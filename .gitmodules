@@ -1,0 +1,3 @@
+[submodule "evaluations/LLMRouterBench"]
+	path = evaluations/LLMRouterBench
+	url = https://github.com/ynulihao/LLMRouterBench.git
