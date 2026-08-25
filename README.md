@@ -317,6 +317,60 @@ Three findings worth carrying forward:
    MiniLM was already calibrated (T ≈ 1.01). Since every routing decision is a
    confidence threshold, this is not cosmetic.
 
+### Where the domain head underperforms
+
+Full analysis: `python -m router.cli analyze 07_finetune_minilm`, which writes
+per-class F1, the confusion matrix, slices and confidently-wrong rows to
+`artifacts/domain/07_finetune_minilm/analysis.md`.
+
+Per-class F1 spans 0.82 to 0.98:
+
+| class | F1 | | class | F1 |
+|---|---|---|---|---|
+| history | 0.822 | | technology | 0.877 |
+| philosophy_psychology | 0.851 | | social_science | 0.887 |
+| arts_recreation | 0.862 | | literature | 0.897 |
+| science | 0.862 | | cs_general | 0.927 |
+| | | | **language** | **0.976** |
+
+Row-normalised confusion (rows = true label, diagonal bolded):
+
+| true \ pred | arts | cs | hist | lang | lit | phil | sci | soc | tech |
+|---|---|---|---|---|---|---|---|---|---|
+| arts_recreation | **.80** | .03 | .08 | — | .06 | — | .02 | .01 | .01 |
+| cs_general | .01 | **.93** | .02 | — | — | .01 | .02 | — | .01 |
+| history | .02 | .05 | **.87** | — | .03 | — | .04 | — | — |
+| language | — | — | .01 | **.96** | — | — | .02 | .01 | — |
+| literature | .02 | — | .01 | — | **.95** | .01 | — | .01 | — |
+| philosophy_psych | — | .01 | .02 | — | .05 | **.82** | .02 | .04 | .05 |
+| science | .01 | .02 | .04 | — | .01 | .01 | **.88** | .01 | .03 |
+| social_science | — | .01 | — | — | .03 | .01 | .03 | **.90** | .02 |
+| technology | — | .01 | — | .01 | — | .03 | **.08** | .02 | **.85** |
+
+**The errors are not where the task is hard — they are where the taxonomy is
+arbitrary.** Three things say so:
+
+1. **Difficulty barely moves accuracy.** easy 0.876 / medium 0.902 / hard 0.885.
+   Essentially flat, and *medium is the best*. If the model were failing on
+   genuinely hard prompts this would slope downward.
+2. **The single largest confusion is `technology → science` (16 cases), and 11
+   of those 16 are `MMLUPro_health`.** Medical questions are filed under
+   `technology` because Dewey class 6 covers Medicine — so the model calls a
+   medical question "science", which is the more defensible answer. It is being
+   penalised for disagreeing with a shelving convention.
+3. **The worst categories are the arbitrary ones**: `70 Arts` (44% error),
+   `15 Psychology` (36%). Both sit on boundaries the taxonomy draws and a human
+   would not.
+
+Conversely `language` at 0.976 F1 is not a triumph — that class is largely the
+WMT translation subset, which is trivially separable because the prompt contains
+non-English text. It is the same format-artifact effect the `question_only`
+ablation measures, showing up as a suspiciously easy class.
+
+Net: the remaining ~11% of errors are mostly *label noise rather than model
+capacity*, so more capacity will buy less than the headline number suggests.
+This is the concrete evidence behind priority 0.
+
 **Latency in context:** the 8.87 ms head gates an LLM call that takes 2–6 s, so it
 is ~0.2% of turn latency while cutting ~55% of cost. Measured single-prompt on
 Apple Silicon (MPS), unbatched — a CPU-only server will be slower and is
