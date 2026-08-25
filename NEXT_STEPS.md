@@ -6,7 +6,7 @@ Status as of 2026-08-24. Concise by design — see [README](README.md) for archi
 
 | Component | State |
 |---|---|
-| Domain head | **Trained.** 10 experiments, best `07_finetune_minilm` 0.886 acc / 0.885 macro-F1 @ 8.9ms. |
+| Domain head | **Trained.** 13 experiments, best `11_finetune_bge_base` 0.894 acc @ 24ms; `07_finetune_minilm` 0.886 @ 8.9ms is the better trade. **Not a routing signal on its own — see priority 0.** |
 | Calibration | **Done.** Temperature fit on val; ECE 0.20 → 0.03. |
 | Policy / pool / skills / orchestrator / gate / session | **Built + tested**, runs offline. |
 | Difficulty | **Heuristic.** Design formula, hand-set weights. |
@@ -16,29 +16,46 @@ Status as of 2026-08-24. Concise by design — see [README](README.md) for archi
 
 ## Priorities
 
-**0. Validate the premise before building on it.** The domain head assumes
-`prompt → domain → capability → model`. That is two inferential leaps, and the
-first one is already shaky: `technology` is 71% medicine, `science` is 43% maths,
-and the format ablation costs ~6 points. Meanwhile `lmarena-ai/arena-human-preference-140k`
-labels the routing decision **directly** — `winner` is which model actually won
-the head-to-head, over ~140k real user prompts rather than 8.4k academic MCQs.
+**0. ~~Validate the premise~~ — DONE, and it failed. Read this first.**
+Both routing paths were tested on the same held-out preference rows against the
+same ground truth (did the strong model actually win?). Neither works:
 
-Train a binary strong-vs-weak head on that (the RouteLLM framing; see also
-`routellm/gpt4_judge_battles`) and compare it against the domain path on the same
-routing objective. Needs no new infrastructure — a source loader and a label
-column; the data/model/metric/experiment layers are already label-agnostic.
-Map `winner` to a strong-vs-weak target by the tier of `model_a`/`model_b`,
-dropping `tie` and `both_bad` or treating them as "weak suffices".
+| path | ROC-AUC |
+|---|---|
+| direct — TF-IDF on `routing_label` | 0.551 |
+| direct — TF-IDF, wide-gap subset | 0.549 |
+| direct — fine-tuned MiniLM | **0.567** (best tried) |
+| indirect — domain head + heuristic difficulty | **0.485 (below chance)** |
 
-*If it wins, the domain head becomes an optional secondary signal rather than
-the backbone, and priorities 1–2 shrink accordingly.* Cheap to answer, and it
-governs everything below it — so answer it first.
+The direct path beats the indirect one by 8 AUC points, so priority 0's
+*direction* was right: supervising the decision directly is better than inferring
+it from a topic. But 0.567 is not deployable either, and the indirect path is
+slightly *anti*-correlated with the truth and below the majority baseline — so
+the 55% "cost saving" the routing evaluation reports is achieved by guessing,
+not routing. Filtering to wide-gap battles did not help (0.551 → 0.549), so the
+ceiling is the task, not the label construction.
 
-**1. Train the difficulty regressor.** Highest leverage. Weak/strong leans on it hardest, and thresholds are currently being fit to a placeholder's output distribution. Target: LMArena `criteria_v0.1` (7 hardness flags → score in [0,1]); loader exists at `router.data.sources.arena`. Reuse the whole model/metric/experiment stack — only the head changes (regression, so swap macro-F1 for MAE/Spearman).
+Caveats, fairly: difficulty is still a heuristic, and the domain head is far out
+of distribution on open user prompts. This indicts the *implementation*, not
+necessarily the concept.
 
-**2. Train the task-type head.** Same data, same stack. Weak labels: `is_code`, `math_v0.1`, `creative_writing_v0.1`. Note the flags are not mutually exclusive — multi-label is the honest framing, current code collapses by precedence.
+**Consequence: reorder everything below.**
 
-**3. Measure pool quality on LLMRouterBench.** Until this exists, every routing threshold is unfalsifiable. Replace the priors in `configs/pool.yaml`, then re-fit `PolicyThresholds` against a real cost/quality frontier instead of quantile heuristics.
+**1. Try a cascade before any more prediction.** Run the weak model, escalate on
+*its own* failure signals — low logprob, self-reported uncertainty, a verifier.
+This sidesteps predicting a quantity that appears close to unpredictable, and it
+is cheaper to build than any of the heads below. This is now the top priority.
+
+**2. If you keep a predictive router, fix the model pair.** RouteLLM's reported
+gains come from one *fixed* strong/weak pair, not a 50-model mixture. Pick the
+two models actually deployed and label against those. The loader already supports
+this via `min_tier_gap`; restricting to a single pair is a small extension.
+
+**3. Train the difficulty regressor.** Highest leverage. Weak/strong leans on it hardest, and thresholds are currently being fit to a placeholder's output distribution. Target: LMArena `criteria_v0.1` (7 hardness flags → score in [0,1]); loader exists at `router.data.sources.arena`. Reuse the whole model/metric/experiment stack — only the head changes (regression, so swap macro-F1 for MAE/Spearman).
+
+**4. Train the task-type head.** Same data, same stack. Weak labels: `is_code`, `math_v0.1`, `creative_writing_v0.1`. Note the flags are not mutually exclusive — multi-label is the honest framing, current code collapses by precedence.
+
+**5. Measure pool quality on LLMRouterBench.** Until this exists, every routing threshold is unfalsifiable. Replace the priors in `configs/pool.yaml`, then re-fit `PolicyThresholds` against a real cost/quality frontier instead of quantile heuristics.
 
 ## Known gaps
 

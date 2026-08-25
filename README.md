@@ -400,6 +400,68 @@ at −7.5 points.
 
 ---
 
+## Priority 0: is the domain path the right path?
+
+The domain head assumes `prompt → domain → capability → model`. The alternative
+supervises the decision directly, from LMArena battles where humans already made
+it (`routing_label`: did the strong model actually win?). Both were tested on the
+same held-out rows, against the same ground truth.
+
+**Neither path works.** That is the headline, and it is a more useful result than
+either winning would have been.
+
+| path | acc | ROC-AUC | note |
+|---|---|---|---|
+| majority baseline | 0.502 | — | always guesses the common class |
+| direct — TF-IDF on `routing_label` | 0.537 | **0.551** | 24.9k rows, balanced |
+| direct — TF-IDF, wide-gap subset | 0.550 | **0.549** | crisper label, 8.0k rows |
+| direct — fine-tuned MiniLM | 0.547 | **0.567** | best of the lot, still weak |
+| indirect — domain head + difficulty | 0.483 | **0.485** | **below chance** |
+
+Three things follow.
+
+**1. The current escalation signal is worthless — literally.** The
+domain-head-plus-difficulty path scores AUC 0.485, i.e. slightly *anti*-correlated
+with whether a strong model was actually needed, and its accuracy is below the
+majority baseline. The 55% cost saving reported above is therefore a saving
+achieved by *guessing*, not by routing. Two caveats keep this from being a
+verdict on the concept: difficulty is still a heuristic placeholder, and the
+domain head is being applied far out of its training distribution (academic MCQ →
+open user prompts). But as *currently implemented*, it does not route.
+
+**2. Predicting the decision directly is only marginally learnable.** The
+fine-tuned head is the best of everything tried and still reaches only AUC 0.567
+(0.547 accuracy). Training loss stalled near ln 2 and validation macro-F1 moved
+0.5422 → 0.5424 → plateau across three epochs. It does beat the indirect path by
+a clear 8 AUC points, so the *direction* of priority 0 was right — supervising the
+decision directly is better than inferring it. It is just that "better" here means
+0.567 instead of 0.485, and neither is deployable.
+
+**3. It is not pairing noise.** The label mixes battles with different
+strong/weak gaps (widest third 57% `strong_needed`, narrowest 42%), and that gap
+is invisible to a prompt-only classifier. Filtering to wide-gap battles should
+have helped. It did not: AUC 0.551 → 0.549. So the ceiling is the task, not the
+label construction.
+
+### What this means for the project
+
+The honest reading is that **prompt-only routing prediction is near its noise
+floor on this data**, whichever label you use. That does not sink the router — it
+relocates the effort:
+
+- **Escalate on observed failure, not predicted difficulty.** Run the weak model,
+  and escalate on its own signals (low logprob, self-reported uncertainty, a
+  verifier). A cascade needs no prediction of an unpredictable quantity. This is
+  now the first thing to try.
+- **If you keep a predictive router, fix the pair.** RouteLLM's gains come from a
+  *fixed* strong/weak pair, not a 50-model mixture. Pick the two models you
+  actually deploy and label against those.
+- **Keep the domain head for something it is good at.** 0.894 accuracy is real;
+  it is just not a routing signal on its own. Skill and tool selection are
+  plausible uses.
+
+---
+
 ## Status
 
 | Component | State |
