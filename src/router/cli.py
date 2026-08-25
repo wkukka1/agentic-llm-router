@@ -11,8 +11,14 @@ from router.agent import AgentConfig, AgenticRouter, PolicyThresholds, Session
 from router.agent.backends import default_backend
 from router.agent.tasktype import infer_task_type
 from router.config import load_experiments
-from router.data.build import PROCESSED_DIR, build_domain_dataset, load_splits
+from router.data.build import (
+    PROCESSED_DIR,
+    build_domain_dataset,
+    build_preference_dataset,
+    load_splits,
+)
 from router.training.analysis import report
+from router.training.compare_paths import compare, render
 from router.training.experiment import ARTIFACTS_DIR
 from router.training.runner import run_all
 
@@ -47,6 +53,21 @@ def cmd_build_data(args: argparse.Namespace) -> int:
         )
         sizes = ", ".join(f"{k}={len(v)}" for k, v in splits.items())
         print(f"{variant}: {sizes}")
+    return 0
+
+
+def cmd_build_preference(args: argparse.Namespace) -> int:
+    splits = build_preference_dataset(
+        max_shards=args.max_shards,
+        tier_quantile=args.tier_quantile,
+        min_tier_gap=args.min_tier_gap,
+        out_dir=Path(args.out_dir),
+        variant=args.variant,
+        seed=args.seed,
+    )
+    for name, frame in splits.items():
+        counts = frame["routing_label"].value_counts().to_dict()
+        print(f"{name}: {len(frame)} rows  {counts}")
     return 0
 
 
@@ -207,6 +228,55 @@ def cmd_route_eval(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_compare_paths(args: argparse.Namespace) -> int:
+    """Priority 0: does predicting the routing decision beat inferring it?"""
+    import numpy as np
+
+    from router.agent import AgenticRouter
+    from router.agent.tasktype import infer_task_type
+
+    test = load_splits(args.variant, Path(args.data_dir))["test"]
+    if args.limit:
+        test = test.head(args.limit)
+    prompts = test["prompt"].tolist()
+
+    direct_scores = None
+    if args.direct_head:
+        from router.inference import DomainHead
+
+        head = DomainHead(args.direct_head)
+        positive = head.model.labels.index("strong_needed")
+        direct_scores = head.model.predict_proba(prompts)[:, positive]
+        print(f"direct path: {args.direct_head}")
+
+    indirect_scores = None
+    if args.domain_head:
+        from router.inference import DomainHead, as_domain_fn
+
+        router = AgenticRouter(
+            domain_fn=as_domain_fn(DomainHead(args.domain_head)),
+            task_type_fn=infer_task_type,
+        )
+        # The policy thresholds on difficulty, so difficulty *is* the indirect
+        # path's escalation score. Using it keeps the comparison honest.
+        indirect_scores = np.array([router.signals_for(p).difficulty for p in prompts])
+        print(f"indirect path: {args.domain_head} + heuristic difficulty")
+
+    if direct_scores is None and indirect_scores is None:
+        raise SystemExit("pass --direct-head and/or --domain-head")
+
+    frame = compare(test, direct_scores=direct_scores, indirect_scores=indirect_scores)
+    text = render(frame)
+    print("\n" + text)
+
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "compare_paths.md").write_text(text)
+    frame.to_csv(out_dir / "compare_paths.csv", index=False)
+    print(f"wrote {out_dir / 'compare_paths.md'}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="router", description="Agentic LLM router training harness")
     parser.add_argument("-v", "--verbose", action="count", default=1)
@@ -218,6 +288,20 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--out-dir", default=str(PROCESSED_DIR))
     build.add_argument("--seed", type=int, default=20260824)
     build.set_defaults(func=cmd_build_data)
+
+    build_pref = sub.add_parser(
+        "build-preference",
+        help="build strong-vs-weak routing splits from LMArena preference battles",
+    )
+    build_pref.add_argument("--max-shards", type=int, default=None)
+    build_pref.add_argument("--tier-quantile", type=float, default=0.5,
+                            help="win-rate quantile splitting strong from weak")
+    build_pref.add_argument("--min-tier-gap", type=float, default=0.0,
+                            help="drop battles whose models are closer than this in win rate")
+    build_pref.add_argument("--variant", default="preference")
+    build_pref.add_argument("--out-dir", default=str(PROCESSED_DIR))
+    build_pref.add_argument("--seed", type=int, default=20260824)
+    build_pref.set_defaults(func=cmd_build_preference)
 
     describe = sub.add_parser("describe-data", help="print split statistics")
     describe.add_argument("--variant", default="full_prompt")
@@ -258,6 +342,18 @@ def build_parser() -> argparse.ArgumentParser:
                             help="share of traffic kept on the weak path")
     route_eval.add_argument("--orchestrate-quantile", type=float, default=0.92)
     route_eval.set_defaults(func=cmd_route_eval)
+
+    compare_cmd = sub.add_parser(
+        "compare-paths",
+        help="priority 0: direct routing head vs domain+difficulty, same ground truth",
+    )
+    compare_cmd.add_argument("--direct-head", help="run dir of a head trained on routing_label")
+    compare_cmd.add_argument("--domain-head", help="run dir of a domain head")
+    compare_cmd.add_argument("--variant", default="preference")
+    compare_cmd.add_argument("--data-dir", default=str(PROCESSED_DIR))
+    compare_cmd.add_argument("--out-dir", default="artifacts/preference")
+    compare_cmd.add_argument("--limit", type=int, default=None)
+    compare_cmd.set_defaults(func=cmd_compare_paths)
 
     analyze = sub.add_parser("analyze", help="error analysis for a finished run")
     analyze.add_argument("name", nargs="*", help="experiment name(s); defaults to the leaderboard leader")

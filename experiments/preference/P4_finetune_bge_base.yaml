@@ -1,0 +1,16 @@
+name: P4_finetune_bge_base
+notes: >
+  Capacity check on the routing label (109M params). Preference data is ~4x the
+  domain set and far noisier, so this is where extra capacity is most likely to
+  pay off -- unlike on the domain label, where errors are mostly label noise.
+model:
+  name: finetune_transformer
+  params:
+    model_name: BAAI/bge-base-en-v1.5
+    max_length: 512
+    batch_size: 16
+    epochs: 3
+    lr: 0.00002
+data:
+  variant: preference
+  label_column: routing_label

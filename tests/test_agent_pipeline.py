@@ -279,3 +279,20 @@ def test_execute_mode_feeds_earlier_answers_into_dependent_sub_queries():
     # The dependent sub-query's user message must carry the earlier answer.
     answering = [user for system, user in backend.calls if "You are" in system]
     assert any("[answer to sub-query 0]" in user for user in answering)
+
+
+def test_fp32_loss_handles_half_precision_logits():
+    """Regression: DeBERTa-v3 loads in fp16 and crashed the weighted loss.
+
+    Guards the `.float()` in FineTunedTransformer.fit -- without it, any
+    half-precision checkpoint fails against the fp32 class-weight tensor.
+    """
+    import torch
+
+    criterion = torch.nn.CrossEntropyLoss(weight=torch.ones(3, dtype=torch.float32))
+    half_logits = torch.randn(4, 3, dtype=torch.float16)
+    targets = torch.tensor([0, 1, 2, 0])
+
+    with pytest.raises(RuntimeError, match="Half"):
+        criterion(half_logits, targets)
+    assert criterion(half_logits.float(), targets).item() > 0

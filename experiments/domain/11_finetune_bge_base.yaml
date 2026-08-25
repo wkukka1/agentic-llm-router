@@ -1,0 +1,16 @@
+name: 11_finetune_bge_base
+notes: >
+  Direct scale-up of experiment 08 (bge-small -> bge-base, 33M -> 109M params).
+  The cleanest read on whether capacity alone buys accuracy, since only the size
+  changes. max_length also raised 256 -> 512: the p95 prompt is 2645 chars, so
+  the earlier runs were truncating the long tail.
+model:
+  name: finetune_transformer
+  params:
+    model_name: BAAI/bge-base-en-v1.5
+    max_length: 512
+    batch_size: 16
+    epochs: 4
+    lr: 0.00002
+data:
+  variant: full_prompt

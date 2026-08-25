@@ -113,7 +113,11 @@ class FineTunedTransformer(DomainClassifier):
             for batch in loader:
                 batch = {k: v.to(self.device) for k, v in batch.items()}
                 targets = batch.pop("labels")
-                logits = self.model(**batch).logits
+                # Always compute the loss in fp32. Some checkpoints (DeBERTa-v3)
+                # load in half precision, and a Half/Float mismatch against the
+                # class-weight tensor fails outright; fp32 loss is also the
+                # numerically safer default.
+                logits = self.model(**batch).logits.float()
                 loss = criterion(logits, targets)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)

@@ -17,10 +17,12 @@ from typing import Any
 import numpy as np
 from sklearn.metrics import (
     accuracy_score,
+    average_precision_score,
     balanced_accuracy_score,
     confusion_matrix,
     f1_score,
     log_loss,
+    roc_auc_score,
 )
 
 
@@ -104,6 +106,15 @@ def evaluate(
     }
     for coverage in coverages:
         metrics[f"acc@coverage{int(coverage * 100)}"] = selective_accuracy(confidence, correct, coverage)
+
+    # For a binary head the router thresholds a score, so ranking quality
+    # matters more than accuracy at the default 0.5 cut.
+    if len(labels) == 2:
+        positive = proba[:, 1]
+        binary_true = (y_true_idx == 1).astype(int)
+        if 0 < binary_true.sum() < len(binary_true):
+            metrics["roc_auc"] = float(roc_auc_score(binary_true, positive))
+            metrics["pr_auc"] = float(average_precision_score(binary_true, positive))
 
     per_class_f1 = f1_score(y_true, y_pred, average=None, labels=labels, zero_division=0)
     metrics["per_class_f1"] = {label: float(score) for label, score in zip(labels, per_class_f1, strict=True)}

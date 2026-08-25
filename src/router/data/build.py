@@ -13,7 +13,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 
 from router.data.schema import normalize_prompt, to_frame
-from router.data.sources import routerarena
+from router.data.sources import preference, routerarena
 
 log = logging.getLogger(__name__)
 
@@ -136,3 +136,41 @@ def load_splits(variant: str = "full_prompt", out_dir: Path = PROCESSED_DIR) -> 
             f"missing splits {missing} under {target}; run `python -m router.cli build-data --variant {variant}`"
         )
     return {name: pd.read_parquet(target / f"{name}.parquet") for name in SPLIT_NAMES}
+
+
+def build_preference_dataset(
+    *,
+    max_shards: int | None = None,
+    tier_quantile: float = 0.5,
+    min_battles: int = 40,
+    min_tier_gap: float = 0.0,
+    out_dir: Path = PROCESSED_DIR,
+    variant: str = "preference",
+    seed: int = 20260824,
+) -> dict[str, pd.DataFrame]:
+    """Build strong-vs-weak routing splits from LMArena preference battles.
+
+    This is the direct alternative to :func:`build_domain_dataset`: the label is
+    the routing decision itself rather than a topic that is assumed to imply it.
+    Both write the same canonical columns, so the model, metric and experiment
+    layers are shared without modification.
+    """
+    examples = preference.load(
+        max_shards=max_shards, tier_quantile=tier_quantile,
+        min_battles=min_battles, min_tier_gap=min_tier_gap,
+    )
+    frame = to_frame(examples)
+    frame = dedupe(frame)
+
+    # Stratify on the label crossed with task type: the class balance matters,
+    # and so does keeping code/math prompts represented in every split.
+    splits = split_frame(frame, stratify_on=["routing_label", "task_type"], seed=seed)
+    assert_no_leakage(splits)
+
+    target = out_dir / variant
+    target.mkdir(parents=True, exist_ok=True)
+    for name, part in splits.items():
+        part.to_parquet(target / f"{name}.parquet", index=False)
+        log.info("wrote %s: %d rows", target / f"{name}.parquet", len(part))
+
+    return splits

@@ -24,6 +24,7 @@ COLUMNS: tuple[str, ...] = (
     "category",
     "task_type",
     "difficulty",
+    "routing_label",
     "hardness_score",
     "n_chars",
     "meta",
@@ -45,6 +46,9 @@ class Example:
         category: Finer-grained topic label, kept as free text.
         task_type: Capability label, a :class:`~router.data.taxonomy.TaskType`.
         difficulty: Ordinal label, a :class:`~router.data.taxonomy.Difficulty`.
+        routing_label: The routing decision itself, when a source supervises it
+            directly -- ``strong_needed`` or ``weak_sufficient``. Sources with
+            only a topic label leave this ``None``.
         hardness_score: Continuous difficulty target in ``[0, 1]`` when the
             source exposes one (LMArena's 7 hardness criteria, normalised).
         meta: Source-specific extras that no downstream stage may depend on.
@@ -57,6 +61,7 @@ class Example:
     category: str | None = None
     task_type: str | None = None
     difficulty: str | None = None
+    routing_label: str | None = None
     hardness_score: float | None = None
     meta: dict[str, Any] = field(default_factory=dict)
 

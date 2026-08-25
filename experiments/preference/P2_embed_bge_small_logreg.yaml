@@ -1,0 +1,14 @@
+name: P2_embed_bge_small_logreg
+notes: >
+  Frozen encoder + linear head. Cheap upper bound on what semantic similarity
+  alone buys before paying for a fine-tune.
+model:
+  name: embed_logreg
+  params:
+    encoder_model: BAAI/bge-small-en-v1.5
+    pooling: cls
+    max_length: 512
+    C: 4.0
+data:
+  variant: preference
+  label_column: routing_label

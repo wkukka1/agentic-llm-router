@@ -33,8 +33,8 @@ def test_config_requires_name_and_model():
 
 
 def test_shipped_experiment_configs_all_load_and_are_uniquely_named():
-    configs = load_experiments(["experiments/domain"])
-    assert len(configs) >= 10
+    configs = load_experiments(["experiments/domain", "experiments/preference"])
+    assert len(configs) >= 14
     names = [c.name for c in configs]
     assert len(names) == len(set(names)), "duplicate experiment names would overwrite each other"
     for config in configs:
@@ -45,5 +45,5 @@ def test_shipped_config_name_matches_its_filename():
     """The run directory is named from `name`, so a mismatch is silently confusing."""
     from pathlib import Path
 
-    for path in sorted(Path("experiments/domain").glob("*.yaml")):
+    for path in sorted(Path("experiments").glob("*/*.yaml")):
         assert yaml.safe_load(path.read_text())["name"] == path.stem
