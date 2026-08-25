@@ -1,2 +1,15 @@
 *.env
-**/pycache__/
+.env
+__pycache__/
+**/__pycache__/
+*.pyc
+.venv/
+.DS_Store
+
+# data + run outputs are reproducible from scripts
+data/raw/
+data/processed/
+artifacts/
+!artifacts/.gitkeep
+*.egg-info/
+src/*.egg-info/

@@ -1,0 +1,25 @@
+# Skills attach to a sub-query when its signals match, and only if the selected
+# model is permitted to call them (see `skills:` on each pool member).
+
+skills:
+  - name: code_interpreter
+    description: Execute code in a sandbox and return stdout/stderr.
+    task_types: [code]
+    cost: 0.001
+
+  - name: calculator
+    description: Exact arithmetic and symbolic evaluation.
+    task_types: [math]
+    cost: 0.0
+
+  - name: web_search
+    description: Retrieve current external information.
+    task_types: [factual_qa]
+    domains: [history, technology]
+    cost: 0.005
+
+  - name: retrieval
+    description: Search the attached corpus for supporting passages.
+    task_types: [reading_comprehension]
+    min_difficulty: 0.7
+    cost: 0.002

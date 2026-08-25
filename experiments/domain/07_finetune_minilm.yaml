@@ -1,0 +1,14 @@
+name: 07_finetune_minilm
+notes: >
+  Full fine-tune of MiniLM-L6. Small enough (22M params) to stay inside an
+  inline router's latency budget on CPU.
+model:
+  name: finetune_transformer
+  params:
+    model_name: sentence-transformers/all-MiniLM-L6-v2
+    max_length: 256
+    batch_size: 32
+    epochs: 5
+    lr: 0.00005
+data:
+  variant: full_prompt

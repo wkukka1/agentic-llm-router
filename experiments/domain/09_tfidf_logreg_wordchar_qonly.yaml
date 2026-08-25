@@ -1,0 +1,15 @@
+name: 09_tfidf_logreg_wordchar_qonly
+notes: >
+  Ablation of experiment 02 on question-only prompts. The gap against 02 is the
+  share of accuracy that comes from benchmark formatting (context blocks, MCQ
+  option lists) rather than from topic - i.e. the part that will not transfer to
+  real user traffic.
+model:
+  name: tfidf_logreg
+  params:
+    word_ngrams: [1, 2]
+    char_ngrams: [3, 5]
+    min_df: 2
+    C: 4.0
+data:
+  variant: question_only

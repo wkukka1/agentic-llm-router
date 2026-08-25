@@ -1,2 +1,15 @@
+PyYAML
 datasets
-dotenv
+huggingface_hub
+litellm
+numpy
+pandas
+pyarrow
+pytest
+python-dotenv
+scikit-learn
+scipy
+tabulate
+torch
+tqdm
+transformers

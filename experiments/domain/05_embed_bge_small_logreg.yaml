@@ -1,0 +1,13 @@
+name: 05_embed_bge_small_logreg
+notes: >
+  Stronger frozen encoder (bge-small-en-v1.5, CLS pooling per model card) with
+  the same linear head as 04. Isolates encoder quality.
+model:
+  name: embed_logreg
+  params:
+    encoder_model: BAAI/bge-small-en-v1.5
+    pooling: cls
+    max_length: 256
+    C: 8.0
+data:
+  variant: full_prompt

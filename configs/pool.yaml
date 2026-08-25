@@ -1,0 +1,43 @@
+# The routing pool. Costs are USD per 1M tokens and are the number the policy
+# actually optimises against, so keep them current.
+#
+# tier semantics:
+#   weak         - answers directly, no delegation. The default path.
+#   strong       - answers hard prompts directly.
+#   orchestrator - strong AND able to decompose and delegate. Eligible for
+#                  strong work as well.
+#
+# quality is a 0-1 placeholder until the pool is scored on LLMRouterBench;
+# `python -m router.cli train` does not set it. Treat it as a prior, not a
+# measurement.
+
+models:
+  - name: claude-haiku-4-5
+    tier: weak
+    cost_in: 1.0
+    cost_out: 5.0
+    context_window: 200000
+    quality: 0.62
+    latency_s_per_1k: 2.0
+    strengths: [language, literature, social_science]
+    skills: [web_search, calculator]
+
+  - name: claude-sonnet-5
+    tier: strong
+    cost_in: 3.0
+    cost_out: 15.0
+    context_window: 200000
+    quality: 0.85
+    latency_s_per_1k: 4.0
+    strengths: [cs_general, technology, science]
+    skills: [web_search, code_interpreter, calculator, retrieval]
+
+  - name: claude-opus-5
+    tier: orchestrator
+    cost_in: 5.0
+    cost_out: 25.0
+    context_window: 200000
+    quality: 0.93
+    latency_s_per_1k: 6.0
+    strengths: [cs_general, science, technology, philosophy_psychology]
+    skills: [web_search, code_interpreter, calculator, retrieval]

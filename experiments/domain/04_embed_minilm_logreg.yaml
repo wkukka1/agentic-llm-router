@@ -1,0 +1,13 @@
+name: 04_embed_minilm_logreg
+notes: >
+  Frozen MiniLM-L6 sentence embeddings + linear head. The encoder pass is shared
+  with the future difficulty head, so its cost amortises across the router.
+model:
+  name: embed_logreg
+  params:
+    encoder_model: sentence-transformers/all-MiniLM-L6-v2
+    pooling: mean
+    max_length: 256
+    C: 8.0
+data:
+  variant: full_prompt
