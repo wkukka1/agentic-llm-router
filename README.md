@@ -296,7 +296,28 @@ All 10 experiments, sorted by macro-F1. Reproduce with
 | 06_embed_bge_small_mlp | 0.761 | 0.756 | 0.029 → 0.026 | 9.92 | 2 |
 | 01_tfidf_logreg_word | 0.759 | 0.757 | 0.200 → 0.032 | 0.37 | 11 |
 | 09_tfidf_logreg_wordchar_qonly | 0.746 | 0.739 | 0.129 → 0.025 | 0.86 | 13 |
-| 04_embed_minilm_logreg | 0.729 | 0.724 | 0.033 → 0.040 | 9.70 | 0 |
+| 04_embed_minilm_logreg | 0.729 | 0.724 | 0.033 → 0.040 | 9.70 |
+
+Scaling up (experiments 11–13, `max_length` 512):
+
+| experiment | params | acc | macro-F1 | p50 ms | train |
+|---|---|---|---|---|---|
+| **11_finetune_bge_base** | 109M | **0.894** | **0.891** | 24.2 | 61 min |
+| 13_finetune_modernbert_base | 149M | 0.878 | 0.875 | 70.5 | 75 min |
+| 07_finetune_minilm *(22M, for reference)* | 22M | 0.886 | 0.885 | 8.9 | 6 min |
+| 12_finetune_deberta_v3_base | 184M | *failed, then fixed* | | | |
+
+**Capacity buys almost nothing here — as the error analysis predicted.** Going
+22M → 109M gains **0.8 points** (0.886 → 0.894) for 2.7× the latency and 10× the
+training time. ModernBERT at 149M is *worse* than MiniLM at 22M. That is the
+signature of a label-noise ceiling rather than a capacity ceiling, and it is
+consistent with the confusion analysis below: the model is being asked to
+reproduce Dewey shelving decisions that are genuinely ambiguous.
+
+Experiment 12 exposed a real bug — DeBERTa-v3 loads in fp16 and crashed the
+class-weighted loss (`expected scalar type Half but found Float`). The loss is
+now computed in fp32 unconditionally, with a regression test. The run has not
+been repeated; on this evidence it would not change the conclusion. 0 |
 
 **Winner: `07_finetune_minilm`** — and it dominates rather than trades off. It beats
 the larger `bge-small` on accuracy *and* latency *and* size *and* training time
