@@ -1,0 +1,9 @@
+name: C1_tfidf
+notes: >
+  Lexical baseline on the capability label. Code prompts carry very distinctive
+  tokens, so this should be strong on `code` and weak on the open-ended classes
+  -- a useful shape to know before paying for a transformer.
+model:
+  name: tfidf_logreg
+  params: {word_ngrams: [1, 2], char_ngrams: [3, 5], min_df: 3, C: 2.0}
+data: {variant: capability, label_column: capability}

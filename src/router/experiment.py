@@ -102,6 +102,22 @@ def run_experiment(
     val_metrics = evaluate(val[label_col].tolist(), val_proba, model.labels)
     test_metrics = evaluate(test[label_col].tolist(), test_proba, model.labels)
 
+    # Per-source scores, because an aggregate hides the only question that
+    # matters: does this work on real prompts, or only on benchmark ones? A
+    # model that scores 91% on benchmarks and 47% in the wild looks fine in
+    # aggregate and is useless in production.
+    if "source" in test.columns and test["source"].nunique() > 1:
+        by_source = {}
+        for source, part in test.groupby("source"):
+            rows = test.index.get_indexer(part.index)
+            by_source[str(source)] = evaluate(
+                part[label_col].tolist(), test_proba[rows], model.labels
+            )
+        test_metrics["by_source"] = {
+            k: {m: v[m] for m in ("n", "accuracy", "macro_f1", "top2_accuracy")}
+            for k, v in by_source.items()
+        }
+
     # Calibrate on validation only, then score the untouched test split. This is
     # free accuracy-wise (temperature scaling is monotonic) and is what makes the
     # router's confidence thresholds mean what they say.
@@ -149,6 +165,9 @@ def run_experiment(
     log.info("%s: test acc=%.4f macro_f1=%.4f ece=%.3f p50=%.2fms",
              config.name, test_metrics["accuracy"], test_metrics["macro_f1"],
              test_metrics["ece"], runtime["latency_ms_p50"])
+    for source, scores in (test_metrics.get("by_source") or {}).items():
+        log.info("    %-12s n=%-5d acc=%.4f macro_f1=%.4f",
+                 source, scores["n"], scores["accuracy"], scores["macro_f1"])
     return result
 
 

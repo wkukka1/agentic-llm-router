@@ -320,6 +320,83 @@ class EmbeddingReducedLogisticRegression(_FrozenEncoderModel):
         return Pipeline([("reduce", reducer), ("clf", head)])
 
 
+#: Human-readable descriptions of each domain, used as the "anchor" text a
+#: zero-shot classifier compares prompts against. Bare slugs ("cs_general")
+#: embed poorly; the encoder needs real words to place a label in its space.
+DOMAIN_DESCRIPTIONS: dict[str, str] = {
+    "cs_general": "computer science, programming, algorithms, software, data structures, information systems",
+    "technology": "technology, engineering, medicine, health, applied sciences, management",
+    "science": "science, mathematics, physics, chemistry, biology, earth science, geology",
+    "history": "history, historical events, civilisations, wars, historical figures",
+    "literature": "literature, novels, poetry, fiction, literary criticism, rhetoric",
+    "language": "language, linguistics, grammar, translation, vocabulary, word meaning",
+    "arts_recreation": "arts, music, sports, games, entertainment, film, recreation",
+    "social_science": "social science, economics, law, politics, sociology, business",
+    "philosophy_psychology": "philosophy, psychology, ethics, logic, reasoning, the mind",
+}
+
+
+@register("zeroshot_similarity")
+class ZeroShotSimilarity(DomainClassifier):
+    """Nearest-label classification with no training at all.
+
+    Embed a description of each label, embed the prompt, and pick the closest
+    label by cosine similarity. Nothing is fitted -- ``fit`` only records the
+    label set -- so this is the honest floor for "what does the base encoder
+    already know", and the only approach here that cannot overfit the training
+    distribution, because it never sees it.
+
+    Scores are softmaxed similarities. They are comparable within a row but are
+    not probabilities in any calibrated sense, which is why the temperature step
+    matters more here than elsewhere.
+    """
+
+    def __init__(self, *, encoder_model: str = "BAAI/bge-small-en-v1.5", pooling: str = "cls",
+                 max_length: int = 256, batch_size: int = 64, temperature: float = 0.05,
+                 descriptions: dict[str, str] | None = None, device: str | None = None, **kw):
+        super().__init__(encoder_model=encoder_model, pooling=pooling, max_length=max_length,
+                         batch_size=batch_size, temperature=temperature,
+                         descriptions=descriptions, device=device, **kw)
+        self.encoder = EmbeddingEncoder(
+            encoder_model, pooling=pooling, max_length=max_length,
+            batch_size=batch_size, normalize=True, device=device,
+        )
+        self._anchors = None
+
+    def fit(self, train_texts, train_labels, val_texts=None, val_labels=None) -> None:
+        # No training. The label set is all that is taken from the data, and the
+        # anchors come from the descriptions, not from any example.
+        self.labels = sorted(set(train_labels))
+        descriptions = self.params.get("descriptions") or DOMAIN_DESCRIPTIONS
+        missing = [label for label in self.labels if label not in descriptions]
+        if missing:
+            raise ValueError(f"no description for label(s): {missing}")
+        self._anchors = self.encoder.encode([descriptions[label] for label in self.labels])
+
+    def predict_proba(self, texts: list[str]) -> np.ndarray:
+        if self._anchors is None:
+            raise RuntimeError("call fit() first to establish the label set")
+        # Both sides are L2-normalised, so a dot product is cosine similarity.
+        similarity = self.encoder.encode(list(texts)) @ self._anchors.T
+        scaled = similarity / max(self.params["temperature"], 1e-6)
+        scaled -= scaled.max(axis=1, keepdims=True)
+        exp = np.exp(scaled)
+        return exp / exp.sum(axis=1, keepdims=True)
+
+    def save(self, path: Path) -> None:
+        path.mkdir(parents=True, exist_ok=True)
+        with (path / "zeroshot.pkl").open("wb") as fh:
+            pickle.dump({"labels": self.labels, "anchors": self._anchors, "params": self.params}, fh)
+
+    def load(self, path: Path) -> None:
+        with (path / "zeroshot.pkl").open("rb") as fh:
+            state = pickle.load(fh)
+        self.labels, self._anchors = state["labels"], state["anchors"]
+
+    def size_bytes(self) -> int:
+        return 0 if self._anchors is None else self._anchors.nbytes
+
+
 # Imported for its side effect: FineTunedTransformer self-registers on import.
 # This sits at the bottom, after DomainClassifier and register are defined, so
 # that router.finetune's import of them resolves against this partially

@@ -21,13 +21,13 @@ from typing import Any
 
 import pandas as pd
 import pyarrow.parquet as pq
-from huggingface_hub import hf_hub_download
+from huggingface_hub import hf_hub_download, list_repo_files
 from sklearn.model_selection import train_test_split
 
 from router.taxonomy import (
     Difficulty,
-    domain_from_routerarena,
-    task_type_from_dataset_name,
+    capability_from_arena_flags,
+    capability_from_dataset_name,
 )
 
 log = logging.getLogger(__name__)
@@ -39,9 +39,8 @@ COLUMNS: tuple[str, ...] = (
     "prompt",
     "source",
     "subset",
-    "domain",
+    "capability",
     "category",
-    "task_type",
     "difficulty",
     "hardness_score",
     "n_chars",
@@ -60,7 +59,8 @@ class Example:
         prompt: The text a user would actually send to the router.
         source: Dataset the row came from (e.g. ``routerarena``).
         subset: Provenance inside the source (e.g. ``LiveCodeBench``).
-        domain: Topic label, a :class:`~router.taxonomy.Domain` value.
+        capability: What the answering model must do; a
+            :class:`~router.taxonomy.Capability` value.
         category: Finer-grained topic label, kept as free text.
         task_type: Capability label, a :class:`~router.taxonomy.TaskType`.
         difficulty: Ordinal label, a :class:`~router.taxonomy.Difficulty`.
@@ -72,9 +72,8 @@ class Example:
     prompt: str
     source: str
     subset: str | None = None
-    domain: str | None = None
+    capability: str | None = None
     category: str | None = None
-    task_type: str | None = None
     difficulty: str | None = None
     hardness_score: float | None = None
     meta: dict[str, Any] = field(default_factory=dict)
@@ -161,15 +160,9 @@ def load(
     rows = table.to_pylist()
 
     examples: list[Example] = []
-    dropped_no_domain = 0
     dropped_empty = 0
 
     for row in rows:
-        domain = domain_from_routerarena(row.get("Domain") or "")
-        if domain is None:
-            dropped_no_domain += 1
-            continue
-
         options = row.get("Options")
         prompt = render_prompt(
             row.get("Question") or "",
@@ -183,6 +176,7 @@ def load(
             continue
 
         subset = (row.get("Dataset name") or "").strip() or None
+        capability = capability_from_dataset_name(subset or "")
         difficulty = (row.get("Difficulty") or "").strip().lower()
 
         examples.append(
@@ -190,9 +184,8 @@ def load(
                 prompt=prompt,
                 source=SOURCE,
                 subset=subset,
-                domain=domain.value,
+                capability=capability.value,
                 category=(row.get("Category") or "").strip() or None,
-                task_type=task_type_from_dataset_name(subset or "").value,
                 difficulty=difficulty if difficulty in set(Difficulty) else None,
                 hardness_score=None,
                 meta={
@@ -205,11 +198,7 @@ def load(
         )
 
     log.info(
-        "routerarena[%s]: kept %d, dropped %d (no domain) + %d (empty prompt)",
-        split,
-        len(examples),
-        dropped_no_domain,
-        dropped_empty,
+        "routerarena[%s]: kept %d, dropped %d (empty prompt)", split, len(examples), dropped_empty
     )
     return examples
 
@@ -312,7 +301,7 @@ def build_domain_dataset(
     frame = to_frame(examples)
     frame = dedupe(frame)
 
-    splits = split_frame(frame, stratify_on=["domain", "difficulty"], seed=seed)
+    splits = split_frame(frame, stratify_on=["capability", "difficulty"], seed=seed)
     assert_no_leakage(splits)
 
     target = out_dir / variant
@@ -333,3 +322,132 @@ def load_splits(variant: str = "full_prompt", out_dir: Path = PROCESSED_DIR) -> 
             f"missing splits {missing} under {target}; run `python -m router.cli build-data --variant {variant}`"
         )
     return {name: pd.read_parquet(target / f"{name}.parquet") for name in SPLIT_NAMES}
+
+
+LMARENA_REPO = "lmarena-ai/arena-human-preference-140k"
+LMARENA_SOURCE = "lmarena"
+
+_LMARENA_COLUMNS = ["id", "conversation_a", "conv_metadata", "category_tag", "language", "is_code"]
+
+
+def _first_user_text(conversation: list[dict] | None) -> str:
+    """The opening user turn as plain text, skipping image parts."""
+    for turn in conversation or []:
+        if turn.get("role") != "user":
+            continue
+        parts = turn.get("content") or []
+        texts = [p.get("text") or "" for p in parts if (p.get("type") or "text") == "text"]
+        joined = "\n".join(t for t in texts if t).strip()
+        if joined:
+            return joined
+    return ""
+
+
+def load_lmarena(
+    *,
+    max_shards: int | None = None,
+    language: str | None = "en",
+    min_chars: int = 10,
+    max_prompt_chars: int = 8_000,
+) -> list[Example]:
+    """Real user prompts, labelled by LMArena's own capability annotations.
+
+    This is the half of the training set that RouterArena cannot provide.
+    Benchmark questions are formatted -- option blocks, context headers -- and a
+    model trained only on them learns the formatting: the Dewey-era classifier
+    scored 91% on benchmarks and 47% on prompts like these.
+
+    An absent flag is a real negative, not missing data, so unflagged rows
+    become ``OTHER`` rather than being dropped. That matters: roughly half of
+    real traffic is ``OTHER``, and a model that never sees it will not predict
+    it.
+    """
+    shards = sorted(f for f in list_repo_files(LMARENA_REPO, repo_type="dataset")
+                    if f.endswith(".parquet"))
+    if max_shards is not None:
+        shards = shards[:max_shards]
+
+    examples: list[Example] = []
+    for shard in shards:
+        path = hf_hub_download(LMARENA_REPO, shard, repo_type="dataset")
+        for batch in pq.ParquetFile(path).iter_batches(batch_size=512, columns=_LMARENA_COLUMNS):
+            for row in batch.to_pylist():
+                if language is not None and row.get("language") != language:
+                    continue
+                prompt = _first_user_text(row.get("conversation_a"))
+                if len(prompt) < min_chars:
+                    continue
+
+                tag = row.get("category_tag") or {}
+                capability = capability_from_arena_flags(
+                    is_code=bool(row.get("is_code")),
+                    is_math=bool((tag.get("math_v0.1") or {}).get("math")),
+                    is_creative_writing=bool(
+                        (tag.get("creative_writing_v0.1") or {}).get("creative_writing")
+                    ),
+                )
+                meta = row.get("conv_metadata") or {}
+                examples.append(
+                    Example(
+                        prompt=prompt[:max_prompt_chars],
+                        source=LMARENA_SOURCE,
+                        subset=shard.rsplit("/", 1)[-1],
+                        capability=capability.value,
+                        hardness_score=_hardness_score(tag),
+                        meta={"arena_id": row.get("id"), "turns": meta.get("turns")},
+                    )
+                )
+        log.info("lmarena[%s]: running total %d", shard, len(examples))
+    return examples
+
+
+#: The seven binary "hard prompt" criteria LMArena annotates each battle with.
+HARDNESS_CRITERIA = (
+    "complexity", "creativity", "domain_knowledge", "problem_solving",
+    "real_world", "specificity", "technical_accuracy",
+)
+
+
+def _hardness_score(category_tag: dict | None) -> float | None:
+    """Fraction of the seven hardness criteria that fired, in ``[0, 1]``."""
+    criteria = (category_tag or {}).get("criteria_v0.1")
+    if not criteria:
+        return None
+    return sum(1 for k in HARDNESS_CRITERIA if criteria.get(k)) / len(HARDNESS_CRITERIA)
+
+
+def build_capability_dataset(
+    *,
+    lmarena_shards: int | None = 3,
+    include_routerarena: bool = True,
+    out_dir: Path = PROCESSED_DIR,
+    variant: str = "capability",
+    seed: int = 20260826,
+) -> dict[str, pd.DataFrame]:
+    """Build capability splits from real prompts plus (optionally) benchmarks.
+
+    Mixing the two distributions is the point. RouterArena supplies clean
+    task-type signal but exam formatting; LMArena supplies the messy
+    conversational prompts the router will actually see. Training on the mix is
+    what stops the model keying on format.
+
+    The split is stratified by ``capability`` **and** ``source``, so every split
+    holds both distributions and per-source accuracy is measurable separately --
+    which is the number that actually matters.
+    """
+    examples = load_lmarena(max_shards=lmarena_shards)
+    if include_routerarena:
+        examples += load("full", include_context=True, include_options=True)
+
+    frame = to_frame(examples)
+    frame = dedupe(frame)
+
+    splits = split_frame(frame, stratify_on=["capability", "source"], seed=seed)
+    assert_no_leakage(splits)
+
+    target = out_dir / variant
+    target.mkdir(parents=True, exist_ok=True)
+    for name, part in splits.items():
+        part.to_parquet(target / f"{name}.parquet", index=False)
+        log.info("wrote %s: %d rows", target / f"{name}.parquet", len(part))
+    return splits

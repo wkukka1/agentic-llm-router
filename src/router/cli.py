@@ -14,9 +14,16 @@ import logging
 import sys
 from pathlib import Path
 
+import pandas as pd
+
 from router.analysis import report
 from router.config import load_experiments
-from router.dataset import PROCESSED_DIR, build_domain_dataset, load_splits
+from router.dataset import (
+    PROCESSED_DIR,
+    build_capability_dataset,
+    build_domain_dataset,
+    load_splits,
+)
 from router.experiment import ARTIFACTS_DIR, run_all
 
 #: Prompt-rendering variants the builder can produce. How the RouterArena
@@ -53,10 +60,23 @@ def cmd_build_data(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_build_capability(args: argparse.Namespace) -> int:
+    splits = build_capability_dataset(
+        lmarena_shards=args.lmarena_shards,
+        include_routerarena=not args.no_routerarena,
+        out_dir=Path(args.out_dir), variant=args.variant, seed=args.seed,
+    )
+    for name, frame in splits.items():
+        print(f"\n{name}: {len(frame)} rows")
+        print(pd.crosstab(frame["capability"], frame["source"]).to_string())
+    return 0
+
+
 def cmd_describe_data(args: argparse.Namespace) -> int:
+    label = "capability" if args.variant.startswith("capability") else "domain"
     for name, frame in load_splits(args.variant, Path(args.out_dir)).items():
         print(f"\n=== {name} ({len(frame)} rows) ===")
-        print(frame["domain"].value_counts().to_string())
+        print(frame[label].value_counts().to_string())
         print("-- difficulty --")
         print(frame["difficulty"].value_counts(dropna=False).to_string())
         print(f"-- prompt chars: median={frame['n_chars'].median():.0f} "
@@ -136,6 +156,19 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--out-dir", default=str(PROCESSED_DIR))
     build.add_argument("--seed", type=int, default=20260824)
     build.set_defaults(func=cmd_build_data)
+
+    build_cap = sub.add_parser(
+        "build-capability",
+        help="build capability splits from real LMArena prompts + RouterArena benchmarks",
+    )
+    build_cap.add_argument("--lmarena-shards", type=int, default=3,
+                           help="each shard is ~10k English prompts")
+    build_cap.add_argument("--no-routerarena", action="store_true",
+                           help="train on real prompts only")
+    build_cap.add_argument("--variant", default="capability")
+    build_cap.add_argument("--out-dir", default=str(PROCESSED_DIR))
+    build_cap.add_argument("--seed", type=int, default=20260826)
+    build_cap.set_defaults(func=cmd_build_capability)
 
     describe = sub.add_parser("describe-data", help="print split statistics")
     describe.add_argument("--variant", default="full_prompt")

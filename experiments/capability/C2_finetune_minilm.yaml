@@ -1,0 +1,15 @@
+name: C2_finetune_minilm
+notes: >
+  The real test of the redesign. Trained on 78% real user prompts and 22%
+  benchmark questions, so it cannot key on exam formatting the way the Dewey
+  classifier did. Scored per source, since the aggregate hides whether it works
+  in the wild.
+model:
+  name: finetune_transformer
+  params:
+    model_name: sentence-transformers/all-MiniLM-L6-v2
+    max_length: 256
+    batch_size: 32
+    epochs: 3
+    lr: 0.00003
+data: {variant: capability, label_column: capability}

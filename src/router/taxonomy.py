@@ -1,17 +1,29 @@
-"""Canonical label spaces for the router's upstream classifiers.
+"""Label space for the router's first stage.
 
-Two orthogonal axes are modelled, because they answer different routing
-questions:
+**This replaces a Dewey-decimal topic taxonomy that failed.** That version
+classified prompts into 9 library categories (medicine filed under
+"technology", mathematics under "science"). It reached 91% on benchmark
+questions and **47% on real user prompts** -- it had learned to recognise exam
+formatting, and its best class (`language`, 0.99 F1) turned out to be the WMT
+translation subset being trivially identifiable by non-English text. On real
+traffic that class became a dumping ground, predicted 4x more often than it
+occurred.
 
-* ``Domain``   -- what the prompt is *about* (topic). Sourced from RouterArena's
-                  Dewey-style ``Domain`` column.
-* ``TaskType`` -- what the model has to *do* (capability). Sourced from dataset
-                  provenance (RouterArena ``Dataset name``) and from the LMArena
-                  ``category_tag`` binary flags.
+Three lessons are baked into the design here:
 
-Keeping them separate matters: "math" is a capability that shows up inside the
-science, technology and CS domains, and a router that collapses the two loses
-the ability to say "physics word problem -> reasoning model".
+1. **Classify by capability, not subject.** What matters for routing is what the
+   model must *do* -- run code, calculate, compose prose -- not which shelf a
+   librarian would file it on. "Explain recursion" and "explain the French
+   Revolution" are the same routing decision; "write a sorting function" and
+   "write a sonnet" are not.
+2. **Every label must be assignable from real traffic.** Each class below is
+   grounded in an annotation that exists on real prompts, not only on
+   benchmarks. A label no data source can supply is a label the model will
+   invent.
+3. **`OTHER` is a first-class citizen.** Roughly half of real prompts are
+   greetings, meta-questions, personal advice or requests no benchmark
+   taxonomy anticipated. Forcing them into a topic is what produced the
+   dumping-ground failure.
 """
 
 from __future__ import annotations
@@ -20,31 +32,22 @@ import re
 from enum import StrEnum
 
 
-class Domain(StrEnum):
-    """Topic of the prompt. Mirrors RouterArena's 9 populated Dewey classes."""
+class Capability(StrEnum):
+    """What the answering model has to be good at."""
 
-    CS_GENERAL = "cs_general"
-    PHILOSOPHY_PSYCHOLOGY = "philosophy_psychology"
-    SOCIAL_SCIENCE = "social_science"
-    LANGUAGE = "language"
-    SCIENCE = "science"
-    TECHNOLOGY = "technology"
-    ARTS_RECREATION = "arts_recreation"
-    LITERATURE = "literature"
-    HISTORY = "history"
-
-
-class TaskType(StrEnum):
-    """Capability the prompt demands."""
-
+    #: Write, debug, explain or transform code; IT and devops questions.
     CODE = "code"
+    #: Calculation, proof, symbolic manipulation, quantitative reasoning.
     MATH = "math"
-    REASONING = "reasoning"
-    FACTUAL_QA = "factual_qa"
-    READING_COMPREHENSION = "reading_comprehension"
-    TRANSLATION = "translation"
+    #: Produce prose as the artifact: stories, poems, lyrics, jokes, scripts.
     CREATIVE_WRITING = "creative_writing"
+    #: Render text between languages.
+    TRANSLATION = "translation"
+    #: Everything else. Deliberately broad -- see the module docstring.
     OTHER = "other"
+
+
+CAPABILITY_LABELS: list[str] = [c.value for c in Capability]
 
 
 class Difficulty(StrEnum):
@@ -53,95 +56,92 @@ class Difficulty(StrEnum):
     HARD = "hard"
 
 
-DOMAIN_LABELS: list[str] = [d.value for d in Domain]
-TASK_TYPE_LABELS: list[str] = [t.value for t in TaskType]
 DIFFICULTY_LABELS: list[str] = [d.value for d in Difficulty]
 
-#: RouterArena encodes the Dewey top-level class as a leading digit, e.g.
-#: ``"0 Computer science, information, and general works"``.
-_ROUTERARENA_DOMAIN_BY_DEWEY: dict[str, Domain] = {
-    "0": Domain.CS_GENERAL,
-    "1": Domain.PHILOSOPHY_PSYCHOLOGY,
-    "3": Domain.SOCIAL_SCIENCE,
-    "4": Domain.LANGUAGE,
-    "5": Domain.SCIENCE,
-    "6": Domain.TECHNOLOGY,
-    "7": Domain.ARTS_RECREATION,
-    "8": Domain.LITERATURE,
-    "9": Domain.HISTORY,
-}
 
+def capability_from_arena_flags(
+    *, is_code: bool, is_math: bool, is_creative_writing: bool
+) -> Capability:
+    """Map LMArena's ``category_tag`` flags onto :class:`Capability`.
 
-def domain_from_routerarena(raw: str) -> Domain | None:
-    """Map a raw RouterArena ``Domain`` string onto :class:`Domain`.
+    These are annotations on **real user prompts**, which is what makes them
+    valuable: they are the only capability labels available on in-the-wild
+    traffic. The flags are not mutually exclusive, so precedence follows how
+    strongly each constrains model choice -- code and maths dominate a routing
+    decision, and a prompt flagged both is overwhelmingly a coding task with
+    arithmetic in it rather than the reverse.
 
-    Returns ``None`` for Dewey class 2 (Religion) and anything unrecognised, so
-    callers can drop rather than silently mislabel.
+    A prompt with no flag is genuinely ``OTHER``: the absence is a real
+    negative, not missing data.
     """
-    if not raw:
-        return None
-    match = re.match(r"\s*(\d)", raw)
-    if match is None:
-        return None
-    return _ROUTERARENA_DOMAIN_BY_DEWEY.get(match.group(1))
+    if is_code:
+        return Capability.CODE
+    if is_math:
+        return Capability.MATH
+    if is_creative_writing:
+        return Capability.CREATIVE_WRITING
+    return Capability.OTHER
 
 
-#: Substring -> TaskType, applied to RouterArena's ``Dataset name`` provenance.
-#: Order matters: the first matching rule wins, so put specific before generic.
-_TASK_TYPE_RULES: tuple[tuple[str, TaskType], ...] = (
-    ("livecodebench", TaskType.CODE),
-    ("humaneval", TaskType.CODE),
-    ("mbpp", TaskType.CODE),
-    ("mmlupro_computer science", TaskType.CODE),
-    ("wmt", TaskType.TRANSLATION),
-    ("aime", TaskType.MATH),
-    ("math", TaskType.MATH),
-    ("gsm8k", TaskType.MATH),
-    ("asdiv", TaskType.MATH),
-    ("finqa", TaskType.MATH),
-    ("narrativeqa", TaskType.READING_COMPREHENSION),
-    ("superglue-rc", TaskType.READING_COMPREHENSION),
-    ("superglue-clozetest", TaskType.READING_COMPREHENSION),
-    ("superglue-wic", TaskType.READING_COMPREHENSION),
-    ("pubmedqa", TaskType.READING_COMPREHENSION),
-    ("ethics", TaskType.REASONING),
-    ("formal_logic", TaskType.REASONING),
-    ("chessinstruct", TaskType.REASONING),
-    ("socialiqa", TaskType.REASONING),
-    ("superglue-causalreasoning", TaskType.REASONING),
-    ("superglue-entailment", TaskType.REASONING),
-    ("superglue-wsc", TaskType.REASONING),
-    ("qanta", TaskType.FACTUAL_QA),
-    ("opentdb", TaskType.FACTUAL_QA),
-    ("mmlu", TaskType.FACTUAL_QA),
-    ("medmcqa", TaskType.FACTUAL_QA),
-    ("geobench", TaskType.FACTUAL_QA),
-    ("geographydata", TaskType.FACTUAL_QA),
-    ("musictheorybench", TaskType.FACTUAL_QA),
+#: Substring -> Capability, matched against RouterArena's ``Dataset name``.
+#: Provenance is a far more reliable label than the ``Domain`` column: a row
+#: from LiveCodeBench is a coding task by construction, whereas its Dewey class
+#: is a cataloguing decision. Order matters; first match wins.
+_ROUTERARENA_RULES: tuple[tuple[str, Capability], ...] = (
+    ("livecodebench", Capability.CODE),
+    ("humaneval", Capability.CODE),
+    ("mbpp", Capability.CODE),
+    ("mmlupro_computer science", Capability.CODE),
+    ("wmt", Capability.TRANSLATION),
+    ("aime", Capability.MATH),
+    ("gsm8k", Capability.MATH),
+    ("asdiv", Capability.MATH),
+    ("mathqa", Capability.MATH),
+    ("finqa", Capability.MATH),
+    ("mmlupro_math", Capability.MATH),
+    ("opentdb_science: mathematics", Capability.MATH),
+    ("mmlu_formal_logic", Capability.MATH),
+    ("math", Capability.MATH),
 )
 
 
-def task_type_from_dataset_name(raw: str) -> TaskType:
-    """Infer the capability axis from RouterArena dataset provenance."""
-    name = (raw or "").strip().lower()
-    for needle, task in _TASK_TYPE_RULES:
-        if needle in name:
-            return task
-    return TaskType.OTHER
+def capability_from_dataset_name(raw: str) -> Capability:
+    """Infer capability from RouterArena dataset provenance.
 
-
-def task_type_from_arena_tags(
-    *, is_code: bool, is_math: bool, is_creative_writing: bool
-) -> TaskType:
-    """Collapse LMArena's binary ``category_tag`` flags onto :class:`TaskType`.
-
-    The flags are not mutually exclusive; precedence follows how strongly each
-    flag constrains model choice (code and math dominate a routing decision).
+    Anything unmatched is ``OTHER``, which is correct rather than lazy:
+    RouterArena is overwhelmingly multiple-choice knowledge recall, and that is
+    exactly what ``OTHER`` denotes here.
     """
-    if is_code:
-        return TaskType.CODE
-    if is_math:
-        return TaskType.MATH
-    if is_creative_writing:
-        return TaskType.CREATIVE_WRITING
-    return TaskType.OTHER
+    name = (raw or "").strip().lower()
+    for needle, capability in _ROUTERARENA_RULES:
+        if needle in name:
+            return capability
+    return Capability.OTHER
+
+
+#: Cheap surface cues, used only to sanity-check the learned model and to label
+#: ad-hoc examples -- never as training supervision.
+_CODE_HINT = re.compile(
+    r"```|\b(def|class|import|function|SELECT|npm|pip|git|docker|API|regex)\b", re.IGNORECASE
+)
+_MATH_HINT = re.compile(
+    r"\$\$|\\frac|\\int|\b(prove|integral|derivative|equation|solve for|theorem)\b", re.IGNORECASE
+)
+_CREATIVE_HINT = re.compile(
+    r"\b(write|compose|draft) (me )?(a |an )?(poem|story|song|lyric|haiku|novel|script|joke)\b",
+    re.IGNORECASE,
+)
+_TRANSLATION_HINT = re.compile(r"\btranslate\b", re.IGNORECASE)
+
+
+def capability_hint(prompt: str) -> Capability:
+    """Rule-based guess, for diagnostics and as a zero-training baseline."""
+    for pattern, capability in (
+        (_TRANSLATION_HINT, Capability.TRANSLATION),
+        (_CODE_HINT, Capability.CODE),
+        (_MATH_HINT, Capability.MATH),
+        (_CREATIVE_HINT, Capability.CREATIVE_WRITING),
+    ):
+        if pattern.search(prompt or ""):
+            return capability
+    return Capability.OTHER
