@@ -1,10 +1,11 @@
 import numpy as np
 import pytest
 
-from router.training.calibration import apply_temperature, fit_temperature
-from router.training.metrics import (
+from router.metrics import (
+    apply_temperature,
     evaluate,
     expected_calibration_error,
+    fit_temperature,
     selective_accuracy,
     top_k_accuracy,
 )

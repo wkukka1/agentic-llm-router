@@ -14,15 +14,59 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from router.training.experiment import ARTIFACTS_DIR
+from router.experiment import ARTIFACTS_DIR
 
 
 def load_run(name: str, out_dir: Path = ARTIFACTS_DIR) -> tuple[pd.DataFrame, dict]:
-    """Load one run's test predictions and metrics."""
+    """Load one run's test predictions and metrics.
+
+    Metrics written by an older version of the harness are topped up from the
+    stored per-row predictions rather than requiring a retrain -- the
+    predictions file carries the full probability matrix, so any metric can be
+    recomputed from it exactly.
+    """
     run_dir = out_dir / name
     predictions = pd.read_parquet(run_dir / "test_predictions.parquet")
-    metrics = json.loads((run_dir / "metrics.json").read_text())
+    metrics = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
+
+    if "per_class" not in metrics.get("test", {}):
+        metrics["test"].update(recompute_from_predictions(predictions, metrics["test"]["labels"]))
     return predictions, metrics
+
+
+def recompute_from_predictions(predictions: pd.DataFrame, labels: list[str]) -> dict:
+    """Re-derive the full metric bundle from stored per-row probabilities."""
+    from router.metrics import evaluate
+
+    columns = [f"p_{label}" for label in labels]
+    missing = [c for c in columns if c not in predictions.columns]
+    if missing:
+        return {}
+    proba = predictions[columns].to_numpy()
+    return evaluate(predictions["y_true"].tolist(), proba, labels)
+
+
+def per_class_table(test_metrics: dict) -> pd.DataFrame:
+    """Precision, recall, F1 and support per class, worst F1 first.
+
+    ``leak_direction`` names the dominant failure mode so the table can be read
+    without cross-referencing the confusion matrix.
+    """
+    per_class = test_metrics.get("per_class")
+    if not per_class:
+        return pd.Series(test_metrics.get("per_class_f1", {})).to_frame("f1")
+
+    frame = pd.DataFrame(per_class).T
+    frame["support"] = frame["support"].astype(int)
+
+    def direction(row):
+        gap = row["precision"] - row["recall"]
+        if abs(gap) < 0.03:
+            return "balanced"
+        return "leaks out" if gap > 0 else "absorbs others"
+
+    frame["leak_direction"] = frame.apply(direction, axis=1)
+    return frame.sort_values("f1").round(3)
 
 
 def confusion_table(predictions: pd.DataFrame) -> pd.DataFrame:
@@ -105,13 +149,18 @@ def report(name: str, out_dir: Path = ARTIFACTS_DIR) -> str:
         "",
         f"- test accuracy: **{test['accuracy']:.4f}**  |  macro-F1: **{test['macro_f1']:.4f}**"
         f"  |  top-2: {test['top2_accuracy']:.4f}",
+        f"- macro precision {test.get('macro_precision', float('nan')):.4f}"
+        f"  |  macro recall {test.get('macro_recall', float('nan')):.4f}",
         f"- ECE raw {test['ece']:.4f} -> calibrated {test.get('ece_calibrated', float('nan')):.4f}"
         f" (T={test.get('temperature', float('nan')):.3f})",
         f"- single-prompt latency p50 {metrics['runtime']['latency_ms_p50']:.2f} ms",
         "",
-        "## Per-class F1",
+        "## Per-class precision / recall / F1",
         "",
-        pd.Series(test["per_class_f1"]).sort_values().to_frame("f1").to_markdown(),
+        "Low **recall** = prompts of this class leak out to other classes.",
+        "Low **precision** = other classes leak *in*. F1 alone hides which.",
+        "",
+        per_class_table(test).to_markdown(),
         "",
         "## Confusion (row-normalised, rows = true label)",
         "",

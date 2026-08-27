@@ -1,4 +1,11 @@
-"""Command line entry point: ``python -m router.cli <command>``."""
+"""Command line entry point: ``python -m router.cli <command>``.
+
+    build-data     download RouterArena, dedupe, split, write parquet
+    describe-data  split statistics
+    train          run one or more experiments, write the leaderboard
+    analyze        per-class precision/recall, confusion, error slices
+    diagnose       feature correlation: VIF, PCA structure, redundancy
+"""
 
 from __future__ import annotations
 
@@ -7,22 +14,15 @@ import logging
 import sys
 from pathlib import Path
 
-from router.agent import AgentConfig, AgenticRouter, PolicyThresholds, Session
-from router.agent.backends import default_backend
-from router.agent.tasktype import infer_task_type
+from router.analysis import report
 from router.config import load_experiments
-from router.data.build import (
-    PROCESSED_DIR,
-    build_domain_dataset,
-    build_preference_dataset,
-    load_splits,
-)
-from router.training.analysis import report
-from router.training.compare_paths import compare, render
-from router.training.experiment import ARTIFACTS_DIR
-from router.training.runner import run_all
+from router.dataset import PROCESSED_DIR, build_domain_dataset, load_splits
+from router.experiment import ARTIFACTS_DIR, run_all
 
-#: Prompt-rendering variants the dataset builder knows how to produce.
+#: Prompt-rendering variants the builder can produce. How the RouterArena
+#: fields are reassembled is a real experimental axis: option blocks and
+#: context headers are format artifacts a classifier will latch onto instead
+#: of the topic.
 DATA_VARIANTS = {
     "full_prompt": {"include_context": True, "include_options": True},
     "question_only": {"include_context": False, "include_options": False},
@@ -46,41 +46,21 @@ def cmd_build_data(args: argparse.Namespace) -> int:
         if variant not in DATA_VARIANTS:
             raise SystemExit(f"unknown variant {variant!r}; expected one of {list(DATA_VARIANTS)} or 'all'")
         splits = build_domain_dataset(
-            **DATA_VARIANTS[variant],
-            variant=variant,
-            out_dir=Path(args.out_dir),
-            seed=args.seed,
+            **DATA_VARIANTS[variant], variant=variant,
+            out_dir=Path(args.out_dir), seed=args.seed,
         )
-        sizes = ", ".join(f"{k}={len(v)}" for k, v in splits.items())
-        print(f"{variant}: {sizes}")
-    return 0
-
-
-def cmd_build_preference(args: argparse.Namespace) -> int:
-    splits = build_preference_dataset(
-        max_shards=args.max_shards,
-        tier_quantile=args.tier_quantile,
-        min_tier_gap=args.min_tier_gap,
-        out_dir=Path(args.out_dir),
-        variant=args.variant,
-        seed=args.seed,
-    )
-    for name, frame in splits.items():
-        counts = frame["routing_label"].value_counts().to_dict()
-        print(f"{name}: {len(frame)} rows  {counts}")
+        print(f"{variant}: " + ", ".join(f"{k}={len(v)}" for k, v in splits.items()))
     return 0
 
 
 def cmd_describe_data(args: argparse.Namespace) -> int:
-    splits = load_splits(args.variant, Path(args.out_dir))
-    for name, frame in splits.items():
+    for name, frame in load_splits(args.variant, Path(args.out_dir)).items():
         print(f"\n=== {name} ({len(frame)} rows) ===")
         print(frame["domain"].value_counts().to_string())
         print("-- difficulty --")
         print(frame["difficulty"].value_counts(dropna=False).to_string())
-        print("-- task_type --")
-        print(frame["task_type"].value_counts().to_string())
-        print(f"-- prompt chars: median={frame['n_chars'].median():.0f} p95={frame['n_chars'].quantile(0.95):.0f}")
+        print(f"-- prompt chars: median={frame['n_chars'].median():.0f} "
+              f"p95={frame['n_chars'].quantile(0.95):.0f}")
     return 0
 
 
@@ -89,19 +69,14 @@ def cmd_train(args: argparse.Namespace) -> int:
     if args.only:
         wanted = set(args.only)
         configs = [c for c in configs if c.name in wanted]
-        missing = wanted - {c.name for c in configs}
-        if missing:
+        if missing := wanted - {c.name for c in configs}:
             raise SystemExit(f"no config found for: {sorted(missing)}")
     if not configs:
         raise SystemExit("no experiment configs matched")
 
     print(f"running {len(configs)} experiment(s): {', '.join(c.name for c in configs)}\n")
-    frame = run_all(
-        configs,
-        out_dir=Path(args.out_dir),
-        save_model=args.save_model,
-        continue_on_error=not args.fail_fast,
-    )
+    frame = run_all(configs, out_dir=Path(args.out_dir), save_model=args.save_model,
+                    continue_on_error=not args.fail_fast)
     print("\n" + frame.to_string(index=False))
     print(f"\nwrote {Path(args.out_dir) / 'leaderboard.md'}")
     return 0
@@ -111,7 +86,6 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     out_dir = Path(args.out_dir)
     names = args.name
     if not names:
-        # Default to the leaderboard leader, which is what you want 90% of the time.
         leaderboard = out_dir / "leaderboard.csv"
         if not leaderboard.exists():
             raise SystemExit(f"no runs found under {out_dir}; run `train` first")
@@ -122,186 +96,46 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     for name in names:
         text = report(name, out_dir)
         destination = out_dir / name / "analysis.md"
-        destination.write_text(text)
+        destination.write_text(text, encoding="utf-8")
         print(text)
         print(f"\nwrote {destination}")
     return 0
 
 
-def _domain_fn_from(run_dir: str | None):
-    """Load a trained domain head, or fall back to a clearly-marked uniform prior."""
-    if run_dir:
-        from router.inference import DomainHead, as_domain_fn
-
-        return as_domain_fn(DomainHead(run_dir)), f"trained head from {run_dir}"
-
-    from router.data.taxonomy import DOMAIN_LABELS
-
-    uniform = {label: 1 / len(DOMAIN_LABELS) for label in DOMAIN_LABELS}
-
-    def stub(_prompt: str):
-        # Deliberately maximally-unconfident: with no head, every prompt is
-        # ambiguous, and the policy's ambiguity rule is what should decide.
-        return DOMAIN_LABELS[0], 1 / len(DOMAIN_LABELS), uniform
-
-    return stub, "NO TRAINED HEAD (uniform prior) - pass --head to use one"
-
-
-def cmd_route(args: argparse.Namespace) -> int:
-    domain_fn, provenance = _domain_fn_from(args.head)
-    router = AgenticRouter(
-        domain_fn=domain_fn,
-        task_type_fn=infer_task_type,
-        backend=default_backend(args.backend_model),
-        thresholds=PolicyThresholds(cost_weight=args.cost_weight),
-        config=AgentConfig(mode=args.mode, max_cost_per_turn=args.max_cost),
-    )
-    print(f"domain signal: {provenance}")
-    print("task-type signal: keyword heuristic (placeholder)")
-    print(f"backend: {type(router.backend).__name__}  mode: {args.mode}\n")
-
-    session = Session()
-    for prompt in args.prompt:
-        result = router.route(prompt, session)
-        print("=" * 78)
-        print(f"PROMPT: {prompt}")
-        print(result.decision.explain())
-        if result.needs_user_input:
-            for question in result.clarifying_questions:
-                print(f"  ASK USER: {question}")
-        for sub in result.sub_queries:
-            print(f"    [{sub.index}] -> {sub.assigned_model} "
-                  f"skills={sub.skills} deps={sub.depends_on} :: {sub.text[:60]}")
-        if result.answer:
-            print(f"\nANSWER:\n{result.answer}")
-    print("=" * 78)
-    print(f"{len(session.turns)} turn(s), estimated total ${session.total_cost:.4f}")
-    return 0
-
-
-def cmd_route_eval(args: argparse.Namespace) -> int:
-    from router.agent.evaluate import evaluate_routing
+def cmd_diagnose(args: argparse.Namespace) -> int:
+    """Feature-correlation diagnostics: which dimensions carry redundant signal."""
+    from router.embeddings import EmbeddingEncoder
+    from router.reduction import correlation_report
 
     splits = load_splits(args.variant, Path(args.data_dir))
-    frame = splits[args.split]
+    frame = splits["train"]
     if args.limit:
         frame = frame.head(args.limit)
 
-    domain_fn, provenance = _domain_fn_from(args.head)
-    thresholds = PolicyThresholds(cost_weight=args.cost_weight)
-    router = AgenticRouter(
-        domain_fn=domain_fn,
-        task_type_fn=infer_task_type,
-        thresholds=thresholds,
-        config=AgentConfig(max_cost_per_turn=args.max_cost),
-    )
+    encoder = EmbeddingEncoder(args.encoder, pooling=args.pooling, max_length=args.max_length)
+    print(f"encoding {len(frame)} prompts with {args.encoder}...")
+    features = encoder.encode_cached(frame["prompt"].tolist(), tag=f"{args.variant}/diagnose")
 
-    if args.calibrate_thresholds:
-        # Fit on the *train* split so the test split still measures a policy
-        # that has not seen it.
-        from router.agent.policy import fit_thresholds_to_quantiles
-
-        calib = splits["train"]["prompt"].head(args.calibration_size).tolist()
-        difficulties = [router.signals_for(p).difficulty for p in calib]
-        thresholds = fit_thresholds_to_quantiles(
-            difficulties,
-            strong_quantile=args.strong_quantile,
-            orchestrate_quantile=args.orchestrate_quantile,
-            base=thresholds,
-        )
-        router.policy.thresholds = thresholds
-        print(f"calibrated thresholds on {len(calib)} train prompts: "
-              f"strong>={thresholds.strong_difficulty:.3f} "
-              f"orchestrate>={thresholds.orchestrate_difficulty:.3f}")
-
-    print(f"domain signal: {provenance}")
-    print(f"routing {len(frame)} prompts from {args.variant}/{args.split}...\n")
-
-    report = evaluate_routing(router, frame["prompt"].tolist())
-    print(report.render())
-
-    out_dir = Path(args.out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    report.per_prompt.to_parquet(out_dir / "routing_decisions.parquet", index=False)
-    (out_dir / "routing_report.md").write_text(report.render())
-    print(f"wrote {out_dir / 'routing_report.md'}")
-    return 0
-
-
-def cmd_compare_paths(args: argparse.Namespace) -> int:
-    """Priority 0: does predicting the routing decision beat inferring it?"""
-    import numpy as np
-
-    from router.agent import AgenticRouter
-    from router.agent.tasktype import infer_task_type
-
-    test = load_splits(args.variant, Path(args.data_dir))["test"]
-    if args.limit:
-        test = test.head(args.limit)
-    prompts = test["prompt"].tolist()
-
-    direct_scores = None
-    if args.direct_head:
-        from router.inference import DomainHead
-
-        head = DomainHead(args.direct_head)
-        positive = head.model.labels.index("strong_needed")
-        direct_scores = head.model.predict_proba(prompts)[:, positive]
-        print(f"direct path: {args.direct_head}")
-
-    indirect_scores = None
-    if args.domain_head:
-        from router.inference import DomainHead, as_domain_fn
-
-        router = AgenticRouter(
-            domain_fn=as_domain_fn(DomainHead(args.domain_head)),
-            task_type_fn=infer_task_type,
-        )
-        # The policy thresholds on difficulty, so difficulty *is* the indirect
-        # path's escalation score. Using it keeps the comparison honest.
-        indirect_scores = np.array([router.signals_for(p).difficulty for p in prompts])
-        print(f"indirect path: {args.domain_head} + heuristic difficulty")
-
-    if direct_scores is None and indirect_scores is None:
-        raise SystemExit("pass --direct-head and/or --domain-head")
-
-    frame = compare(test, direct_scores=direct_scores, indirect_scores=indirect_scores)
-    text = render(frame)
+    text = correlation_report(features, vif_threshold=args.vif_threshold)
     print("\n" + text)
 
-    out_dir = Path(args.out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "compare_paths.md").write_text(text)
-    frame.to_csv(out_dir / "compare_paths.csv", index=False)
-    print(f"wrote {out_dir / 'compare_paths.md'}")
+    out = Path(args.out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "feature_diagnostics.md").write_text(text, encoding="utf-8")
+    print(f"wrote {out / 'feature_diagnostics.md'}")
     return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="router", description="Agentic LLM router training harness")
+    parser = argparse.ArgumentParser(prog="router", description="Domain classifier training harness")
     parser.add_argument("-v", "--verbose", action="count", default=1)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    build = sub.add_parser("build-data", help="download sources and write train/val/test splits")
-    build.add_argument("--variant", default="full_prompt",
-                       help=f"one of {list(DATA_VARIANTS)} or 'all'")
+    build = sub.add_parser("build-data", help="download, dedupe, split, write parquet")
+    build.add_argument("--variant", default="full_prompt", help=f"one of {list(DATA_VARIANTS)} or 'all'")
     build.add_argument("--out-dir", default=str(PROCESSED_DIR))
     build.add_argument("--seed", type=int, default=20260824)
     build.set_defaults(func=cmd_build_data)
-
-    build_pref = sub.add_parser(
-        "build-preference",
-        help="build strong-vs-weak routing splits from LMArena preference battles",
-    )
-    build_pref.add_argument("--max-shards", type=int, default=None)
-    build_pref.add_argument("--tier-quantile", type=float, default=0.5,
-                            help="win-rate quantile splitting strong from weak")
-    build_pref.add_argument("--min-tier-gap", type=float, default=0.0,
-                            help="drop battles whose models are closer than this in win rate")
-    build_pref.add_argument("--variant", default="preference")
-    build_pref.add_argument("--out-dir", default=str(PROCESSED_DIR))
-    build_pref.add_argument("--seed", type=int, default=20260824)
-    build_pref.set_defaults(func=cmd_build_preference)
 
     describe = sub.add_parser("describe-data", help="print split statistics")
     describe.add_argument("--variant", default="full_prompt")
@@ -316,49 +150,21 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--fail-fast", action="store_true")
     train.set_defaults(func=cmd_train)
 
-    route = sub.add_parser("route", help="route prompts through the agentic pipeline")
-    route.add_argument("prompt", nargs="+", help="one or more prompts, routed as a session")
-    route.add_argument("--head", help="path to a trained run directory, e.g. artifacts/domain/07_finetune_minilm")
-    route.add_argument("--mode", choices=["plan", "execute"], default="plan",
-                       help="'plan' routes without generating answers; 'execute' calls the models")
-    route.add_argument("--backend-model", help="LiteLLM model for gate/decompose/answer; omit for heuristics")
-    route.add_argument("--cost-weight", type=float, default=0.5, help="0 = ignore cost, 1+ = cost dominates")
-    route.add_argument("--max-cost", type=float, default=None, help="downgrade any turn costing more than this")
-    route.set_defaults(func=cmd_route)
-
-    route_eval = sub.add_parser("route-eval", help="score the routing policy over a split")
-    route_eval.add_argument("--head", help="trained run directory for the domain signal")
-    route_eval.add_argument("--variant", default="full_prompt")
-    route_eval.add_argument("--split", default="test", choices=["train", "val", "test"])
-    route_eval.add_argument("--data-dir", default=str(PROCESSED_DIR))
-    route_eval.add_argument("--out-dir", default="artifacts/routing")
-    route_eval.add_argument("--limit", type=int, default=None)
-    route_eval.add_argument("--cost-weight", type=float, default=0.5)
-    route_eval.add_argument("--max-cost", type=float, default=None)
-    route_eval.add_argument("--calibrate-thresholds", action="store_true",
-                            help="fit difficulty thresholds to quantiles of the train split")
-    route_eval.add_argument("--calibration-size", type=int, default=1000)
-    route_eval.add_argument("--strong-quantile", type=float, default=0.70,
-                            help="share of traffic kept on the weak path")
-    route_eval.add_argument("--orchestrate-quantile", type=float, default=0.92)
-    route_eval.set_defaults(func=cmd_route_eval)
-
-    compare_cmd = sub.add_parser(
-        "compare-paths",
-        help="priority 0: direct routing head vs domain+difficulty, same ground truth",
-    )
-    compare_cmd.add_argument("--direct-head", help="run dir of a head trained on routing_label")
-    compare_cmd.add_argument("--domain-head", help="run dir of a domain head")
-    compare_cmd.add_argument("--variant", default="preference")
-    compare_cmd.add_argument("--data-dir", default=str(PROCESSED_DIR))
-    compare_cmd.add_argument("--out-dir", default="artifacts/preference")
-    compare_cmd.add_argument("--limit", type=int, default=None)
-    compare_cmd.set_defaults(func=cmd_compare_paths)
-
-    analyze = sub.add_parser("analyze", help="error analysis for a finished run")
+    analyze = sub.add_parser("analyze", help="per-class precision/recall, confusion, error slices")
     analyze.add_argument("name", nargs="*", help="experiment name(s); defaults to the leaderboard leader")
     analyze.add_argument("--out-dir", default=str(ARTIFACTS_DIR))
     analyze.set_defaults(func=cmd_analyze)
+
+    diagnose = sub.add_parser("diagnose", help="feature correlation: VIF, PCA structure, redundancy")
+    diagnose.add_argument("--encoder", default="BAAI/bge-small-en-v1.5")
+    diagnose.add_argument("--pooling", default="cls", choices=["cls", "mean"])
+    diagnose.add_argument("--max-length", type=int, default=256)
+    diagnose.add_argument("--variant", default="full_prompt")
+    diagnose.add_argument("--data-dir", default=str(PROCESSED_DIR))
+    diagnose.add_argument("--out-dir", default=str(ARTIFACTS_DIR))
+    diagnose.add_argument("--vif-threshold", type=float, default=10.0)
+    diagnose.add_argument("--limit", type=int, default=2000)
+    diagnose.set_defaults(func=cmd_diagnose)
 
     return parser
 

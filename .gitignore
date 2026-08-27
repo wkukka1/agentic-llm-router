@@ -13,3 +13,5 @@ artifacts/
 !artifacts/.gitkeep
 *.egg-info/
 src/*.egg-info/
+Thumbs.db
+desktop.ini

@@ -1,4 +1,10 @@
-"""Run one experiment end to end and write a self-describing result directory."""
+"""Run experiments and produce the leaderboard.
+
+One experiment writes a self-describing run directory (config, metrics,
+per-row predictions), so error analysis and re-scoring never require a retrain.
+The sweep writes the leaderboard after each run, so a crash in run 7 does not
+cost the six that already succeeded.
+"""
 
 from __future__ import annotations
 
@@ -12,14 +18,15 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import yaml
 
 from router.config import ExperimentConfig
-from router.data.build import load_splits
+from router.dataset import load_splits
+from router.metrics import apply_temperature, evaluate, fit_temperature, measure_latency
 from router.models import build as build_model
-from router.training.calibration import apply_temperature, fit_temperature
-from router.training.metrics import evaluate, measure_latency
 
 log = logging.getLogger(__name__)
+
 
 ARTIFACTS_DIR = Path("artifacts/domain")
 
@@ -130,9 +137,11 @@ def run_experiment(
 
     run_dir = out_dir / config.name
     run_dir.mkdir(parents=True, exist_ok=True)
-    (run_dir / "config.yaml").write_text(_as_yaml(config.to_dict()))
-    (run_dir / "metrics.json").write_text(json.dumps(
-        {"val": val_metrics, "test": test_metrics, "runtime": runtime}, indent=2))
+    (run_dir / "config.yaml").write_text(_as_yaml(config.to_dict()), encoding="utf-8")
+    (run_dir / "metrics.json").write_text(
+        json.dumps({"val": val_metrics, "test": test_metrics, "runtime": runtime}, indent=2),
+        encoding="utf-8",
+    )
     _write_predictions(run_dir, test, test_proba, model.labels, text_col, label_col)
     if save_model:
         model.save(run_dir / "model")
@@ -161,6 +170,75 @@ def _write_predictions(run_dir: Path, test: pd.DataFrame, proba: np.ndarray,
 
 
 def _as_yaml(payload: dict[str, Any]) -> str:
-    import yaml
-
     return yaml.safe_dump(payload, sort_keys=False)
+
+
+#: Columns of the leaderboard, in the order a reader should scan them.
+SUMMARY_COLUMNS = [
+    "experiment", "model", "variant",
+    "test_accuracy", "test_macro_f1", "test_balanced_acc", "test_top2_acc",
+    "test_ece", "test_ece_cal", "temperature", "test_acc@cov70", "val_macro_f1",
+    "latency_ms_p50", "train_seconds", "model_mb",
+]
+
+
+def run_all(
+    configs: list[ExperimentConfig],
+    *,
+    out_dir: Path = ARTIFACTS_DIR,
+    save_model: bool = False,
+    continue_on_error: bool = True,
+) -> pd.DataFrame:
+    """Run every config, writing the leaderboard after each one.
+
+    Writing incrementally means a crash in experiment 7 does not cost you the
+    six that already succeeded.
+    """
+    results: list[ExperimentResult] = []
+    failures: dict[str, str] = {}
+
+    for config in configs:
+        try:
+            results.append(run_experiment(config, out_dir=out_dir, save_model=save_model))
+        except Exception as exc:  # noqa: BLE001 - a bad config must not kill the sweep
+            log.exception("experiment %s failed", config.name)
+            failures[config.name] = f"{type(exc).__name__}: {exc}"
+            if not continue_on_error:
+                raise
+        if results:
+            _write_summary(results, failures, out_dir)
+
+    return _summary_frame(results)
+
+
+def _summary_frame(results: list[ExperimentResult]) -> pd.DataFrame:
+    if not results:
+        return pd.DataFrame(columns=SUMMARY_COLUMNS)
+    frame = pd.DataFrame([r.summary_row() for r in results])
+    return frame[SUMMARY_COLUMNS].sort_values("test_macro_f1", ascending=False).reset_index(drop=True)
+
+
+def _write_summary(results: list[ExperimentResult], failures: dict[str, str], out_dir: Path) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    frame = _summary_frame(results)
+    frame.to_csv(out_dir / "leaderboard.csv", index=False)
+    (out_dir / "leaderboard.md").write_text(render_markdown(frame, failures), encoding="utf-8")
+    if failures:
+        (out_dir / "failures.json").write_text(json.dumps(failures, indent=2), encoding="utf-8")
+
+
+def render_markdown(frame: pd.DataFrame, failures: dict[str, str] | None = None) -> str:
+    """Human-readable leaderboard, sorted by macro-F1."""
+    lines = ["# Domain classifier leaderboard", ""]
+    if frame.empty:
+        lines.append("_no successful runs_")
+    else:
+        display = frame.copy()
+        for col in display.columns:
+            if display[col].dtype.kind == "f":
+                display[col] = display[col].map(lambda v: f"{v:.4f}")
+        lines.append(display.to_markdown(index=False))
+    if failures:
+        lines += ["", "## Failures", ""]
+        lines += [f"- `{name}`: {msg}" for name, msg in failures.items()]
+    return "\n".join(lines) + "\n"

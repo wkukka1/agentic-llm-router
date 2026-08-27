@@ -7,7 +7,8 @@ from router.models import available, build
 
 def test_all_expected_models_are_registered():
     assert set(available()) == {
-        "tfidf_logreg", "tfidf_linear_svm", "embed_logreg", "embed_mlp", "finetune_transformer",
+        "tfidf_logreg", "tfidf_linear_svm", "embed_logreg", "embed_mlp",
+        "embed_reduced_logreg", "finetune_transformer",
     }
 
 
@@ -33,8 +34,8 @@ def test_config_requires_name_and_model():
 
 
 def test_shipped_experiment_configs_all_load_and_are_uniquely_named():
-    configs = load_experiments(["experiments/domain", "experiments/preference"])
-    assert len(configs) >= 14
+    configs = load_experiments(["experiments/domain"])
+    assert len(configs) >= 9
     names = [c.name for c in configs]
     assert len(names) == len(set(names)), "duplicate experiment names would overwrite each other"
     for config in configs:
@@ -46,4 +47,4 @@ def test_shipped_config_name_matches_its_filename():
     from pathlib import Path
 
     for path in sorted(Path("experiments").glob("*/*.yaml")):
-        assert yaml.safe_load(path.read_text())["name"] == path.stem
+        assert yaml.safe_load(path.read_text(encoding="utf-8"))["name"] == path.stem

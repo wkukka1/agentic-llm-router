@@ -1,12 +1,15 @@
-"""Scoring for the domain head.
+"""Scoring and calibration.
 
-Beyond accuracy, two families of metric are reported because the router
-consumes them directly:
+Beyond accuracy, two families matter because downstream consumers use them
+directly:
 
-* **Calibration** (ECE, Brier) -- the router thresholds on confidence, so a
-  model that is 90% accurate but claims 99% confidence is actively harmful.
-* **Selective risk** -- accuracy at a given coverage tells you where to put the
-  "escalate to a strong model / ask a follow-up" threshold from the design.
+* **Calibration** (ECE, Brier, temperature scaling) -- a head that is 89%
+  accurate but claims 99% confidence is worse than useless to anything that
+  thresholds on confidence.
+* **Selective risk** -- accuracy at a given coverage tells you where to abstain.
+
+Temperature scaling is monotonic, so it never changes accuracy; it only makes
+the probabilities mean what they say.
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ import time
 from typing import Any
 
 import numpy as np
+from scipy.optimize import minimize_scalar
 from sklearn.metrics import (
     accuracy_score,
     average_precision_score,
@@ -22,6 +26,7 @@ from sklearn.metrics import (
     confusion_matrix,
     f1_score,
     log_loss,
+    precision_recall_fscore_support,
     roc_auc_score,
 )
 
@@ -116,8 +121,63 @@ def evaluate(
             metrics["roc_auc"] = float(roc_auc_score(binary_true, positive))
             metrics["pr_auc"] = float(average_precision_score(binary_true, positive))
 
-    per_class_f1 = f1_score(y_true, y_pred, average=None, labels=labels, zero_division=0)
-    metrics["per_class_f1"] = {label: float(score) for label, score in zip(labels, per_class_f1, strict=True)}
+    # Precision and recall separately, not just F1: they fail differently and
+    # the router cares which. Low recall on a class means prompts of that kind
+    # get routed elsewhere; low precision means other prompts get misrouted
+    # *into* it. F1 alone hides which is happening.
+    precision, recall, f1, support = precision_recall_fscore_support(
+        y_true, y_pred, labels=labels, average=None, zero_division=0
+    )
+    metrics["per_class"] = {
+        label: {
+            "precision": float(p),
+            "recall": float(r),
+            "f1": float(f),
+            "support": int(sup),
+        }
+        for label, p, r, f, sup in zip(labels, precision, recall, f1, support, strict=True)
+    }
+    metrics["per_class_f1"] = {label: float(score) for label, score in zip(labels, f1, strict=True)}
+    metrics["macro_precision"] = float(precision.mean())
+    metrics["macro_recall"] = float(recall.mean())
     metrics["confusion_matrix"] = confusion_matrix(y_true, y_pred, labels=labels).tolist()
     metrics["labels"] = labels
     return metrics
+
+
+_EPSILON = 1e-12
+
+
+def apply_temperature(proba: np.ndarray, temperature: float) -> np.ndarray:
+    """Re-sharpen or soften a probability matrix by ``temperature``.
+
+    Works on probabilities rather than logits so it applies uniformly to every
+    model in the registry, including the sklearn ones that never expose logits.
+    """
+    logits = np.log(np.clip(proba, _EPSILON, None)) / max(temperature, _EPSILON)
+    logits -= logits.max(axis=1, keepdims=True)
+    exp = np.exp(logits)
+    return exp / exp.sum(axis=1, keepdims=True)
+
+
+def fit_temperature(
+    proba: np.ndarray,
+    y_true_idx: np.ndarray,
+    *,
+    bounds: tuple[float, float] = (0.05, 10.0),
+) -> float:
+    """Find the temperature minimising validation NLL.
+
+    ``T > 1`` softens an over-confident model; ``T < 1`` sharpens an
+    under-confident one.
+    """
+    if len(y_true_idx) == 0:
+        return 1.0
+
+    def nll(temperature: float) -> float:
+        scaled = apply_temperature(proba, temperature)
+        picked = scaled[np.arange(len(y_true_idx)), y_true_idx]
+        return float(-np.log(np.clip(picked, _EPSILON, None)).mean())
+
+    result = minimize_scalar(nll, bounds=bounds, method="bounded")
+    return float(result.x) if result.success else 1.0

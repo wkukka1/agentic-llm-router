@@ -7,7 +7,14 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Windows is in the matrix deliberately: file encoding and path handling
+    # are the two things that silently break there, and only CI catches it.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -26,6 +33,6 @@ jobs:
         run: ruff check src tests
 
       - name: Test
-        # The suite is offline by design: no API keys, no dataset downloads.
-        # Tests that need a trained artifact skip themselves.
+        # Offline by design: no API keys, no dataset downloads. Tests that need
+        # a trained artifact skip themselves.
         run: pytest -q

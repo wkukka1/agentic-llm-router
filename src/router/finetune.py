@@ -18,9 +18,8 @@ from sklearn.metrics import f1_score
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-from router.features.embeddings import resolve_device
-from router.models.base import DomainClassifier
-from router.models.registry import register
+from router.embeddings import resolve_device
+from router.models import DomainClassifier, register
 
 log = logging.getLogger(__name__)
 
@@ -162,12 +161,12 @@ class FineTunedTransformer(DomainClassifier):
         path.mkdir(parents=True, exist_ok=True)
         self.model.save_pretrained(path)
         self.tokenizer.save_pretrained(path)
-        (path / "labels.json").write_text(json.dumps(self.labels))
+        (path / "labels.json").write_text(json.dumps(self.labels), encoding="utf-8")
 
     def load(self, path: Path) -> None:
         self.tokenizer = AutoTokenizer.from_pretrained(path)
         self.model = AutoModelForSequenceClassification.from_pretrained(path).to(self.device)
-        self.labels = json.loads((path / "labels.json").read_text())
+        self.labels = json.loads((path / "labels.json").read_text(encoding="utf-8"))
 
     def size_bytes(self) -> int:
         if self.model is None:

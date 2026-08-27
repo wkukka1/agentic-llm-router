@@ -1,6 +1,6 @@
 import pytest
 
-from router.data.taxonomy import (
+from router.taxonomy import (
     DOMAIN_LABELS,
     Domain,
     TaskType,

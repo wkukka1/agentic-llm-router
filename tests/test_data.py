@@ -2,9 +2,15 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from router.data.build import assert_no_leakage, dedupe, split_frame
-from router.data.schema import Example, normalize_prompt, to_frame
-from router.data.sources.routerarena import render_prompt
+from router.dataset import (
+    Example,
+    assert_no_leakage,
+    dedupe,
+    normalize_prompt,
+    render_prompt,
+    split_frame,
+    to_frame,
+)
 
 
 def _frame(n=180, seed=0):
