@@ -1,0 +1,15 @@
+name: D4_realonly_minilm
+notes: >
+  Trained on hand-labelled real prompts only (~640 rows). Tiny, but perfectly
+  on-distribution. If this beats the model trained on 16k mixed rows, the
+  benchmark data is actively harmful rather than merely diluted.
+model:
+  name: finetune_transformer
+  params:
+    model_name: sentence-transformers/all-MiniLM-L6-v2
+    max_length: 256
+    batch_size: 16
+    epochs: 8
+    lr: 0.00004
+    class_weighted_loss: false
+data: {variant: real_only, label_column: domain}

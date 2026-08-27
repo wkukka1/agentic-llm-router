@@ -1,0 +1,12 @@
+name: D3_bge_base
+notes: Larger encoder (109M) on the same corpus, to test whether capacity helps now that the labels are cleaner.
+model:
+  name: finetune_transformer
+  params:
+    model_name: BAAI/bge-base-en-v1.5
+    max_length: 256
+    batch_size: 16
+    epochs: 3
+    lr: 0.00002
+    class_weighted_loss: false
+data: {variant: domain_v3, label_column: domain}

@@ -1,60 +1,65 @@
 # Next steps
 
-Scope: the capability-classification stage. Status 2026-08-26.
+Status 2026-08-27. Current model: 0.674 top-1 / 0.829 top-2 on 350 held-out
+real prompts.
 
-## State
+## The one thing that matters
 
-| | |
+**Label more real prompts.** Everything else has been tried and is flat.
+
+Evidence that data is the binding constraint:
+
+| lever | effect |
 |---|---|
-| Capability head | **Trained.** 76.6% on real prompts, 93.1% on benchmarks, 8.9 ms. |
-| Calibration | **Done.** ECE 0.027 → 0.020. |
-| Real-prompt evaluation | **Done and wired in.** Every run scores per source. |
-| Precision on small classes | **Weak.** math 0.49, creative_writing 0.56. |
-| Translation on real prompts | **Untested.** No real training examples exist. |
+| hand-labelled rows 597 → 872 | **+8 points** (0.589 → 0.674) |
+| transfer learning vs single stage | +8 points |
+| epochs / learning-rate sweep | ±1 point (66.3–67.4%) |
+| model size 22M → 109M → 149M (v1) | +0.8, then negative |
+| taxonomy 12 → 6 classes (v1) | +7, but destroys the label space |
 
-## Priorities
+Going from ~870 to ~3,000 labelled real prompts is the highest-value work
+available. At roughly 90 labels/hour that is about 24 hours of reading, and on
+the observed curve should land near 0.78–0.82.
 
-**1. Fix precision on `math` and `creative_writing`.** Both have good recall
-(0.85, 0.84) and poor precision (0.49, 0.56) — the model finds them but
-over-claims them. This is a class-imbalance artifact: they are 1–2% of real
-traffic and the loss is class-weighted, which trades precision for recall.
-Cheapest fixes, in order: tune the class weights, then adjust the decision
-threshold per class on validation, then resample. No new data required.
+Two things worth doing while labelling:
 
-**2. Get real translation examples.** LMArena has no translation flag, so the
-class is trained on 180 benchmark rows and has never been evaluated in the wild.
-Either mine LMArena for prompts containing translation requests and hand-check a
-sample, or accept that `translation` is benchmark-only and fold it into `other`
-until there is data.
+- **Target the weak classes.** `law_politics` (n=74) has perfect precision and
+  0.33 recall — it simply has not seen enough. `humanities` (n=95) is the only
+  genuinely confused class.
+- **Double-label a sample.** ~200 prompts labelled twice would measure
+  self-consistency. With 10 fuzzy classes the labeller's own noise may be a real
+  part of the ceiling, and right now that is unmeasured.
 
-**3. Decide whether `other` should be split.** It is 58% of real traffic and the
-lowest-recall class (0.724). Inside it are at least: factual lookup, personal
-advice, analysis/explanation, and meta-questions about the assistant. If the
-downstream router would treat those differently, they need separate labels — and
-new annotation, since no existing source distinguishes them.
+## Also worth doing
+
+**Ship top-2 or abstention, not bare top-1.** Top-2 is 0.829 and confidence ≥0.9
+gives 0.811 over 57% of traffic. If the downstream stage accepts a ranked pair
+or can defer, that is available today at no cost.
+
+**Re-check `meta_other`.** It is 12% of real traffic and a genuine catch-all
+(greetings, jailbreaks, questions about the assistant, context-free follow-ups).
+If the router would treat those differently from each other, it needs splitting
+— and that needs new labels.
 
 ## Known limits
 
-- **`macro-F1` on real prompts is 0.575**, well below accuracy (0.766), because
-  the two small classes drag it down. Accuracy alone flatters this model.
-- **LMArena flags are the ground truth**, and they are model-assisted
-  annotations, not gold human labels. `is_code` firing on 34.7% of prompts is
-  plausible but unaudited.
-- **The 200-prompt manual evaluation used labels generated in-session**, under
-  the old taxonomy. It established the v1 collapse; it has not been redone
-  against the capability labels.
-- **Latency is Apple-Silicon (MPS)**, single-prompt, unbatched.
-- **v1 artifacts remain** under `experiments/domain/` and `artifacts/domain/`
-  for the record. They are not part of the current pipeline.
+- **Labels are single-annotator.** One person read each prompt once. Boundaries
+  between `business_finance` / `personal_life` / `meta_other` are genuinely
+  fuzzy and the labelling is not audited.
+- **LMArena flags are model-assisted**, not gold human labels. They supply 3 of
+  the 10 domains in stage 1.
+- **`law_politics` recall is 0.33.** Do not rely on it to catch legal or
+  political prompts yet.
+- **Benchmark scores (0.88–0.99) mean nothing on their own.** v1 scored 0.91
+  there and 0.47 in the wild. Always read the real-prompt column.
+- **Latency is Apple Silicon, single-prompt, unbatched.** A CPU server will be
+  slower; unmeasured.
+- **BIG-bench contributes ~1,700 rows** and its prompts are synthetic. It was
+  included to test whether task diversity helps; its effect has not been
+  ablated separately.
 
-## Things to consider
+## Things not to bother with
 
-- **Do not standardise embeddings** (costs ~7 points; see README).
-- **Top-2 is 0.961 on real prompts** against 0.766 top-1. If the next stage can
-  accept a ranked pair, that gap is free accuracy.
-- **More data helps, but only matching data.** A power-law fit on the v1
-  benchmark curve suggested 2× data → +4 points, but that extrapolation held
-  only within one distribution and did not survive contact with real prompts.
-  Treat any such projection as valid only for the distribution it was fit on.
-- **Scaling the model does not help.** v1 tested 22M → 109M → 149M: +0.8 points
-  then negative. The ceiling was labels, not capacity.
+- **Bigger encoders.** v1 tested this thoroughly: the ceiling was labels.
+- **Hyperparameter tuning.** Swept; worth ~1 point.
+- **Standardising embeddings before PCA.** Costs ~7 points; see README.

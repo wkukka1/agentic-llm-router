@@ -1,12 +1,18 @@
-"""Dataset construction: canonical rows, the RouterArena source, and splits.
+"""Canonical rows, splitting, and dataset assembly.
 
-One module rather than a ``schema`` / ``sources`` / ``build`` package, because
-there is exactly one supervised source. That structure was overhead without
-benefit; if a second source is added, split it then.
+Loaders live in :mod:`router.sources`. This module owns the row type every
+loader emits, and the once-only split that every experiment scores against.
 
-Flow: ``load()`` -> ``Example`` rows -> ``to_frame()`` -> dedupe -> stratified
-split -> leakage assertion -> parquet. Splitting happens once, so every
-experiment scores identical rows.
+Two invariants are enforced here rather than trusted:
+
+* **No duplicate prompts.** Sources overlap; a prompt in both train and test
+  turns memorisation into apparent skill.
+* **No leakage between splits**, asserted after splitting rather than assumed.
+
+Splits are stratified by ``domain`` *and* ``source``, so every split holds every
+distribution and per-source accuracy is measurable. That last part matters more
+than it sounds: a classifier that scores 91% on exam questions and 47% on real
+prompts looks fine in aggregate.
 """
 
 from __future__ import annotations
@@ -20,31 +26,15 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import pyarrow.parquet as pq
-from huggingface_hub import hf_hub_download, list_repo_files
 from sklearn.model_selection import train_test_split
-
-from router.taxonomy import (
-    Difficulty,
-    capability_from_arena_flags,
-    capability_from_dataset_name,
-)
 
 log = logging.getLogger(__name__)
 
+PROCESSED_DIR = Path("data/processed")
+SPLIT_NAMES = ("train", "val", "test")
 
-#: Columns of the canonical parquet, in order.
 COLUMNS: tuple[str, ...] = (
-    "uid",
-    "prompt",
-    "source",
-    "subset",
-    "capability",
-    "category",
-    "difficulty",
-    "hardness_score",
-    "n_chars",
-    "meta",
+    "uid", "prompt", "source", "subset", "domain", "difficulty", "n_chars", "meta",
 )
 
 _WHITESPACE = re.compile(r"\s+")
@@ -52,223 +42,98 @@ _WHITESPACE = re.compile(r"\s+")
 
 @dataclass(slots=True)
 class Example:
-    """One routable prompt plus whatever supervision the source provides.
+    """One labelled prompt.
 
-    Attributes:
-        uid: Stable id derived from ``source`` and the normalised prompt.
-        prompt: The text a user would actually send to the router.
-        source: Dataset the row came from (e.g. ``routerarena``).
-        subset: Provenance inside the source (e.g. ``LiveCodeBench``).
-        capability: What the answering model must do; a
-            :class:`~router.taxonomy.Capability` value.
-        category: Finer-grained topic label, kept as free text.
-        task_type: Capability label, a :class:`~router.taxonomy.TaskType`.
-        difficulty: Ordinal label, a :class:`~router.taxonomy.Difficulty`.
-        hardness_score: Continuous difficulty target in ``[0, 1]`` when the
-            source exposes one (LMArena's 7 hardness criteria, normalised).
-        meta: Source-specific extras that no downstream stage may depend on.
+    ``capability`` is accepted as an alias for ``domain`` so the loaders read
+    naturally either way; both populate the same field.
     """
 
     prompt: str
     source: str
     subset: str | None = None
     capability: str | None = None
-    category: str | None = None
     difficulty: str | None = None
-    hardness_score: float | None = None
     meta: dict[str, Any] = field(default_factory=dict)
 
     @property
+    def domain(self) -> str | None:
+        return self.capability
+
+    @property
     def uid(self) -> str:
-        digest = hashlib.sha1(
-            f"{self.source}\x00{normalize_prompt(self.prompt)}".encode()
-        )
+        digest = hashlib.sha1(normalize_prompt(self.prompt).encode())
         return digest.hexdigest()[:16]
 
     def to_row(self) -> dict[str, Any]:
         row = asdict(self)
         row["uid"] = self.uid
+        row["domain"] = self.capability
         row["n_chars"] = len(self.prompt)
-        row["meta"] = json.dumps(row["meta"], default=str)
-        return {col: row[col] for col in COLUMNS}
+        row["meta"] = json.dumps(row.get("meta") or {}, default=str)
+        return {c: row.get(c) for c in COLUMNS}
 
 
 def normalize_prompt(text: str) -> str:
-    """Collapse whitespace and case for dedup/leakage checks only."""
+    """Collapse whitespace and case, for dedup and leakage checks only."""
     return _WHITESPACE.sub(" ", (text or "")).strip().lower()
 
 
 def to_frame(examples: list[Example]) -> pd.DataFrame:
-    """Materialise examples as a dataframe with the canonical column order."""
     if not examples:
         return pd.DataFrame(columns=list(COLUMNS))
     return pd.DataFrame([e.to_row() for e in examples], columns=list(COLUMNS))
 
 
-REPO_ID = "RouteWorks/RouterArena"
-SOURCE = "routerarena"
-
-#: RouterArena ships three cuts; ``full`` is the 8.4k labelled set.
-SPLIT_FILES = {
-    "full": "data/full-00000-of-00001.parquet",
-    "sub_10": "data/sub_10-00000-of-00001.parquet",
-    "robustness": "data/robustness-00000-of-00001.parquet",
-}
-
-_OPTION_LETTERS = "ABCDEFGHIJKLMNOP"
-
-
-def render_prompt(
-    question: str,
-    context: str | None,
-    options: list[str] | None,
-    *,
-    include_context: bool = True,
-    include_options: bool = True,
-) -> str:
-    """Reassemble the row into the prompt a user would send.
-
-    Options and context are toggleable because they are a double-edged sword:
-    they are part of the real request, but an option block is also a strong
-    format artifact that a classifier can latch onto instead of the topic. The
-    experiment configs sweep both settings to measure that gap.
-    """
-    parts: list[str] = []
-    if include_context and (context or "").strip():
-        parts.append(context.strip())
-    parts.append((question or "").strip())
-    if include_options and options is not None and len(options) > 0:
-        rendered = "\n".join(
-            f"{_OPTION_LETTERS[i]}. {opt}" for i, opt in enumerate(options[: len(_OPTION_LETTERS)])
-        )
-        parts.append(rendered)
-    return "\n\n".join(p for p in parts if p)
-
-
-def load(
-    split: str = "full",
-    *,
-    include_context: bool = True,
-    include_options: bool = True,
-) -> list[Example]:
-    """Download (cached) and normalise a RouterArena split."""
-    if split not in SPLIT_FILES:
-        raise ValueError(f"unknown RouterArena split {split!r}; expected one of {list(SPLIT_FILES)}")
-
-    path = hf_hub_download(REPO_ID, SPLIT_FILES[split], repo_type="dataset")
-    table = pq.read_table(path)
-    rows = table.to_pylist()
-
-    examples: list[Example] = []
-    dropped_empty = 0
-
-    for row in rows:
-        options = row.get("Options")
-        prompt = render_prompt(
-            row.get("Question") or "",
-            row.get("Context"),
-            list(options) if options is not None else None,
-            include_context=include_context,
-            include_options=include_options,
-        )
-        if not prompt.strip():
-            dropped_empty += 1
-            continue
-
-        subset = (row.get("Dataset name") or "").strip() or None
-        capability = capability_from_dataset_name(subset or "")
-        difficulty = (row.get("Difficulty") or "").strip().lower()
-
-        examples.append(
-            Example(
-                prompt=prompt,
-                source=SOURCE,
-                subset=subset,
-                capability=capability.value,
-                category=(row.get("Category") or "").strip() or None,
-                difficulty=difficulty if difficulty in set(Difficulty) else None,
-                hardness_score=None,
-                meta={
-                    "global_index": row.get("Global Index"),
-                    "answer": row.get("Answer"),
-                    "keywords": row.get("Keywords"),
-                    "n_options": len(options) if options is not None else 0,
-                },
-            )
-        )
-
-    log.info(
-        "routerarena[%s]: kept %d, dropped %d (empty prompt)", split, len(examples), dropped_empty
-    )
-    return examples
-
-
-PROCESSED_DIR = Path("data/processed")
-SPLIT_NAMES = ("train", "val", "test")
-
-
 def dedupe(frame: pd.DataFrame) -> pd.DataFrame:
-    """Drop exact prompt duplicates (after whitespace/case normalisation).
+    """Drop exact prompt duplicates, keeping the first occurrence.
 
-    Duplicates that straddle a split boundary are pure leakage, and RouterArena
-    does contain repeated stems across its constituent benchmarks.
+    Sources are ordered most-trusted-first by the builder, so the survivor of a
+    collision is the row with the better label.
     """
     before = len(frame)
     key = frame["prompt"].map(normalize_prompt)
     frame = frame.loc[~key.duplicated()].reset_index(drop=True)
     if before != len(frame):
-        log.info("dedupe: dropped %d duplicate prompts (%d -> %d)", before - len(frame), before, len(frame))
+        log.info("dedupe: %d -> %d (%d duplicates)", before, len(frame), before - len(frame))
     return frame
 
 
 def _stratify_key(frame: pd.DataFrame, columns: list[str], min_count: int = 3) -> pd.Series:
-    """Composite stratification key, backing off when a cell is too small.
+    """Composite stratification key that degrades safely.
 
-    Stratifying on domain x difficulty keeps difficulty balanced inside each
-    domain, but rare cells would make the split fail; those fall back to the
-    first column alone.
+    Two back-offs, because stratifying needs at least two members per group:
+    a cell thinner than ``min_count`` falls back to the first column alone, and
+    anything *still* alone is pooled into one bucket. Without the second pass a
+    single rare (domain, source) pair aborts the whole split.
     """
     key = frame[columns].astype(str).agg("|".join, axis=1)
     counts = key.value_counts()
-    rare = counts[counts < min_count].index
-    return key.where(~key.isin(rare), frame[columns[0]].astype(str))
+    key = key.where(~key.isin(counts[counts < min_count].index), frame[columns[0]].astype(str))
+    counts = key.value_counts()
+    # Anything still alone joins the largest group. Pooling singletons into
+    # their own bucket does not help -- a bucket of one cannot be stratified
+    # either -- and folding them into a big group costs nothing.
+    return key.where(~key.isin(counts[counts < 2].index), counts.idxmax())
 
 
-def split_frame(
-    frame: pd.DataFrame,
-    *,
-    stratify_on: list[str],
-    val_size: float = 0.15,
-    test_size: float = 0.15,
-    seed: int = 20260824,
-) -> dict[str, pd.DataFrame]:
-    """Stratified train/val/test split."""
+def split_frame(frame: pd.DataFrame, *, stratify_on: list[str], val_size: float = 0.15,
+                test_size: float = 0.15, seed: int = 20260826) -> dict[str, pd.DataFrame]:
     key = _stratify_key(frame, stratify_on)
-
     train_idx, holdout_idx = train_test_split(
-        frame.index,
-        test_size=val_size + test_size,
-        stratify=key,
-        random_state=seed,
-    )
-    holdout_key = key.loc[holdout_idx]
-    relative_test = test_size / (val_size + test_size)
-    val_idx, test_idx = train_test_split(
-        holdout_idx,
-        test_size=relative_test,
-        stratify=holdout_key,
-        random_state=seed,
-    )
+        frame.index, test_size=val_size + test_size, stratify=key, random_state=seed)
 
-    return {
-        "train": frame.loc[train_idx].reset_index(drop=True),
-        "val": frame.loc[val_idx].reset_index(drop=True),
-        "test": frame.loc[test_idx].reset_index(drop=True),
-    }
+    # Re-derive the key on the holdout alone: a cell with three members overall
+    # can land here with one, which stratification cannot split.
+    holdout_key = _stratify_key(frame.loc[holdout_idx], stratify_on)
+    val_idx, test_idx = train_test_split(
+        holdout_idx, test_size=test_size / (val_size + test_size),
+        stratify=holdout_key, random_state=seed)
+    return {"train": frame.loc[train_idx].reset_index(drop=True),
+            "val": frame.loc[val_idx].reset_index(drop=True),
+            "test": frame.loc[test_idx].reset_index(drop=True)}
 
 
 def assert_no_leakage(splits: dict[str, pd.DataFrame]) -> None:
-    """Fail loudly if a normalised prompt appears in more than one split."""
     seen: dict[str, str] = {}
     for name, frame in splits.items():
         for prompt in frame["prompt"]:
@@ -279,170 +144,82 @@ def assert_no_leakage(splits: dict[str, pd.DataFrame]) -> None:
             seen[norm] = name
 
 
-def build_domain_dataset(
-    *,
-    include_context: bool = True,
-    include_options: bool = True,
-    out_dir: Path = PROCESSED_DIR,
-    variant: str = "full_prompt",
-    seed: int = 20260824,
-) -> dict[str, pd.DataFrame]:
-    """Build the labelled domain-classification splits from RouterArena.
-
-    Args:
-        include_context / include_options: Prompt-rendering switches. These
-            define the dataset *variant*, which is why the variant name is part
-            of the output path -- two renderings are two different datasets.
-        variant: Sub-directory name under ``out_dir``.
-    """
-    examples = load(
-        "full", include_context=include_context, include_options=include_options
-    )
-    frame = to_frame(examples)
-    frame = dedupe(frame)
-
-    splits = split_frame(frame, stratify_on=["capability", "difficulty"], seed=seed)
-    assert_no_leakage(splits)
-
-    target = out_dir / variant
-    target.mkdir(parents=True, exist_ok=True)
-    for name, part in splits.items():
-        part.to_parquet(target / f"{name}.parquet", index=False)
-        log.info("wrote %s: %d rows", target / f"{name}.parquet", len(part))
-
-    return splits
-
-
-def load_splits(variant: str = "full_prompt", out_dir: Path = PROCESSED_DIR) -> dict[str, pd.DataFrame]:
-    """Read previously built splits, with a clear error if they are missing."""
+def load_splits(variant: str = "domain_v3", out_dir: Path = PROCESSED_DIR) -> dict[str, pd.DataFrame]:
     target = out_dir / variant
     missing = [n for n in SPLIT_NAMES if not (target / f"{n}.parquet").exists()]
     if missing:
-        raise FileNotFoundError(
-            f"missing splits {missing} under {target}; run `python -m router.cli build-data --variant {variant}`"
-        )
+        raise FileNotFoundError(f"missing splits {missing} under {target}; run `router build-data`")
     return {name: pd.read_parquet(target / f"{name}.parquet") for name in SPLIT_NAMES}
 
 
-LMARENA_REPO = "lmarena-ai/arena-human-preference-140k"
-LMARENA_SOURCE = "lmarena"
-
-_LMARENA_COLUMNS = ["id", "conversation_a", "conv_metadata", "category_tag", "language", "is_code"]
-
-
-def _first_user_text(conversation: list[dict] | None) -> str:
-    """The opening user turn as plain text, skipping image parts."""
-    for turn in conversation or []:
-        if turn.get("role") != "user":
-            continue
-        parts = turn.get("content") or []
-        texts = [p.get("text") or "" for p in parts if (p.get("type") or "text") == "text"]
-        joined = "\n".join(t for t in texts if t).strip()
-        if joined:
-            return joined
-    return ""
-
-
-def load_lmarena(
+def build_dataset(
     *,
-    max_shards: int | None = None,
-    language: str | None = "en",
-    min_chars: int = 10,
-    max_prompt_chars: int = 8_000,
-) -> list[Example]:
-    """Real user prompts, labelled by LMArena's own capability annotations.
-
-    This is the half of the training set that RouterArena cannot provide.
-    Benchmark questions are formatted -- option blocks, context headers -- and a
-    model trained only on them learns the formatting: the Dewey-era classifier
-    scored 91% on benchmarks and 47% on prompts like these.
-
-    An absent flag is a real negative, not missing data, so unflagged rows
-    become ``OTHER`` rather than being dropped. That matters: roughly half of
-    real traffic is ``OTHER``, and a model that never sees it will not predict
-    it.
-    """
-    shards = sorted(f for f in list_repo_files(LMARENA_REPO, repo_type="dataset")
-                    if f.endswith(".parquet"))
-    if max_shards is not None:
-        shards = shards[:max_shards]
-
-    examples: list[Example] = []
-    for shard in shards:
-        path = hf_hub_download(LMARENA_REPO, shard, repo_type="dataset")
-        for batch in pq.ParquetFile(path).iter_batches(batch_size=512, columns=_LMARENA_COLUMNS):
-            for row in batch.to_pylist():
-                if language is not None and row.get("language") != language:
-                    continue
-                prompt = _first_user_text(row.get("conversation_a"))
-                if len(prompt) < min_chars:
-                    continue
-
-                tag = row.get("category_tag") or {}
-                capability = capability_from_arena_flags(
-                    is_code=bool(row.get("is_code")),
-                    is_math=bool((tag.get("math_v0.1") or {}).get("math")),
-                    is_creative_writing=bool(
-                        (tag.get("creative_writing_v0.1") or {}).get("creative_writing")
-                    ),
-                )
-                meta = row.get("conv_metadata") or {}
-                examples.append(
-                    Example(
-                        prompt=prompt[:max_prompt_chars],
-                        source=LMARENA_SOURCE,
-                        subset=shard.rsplit("/", 1)[-1],
-                        capability=capability.value,
-                        hardness_score=_hardness_score(tag),
-                        meta={"arena_id": row.get("id"), "turns": meta.get("turns")},
-                    )
-                )
-        log.info("lmarena[%s]: running total %d", shard, len(examples))
-    return examples
-
-
-#: The seven binary "hard prompt" criteria LMArena annotates each battle with.
-HARDNESS_CRITERIA = (
-    "complexity", "creativity", "domain_knowledge", "problem_solving",
-    "real_world", "specificity", "technical_accuracy",
-)
-
-
-def _hardness_score(category_tag: dict | None) -> float | None:
-    """Fraction of the seven hardness criteria that fired, in ``[0, 1]``."""
-    criteria = (category_tag or {}).get("criteria_v0.1")
-    if not criteria:
-        return None
-    return sum(1 for k in HARDNESS_CRITERIA if criteria.get(k)) / len(HARDNESS_CRITERIA)
-
-
-def build_capability_dataset(
-    *,
-    lmarena_shards: int | None = 3,
-    include_routerarena: bool = True,
+    arena_shards: int = 3,
+    use_mmlu_pro: bool = True,
+    use_routerarena: bool = True,
+    use_bigbench: bool = True,
+    real_eval_size: int = 250,
+    hand_oversample: int = 4,
+    cap_per_source_domain: int | None = 1200,
     out_dir: Path = PROCESSED_DIR,
-    variant: str = "capability",
+    variant: str = "domain_v3",
     seed: int = 20260826,
 ) -> dict[str, pd.DataFrame]:
-    """Build capability splits from real prompts plus (optionally) benchmarks.
+    """Assemble every source, then split.
 
-    Mixing the two distributions is the point. RouterArena supplies clean
-    task-type signal but exam formatting; LMArena supplies the messy
-    conversational prompts the router will actually see. Training on the mix is
-    what stops the model keying on format.
-
-    The split is stratified by ``capability`` **and** ``source``, so every split
-    holds both distributions and per-source accuracy is measurable separately --
-    which is the number that actually matters.
+    ``real_eval_size`` hand-labelled real prompts are held out *before* anything
+    else and placed directly into the test split. They are the honest measure:
+    genuine user traffic, labelled by hand, never seen in training.
     """
-    examples = load_lmarena(max_shards=lmarena_shards)
-    if include_routerarena:
-        examples += load("full", include_context=True, include_options=True)
+    from router import sources
 
-    frame = to_frame(examples)
-    frame = dedupe(frame)
+    # Dedupe hand labels *before* carving off the eval set: a prompt labelled
+    # twice would otherwise put one copy in eval and one in train.
+    hand = dedupe(to_frame(sources.load_handlabelled()))
+    # Reserve the real-prompt evaluation set first, stratified by domain.
+    hand_eval, hand_train = train_test_split(
+        hand, train_size=min(real_eval_size, len(hand) // 2),
+        stratify=hand["domain"], random_state=seed)
+    hand_eval = hand_eval.assign(source="handlabelled_eval").reset_index(drop=True)
+    hand_train = hand_train.reset_index(drop=True)
 
-    splits = split_frame(frame, stratify_on=["capability", "source"], seed=seed)
+    # Hand labels are the only rows pairing real traffic with all 12 domains,
+    # and there are ~750 of them against tens of thousands of benchmark rows.
+    # Repeating them raises their weight in the loss without discarding the
+    # benchmark signal; duplicates are added after dedupe so they survive it.
+    hand_repeated = pd.concat([hand_train] * max(hand_oversample, 1), ignore_index=True)
+
+    # Ordered most-trusted-first: dedupe keeps the first occurrence.
+    parts = [hand_train, to_frame(sources.load_arena_flagged(max_shards=arena_shards))]
+    if use_mmlu_pro:
+        parts.append(to_frame(sources.load_mmlu_pro()))
+    if use_routerarena:
+        parts.append(to_frame(sources.load_routerarena_bycategory()))
+    if use_bigbench:
+        parts.append(to_frame(sources.load_bigbench()))
+
+    frame = dedupe(pd.concat(parts, ignore_index=True))
+
+    # Cap any one (source, domain) cell. Without this, arena's `is_code` flag
+    # contributes ~7k software_tech rows and the model learns that domain at the
+    # expense of the eleven others.
+    if cap_per_source_domain:
+        capped = []
+        for _, group in frame.groupby(["source", "domain"], observed=True):
+            capped.append(group.sample(min(len(group), cap_per_source_domain),
+                                       random_state=seed))
+        frame = pd.concat(capped, ignore_index=True)
+        log.info("after per-(source,domain) cap: %d rows", len(frame))
+
+    splits = split_frame(frame, stratify_on=["domain", "source"], seed=seed)
+
+    # Oversampling applies to training only -- never to val or test.
+    extra = hand_repeated[~hand_repeated["uid"].isin(
+        set(splits["val"]["uid"]) | set(splits["test"]["uid"]))]
+    splits["train"] = pd.concat([splits["train"], extra], ignore_index=True)
+
+    # Held-out real prompts join the test split only.
+    splits["test"] = pd.concat([splits["test"], hand_eval], ignore_index=True)
     assert_no_leakage(splits)
 
     target = out_dir / variant

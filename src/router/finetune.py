@@ -38,12 +38,14 @@ class _TextDataset(Dataset):
 
 @register("finetune_transformer")
 class FineTunedTransformer(DomainClassifier):
-    def __init__(self, *, model_name: str, max_length: int = 256, batch_size: int = 32,
+    def __init__(self, *, model_name: str, init_from: str | None = None,
+                 max_length: int = 256, batch_size: int = 32,
                  eval_batch_size: int = 64, epochs: int = 4, lr: float = 3e-5,
                  weight_decay: float = 0.01, warmup_ratio: float = 0.1,
                  class_weighted_loss: bool = True, seed: int = 20260824,
                  device: str | None = None, **kw):
-        super().__init__(model_name=model_name, max_length=max_length, batch_size=batch_size,
+        super().__init__(model_name=model_name, init_from=init_from,
+                         max_length=max_length, batch_size=batch_size,
                          eval_batch_size=eval_batch_size, epochs=epochs, lr=lr,
                          weight_decay=weight_decay, warmup_ratio=warmup_ratio,
                          class_weighted_loss=class_weighted_loss, seed=seed, device=device, **kw)
@@ -69,13 +71,22 @@ class FineTunedTransformer(DomainClassifier):
         index = {label: i for i, label in enumerate(self.labels)}
         y_train = [index[label] for label in train_labels]
 
-        self.tokenizer = AutoTokenizer.from_pretrained(p["model_name"])
+        # `init_from` continues training from a previous run rather than the
+        # base checkpoint. Pretraining on abundant benchmark data and then
+        # fine-tuning on scarce in-distribution data is worth more here than
+        # either alone: benchmarks teach the domain vocabulary, real prompts
+        # teach what the domains look like in the wild.
+        source = p.get("init_from") or p["model_name"]
+        self.tokenizer = AutoTokenizer.from_pretrained(source)
         self.model = AutoModelForSequenceClassification.from_pretrained(
-            p["model_name"],
+            source,
             num_labels=len(self.labels),
             id2label=dict(enumerate(self.labels)),
             label2id=index,
+            ignore_mismatched_sizes=True,
         ).to(self.device)
+        if p.get("init_from"):
+            log.info("initialised from %s", source)
 
         loader = DataLoader(
             _TextDataset(list(train_texts), y_train),

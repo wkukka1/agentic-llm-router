@@ -18,12 +18,7 @@ import pandas as pd
 
 from router.analysis import report
 from router.config import load_experiments
-from router.dataset import (
-    PROCESSED_DIR,
-    build_capability_dataset,
-    build_domain_dataset,
-    load_splits,
-)
+from router.dataset import PROCESSED_DIR, build_dataset, load_splits
 from router.experiment import ARTIFACTS_DIR, run_all
 
 #: Prompt-rendering variants the builder can produce. How the RouterArena
@@ -48,32 +43,21 @@ def _configure_logging(verbosity: int) -> None:
 
 
 def cmd_build_data(args: argparse.Namespace) -> int:
-    variants = list(DATA_VARIANTS) if args.variant == "all" else [args.variant]
-    for variant in variants:
-        if variant not in DATA_VARIANTS:
-            raise SystemExit(f"unknown variant {variant!r}; expected one of {list(DATA_VARIANTS)} or 'all'")
-        splits = build_domain_dataset(
-            **DATA_VARIANTS[variant], variant=variant,
-            out_dir=Path(args.out_dir), seed=args.seed,
-        )
-        print(f"{variant}: " + ", ".join(f"{k}={len(v)}" for k, v in splits.items()))
-    return 0
-
-
-def cmd_build_capability(args: argparse.Namespace) -> int:
-    splits = build_capability_dataset(
-        lmarena_shards=args.lmarena_shards,
-        include_routerarena=not args.no_routerarena,
+    splits = build_dataset(
+        arena_shards=args.arena_shards,
+        use_bigbench=not args.no_bigbench,
+        real_eval_size=args.real_eval_size,
+        hand_oversample=args.hand_oversample,
         out_dir=Path(args.out_dir), variant=args.variant, seed=args.seed,
     )
     for name, frame in splits.items():
         print(f"\n{name}: {len(frame)} rows")
-        print(pd.crosstab(frame["capability"], frame["source"]).to_string())
+        print(pd.crosstab(frame["domain"], frame["source"]).to_string())
     return 0
 
 
 def cmd_describe_data(args: argparse.Namespace) -> int:
-    label = "capability" if args.variant.startswith("capability") else "domain"
+    label = "domain"
     for name, frame in load_splits(args.variant, Path(args.out_dir)).items():
         print(f"\n=== {name} ({len(frame)} rows) ===")
         print(frame[label].value_counts().to_string())
@@ -151,27 +135,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-v", "--verbose", action="count", default=1)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    build = sub.add_parser("build-data", help="download, dedupe, split, write parquet")
-    build.add_argument("--variant", default="full_prompt", help=f"one of {list(DATA_VARIANTS)} or 'all'")
+    build = sub.add_parser("build-data", help="assemble all sources and write splits")
+    build.add_argument("--arena-shards", type=int, default=3)
+    build.add_argument("--no-bigbench", action="store_true")
+    build.add_argument("--real-eval-size", type=int, default=250)
+    build.add_argument("--hand-oversample", type=int, default=4)
+    build.add_argument("--variant", default="domain_v3")
     build.add_argument("--out-dir", default=str(PROCESSED_DIR))
-    build.add_argument("--seed", type=int, default=20260824)
+    build.add_argument("--seed", type=int, default=20260826)
     build.set_defaults(func=cmd_build_data)
 
-    build_cap = sub.add_parser(
-        "build-capability",
-        help="build capability splits from real LMArena prompts + RouterArena benchmarks",
-    )
-    build_cap.add_argument("--lmarena-shards", type=int, default=3,
-                           help="each shard is ~10k English prompts")
-    build_cap.add_argument("--no-routerarena", action="store_true",
-                           help="train on real prompts only")
-    build_cap.add_argument("--variant", default="capability")
-    build_cap.add_argument("--out-dir", default=str(PROCESSED_DIR))
-    build_cap.add_argument("--seed", type=int, default=20260826)
-    build_cap.set_defaults(func=cmd_build_capability)
-
     describe = sub.add_parser("describe-data", help="print split statistics")
-    describe.add_argument("--variant", default="full_prompt")
+    describe.add_argument("--variant", default="domain_v3")
     describe.add_argument("--out-dir", default=str(PROCESSED_DIR))
     describe.set_defaults(func=cmd_describe_data)
 
@@ -192,7 +167,7 @@ def build_parser() -> argparse.ArgumentParser:
     diagnose.add_argument("--encoder", default="BAAI/bge-small-en-v1.5")
     diagnose.add_argument("--pooling", default="cls", choices=["cls", "mean"])
     diagnose.add_argument("--max-length", type=int, default=256)
-    diagnose.add_argument("--variant", default="full_prompt")
+    diagnose.add_argument("--variant", default="domain_v3")
     diagnose.add_argument("--data-dir", default=str(PROCESSED_DIR))
     diagnose.add_argument("--out-dir", default=str(ARTIFACTS_DIR))
     diagnose.add_argument("--vif-threshold", type=float, default=10.0)

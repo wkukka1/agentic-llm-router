@@ -15,3 +15,8 @@ artifacts/
 src/*.egg-info/
 Thumbs.db
 desktop.ini
+
+# The hand-labelled real-prompt set is the project's key asset, not a
+# regenerable artifact. It is committed deliberately.
+!data/handlabelled/
+!data/handlabelled/*.parquet
