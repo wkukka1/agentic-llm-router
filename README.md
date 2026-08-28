@@ -15,24 +15,24 @@ and matched by prompt text, so results from different runs are comparable.
 
 | | |
 |---|---|
-| **top-1** | **0.738** |
-| top-2 | 0.875 |
-| top-3 | 0.918 |
-| macro-F1 | 0.718 |
-| ECE (raw → calibrated) | 0.248 → **0.054** |
+| **top-1** | **0.745** |
+| top-2 | 0.878 |
+| top-3 | 0.938 |
+| macro-F1 | 0.728 |
+| ECE (raw → calibrated) | 0.240 → **0.071** |
 | latency | 58 ms (3 encoders) |
 
 Calibrated confidence is informative, so **abstention works**:
 
 | traffic covered | top-1 |
 |---|---|
-| 30% | **0.958** |
-| 40% | **0.944** |
+| 40% | **0.938** |
 | 50% | 0.925 |
-| 70% | 0.854 |
-| 100% | 0.738 |
+| 60% | 0.904 |
+| 70% | 0.868 |
+| 100% | 0.745 |
 
-**93%+ is available on the most-confident 40% of traffic**, or via top-3 at 92%.
+**93%+ is available on the most-confident 40-50% of traffic**, or via top-3 at 93.8%.
 
 Per class:
 
