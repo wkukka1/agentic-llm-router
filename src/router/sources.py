@@ -190,3 +190,54 @@ def load_bigbench(*, max_per_task: int = 60) -> list[Example]:
                                    capability=domain.value))
     log.info("bigbench: %d rows from mapped tasks", len(out))
     return out
+
+
+SYNTHETIC_DIR = "data/synthetic"
+
+
+def load_synthetic(domains: list[str] | None = None) -> list[Example]:
+    """Hand-written synthetic prompts for the four weakest domains.
+
+    Motivation: `humanities`, `language`, `law_politics` and `medicine_health`
+    each had ~100-165 real examples and the model was confident on <13% of
+    them. Real labelled data is the scarce resource; these are written to
+    supplement it.
+
+    **Written deliberately in real-user register** -- lowercase openings,
+    typos, missing punctuation, bare fragments, context-free follow-ups. Clean,
+    well-formed synthetic prompts would be trivially separable from real
+    traffic, and the model would learn to detect *synthetic style* rather than
+    domain. That is the same mechanism that made v1 score 91% on benchmarks and
+    47% in the wild, so it is the specific thing to avoid here.
+
+    Whether this helps is an empirical question, settled only by the frozen
+    real-prompt eval. It is tagged ``source="synthetic"`` so its contribution
+    is always measurable separately, and can be dropped in one line.
+    """
+    import importlib.util
+    import sys
+
+    modules = {
+        "law_politics": "LAW_POLITICS",
+        "medicine_health": "MEDICINE_HEALTH",
+        "humanities": "HUMANITIES",
+        "language": "LANGUAGE",
+    }
+    # Measured: adding synthetic data to a class that already has enough real
+    # examples shifts the prior and costs accuracy elsewhere. Restricting it to
+    # genuinely starved classes is the difference between +0.20 F1 and a net
+    # regression, so the caller chooses which domains get supplemented.
+    if domains is not None:
+        modules = {k: v for k, v in modules.items() if k in domains}
+    out: list[Example] = []
+    for domain, symbol in modules.items():
+        path = f"{SYNTHETIC_DIR}/{domain}.py"
+        spec = importlib.util.spec_from_file_location(f"_syn_{domain}", path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        for prompt in getattr(module, symbol):
+            out.append(Example(prompt=prompt, source="synthetic", subset=domain,
+                               capability=domain))
+    log.info("synthetic: %d rows across %d domains", len(out), len(modules))
+    return out

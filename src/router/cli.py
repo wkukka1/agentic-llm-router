@@ -46,6 +46,7 @@ def cmd_build_data(args: argparse.Namespace) -> int:
     splits = build_dataset(
         arena_shards=args.arena_shards,
         use_bigbench=not args.no_bigbench,
+        synthetic_domains=args.synthetic_domains,
         real_eval_size=args.real_eval_size,
         hand_oversample=args.hand_oversample,
         out_dir=Path(args.out_dir), variant=args.variant, seed=args.seed,
@@ -138,6 +139,8 @@ def build_parser() -> argparse.ArgumentParser:
     build = sub.add_parser("build-data", help="assemble all sources and write splits")
     build.add_argument("--arena-shards", type=int, default=3)
     build.add_argument("--no-bigbench", action="store_true")
+    build.add_argument("--synthetic-domains", nargs="*", default=None,
+                       help="domains to supplement with synthetic prompts; omit for none")
     build.add_argument("--real-eval-size", type=int, default=250)
     build.add_argument("--hand-oversample", type=int, default=4)
     build.add_argument("--variant", default="domain_v3")

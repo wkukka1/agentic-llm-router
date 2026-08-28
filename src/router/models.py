@@ -397,6 +397,145 @@ class ZeroShotSimilarity(DomainClassifier):
         return 0 if self._anchors is None else self._anchors.nbytes
 
 
+
+@register("knn_embed")
+class EmbeddingKNN(DomainClassifier):
+    """Frozen encoder + k-nearest-neighbour vote.
+
+    Worth testing rather than assuming: with few examples per class, kNN can
+    beat a fine-tune, because it makes no attempt to learn a decision boundary
+    from data too sparse to define one. It also degrades gracefully, exposes
+    *which* training prompts drove a prediction, and absorbs a new class by
+    appending rows rather than retraining.
+
+    Probabilities come from distance-weighted neighbour votes, so they are
+    genuinely soft rather than a hard vote rounded off.
+    """
+
+    def __init__(self, *, encoder_model: str = "BAAI/bge-small-en-v1.5", pooling: str = "cls",
+                 max_length: int = 256, batch_size: int = 64, k: int = 15,
+                 weights: str = "distance", temperature: float = 0.05,
+                 device: str | None = None, **kw):
+        super().__init__(encoder_model=encoder_model, pooling=pooling, max_length=max_length,
+                         batch_size=batch_size, k=k, weights=weights,
+                         temperature=temperature, device=device, **kw)
+        self.encoder = EmbeddingEncoder(encoder_model, pooling=pooling, max_length=max_length,
+                                        batch_size=batch_size, normalize=True, device=device)
+        self._bank = None
+        self._bank_labels = None
+
+    def fit(self, train_texts, train_labels, val_texts=None, val_labels=None) -> None:
+        self.labels = sorted(set(train_labels))
+        self._bank = self.encoder.encode(list(train_texts))
+        index = {label: i for i, label in enumerate(self.labels)}
+        self._bank_labels = np.array([index[label] for label in train_labels])
+
+    def predict_proba(self, texts: list[str]) -> np.ndarray:
+        if self._bank is None:
+            raise RuntimeError("call fit() first")
+        p = self.params
+        query = self.encoder.encode(list(texts))
+        # Both sides L2-normalised, so a dot product is cosine similarity.
+        similarity = query @ self._bank.T
+        k = min(p["k"], similarity.shape[1])
+        top = np.argpartition(-similarity, k - 1, axis=1)[:, :k]
+
+        out = np.zeros((len(texts), len(self.labels)))
+        for row, neighbours in enumerate(top):
+            sims = similarity[row, neighbours]
+            if p["weights"] == "distance":
+                # Softmax over similarity: near neighbours dominate, but a
+                # tie among the top few stays genuinely uncertain.
+                w = np.exp((sims - sims.max()) / max(p["temperature"], 1e-6))
+            else:
+                w = np.ones_like(sims)
+            for weight, label_idx in zip(w, self._bank_labels[neighbours], strict=True):
+                out[row, label_idx] += weight
+        return out / out.sum(axis=1, keepdims=True).clip(min=1e-12)
+
+    def save(self, path: Path) -> None:
+        path.mkdir(parents=True, exist_ok=True)
+        with (path / "knn.pkl").open("wb") as fh:
+            pickle.dump({"bank": self._bank, "bank_labels": self._bank_labels,
+                         "labels": self.labels, "params": self.params}, fh)
+
+    def load(self, path: Path) -> None:
+        with (path / "knn.pkl").open("rb") as fh:
+            state = pickle.load(fh)
+        self._bank, self._bank_labels = state["bank"], state["bank_labels"]
+        self.labels = state["labels"]
+
+    def size_bytes(self) -> int:
+        return 0 if self._bank is None else self._bank.nbytes
+
+
+
+@register("ensemble")
+class EnsembleClassifier(DomainClassifier):
+    """Averages the probabilities of several member classifiers.
+
+    Fine-tuning on ~1.3k examples turned out to be high-variance: five seeds of
+    the same config spanned 63.5-67.8% (sd 1.75, 95% CI +/-3.4 points), which
+    is wider than most of the effects being measured. Frozen encoders with a
+    linear head are deterministic and individually stronger, and averaging
+    several *different* encoders adds the diversity that seed-averaging could
+    not.
+
+    Members must be chosen on validation, never on test: searching member
+    combinations against the test set inflated the score by ~2 points in this
+    project before the protocol was fixed.
+    """
+
+    def __init__(self, *, members: list[dict], temperature: float = 1.0, **kw):
+        super().__init__(members=members, temperature=temperature, **kw)
+        self._members: list[DomainClassifier] = []
+
+    def fit(self, train_texts, train_labels, val_texts=None, val_labels=None) -> None:
+        self._members = []
+        for spec in self.params["members"]:
+            m = build(spec["name"], **(spec.get("params") or {}))
+            m.fit(train_texts, train_labels, val_texts, val_labels)
+            self._members.append(m)
+        self.labels = self._members[0].labels
+        if any(m.labels != self.labels for m in self._members):
+            raise ValueError("ensemble members disagree on the label ordering")
+
+    def predict_proba(self, texts: list[str]) -> np.ndarray:
+        if not self._members:
+            raise RuntimeError("call fit() or load() first")
+        stacked = np.mean([m.predict_proba(list(texts)) for m in self._members], axis=0)
+        temperature = self.params.get("temperature", 1.0)
+        if temperature == 1.0:
+            return stacked
+        # Temperature is fitted on validation by the experiment runner; applying
+        # it here keeps the served probabilities calibrated (ECE 0.25 -> 0.05).
+        logits = np.log(np.clip(stacked, 1e-12, None)) / max(temperature, 1e-12)
+        logits -= logits.max(axis=1, keepdims=True)
+        exp = np.exp(logits)
+        return exp / exp.sum(axis=1, keepdims=True)
+
+    def save(self, path: Path) -> None:
+        path.mkdir(parents=True, exist_ok=True)
+        for i, m in enumerate(self._members):
+            m.save(path / f"member_{i}")
+        with (path / "ensemble.pkl").open("wb") as fh:
+            pickle.dump({"labels": self.labels, "params": self.params}, fh)
+
+    def load(self, path: Path) -> None:
+        with (path / "ensemble.pkl").open("rb") as fh:
+            state = pickle.load(fh)
+        self.labels = state["labels"]
+        self.params = state["params"]
+        self._members = []
+        for i, spec in enumerate(self.params["members"]):
+            m = build(spec["name"], **(spec.get("params") or {}))
+            m.load(path / f"member_{i}")
+            self._members.append(m)
+
+    def size_bytes(self) -> int:
+        return sum(m.size_bytes() for m in self._members)
+
+
 # Imported for its side effect: FineTunedTransformer self-registers on import.
 # This sits at the bottom, after DomainClassifier and register are defined, so
 # that router.finetune's import of them resolves against this partially

@@ -31,6 +31,8 @@ from sklearn.model_selection import train_test_split
 log = logging.getLogger(__name__)
 
 PROCESSED_DIR = Path("data/processed")
+#: Never regenerated. See build_dataset for why.
+FROZEN_EVAL_PATH = Path("data/handlabelled/eval_frozen.parquet")
 SPLIT_NAMES = ("train", "val", "test")
 
 COLUMNS: tuple[str, ...] = (
@@ -158,6 +160,7 @@ def build_dataset(
     use_mmlu_pro: bool = True,
     use_routerarena: bool = True,
     use_bigbench: bool = True,
+    synthetic_domains: list[str] | None = None,
     real_eval_size: int = 250,
     hand_oversample: int = 4,
     cap_per_source_domain: int | None = 1200,
@@ -176,12 +179,18 @@ def build_dataset(
     # Dedupe hand labels *before* carving off the eval set: a prompt labelled
     # twice would otherwise put one copy in eval and one in train.
     hand = dedupe(to_frame(sources.load_handlabelled()))
-    # Reserve the real-prompt evaluation set first, stratified by domain.
-    hand_eval, hand_train = train_test_split(
-        hand, train_size=min(real_eval_size, len(hand) // 2),
-        stratify=hand["domain"], random_state=seed)
-    hand_eval = hand_eval.assign(source="handlabelled_eval").reset_index(drop=True)
-    hand_train = hand_train.reset_index(drop=True)
+
+    # The eval set is FROZEN on disk and matched by prompt text, not resampled
+    # per run. Earlier versions drew a fresh sample each build, which silently
+    # made results from different runs incomparable -- including a learning
+    # curve that was fitted across two different test sets. Never resample this.
+    frozen = pd.read_parquet(FROZEN_EVAL_PATH)
+    eval_keys = set(frozen["prompt"].map(normalize_prompt))
+    is_eval = hand["prompt"].map(normalize_prompt).isin(eval_keys)
+    hand_eval = hand[is_eval].assign(source="handlabelled_eval").reset_index(drop=True)
+    hand_train = hand[~is_eval].reset_index(drop=True)
+    log.info("frozen eval set: %d rows; %d hand rows remain for training",
+             len(hand_eval), len(hand_train))
 
     # Hand labels are the only rows pairing real traffic with all 12 domains,
     # and there are ~750 of them against tens of thousands of benchmark rows.
@@ -197,8 +206,19 @@ def build_dataset(
         parts.append(to_frame(sources.load_routerarena_bycategory()))
     if use_bigbench:
         parts.append(to_frame(sources.load_bigbench()))
+    if synthetic_domains:
+        parts.append(to_frame(sources.load_synthetic(synthetic_domains)))
 
     frame = dedupe(pd.concat(parts, ignore_index=True))
+
+    # The eval prompts are carved out before dedupe runs, so a benchmark row
+    # with identical text would survive here and leak into training. Drop any
+    # such row: the held-out real prompts must appear nowhere else.
+    eval_keys = set(hand_eval["prompt"].map(normalize_prompt))
+    before = len(frame)
+    frame = frame[~frame["prompt"].map(normalize_prompt).isin(eval_keys)].reset_index(drop=True)
+    if before != len(frame):
+        log.info("dropped %d row(s) colliding with the held-out eval set", before - len(frame))
 
     # Cap any one (source, domain) cell. Without this, arena's `is_code` flag
     # contributes ~7k software_tech rows and the model learns that domain at the

@@ -1,0 +1,24 @@
+name: PROD_ensemble
+notes: >
+  Production configuration. Three frozen encoders with light heads, averaged.
+
+  Chosen over fine-tuning because fine-tuning on ~1.3k real examples is
+  high-variance: five seeds of one config spanned 63.5-67.8% (sd 1.75), which
+  is wider than most effects worth measuring. These members are deterministic
+  and individually stronger (67-68.5%), and averaging three *different*
+  encoders adds diversity that seed-averaging cannot.
+
+  Members were selected on validation, not test. An earlier search over member
+  combinations scored against test read 76.0%; the same protocol run honestly
+  gives 73.75%, so the 2.25-point gap was pure selection bias.
+model:
+  name: ensemble
+  params:
+    members:
+      - name: embed_logreg
+        params: {encoder_model: BAAI/bge-base-en-v1.5, pooling: cls, max_length: 256, C: 4.0, class_weight: null}
+      - name: embed_logreg
+        params: {encoder_model: intfloat/e5-large-v2, pooling: mean, max_length: 256, C: 4.0, class_weight: null}
+      - name: knn_embed
+        params: {encoder_model: BAAI/bge-large-en-v1.5, pooling: cls, max_length: 256, k: 25, temperature: 0.04}
+data: {variant: real_only, label_column: domain}

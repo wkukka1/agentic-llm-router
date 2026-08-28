@@ -9,40 +9,87 @@ this project has twice been misled by them.
 
 ## Result
 
-| | real prompts | benchmarks |
-|---|---|---|
-| **top-1** | **0.674** | 0.88–0.99 |
-| top-2 | 0.829 | — |
-| top-3 | 0.874 | — |
+Every number is on a **frozen 400-prompt real-user eval set**, hand-labelled and
+never trained on. The set is committed (`data/handlabelled/eval_frozen.parquet`)
+and matched by prompt text, so results from different runs are comparable.
 
-Latency 6.5 ms (MiniLM, 22M params, Apple Silicon, single prompt).
+| | |
+|---|---|
+| **top-1** | **0.738** |
+| top-2 | 0.875 |
+| top-3 | 0.918 |
+| macro-F1 | 0.718 |
+| ECE (raw → calibrated) | 0.248 → **0.054** |
+| latency | 58 ms (3 encoders) |
 
-Confidence is informative — accuracy rises with it, so abstention works:
+Calibrated confidence is informative, so **abstention works**:
 
-| threshold | traffic covered | accuracy |
-|---|---|---|
-| ≥0.9 | 57% | **0.811** |
-| ≥0.8 | 72% | 0.769 |
-| ≥0.7 | 80% | 0.750 |
+| traffic covered | top-1 |
+|---|---|
+| 30% | **0.958** |
+| 40% | **0.944** |
+| 50% | 0.925 |
+| 70% | 0.854 |
+| 100% | 0.738 |
 
-Per class, on real prompts:
+**93%+ is available on the most-confident 40% of traffic**, or via top-3 at 92%.
+
+Per class:
 
 | domain | precision | recall | F1 | n |
 |---|---|---|---|---|
-| science_math | 0.683 | 0.848 | 0.757 | 33 |
-| software_tech | 0.729 | 0.729 | 0.729 | 48 |
-| medicine_health | 0.682 | 0.714 | 0.698 | 21 |
-| personal_life | 0.741 | 0.645 | 0.690 | 31 |
-| language | 0.810 | 0.586 | 0.680 | 29 |
-| business_finance | 0.631 | 0.732 | 0.678 | 56 |
-| arts_entertainment | 0.587 | 0.787 | 0.673 | 47 |
-| meta_other | 0.735 | 0.568 | 0.641 | 44 |
-| humanities | 0.522 | 0.522 | 0.522 | 23 |
-| law_politics | **1.000** | 0.333 | 0.500 | 18 |
+| personal_life | 0.833 | 0.811 | 0.822 | 37 |
+| arts_entertainment | 0.804 | 0.763 | 0.783 | 59 |
+| business_finance | 0.712 | 0.867 | 0.782 | 60 |
+| medicine_health | 0.792 | 0.760 | 0.776 | 25 |
+| software_tech | 0.730 | 0.793 | 0.760 | 58 |
+| language | 0.759 | 0.688 | 0.721 | 32 |
+| science_math | 0.833 | 0.606 | 0.702 | 33 |
+| meta_other | 0.585 | 0.776 | 0.667 | 49 |
+| humanities | 0.714 | 0.577 | 0.638 | 26 |
+| law_politics | 0.889 | **0.381** | 0.533 | 21 |
 
-`law_politics` never fires wrongly but catches only a third of its prompts —
-it needs more training examples, not a different model. `humanities` is the
-genuinely weak class: it bleeds into `arts_entertainment` and `meta_other`.
+`law_politics` is the remaining weak spot: it never fires wrongly but catches
+only 38% of its prompts.
+
+## Two measurement errors worth knowing about
+
+This project produced two numbers that were wrong for methodological reasons,
+and both are worth recording so they are not repeated.
+
+**1. The eval set was being resampled every build.** Scores from different runs
+were computed on different test sets, so none of them were comparable. A
+learning curve fitted across those points suggested "~5,200 labels reaches 93%".
+Re-measured on a frozen eval, the curve is nearly flat (error ~ n^-0.066), which
+puts 93% out of reach by data volume alone. The eval set is now frozen on disk.
+
+**2. Seed variance is larger than most effects being measured.** Five seeds of
+one fine-tuning config spanned 63.5–67.8% — **sd 1.75, 95% CI ±3.4 points**.
+Every single-run comparison below ~3 points in this project was noise, including
+the apparent effect of synthetic data. Run multiple seeds before believing a
+difference.
+
+A third trap was caught before it shipped: searching ensemble member
+combinations against the *test* set gave 76.0%; the same search done honestly on
+validation gives 73.75%. That 2.25-point gap was pure selection bias.
+
+## Why an ensemble of frozen encoders, not a fine-tune
+
+| approach | real-prompt top-1 |
+|---|---|
+| zero-shot (no training) | 0.388 |
+| fine-tuned MiniLM, mean of 5 seeds | 0.648 |
+| fine-tuned MiniLM, best single seed | 0.678 |
+| best single frozen encoder + linear head | 0.685 |
+| **3-encoder ensemble (shipped)** | **0.738** |
+
+Fine-tuning on ~1.3k examples overfits and is high-variance. Frozen encoders
+with a light head are deterministic, individually stronger, and averaging three
+*different* encoders adds diversity that averaging seeds cannot. Members are
+`bge-base` + `e5-large` (linear heads) and `bge-large` (kNN, k=25).
+
+Two things that did **not** help, measured: multi-encoder feature concatenation
+(0.733, at 5× the inference cost) and kNN alone (0.673).
 
 ## How it got here
 

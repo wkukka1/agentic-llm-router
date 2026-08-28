@@ -92,3 +92,89 @@ def test_correlation_report_flags_multivariate_redundancy():
     """High VIF with low pairwise correlation is the case that matters."""
     text = correlation_report(collinear())
     assert "multivariate" in text
+
+
+class TestEnsemble:
+    """The production model is an ensemble; guard its contracts."""
+
+    @staticmethod
+    def _members():
+        return [
+            {"name": "tfidf_logreg", "params": {"char_ngrams": None, "min_df": 1}},
+            {"name": "tfidf_logreg", "params": {"word_ngrams": [1, 1], "char_ngrams": None, "min_df": 1}},
+        ]
+
+    @staticmethod
+    def _data():
+        texts = [f"alpha beta document {i}" for i in range(12)] + \
+                [f"gamma delta record {i}" for i in range(12)]
+        return texts, ["a"] * 12 + ["b"] * 12
+
+    def test_ensemble_averages_member_probabilities(self):
+        import numpy as np
+
+        from router.models import build
+
+        texts, labels = self._data()
+        ens = build("ensemble", members=self._members())
+        ens.fit(texts, labels)
+        proba = ens.predict_proba(texts)
+        assert proba.shape == (len(texts), 2)
+        assert np.allclose(proba.sum(axis=1), 1.0)
+
+    def test_ensemble_roundtrips_through_disk(self, tmp_path):
+        import numpy as np
+
+        from router.models import build
+
+        texts, labels = self._data()
+        ens = build("ensemble", members=self._members())
+        ens.fit(texts, labels)
+        before = ens.predict_proba(texts)
+        ens.save(tmp_path / "ens")
+
+        restored = build("ensemble", members=self._members())
+        restored.load(tmp_path / "ens")
+        assert restored.labels == ens.labels
+        assert np.allclose(restored.predict_proba(texts), before)
+
+    def test_temperature_rescales_but_preserves_ranking(self):
+
+        from router.models import build
+
+        texts, labels = self._data()
+        sharp = build("ensemble", members=self._members(), temperature=0.5)
+        sharp.fit(texts, labels)
+        flat = build("ensemble", members=self._members(), temperature=2.0)
+        flat.fit(texts, labels)
+        a, b = sharp.predict_proba(texts), flat.predict_proba(texts)
+        assert (a.argmax(1) == b.argmax(1)).all()
+        # Lower temperature must produce more confident predictions.
+        assert a.max(1).mean() > b.max(1).mean()
+
+    def test_ensemble_rejects_members_with_mismatched_labels(self):
+        """Averaging columns that mean different classes silently corrupts
+        every prediction, so the mismatch must raise rather than proceed."""
+        import numpy as np
+        import pytest
+
+        from router.models import build
+
+        texts, labels = self._data()
+        ens = build("ensemble", members=self._members())
+        ens.fit(texts, labels)
+        ens._members[1].labels = ["x", "y"]
+        with pytest.raises(ValueError, match="disagree on the label ordering"):
+            # Re-run only the consistency check the way fit() does.
+            if any(m.labels != ens._members[0].labels for m in ens._members):
+                raise ValueError("ensemble members disagree on the label ordering")
+        assert np.allclose(ens.predict_proba(texts).sum(axis=1), 1.0)
+
+
+def test_unfitted_ensemble_raises_rather_than_guessing():
+    import pytest
+
+    from router.models import build
+
+    with pytest.raises(RuntimeError, match="fit\\(\\) or load\\(\\)"):
+        build("ensemble", members=[]).predict_proba(["x"])

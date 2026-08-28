@@ -1,65 +1,75 @@
 # Next steps
 
-Status 2026-08-27. Current model: 0.674 top-1 / 0.829 top-2 on 350 held-out
-real prompts.
+Status 2026-08-28. Shipped: 3-encoder ensemble, **0.738 top-1 / 0.875 top-2** on
+a frozen 400-prompt real-user eval.
 
-## The one thing that matters
+## Read this before running another experiment
 
-**Label more real prompts.** Everything else has been tried and is flat.
+**Seed variance is ±3.4 points (95% CI).** Five seeds of one config spanned
+63.5–67.8%. Any single-run difference below ~3 points is noise. Run 3–5 seeds,
+or use the deterministic frozen-encoder members, before believing an effect.
 
-Evidence that data is the binding constraint:
+**The eval set is frozen and must stay frozen.**
+`data/handlabelled/eval_frozen.parquet`, matched by prompt text. It was
+previously resampled per build, which silently made runs incomparable and
+produced a learning-curve extrapolation that was wrong by orders of magnitude.
 
-| lever | effect |
-|---|---|
-| hand-labelled rows 597 → 872 | **+8 points** (0.589 → 0.674) |
-| transfer learning vs single stage | +8 points |
-| epochs / learning-rate sweep | ±1 point (66.3–67.4%) |
-| model size 22M → 109M → 149M (v1) | +0.8, then negative |
-| taxonomy 12 → 6 classes (v1) | +7, but destroys the label space |
+**Select on validation, never on test.** Searching ensemble combinations against
+test read 76.0% vs 73.75% honest — a 2.25-point illusion.
 
-Going from ~870 to ~3,000 labelled real prompts is the highest-value work
-available. At roughly 90 labels/hour that is about 24 hours of reading, and on
-the observed curve should land near 0.78–0.82.
+## The 93% question
 
-Two things worth doing while labelling:
+93% top-1 across all traffic is **not reachable** on this taxonomy by the levers
+tried. Measured on the frozen eval, error decays as `n^-0.066` in labelled data,
+which puts 93% at ~10^13 examples. Model scale, hyperparameters, kNN, synthetic
+data and feature concatenation were each worth ≤2 points or nothing.
 
-- **Target the weak classes.** `law_politics` (n=74) has perfect precision and
-  0.33 recall — it simply has not seen enough. `humanities` (n=95) is the only
-  genuinely confused class.
-- **Double-label a sample.** ~200 prompts labelled twice would measure
-  self-consistency. With 10 fuzzy classes the labeller's own noise may be a real
-  part of the ceiling, and right now that is unmeasured.
+93% **is** available today, two ways:
 
-## Also worth doing
+- **top-1 on the most-confident 40% of traffic** (0.944), deferring the rest
+- **top-3** (0.918) or top-2 on the confident half
 
-**Ship top-2 or abstention, not bare top-1.** Top-2 is 0.829 and confidence ≥0.9
-gives 0.811 over 57% of traffic. If the downstream stage accepts a ranked pair
-or can defer, that is available today at no cost.
+If the router can accept a shortlist or defer, the target is already met. If it
+must be top-1 on everything, the target needs revisiting.
 
-**Re-check `meta_other`.** It is 12% of real traffic and a genuine catch-all
-(greetings, jailbreaks, questions about the assistant, context-free follow-ups).
-If the router would treat those differently from each other, it needs splitting
-— and that needs new labels.
+## Priorities
+
+**1. Measure inter-annotator agreement.** Still the highest-value open question
+and still unanswered. All 2,041 labels are single-annotator, and my attempted
+self-consistency check was invalid (the original labels were in context, giving
+a meaningless 150/150). Have a second person label 200 of the frozen eval
+prompts. If they agree with the existing labels ~75% of the time, then 0.738 is
+already near the ceiling and further modelling work is wasted. ~2 hours.
+
+**2. Fix `law_politics` recall (0.381).** Precision is 0.889 — it is simply too
+cautious, with only ~106 real examples. Synthetic data raised its F1 from 0.500
+to 0.700 in isolation but cost accuracy elsewhere when applied to four classes
+at once; applying it to this class alone was neutral overall. Real examples
+(r/legaladvice, policy forums) are the better fix.
+
+**3. Consider whether `meta_other` should be split.** 12% of traffic, precision
+0.585 — it absorbs greetings, jailbreaks, questions about the assistant, and
+context-free follow-ups. If the router treats those differently, they need
+separate labels.
 
 ## Known limits
 
-- **Labels are single-annotator.** One person read each prompt once. Boundaries
-  between `business_finance` / `personal_life` / `meta_other` are genuinely
-  fuzzy and the labelling is not audited.
-- **LMArena flags are model-assisted**, not gold human labels. They supply 3 of
-  the 10 domains in stage 1.
-- **`law_politics` recall is 0.33.** Do not rely on it to catch legal or
-  political prompts yet.
-- **Benchmark scores (0.88–0.99) mean nothing on their own.** v1 scored 0.91
-  there and 0.47 in the wild. Always read the real-prompt column.
-- **Latency is Apple Silicon, single-prompt, unbatched.** A CPU server will be
-  slower; unmeasured.
-- **BIG-bench contributes ~1,700 rows** and its prompts are synthetic. It was
-  included to test whether task diversity helps; its effect has not been
-  ablated separately.
+- **Single-annotator labels**, unaudited. This is the load-bearing caveat.
+- **LMArena flags are model-assisted**, and supply 3 of 10 domains in stage 1.
+- **Latency 58 ms** — three encoders, two of them large. A single frozen
+  `bge-base` head gives 0.680 at ~10 ms if that trade is better.
+- **Apple Silicon (MPS), single-prompt, unbatched.** A CPU server will differ.
+- **Benchmark scores (0.83–0.99) are not evidence of anything.** v1 scored 0.91
+  there and 0.47 in the wild. Read the real-prompt column only.
 
-## Things not to bother with
+## Things measured and not worth repeating
 
-- **Bigger encoders.** v1 tested this thoroughly: the ceiling was labels.
-- **Hyperparameter tuning.** Swept; worth ~1 point.
-- **Standardising embeddings before PCA.** Costs ~7 points; see README.
+| tried | result |
+|---|---|
+| bigger encoders for fine-tuning (v1: 22M→109M→149M) | +0.8 then negative |
+| hyperparameter sweeps | ±1 point |
+| kNN alone | 0.673 (below ensemble) |
+| synthetic data, 4 classes | net −1.75 (within noise); helped `law_politics` only |
+| multi-encoder feature concatenation | 0.733, 5× cost |
+| standardising embeddings before PCA | −7 points |
+| Kaggle query-domain dataset | wrong taxonomy; collapses to one class |

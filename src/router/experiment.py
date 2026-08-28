@@ -159,6 +159,12 @@ def run_experiment(
         encoding="utf-8",
     )
     _write_predictions(run_dir, test, test_proba, model.labels, text_col, label_col)
+    # Validation predictions too: ensemble selection and threshold tuning must
+    # happen on val, never on test. Without these, picking the best member
+    # combination means selecting on the test set and reporting a number that
+    # will not survive contact with new data.
+    _write_predictions(run_dir, val, val_proba, model.labels, text_col, label_col,
+                       filename="val_predictions.parquet")
     if save_model:
         model.save(run_dir / "model")
 
@@ -172,7 +178,8 @@ def run_experiment(
 
 
 def _write_predictions(run_dir: Path, test: pd.DataFrame, proba: np.ndarray,
-                       labels: list[str], text_col: str, label_col: str) -> None:
+                       labels: list[str], text_col: str, label_col: str,
+                       filename: str = "test_predictions.parquet") -> None:
     """Per-row predictions, so error analysis never requires a retrain."""
     frame = pd.DataFrame({
         "uid": test["uid"],
@@ -185,7 +192,7 @@ def _write_predictions(run_dir: Path, test: pd.DataFrame, proba: np.ndarray,
     })
     for i, label in enumerate(labels):
         frame[f"p_{label}"] = proba[:, i]
-    frame.to_parquet(run_dir / "test_predictions.parquet", index=False)
+    frame.to_parquet(run_dir / filename, index=False)
 
 
 def _as_yaml(payload: dict[str, Any]) -> str:

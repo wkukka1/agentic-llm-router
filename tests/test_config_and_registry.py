@@ -9,6 +9,7 @@ def test_all_expected_models_are_registered():
     assert set(available()) == {
         "tfidf_logreg", "tfidf_linear_svm", "embed_logreg", "embed_mlp",
         "embed_reduced_logreg", "finetune_transformer", "zeroshot_similarity",
+        "knn_embed", "ensemble",
     }
 
 
@@ -34,8 +35,8 @@ def test_config_requires_name_and_model():
 
 
 def test_shipped_experiment_configs_all_load_and_are_uniquely_named():
-    configs = load_experiments(["experiments/domain", "experiments/capability"])
-    assert len(configs) >= 11
+    configs = load_experiments(["experiments/v3"])
+    assert len(configs) >= 5
     names = [c.name for c in configs]
     assert len(names) == len(set(names)), "duplicate experiment names would overwrite each other"
     for config in configs:

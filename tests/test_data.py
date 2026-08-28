@@ -100,3 +100,37 @@ def test_handlabelled_dataset_is_present_and_consistent():
     assert not frame["prompt"].duplicated().any()
     # No class should be so rare it cannot be split three ways.
     assert frame["domain"].value_counts().min() >= 20
+
+
+def test_frozen_eval_set_is_present_and_stable():
+    """The eval set must never be resampled.
+
+    Regression: earlier builds drew a fresh eval sample each run, which made
+    results from different runs silently incomparable -- a learning curve was
+    fitted across two *different* test sets before this was caught.
+    """
+    from pathlib import Path
+
+    from router.dataset import FROZEN_EVAL_PATH
+
+    if not Path(FROZEN_EVAL_PATH).exists():
+        pytest.skip("frozen eval set not present")
+    frame = pd.read_parquet(FROZEN_EVAL_PATH)
+    assert len(frame) == 400
+    assert not frame["prompt"].duplicated().any()
+    assert set(frame.columns) == {"prompt", "domain"}
+
+
+def test_frozen_eval_prompts_are_all_hand_labelled():
+    """Every eval prompt must exist in the labelled pool with a matching label."""
+    from pathlib import Path
+
+    from router.dataset import FROZEN_EVAL_PATH
+
+    if not Path(FROZEN_EVAL_PATH).exists():
+        pytest.skip("frozen eval set not present")
+    frozen = pd.read_parquet(FROZEN_EVAL_PATH)
+    hand = pd.read_parquet("data/handlabelled/real_prompts.parquet")
+    merged = frozen.merge(hand, on="prompt", suffixes=("_frozen", "_hand"))
+    assert len(merged) == len(frozen)
+    assert (merged["domain_frozen"] == merged["domain_hand"]).all()
