@@ -45,19 +45,37 @@ Per class:
 
 | domain | precision | recall | F1 | n |
 |---|---|---|---|---|
-| personal_life | 0.833 | 0.811 | 0.822 | 37 |
-| arts_entertainment | 0.804 | 0.763 | 0.783 | 59 |
-| business_finance | 0.712 | 0.867 | 0.782 | 60 |
-| medicine_health | 0.792 | 0.760 | 0.776 | 25 |
-| software_tech | 0.730 | 0.793 | 0.760 | 58 |
-| language | 0.759 | 0.688 | 0.721 | 32 |
-| science_math | 0.833 | 0.606 | 0.702 | 33 |
-| meta_other | 0.585 | 0.776 | 0.667 | 49 |
-| humanities | 0.714 | 0.577 | 0.638 | 26 |
-| law_politics | 0.889 | **0.381** | 0.533 | 21 |
+| personal_life | 0.811 | 0.811 | 0.811 | 37 |
+| business_finance | 0.754 | 0.867 | 0.806 | 60 |
+| arts_entertainment | 0.789 | 0.763 | 0.776 | 59 |
+| software_tech | 0.776 | 0.776 | 0.776 | 58 |
+| medicine_health | 0.818 | 0.720 | 0.766 | 25 |
+| language | 0.846 | 0.688 | 0.759 | 32 |
+| science_math | 0.694 | 0.758 | 0.725 | 33 |
+| meta_other | 0.679 | 0.776 | 0.724 | 49 |
+| humanities | 0.762 | 0.615 | 0.681 | 26 |
+| law_politics | 0.667 | 0.571 | 0.615 | 21 |
 
-`law_politics` is the remaining weak spot: it never fires wrongly but catches
-only 38% of its prompts.
+`law_politics` is the weakest class; it confuses with `business_finance` on
+prompts where both are genuinely defensible (contract law, tax, regulation).
+
+## Serving
+
+```python
+from router.inference import DomainHead
+
+head = DomainHead("artifacts/v7/PROD_ensemble", defer_below=0.55, shortlist_size=2)
+p = head.predict("whats the statute of limitations on unpaid invoices")
+# p.domain        -> "business_finance"
+# p.confidence    -> 0.618   (calibrated; temperature comes from the run dir)
+# p.shortlist     -> ["business_finance", "law_politics"]
+# p.distribution  -> all 10 domains
+# p.should_defer  -> False
+```
+
+For a consumer that works with probabilities -- NMIRT, for instance --
+`p.distribution` is strictly better than any hard label or shortlist: it carries
+everything the model knows and lets the consumer pick its own operating point.
 
 ## Two measurement errors worth knowing about
 
@@ -88,7 +106,7 @@ validation gives 73.75%. That 2.25-point gap was pure selection bias.
 | fine-tuned MiniLM, mean of 5 seeds | 0.648 |
 | fine-tuned MiniLM, best single seed | 0.678 |
 | best single frozen encoder + linear head | 0.685 |
-| **3-encoder ensemble (shipped)** | **0.738** |
+| **6-member weighted ensemble (shipped)** | **0.758** |
 
 Fine-tuning on ~1.3k examples overfits and is high-variance. Frozen encoders
 with a light head are deterministic, individually stronger, and averaging three

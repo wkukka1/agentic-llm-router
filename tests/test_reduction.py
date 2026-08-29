@@ -178,3 +178,80 @@ def test_unfitted_ensemble_raises_rather_than_guessing():
 
     with pytest.raises(RuntimeError, match="fit\\(\\) or load\\(\\)"):
         build("ensemble", members=[]).predict_proba(["x"])
+
+
+class TestDomainHead:
+    """The serving seam. Guards the contract the next stage depends on."""
+
+    @staticmethod
+    def _run_dir(tmp_path):
+        """A tiny trained run directory, written the way the runner writes one."""
+        import json
+
+        import yaml
+
+        from router.models import build
+
+        texts = [f"alpha beta doc {i}" for i in range(12)] + \
+                [f"gamma delta rec {i}" for i in range(12)]
+        labels = ["a"] * 12 + ["b"] * 12
+        cfg = {"model": {"name": "tfidf_logreg",
+                         "params": {"char_ngrams": None, "min_df": 1}}}
+        m = build(cfg["model"]["name"], **cfg["model"]["params"])
+        m.fit(texts, labels)
+        d = tmp_path / "run"
+        d.mkdir()
+        m.save(d / "model")
+        (d / "config.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
+        (d / "metrics.json").write_text(json.dumps({"test": {"temperature": 2.0}}),
+                                        encoding="utf-8")
+        return d
+
+    def test_predict_returns_labels_shortlist_and_distribution(self, tmp_path):
+        from router.inference import DomainHead
+
+        head = DomainHead(self._run_dir(tmp_path), shortlist_size=2)
+        p = head.predict("alpha beta doc 3")
+        assert p.domain in head.labels
+        assert len(p.shortlist) == 2
+        assert p.shortlist[0] == p.domain
+        assert sum(p.distribution.values()) == pytest.approx(1.0, abs=1e-6)
+
+    def test_labels_are_plain_strings_not_numpy(self, tmp_path):
+        """Members can return numpy string arrays; JSON serialisation breaks
+        on those, and the next stage consumes this over a wire."""
+        import json
+
+        from router.inference import DomainHead
+
+        head = DomainHead(self._run_dir(tmp_path))
+        p = head.predict("alpha beta doc 1")
+        assert all(type(x) is str for x in p.shortlist)
+        json.dumps({"shortlist": p.shortlist, "distribution": p.distribution})
+
+    def test_temperature_from_metrics_is_applied(self, tmp_path):
+        """T=2.0 softens; without it the threshold means something different."""
+        from router.inference import DomainHead
+
+        d = self._run_dir(tmp_path)
+        head = DomainHead(d)
+        assert head.temperature == 2.0
+        head.temperature = 1.0
+        raw = head.predict("alpha beta doc 1").confidence
+        head.temperature = 2.0
+        assert head.predict("alpha beta doc 1").confidence < raw
+
+    def test_defer_flag_tracks_the_threshold(self, tmp_path):
+        from router.inference import DomainHead
+
+        d = self._run_dir(tmp_path)
+        assert not DomainHead(d, defer_below=0.0).predict("alpha beta doc 1").should_defer
+        assert DomainHead(d, defer_below=1.01).predict("alpha beta doc 1").should_defer
+
+    def test_batch_matches_single(self, tmp_path):
+        from router.inference import DomainHead
+
+        head = DomainHead(self._run_dir(tmp_path))
+        prompts = ["alpha beta doc 2", "gamma delta rec 5"]
+        assert [x.domain for x in head.predict_batch(prompts)] == \
+               [head.predict(p).domain for p in prompts]

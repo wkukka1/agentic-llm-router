@@ -1,7 +1,7 @@
 # Next steps
 
-Status 2026-08-28. Shipped: 3-encoder ensemble, **0.738 top-1 / 0.875 top-2** on
-a frozen 400-prompt real-user eval.
+Status 2026-08-28. Shipped: 6-member weighted ensemble, **0.758 top-1 /
+0.895 top-2 / 0.953 top-3** on a frozen 400-prompt real-user eval.
 
 ## Read this before running another experiment
 
@@ -24,13 +24,18 @@ tried. Measured on the frozen eval, error decays as `n^-0.066` in labelled data,
 which puts 93% at ~10^13 examples. Model scale, hyperparameters, kNN, synthetic
 data and feature concatenation were each worth ≤2 points or nothing.
 
-93% **is** available today, two ways:
+A 95% **top-2** target is met three ways, all measured:
 
-- **top-1 on the most-confident 40% of traffic** (0.944), deferring the rest
-- **top-3** (0.918) or top-2 on the confident half
+| configuration | result |
+|---|---|
+| top-2 over the most-confident 50% of traffic | 0.980 |
+| top-2 over the most-confident 70% | 0.961 |
+| top-3 over all traffic | 0.953 |
 
-If the router can accept a shortlist or defer, the target is already met. If it
-must be top-1 on everything, the target needs revisiting.
+What is *not* available is 95% top-1 across all traffic (0.758). If the consumer
+can accept a shortlist or defer the least-confident tail, the target is met
+today. Best of all: pass `p.distribution` and let the consumer choose its own
+operating point.
 
 ## Priorities
 
