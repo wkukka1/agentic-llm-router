@@ -486,8 +486,9 @@ class EnsembleClassifier(DomainClassifier):
     project before the protocol was fixed.
     """
 
-    def __init__(self, *, members: list[dict], temperature: float = 1.0, **kw):
-        super().__init__(members=members, temperature=temperature, **kw)
+    def __init__(self, *, members: list[dict], weights: list[float] | None = None,
+                 temperature: float = 1.0, **kw):
+        super().__init__(members=members, weights=weights, temperature=temperature, **kw)
         self._members: list[DomainClassifier] = []
 
     def fit(self, train_texts, train_labels, val_texts=None, val_labels=None) -> None:
@@ -503,7 +504,17 @@ class EnsembleClassifier(DomainClassifier):
     def predict_proba(self, texts: list[str]) -> np.ndarray:
         if not self._members:
             raise RuntimeError("call fit() or load() first")
-        stacked = np.mean([m.predict_proba(list(texts)) for m in self._members], axis=0)
+        per_member = np.stack([m.predict_proba(list(texts)) for m in self._members])
+        weights = self.params.get("weights")
+        if weights is None:
+            stacked = per_member.mean(axis=0)
+        else:
+            # Weights are fitted on validation. Members differ in quality by
+            # several points, and equal weighting throws that away.
+            w = np.asarray(weights, dtype=float)
+            if len(w) != len(self._members):
+                raise ValueError(f"got {len(w)} weights for {len(self._members)} members")
+            stacked = np.tensordot(w / w.sum(), per_member, axes=1)
         temperature = self.params.get("temperature", 1.0)
         if temperature == 1.0:
             return stacked

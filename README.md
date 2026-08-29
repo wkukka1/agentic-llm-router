@@ -15,24 +15,31 @@ and matched by prompt text, so results from different runs are comparable.
 
 | | |
 |---|---|
-| **top-1** | **0.748** |
-| top-2 | 0.875 |
-| top-3 | 0.943 |
-| macro-F1 | 0.732 |
-| ECE (raw → calibrated) | 0.240 → **0.071** |
-| latency | 151 ms (6 encoders) |
+| **top-1** | **0.758** |
+| top-2 | 0.895 |
+| top-3 | **0.953** |
+| macro-F1 | 0.744 |
+| ECE (raw → calibrated) | 0.272 → **0.058** |
+| latency | ~150 ms (6 encoders; accuracy prioritised over speed) |
 
 Calibrated confidence is informative, so **abstention works**:
 
 | traffic covered | top-1 |
 |---|---|
-| 40% | **0.938** |
-| 50% | 0.925 |
-| 60% | 0.904 |
-| 70% | 0.868 |
-| 100% | 0.745 |
+| coverage | top-1 | top-2 |
+|---|---|---|
+| 40% | **0.931** | **1.000** |
+| 50% | 0.915 | **0.980** |
+| 60% | 0.896 | **0.975** |
+| 70% | 0.864 | **0.961** |
+| 100% | 0.758 | 0.895 |
 
-**93%+ is available on the most-confident 40-50% of traffic**, or via top-3 at 93.8%.
+**A 95% top-2 target is met on 70% of traffic** (0.961), and on 40% it is
+perfect (1.000). Across *all* traffic top-3 reaches 0.953; top-2 is 0.895.
+
+So 95% is achievable two ways -- accept three candidates, or accept two and
+defer the least-confident 30%. It is not achievable at top-2 across 100% of
+traffic with this data.
 
 Per class:
 

@@ -81,7 +81,8 @@ def cmd_train(args: argparse.Namespace) -> int:
 
     print(f"running {len(configs)} experiment(s): {', '.join(c.name for c in configs)}\n")
     frame = run_all(configs, out_dir=Path(args.out_dir), save_model=args.save_model,
-                    continue_on_error=not args.fail_fast)
+                    continue_on_error=not args.fail_fast,
+                    measure_latency=not args.no_latency)
     print("\n" + frame.to_string(index=False))
     print(f"\nwrote {Path(args.out_dir) / 'leaderboard.md'}")
     return 0
@@ -159,6 +160,10 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--out-dir", default=str(ARTIFACTS_DIR))
     train.add_argument("--save-model", action="store_true")
     train.add_argument("--fail-fast", action="store_true")
+    train.add_argument("--no-latency", action="store_true",
+                       help="skip single-prompt latency timing; it runs 200 prompts one "
+                            "at a time through every member and dominates runtime for "
+                            "multi-encoder ensembles")
     train.set_defaults(func=cmd_train)
 
     analyze = sub.add_parser("analyze", help="per-class precision/recall, confusion, error slices")

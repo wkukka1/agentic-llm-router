@@ -214,6 +214,7 @@ def run_all(
     out_dir: Path = ARTIFACTS_DIR,
     save_model: bool = False,
     continue_on_error: bool = True,
+    measure_latency: bool = True,
 ) -> pd.DataFrame:
     """Run every config, writing the leaderboard after each one.
 
@@ -225,7 +226,8 @@ def run_all(
 
     for config in configs:
         try:
-            results.append(run_experiment(config, out_dir=out_dir, save_model=save_model))
+            results.append(run_experiment(config, out_dir=out_dir, save_model=save_model,
+                                          measure_latency_on_test=measure_latency))
         except Exception as exc:  # noqa: BLE001 - a bad config must not kill the sweep
             log.exception("experiment %s failed", config.name)
             failures[config.name] = f"{type(exc).__name__}: {exc}"
