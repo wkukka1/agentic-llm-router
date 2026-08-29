@@ -124,3 +124,53 @@ def test_arena_flag_precedence_is_code_then_math():
         is_code=True, is_math=True, is_creative_writing=True) is Domain.SOFTWARE_TECH
     assert domain_from_arena_flags(
         is_code=False, is_math=True, is_creative_writing=True) is Domain.SCIENCE_MATH
+
+
+class TestDomainMerges:
+    """Optional coarser grouping, applied at inference not at training."""
+
+    def test_merge_map_only_touches_the_two_intended_pairs(self):
+        from router.taxonomy import DOMAIN_LABELS, MERGED_DOMAIN_LABELS, apply_domain_merges
+
+        assert len(MERGED_DOMAIN_LABELS) == len(DOMAIN_LABELS) - 2
+        for d in DOMAIN_LABELS:
+            merged = apply_domain_merges(d)
+            if d in ("business_finance", "law_politics"):
+                assert merged == "business_law"
+            elif d in ("humanities", "arts_entertainment"):
+                assert merged == "culture"
+            else:
+                assert merged == d, f"{d} should be untouched"
+
+    def test_science_and_software_stay_separate(self):
+        """Merging them scores better (0.785 vs 0.773) and is deliberately not
+        done: maths and code route to different models, so collapsing them buys
+        a metric by destroying a distinction the router needs."""
+        from router.taxonomy import apply_domain_merges
+
+        assert apply_domain_merges("science_math") != apply_domain_merges("software_tech")
+
+    def test_merge_is_idempotent(self):
+        from router.taxonomy import MERGED_DOMAIN_LABELS, apply_domain_merges
+
+        for d in MERGED_DOMAIN_LABELS:
+            assert apply_domain_merges(d) == d
+
+    def test_unknown_domain_passes_through(self):
+        from router.taxonomy import apply_domain_merges
+
+        assert apply_domain_merges("not_a_domain") == "not_a_domain"
+
+    def test_head_merges_by_summing_probabilities(self):
+        """The merged score for a group must be the sum of its members', not
+        the max -- that is what makes post-hoc merging beat retraining."""
+        import numpy as np
+
+        from router.inference import DomainHead
+
+        labels = ["business_finance", "law_politics", "software_tech"]
+        proba = np.array([[0.3, 0.3, 0.4]])
+        merged, names = DomainHead._merge(proba, labels)
+        assert names == ["business_law", "software_tech"]
+        assert merged[0, names.index("business_law")] == pytest.approx(0.6)
+        assert merged.sum() == pytest.approx(1.0)

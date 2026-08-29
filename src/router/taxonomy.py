@@ -204,3 +204,40 @@ def domain_from_arena_flags(
     if is_creative_writing:
         return Domain.ARTS_ENTERTAINMENT
     return None
+
+
+#: Optional coarser grouping. Two pairs are merged because the distinction is
+#: not one a labeller can make reliably *and* not one a router needs:
+#:
+#:   business_finance + law_politics -> business_law
+#:       The largest genuine confusion. "Statute of limitations on unpaid
+#:       invoices", "restricted payment baskets in credit agreements" -- both
+#:       labels are defensible, and both route to the same kind of model.
+#:   humanities + arts_entertainment -> culture
+#:       History, philosophy, film and music behave alike for routing.
+#:
+#: Measured on the frozen eval: 0.7575 -> 0.7725 top-1, 0.8950 -> 0.9100 top-2.
+#:
+#: `science_math + software_tech -> technical` scores better still (0.7850 /
+#: 0.9250) and is deliberately NOT included: maths and code route to different
+#: models, so collapsing them buys accuracy on this metric by destroying a
+#: distinction the router actually needs.
+#:
+#: Applied at build time, never in the stored labels. Merging is lossy and
+#: one-way; the 10-class labels remain the source of truth so a future router
+#: with different needs can regroup differently.
+DOMAIN_MERGES: dict[str, str] = {
+    "business_finance": "business_law",
+    "law_politics": "business_law",
+    "humanities": "culture",
+    "arts_entertainment": "culture",
+}
+
+MERGED_DOMAIN_LABELS: list[str] = sorted(
+    {DOMAIN_MERGES.get(d, d) for d in DOMAIN_LABELS}
+)
+
+
+def apply_domain_merges(domain: str) -> str:
+    """Map a fine-grained domain onto its merged group, if it has one."""
+    return DOMAIN_MERGES.get(domain, domain)

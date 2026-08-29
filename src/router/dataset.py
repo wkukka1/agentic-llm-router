@@ -252,6 +252,7 @@ def build_dataset(
 
 def build_real_only_dataset(
     *,
+    merge_domains: bool = False,
     out_dir: Path = PROCESSED_DIR,
     variant: str = "real_only",
     seed: int = 20260827,
@@ -270,6 +271,13 @@ def build_real_only_dataset(
     from router import sources
 
     hand = dedupe(to_frame(sources.load_handlabelled()))
+    if merge_domains:
+        # Applied here rather than in the stored labels: merging is lossy and
+        # one-way, so the 10-class labels stay the source of truth.
+        from router.taxonomy import apply_domain_merges
+
+        hand["domain"] = hand["domain"].map(apply_domain_merges)
+        log.info("merged domains -> %d classes", hand["domain"].nunique())
     frozen = pd.read_parquet(FROZEN_EVAL_PATH)
     is_eval = hand["prompt"].map(normalize_prompt).isin(
         set(frozen["prompt"].map(normalize_prompt))

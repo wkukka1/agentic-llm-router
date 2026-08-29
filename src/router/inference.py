@@ -54,10 +54,16 @@ class DomainHead:
     """Loads a trained run directory and serves calibrated predictions."""
 
     def __init__(self, run_dir: str | Path, *, defer_below: float = 0.0,
-                 shortlist_size: int = 2) -> None:
+                 shortlist_size: int = 2, merge_domains: bool = False) -> None:
         self.run_dir = Path(run_dir)
         self.defer_below = defer_below
         self.shortlist_size = shortlist_size
+        # Merging is applied to the *output* of a fine-grained model, never by
+        # training on coarse labels. Measured: post-hoc merging reaches 0.7725
+        # where retraining on the merged labels reaches 0.7375. Training on
+        # coarse labels throws away distinctions the model can otherwise learn
+        # and sum over.
+        self.merge_domains = merge_domains
 
         config = yaml.safe_load((self.run_dir / "config.yaml").read_text(encoding="utf-8"))
         metrics = json.loads((self.run_dir / "metrics.json").read_text(encoding="utf-8"))
@@ -82,6 +88,8 @@ class DomainHead:
     def predict_batch(self, prompts: list[str]) -> list[DomainPrediction]:
         proba = self._calibrated(self.model.predict_proba(list(prompts)))
         labels = self.labels
+        if self.merge_domains:
+            proba, labels = self._merge(proba, labels)
         out: list[DomainPrediction] = []
         for row in proba:
             order = np.argsort(-row)
@@ -94,6 +102,19 @@ class DomainHead:
                 should_defer=float(row[best]) < self.defer_below,
             ))
         return out
+
+    @staticmethod
+    def _merge(proba: np.ndarray, labels: list[str]) -> tuple[np.ndarray, list[str]]:
+        """Sum fine-grained probabilities into their merged groups."""
+        from router.taxonomy import apply_domain_merges
+
+        groups = [apply_domain_merges(x) for x in labels]
+        merged = sorted(set(groups))
+        index = {g: i for i, g in enumerate(merged)}
+        out = np.zeros((len(proba), len(merged)))
+        for j, g in enumerate(groups):
+            out[:, index[g]] += proba[:, j]
+        return out, merged
 
     def _calibrated(self, proba: np.ndarray) -> np.ndarray:
         if self.temperature == 1.0:

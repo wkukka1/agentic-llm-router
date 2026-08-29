@@ -49,7 +49,8 @@ def _configure_logging(verbosity: int) -> None:
 
 def cmd_build_real(args: argparse.Namespace) -> int:
     """Hand-labelled real prompts only -- what the shipped model trains on."""
-    splits = build_real_only_dataset(out_dir=Path(args.out_dir), variant=args.variant,
+    splits = build_real_only_dataset(merge_domains=args.merge_domains,
+                                     out_dir=Path(args.out_dir), variant=args.variant,
                                      seed=args.seed)
     for name, frame in splits.items():
         print(f"\n{name}: {len(frame)} rows")
@@ -168,6 +169,9 @@ def build_parser() -> argparse.ArgumentParser:
         "build-real",
         help="hand-labelled real prompts only -- the split the shipped model uses",
     )
+    build_real.add_argument("--merge-domains", action="store_true",
+                            help="collapse business_finance+law_politics and "
+                                 "humanities+arts_entertainment (10 -> 8 classes)")
     build_real.add_argument("--variant", default="real_only")
     build_real.add_argument("--out-dir", default=str(PROCESSED_DIR))
     build_real.add_argument("--seed", type=int, default=20260827)

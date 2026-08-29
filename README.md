@@ -59,6 +59,31 @@ Per class:
 `law_politics` is the weakest class; it confuses with `business_finance` on
 prompts where both are genuinely defensible (contract law, tax, regulation).
 
+## Optional: merged domains
+
+Two pairs can be collapsed, because the distinction is neither reliably
+labellable nor useful to a router:
+
+    business_finance + law_politics -> business_law
+    humanities + arts_entertainment -> culture
+
+| | classes | top-1 | top-2 | top-3 |
+|---|---|---|---|---|
+| baseline | 10 | 0.758 | 0.895 | 0.953 |
+| **merged at inference** | 8 | **0.773** | **0.910** | **0.963** |
+| merged by retraining | 8 | 0.738 | — | — |
+
+**Merge at inference, not at training** — that is the finding worth keeping.
+Summing a 10-class model's probabilities into 8 groups scores 0.773; retraining
+the same ensemble on 8 merged labels scores 0.738. Training on coarse labels
+discards distinctions the model can otherwise learn and sum over. So the stored
+labels stay fine-grained and `DomainHead(..., merge_domains=True)` applies the
+grouping at serve time, reversibly.
+
+`science_math + software_tech -> technical` scores better still (0.785 / 0.925)
+and is deliberately excluded: maths and code route to different models, so
+collapsing them buys a metric by destroying a distinction the router needs.
+
 ## Serving
 
 ```python
