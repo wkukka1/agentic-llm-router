@@ -44,10 +44,20 @@ def _pool(hidden: torch.Tensor, mask: torch.Tensor, strategy: str) -> torch.Tens
 class EmbeddingEncoder:
     """Wraps a frozen HF encoder as a batched ``list[str] -> np.ndarray``."""
 
+    #: Models whose training used a fixed instruction prefix. Embedding raw
+    #: text into these is a silent quality loss -- the encoder was never shown
+    #: bare inputs, so the vectors land in a slightly different region of the
+    #: space than anything it was optimised for.
+    DEFAULT_PREFIXES: dict[str, str] = {
+        "intfloat/e5": "query: ",
+        "intfloat/multilingual-e5": "query: ",
+    }
+
     def __init__(
         self,
         model_name: str,
         *,
+        prefix: str | None = None,
         pooling: str = "mean",
         max_length: int = 256,
         batch_size: int = 64,
@@ -55,6 +65,10 @@ class EmbeddingEncoder:
         device: str | None = None,
     ) -> None:
         self.model_name = model_name
+        if prefix is None:
+            prefix = next((v for k, v in self.DEFAULT_PREFIXES.items()
+                           if model_name.startswith(k)), "")
+        self.prefix = prefix
         self.pooling = pooling
         self.max_length = max_length
         self.batch_size = batch_size
@@ -73,7 +87,7 @@ class EmbeddingEncoder:
     @property
     def signature(self) -> str:
         """Identifies the cache namespace for this encoder configuration."""
-        raw = f"{self.model_name}|{self.pooling}|{self.max_length}|{self.normalize}"
+        raw = f"{self.model_name}|{self.prefix}|{self.pooling}|{self.max_length}|{self.normalize}"
         return hashlib.sha1(raw.encode()).hexdigest()[:12]
 
     @torch.inference_mode()
@@ -81,7 +95,7 @@ class EmbeddingEncoder:
         self._ensure_loaded()
         out: list[np.ndarray] = []
         for start in range(0, len(texts), self.batch_size):
-            batch = texts[start : start + self.batch_size]
+            batch = [self.prefix + t for t in texts[start : start + self.batch_size]]
             enc = self._tokenizer(
                 batch,
                 padding=True,

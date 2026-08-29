@@ -15,12 +15,12 @@ and matched by prompt text, so results from different runs are comparable.
 
 | | |
 |---|---|
-| **top-1** | **0.745** |
-| top-2 | 0.878 |
-| top-3 | 0.938 |
-| macro-F1 | 0.728 |
+| **top-1** | **0.748** |
+| top-2 | 0.875 |
+| top-3 | 0.943 |
+| macro-F1 | 0.732 |
 | ECE (raw → calibrated) | 0.240 → **0.071** |
-| latency | 58 ms (3 encoders) |
+| latency | 151 ms (6 encoders) |
 
 Calibrated confidence is informative, so **abstention works**:
 
@@ -85,11 +85,26 @@ validation gives 73.75%. That 2.25-point gap was pure selection bias.
 
 Fine-tuning on ~1.3k examples overfits and is high-variance. Frozen encoders
 with a light head are deterministic, individually stronger, and averaging three
-*different* encoders adds diversity that averaging seeds cannot. Members are
-`bge-base` + `e5-large` (linear heads) and `bge-large` (kNN, k=25).
+*different* encoders adds diversity that averaging seeds cannot. Six members: `multilingual-e5-large-instruct`, `bge-base`, `bge-large`,
+`bge-m3`, `mxbai-embed-large` (linear heads) and `bge-large` (kNN, k=25).
 
-Two things that did **not** help, measured: multi-encoder feature concatenation
-(0.733, at 5× the inference cost) and kNN alone (0.673).
+**One member was silently broken.** `intfloat/*` encoders are trained with a
+`"query: "` prefix on every input; we were embedding raw text. Adding it moved
+e5-large from 0.6675 to 0.7000 — a 3.25-point bug, not a tuning choice.
+`EmbeddingEncoder` now applies the prefix automatically per model family.
+
+Things that did **not** help, measured on the frozen eval:
+
+| tried | result |
+|---|---|
+| multi-encoder feature concatenation | 0.733, at 5× inference cost |
+| kNN alone | 0.673 |
+| per-class decision weights fitted on val | val 0.694→0.736, **test 0.745→0.735** |
+| synthetic prompts for 4 weak classes | net −1.75 (inside noise) |
+
+The per-class weights are the instructive failure: they improved validation
+macro-F1 by 4 points and *hurt* test. With a ~350-row validation set, threshold
+fitting is curve-fitting to noise.
 
 ## How it got here
 
