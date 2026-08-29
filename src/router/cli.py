@@ -18,7 +18,12 @@ import pandas as pd
 
 from router.analysis import report
 from router.config import load_experiments
-from router.dataset import PROCESSED_DIR, build_dataset, load_splits
+from router.dataset import (
+    PROCESSED_DIR,
+    build_dataset,
+    build_real_only_dataset,
+    load_splits,
+)
 from router.experiment import ARTIFACTS_DIR, run_all
 
 #: Prompt-rendering variants the builder can produce. How the RouterArena
@@ -40,6 +45,16 @@ def _configure_logging(verbosity: int) -> None:
     )
     for noisy in ("urllib3", "filelock", "httpx", "huggingface_hub", "transformers"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+
+
+def cmd_build_real(args: argparse.Namespace) -> int:
+    """Hand-labelled real prompts only -- what the shipped model trains on."""
+    splits = build_real_only_dataset(out_dir=Path(args.out_dir), variant=args.variant,
+                                     seed=args.seed)
+    for name, frame in splits.items():
+        print(f"\n{name}: {len(frame)} rows")
+        print(frame["domain"].value_counts().to_string())
+    return 0
 
 
 def cmd_build_data(args: argparse.Namespace) -> int:
@@ -148,6 +163,15 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--out-dir", default=str(PROCESSED_DIR))
     build.add_argument("--seed", type=int, default=20260826)
     build.set_defaults(func=cmd_build_data)
+
+    build_real = sub.add_parser(
+        "build-real",
+        help="hand-labelled real prompts only -- the split the shipped model uses",
+    )
+    build_real.add_argument("--variant", default="real_only")
+    build_real.add_argument("--out-dir", default=str(PROCESSED_DIR))
+    build_real.add_argument("--seed", type=int, default=20260827)
+    build_real.set_defaults(func=cmd_build_real)
 
     describe = sub.add_parser("describe-data", help="print split statistics")
     describe.add_argument("--variant", default="domain_v3")

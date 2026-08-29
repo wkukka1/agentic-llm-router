@@ -200,13 +200,31 @@ medicine_health 87, law_politics 74.
 ```bash
 pip install -e .
 
-python -m router.cli build-data          # assemble all sources -> splits
-python -m router.cli train experiments/v3/D2_minilm.yaml --save-model   # stage 1
-python -m router.cli train experiments/v3/D5_transfer.yaml --save-model # stage 2
-python -m router.cli analyze --out-dir artifacts/v3
-python -m router.cli diagnose            # feature correlation: VIF, PCA, effective rank
+# 1. build the split the shipped model uses (hand-labelled real prompts,
+#    frozen eval held out by prompt text)
+python -m router.cli build-real
+
+# 2. train the production ensemble
+python -m router.cli train experiments/v4/PROD_ensemble.yaml \
+    --out-dir artifacts/prod --save-model --no-latency
+
+# 3. inspect
+python -m router.cli analyze --out-dir artifacts/prod
+python -m router.cli diagnose        # feature correlation: VIF, PCA, effective rank
 pytest
 ```
+
+`--no-latency` matters for ensembles: latency timing runs 200 prompts one at a
+time through every member, which for six encoders is ~1200 sequential passes
+and dominates the run.
+
+The two-stage fine-tune path (`experiments/v3/`) is kept for the record. It is
+*not* the shipped model -- it scored 0.674 against the ensemble's 0.758, and its
+seed variance was ±3.4 points.
+
+Only `data/handlabelled/` and `data/synthetic/` are committed; `data/processed/`
+and `artifacts/` are rebuilt by the commands above. Benchmark sources download
+from Hugging Face on first use.
 
 Adding an experiment is a YAML file; adding a model is a `@register("name")`
 decorator. `init_from` on a fine-tune config chains the two stages.

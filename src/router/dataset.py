@@ -248,3 +248,45 @@ def build_dataset(
         part.to_parquet(target / f"{name}.parquet", index=False)
         log.info("wrote %s: %d rows", target / f"{name}.parquet", len(part))
     return splits
+
+
+def build_real_only_dataset(
+    *,
+    out_dir: Path = PROCESSED_DIR,
+    variant: str = "real_only",
+    seed: int = 20260827,
+) -> dict[str, pd.DataFrame]:
+    """Splits containing only hand-labelled real prompts.
+
+    This is what the shipped model trains on. Benchmark rows are excluded
+    entirely: they are exam-formatted, and a model trained on them scored 0.91
+    on benchmarks and 0.47 on real traffic. They remain useful for pretraining
+    a transformer (see ``build_dataset``), but the frozen-encoder ensemble does
+    not need them and is measurably better without.
+
+    The evaluation rows are the frozen set, matched by prompt text, so results
+    stay comparable across runs and across changes to the label pool.
+    """
+    from router import sources
+
+    hand = dedupe(to_frame(sources.load_handlabelled()))
+    frozen = pd.read_parquet(FROZEN_EVAL_PATH)
+    is_eval = hand["prompt"].map(normalize_prompt).isin(
+        set(frozen["prompt"].map(normalize_prompt))
+    )
+    hand_eval = hand[is_eval].assign(source="handlabelled_eval").reset_index(drop=True)
+    pool = hand[~is_eval].reset_index(drop=True)
+    log.info("real_only: %d train pool, %d frozen eval", len(pool), len(hand_eval))
+
+    # Small val/test off the pool; the frozen set is appended to test and is
+    # the split every reported number comes from.
+    splits = split_frame(pool, stratify_on=["domain"], val_size=0.15, test_size=0.05, seed=seed)
+    splits["test"] = pd.concat([splits["test"], hand_eval], ignore_index=True)
+    assert_no_leakage(splits)
+
+    target = out_dir / variant
+    target.mkdir(parents=True, exist_ok=True)
+    for name, part in splits.items():
+        part.to_parquet(target / f"{name}.parquet", index=False)
+        log.info("wrote %s: %d rows", target / f"{name}.parquet", len(part))
+    return splits
