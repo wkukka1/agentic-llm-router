@@ -25,6 +25,7 @@ from router.dataset import (
     load_splits,
 )
 from router.experiment import ARTIFACTS_DIR, run_all
+from router.external_eval import EXTERNAL_DIR, render, score
 
 #: Prompt-rendering variants the builder can produce. How the RouterArena
 #: fields are reassembled is a real experimental axis: option blocks and
@@ -148,6 +149,25 @@ def cmd_diagnose(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_external(args: argparse.Namespace) -> int:
+    """Score a trained run against externally-labelled prompt sets."""
+    import pandas as pd
+
+    from router.inference import DomainHead
+
+    head = DomainHead(args.run_dir, merge_domains=not args.no_merge, shortlist_size=2)
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for path in sorted(Path(args.data_dir).glob("*.parquet")):
+        frame = pd.read_parquet(path)
+        result = score(head, frame)
+        text = render(result, path.stem)
+        (out_dir / f"external_{path.stem}.md").write_text(text, encoding="utf-8")
+        print(f"{path.stem:16} n={len(frame):4}  top1={result['top1']:.4f}  top2={result['top2']:.4f}")
+    print(f"\nwrote reports to {out_dir}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="router", description="Domain classifier training harness")
     parser.add_argument("-v", "--verbose", action="count", default=1)
@@ -193,6 +213,17 @@ def build_parser() -> argparse.ArgumentParser:
                             "at a time through every member and dominates runtime for "
                             "multi-encoder ensembles")
     train.set_defaults(func=cmd_train)
+
+    external = sub.add_parser(
+        "external",
+        help="score against externally-labelled prompt sets (labels not written by this project)",
+    )
+    external.add_argument("run_dir", help="a trained run directory")
+    external.add_argument("--data-dir", default=str(EXTERNAL_DIR))
+    external.add_argument("--out-dir", default="artifacts/external")
+    external.add_argument("--no-merge", action="store_true",
+                          help="score in the 10-class space instead of the 8-class merged one")
+    external.set_defaults(func=cmd_external)
 
     analyze = sub.add_parser("analyze", help="per-class precision/recall, confusion, error slices")
     analyze.add_argument("name", nargs="*", help="experiment name(s); defaults to the leaderboard leader")

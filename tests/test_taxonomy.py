@@ -174,3 +174,22 @@ class TestDomainMerges:
         assert names == ["business_law", "software_tech"]
         assert merged[0, names.index("business_law")] == pytest.approx(0.6)
         assert merged.sum() == pytest.approx(1.0)
+
+
+def test_software_tech_owns_questions_about_ai():
+    """Agreed boundary: questions *about* AI/ML systems are software_tech;
+    meta_other is for questions about the assistant itself.
+
+    This was the single largest error source against externally-labelled sets
+    (18 of 44 errors across 402 prompts) and it was a definition disagreement,
+    not a model failure. Pinned so it does not drift back."""
+    from router.taxonomy import DOMAIN_DESCRIPTIONS
+
+    software = DOMAIN_DESCRIPTIONS["software_tech"].lower()
+    assert "machine learning" in software or "ai" in software
+    assert "model" in software
+    meta = DOMAIN_DESCRIPTIONS["meta_other"].lower()
+    assert "assistant" in meta
+    # The old wording claimed hardware for software_tech; hardware is now
+    # unowned, pending enough examples to place it (only 31 in 2,441 rows).
+    assert "hardware" not in software

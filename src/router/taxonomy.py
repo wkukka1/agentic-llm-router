@@ -21,7 +21,19 @@ distribution. The design rules:
 2. **Boundaries follow how people ask, not how librarians file.** Medicine is
    its own domain rather than a subdivision of technology; a question about
    Python and a question about buying a laptop are both `software_tech`.
-3. **`personal_life` and `meta_other` exist.** Roughly a third of real traffic
+3. **Questions *about* AI, ML and models are `software_tech`, not `meta_other`.**
+   "What is a large language model?", "is my macro-F1 of 0.72 good?" and "how
+   do I evaluate a classifier?" are technical questions about software, no
+   different from a question about databases. `meta_other` is reserved for
+   questions about *this assistant* ("what can you help me with?", "how
+   confident are you?"), greetings, and prompts with no answerable content.
+
+   This boundary was the single largest error source measured against
+   externally-labelled sets -- 18 of 44 errors across 402 prompts, worth ~4.5
+   points of accuracy -- and it was a definition disagreement, not a model
+   failure.
+
+4. **`personal_life` and `meta_other` exist.** Roughly a third of real traffic
    is advice, chat, or questions about the assistant itself. v1 had nowhere to
    put these, which is what created its dumping ground.
 """
@@ -51,7 +63,7 @@ DOMAIN_LABELS: list[str] = [d.value for d in Domain]
 
 #: One-line descriptions, used for zero-shot anchors and for documentation.
 DOMAIN_DESCRIPTIONS: dict[str, str] = {
-    "software_tech": "programming, software, IT, devops, hardware, consumer electronics, AI tools",
+    "software_tech": "programming, software, IT, devops, AI and machine learning, models, prompts",
     "science_math": "mathematics, statistics, logic, physics, chemistry, biology, earth science, astronomy",
     "medicine_health": "medicine, health, symptoms, fitness, nutrition, mental health treatment",
     "business_finance": "business, economics, finance, investing, marketing, careers, management",
