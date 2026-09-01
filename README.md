@@ -102,6 +102,36 @@ For a consumer that works with probabilities -- NMIRT, for instance --
 `p.distribution` is strictly better than any hard label or shortlist: it carries
 everything the model knows and lets the consumer pick its own operating point.
 
+## Scale checks
+
+Two larger tests beyond the 400-prompt frozen eval.
+
+**5-fold cross-validation over all 2,441 labelled real prompts** — every row
+used as test data, so the tightest estimate this data supports:
+
+| | top-1 | top-2 | top-3 | fold sd |
+|---|---|---|---|---|
+| 10 classes | 0.738 | 0.896 | 0.946 | 0.008 |
+| 8 classes (merged) | 0.746 | 0.912 | **0.964** | 0.017 |
+
+Slightly below the single frozen-eval figure (0.758/0.895), which means that
+eval draw was mildly lucky. **Quote the CV number**; the fold spread of 0.008
+makes it far tighter than any single split.
+
+**3,000 unlabelled real prompts**, checking the prediction distribution has not
+collapsed. It has not — shares span 3.0% to 30.0% across all ten classes.
+
+The one large deviation is instructive: `software_tech` is predicted 30.0% but
+is only 13.1% of the hand-labelled set. That is **a property of the labelled
+set, not an error**. The hand labels were sampled from *unflagged* LMArena rows
+(code/math/creative prompts were excluded to get coverage of rarer classes), so
+they under-represent software by construction. Unfiltered LMArena is 34.7%
+`is_code`, so 30% is about right. `law_politics` deviates the other way for the
+same reason — it was keyword-seeded and is over-represented in the labels.
+
+**So the hand-labelled distribution is not the traffic distribution.** Accuracy
+measured on it is still valid; any claim about class *prevalence* is not.
+
 ## Two measurement errors worth knowing about
 
 This project produced two numbers that were wrong for methodological reasons,

@@ -33,6 +33,12 @@ distribution. The design rules:
    points of accuracy -- and it was a definition disagreement, not a model
    failure.
 
+   Hardware and devices also sit here. A separate hardware class was
+   considered and rejected on the data: only 31 of 2,441 labelled prompts are
+   hardware-flavoured, which is far too few to learn (the weakest current
+   class has 203 examples and still only reaches F1 0.62). Revisit if the
+   volume ever justifies it.
+
 4. **`personal_life` and `meta_other` exist.** Roughly a third of real traffic
    is advice, chat, or questions about the assistant itself. v1 had nowhere to
    put these, which is what created its dumping ground.
@@ -63,7 +69,7 @@ DOMAIN_LABELS: list[str] = [d.value for d in Domain]
 
 #: One-line descriptions, used for zero-shot anchors and for documentation.
 DOMAIN_DESCRIPTIONS: dict[str, str] = {
-    "software_tech": "programming, software, IT, devops, AI and machine learning, models, prompts",
+    "software_tech": "programming, software, IT, devops, AI and machine learning, models, prompts, hardware, devices and consumer electronics",
     "science_math": "mathematics, statistics, logic, physics, chemistry, biology, earth science, astronomy",
     "medicine_health": "medicine, health, symptoms, fitness, nutrition, mental health treatment",
     "business_finance": "business, economics, finance, investing, marketing, careers, management",

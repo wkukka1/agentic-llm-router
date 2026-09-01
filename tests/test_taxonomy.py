@@ -190,6 +190,6 @@ def test_software_tech_owns_questions_about_ai():
     assert "model" in software
     meta = DOMAIN_DESCRIPTIONS["meta_other"].lower()
     assert "assistant" in meta
-    # The old wording claimed hardware for software_tech; hardware is now
-    # unowned, pending enough examples to place it (only 31 in 2,441 rows).
-    assert "hardware" not in software
+    # Hardware lives here too: a separate class was rejected on the data
+    # (only 31 hardware-flavoured prompts in 2,441).
+    assert "hardware" in software
