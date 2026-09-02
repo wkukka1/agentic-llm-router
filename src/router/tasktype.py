@@ -90,50 +90,71 @@ CONTEXT_FEATURES = ("has_context", "log_context_length")
 
 
 # ---------------------------------------------------------------------------
-# What happened when this met real traffic
+# What happened when this met real traffic, and what replaced it
 # ---------------------------------------------------------------------------
 #
 # All of the above is a Dolly number, and Dolly is not the traffic this router
-# will see. 200 random real prompts were hand-labelled with these same six task
-# types (``data/handlabelled/real_tasks_200.parquet``). The distributions are
-# not close:
+# will see. 1,000 random real prompts were hand-labelled with these six task
+# types (``data/handlabelled/real_tasks.parquet``). The mixes are not close:
 #
 #            answer  create  ideate  classify  summarize  extract
 #     Dolly     51%      5%     12%       14%         8%      10%
-#     real      72%     16%      8%        4%         1%       0%
+#     real      73%     17%      7%        2%         1%       0.3%
 #
-# `extract` did not occur once, `summarize` twice. Dolly's mix is balanced
-# because employees were *asked* to write instructions in eight named
-# categories; real users ask questions and ask for things to be written.
+# Dolly is balanced because employees were *asked* to write instructions in
+# eight named categories. Real users ask questions (73%) and ask for things to
+# be written (17%); everything else is a long tail. The first 200 labels and the
+# next 800 agreed to within a point on every class, so this is the traffic, not
+# a sampling accident.
 #
-# The accuracy consequence, paired bootstrap over the 200 prompts:
+# Held out on real prompts, five-fold cross-validation:
 #
-#     always predict "answer"                      0.720  [0.655, 0.780]
-#     Dolly-trained head, 14,776 rows              0.700  [0.635, 0.765]
-#     head trained on these 200 real prompts, OOF  0.800  [0.740, 0.855]
+#     always predict "answer"                       0.729
+#     Dolly-trained head, 14,776 rows               0.700   <- below the constant
+#     three encoders, trained on 1,000 real rows    0.787
+#     + a word/char tf-idf member                   0.828 top-1 / 0.952 top-2
 #
-#     real-trained - Dolly-trained   +0.100  [+0.035, +0.165]  significant
-#     real-trained - majority        +0.080  [+0.015, +0.145]  significant
-#     Dolly-trained - majority       -0.020  [-0.085, +0.045]  not significant
+#     final config - majority baseline   +0.099  [+0.067, +0.131]  (paired
+#     bootstrap, 4,000 resamples) -- significant.
 #
-# **The Dolly-trained classifier is not distinguishable from always answering
-# "answer".** 200 real labels beat 14,776 out-of-distribution ones, by a margin
-# that survives the bootstrap. This is the same failure the domain classifier
-# hit in v1 -- 0.91 on benchmark data, 0.47 in the wild -- and it was caught the
-# same way, by hand-labelling real prompts rather than trusting a benchmark.
+# So 1,000 in-distribution labels are worth more than 14,776 out-of-distribution
+# ones by 12.8 points, and the Dolly head is not distinguishable from a constant
+# predictor. This is the v1 domain failure (0.91 on benchmarks, 0.47 in the
+# wild) arriving a second time, caught the same way.
 #
-# Prior correction does not rescue it. The shift looked like textbook label
-# shift, so the target prior was estimated from unlabelled real prompts by EM
-# (Saerens, Latinne & Decaestecker 2002) and used to reweight the predictions.
-# Top-1 went from 0.700 to 0.220: the estimate put `create` at 65% against a
-# true 16% and `answer` at 12% against a true 72%. Supplying the *true* prior
-# instead reaches 0.740, so the correction is not broken -- the assumption is.
-# P(x|y) moved as much as P(y) did, because "Write a poem about the sea" and
-# "refine: Please find attached reports" share a label and nothing else, and no
-# estimator that only adjusts P(y) from unlabelled data can recover from that.
+# **Dolly rows are actively harmful, not merely useless.** Mixed into the real
+# training data at every ratio tried:
 #
-# So this classifier is not ready to route on. The path is not a better model:
-# it is ~1,000 real prompts labelled with these six types, which on the evidence
-# above is worth more than any amount of Dolly. Keep `extract` and `summarize`
-# in the label space -- they are real tasks that this traffic sample happens not
-# to contain -- but do not expect the classifier to have learned them.
+#     real only (1,000 rows)                        0.781
+#     + 2,000 Dolly rows, equal weight              0.622
+#     + all 14,776, equal weight                    0.460
+#     + all 14,776, real rows weighted 15x          0.739
+#
+# Even weighted fifteen to one they cost four points. `load_dolly_tasks` is kept
+# for reproducing this comparison; `load_real_tasks` is the training set.
+#
+# Prior correction was the obvious fix and it does not work. Estimating the
+# target prior by EM from unlabelled real prompts (Saerens, Latinne &
+# Decaestecker 2002) took top-1 from 0.700 to 0.220, putting `create` at 65%
+# against a true 16%. Handing it the *true* prior reaches 0.740, so the method
+# is sound and the assumption is wrong: this is not label shift. P(x|y) moved as
+# far as P(y) did, because "Write a poem about the sea" and "refine: Please find
+# attached reports" share a label and nothing else.
+#
+# Per class on real prompts (final configuration):
+#
+#     answer 0.901 (n=729) | create 0.778 (166) | summarize 0.526 (11)
+#     ideate 0.470 (69)    | classify 0.455 (22) | extract 0.000 (3)
+#
+# The macro-F1 of 0.522 is the honest headline for anything that cares about the
+# rare classes: `extract` has three examples and is never predicted, `summarize`
+# eleven. Top-1 and top-2 are carried by `answer` and `create`, which is exactly
+# the split a router can act on today -- answer-shaped work and produce-shaped
+# work behave differently downstream. The rest needs more labels, not a better
+# model; the biggest single confusion is `answer` -> `ideate` (47 of 172
+# errors), a boundary that is genuinely soft ("what should I do about X" is both).
+#
+# Note the adaptive shortlist that works on the domain head does *not* transfer
+# here: `class_weight="balanced"` is what lifts the rare classes, and it flattens
+# the probabilities enough that mass >= 0.75 asks for 3.15 of 6 labels. Fix the
+# calibration before reaching for that trick on this head.

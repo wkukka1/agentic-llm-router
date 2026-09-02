@@ -39,6 +39,7 @@ log = logging.getLogger(__name__)
 
 ARENA_REPO = "lmarena-ai/arena-human-preference-140k"
 HANDLABELLED_PATH = "data/handlabelled/real_prompts.parquet"
+REAL_TASKS_PATH = "data/handlabelled/real_tasks.parquet"
 
 
 def _first_user_text(conversation) -> str:
@@ -243,13 +244,33 @@ def load_synthetic(domains: list[str] | None = None) -> list[Example]:
     return out
 
 
+def load_real_tasks(path: str = REAL_TASKS_PATH) -> list[Example]:
+    """1,000 real prompts hand-labelled with task type.
+
+    This is the task-type training set. It is small, and it is the right
+    distribution, which on measurement matters far more: a head trained on
+    these 1,000 rows scores 0.828 on held-out real prompts where one trained on
+    14,776 Dolly rows scores 0.700 -- below the 0.729 of always predicting
+    `answer`. See :mod:`router.tasktype` for the full comparison.
+    """
+    frame = pd.read_parquet(path)
+    out = [Example(prompt=row.prompt, source="handlabelled", subset="real_tasks",
+                   capability=row.task) for row in frame.itertuples()]
+    log.info("real tasks: %d rows", len(out))
+    return out
+
+
 def load_dolly_tasks() -> list[Example]:
-    """Dolly-15k as task-type supervision.
+    """Dolly-15k as task-type supervision. **Superseded by :func:`load_real_tasks`.**
 
     Human-written instructions with task labels -- the only sizeable source of
     them. Only the instruction text is used, never the context passage: at
     serving time the router should decide from what the user asked, and
     training on the passage would teach it to read a document it may not have.
+
+    Retained for reproducing the comparison, not for training. Mixing these rows
+    into the real ones hurts at every ratio tried, including down-weighting them
+    fifteen to one; the measurements are in :mod:`router.tasktype`.
     """
     from router.tasktype import task_from_dolly
 

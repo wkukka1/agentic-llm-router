@@ -72,21 +72,27 @@ can accept a shortlist or defer the least-confident tail, the target is met
 today. Best of all: pass `p.distribution` and let the consumer choose its own
 operating point.
 
-## The task classifier is not ready, and the reason is measured
+## The task classifier: retrained on real prompts, now shipping-grade
 
-Dolly-15k gets it to 0.822 top-1 / 0.940 top-2 under nested cross-validation.
-On 200 hand-labelled *real* prompts it scores 0.700 — against 0.720 for always
-predicting `answer`. The difference from the majority baseline is not
-significant (−0.020, 95% CI [−0.085, +0.045]).
+Dolly-15k gets it to 0.822 top-1 under nested cross-validation and **0.700 on
+real prompts, below the 0.729 of always predicting `answer`.** 1,000 real
+prompts were hand-labelled with the six task types instead:
 
-A head trained on those 200 real prompts scores 0.800 out-of-fold, beating both
-the Dolly head (+0.100, [+0.035, +0.165]) and the baseline (+0.080,
-[+0.015, +0.145]). **200 in-distribution labels beat 14,776 out-of-distribution
-ones**, and prior correction does not close the gap — see `router/tasktype.py`
-for why the label-shift assumption fails here.
+| trained on | real-prompt top-1 |
+|---|---|
+| always predict `answer` | 0.729 |
+| 14,776 Dolly rows | 0.700 |
+| 1,000 real rows, three encoders | 0.787 |
+| **+ a word/char tf-idf member** | **0.828 top-1 / 0.952 top-2** |
 
-The next step is ~1,000 real prompts labelled with the six task types, not a
-better model. `data/handlabelled/real_tasks_200.parquet` is the start.
++0.099 over the baseline, 95% CI [+0.067, +0.131]. Mixing Dolly *in* hurts at
+every ratio — 0.460 at equal weight, still 0.739 when real rows are weighted
+fifteen to one. `router/tasktype.py` carries the full table and the failed
+prior-correction attempt.
+
+Real traffic is `answer` 73%, `create` 17%, and a long tail; `extract` is 0.3%.
+So macro-F1 0.522 is the honest number for the rare classes, and the split the
+router can act on today is answer-shaped vs produce-shaped work.
 
 ## Priorities
 
@@ -98,18 +104,23 @@ project. `data/handlabelled/reannotation_200.parquet` has the prompts and both
 existing label sets; a third column from someone else finishes the measurement.
 ~2 hours.
 
-**2. Label ~1,000 real prompts with task type.** The evidence above says this is
-worth more than any modelling work on either classifier. It also gives the
-second axis the router wants: `domain x task` is far more routing signal than
-either alone, and both heads already exist.
+**2. Combine the two axes.** Both heads now exist and both are trained on real
+prompts. `domain x task` is far more routing signal than either alone, and it
+costs nothing new. The open question is whether the router wants the cross
+product or the two fields separately — that depends on the model pool.
 
-**3. Fix `law_politics` recall (0.381).** Precision is 0.889 — it is simply too
+**3. More labels for the rare task types.** `extract` has three examples,
+`summarize` eleven. Either label enough of them to learn (they are rare in
+traffic, so this means targeted sampling, not more random draws) or drop them
+from the label space and let `has_context` carry the distinction.
+
+**4. Fix `law_politics` recall (0.381).** Precision is 0.889 — it is simply too
 cautious, with only ~106 real examples. Synthetic data raised its F1 from 0.500
 to 0.700 in isolation but cost accuracy elsewhere when applied to four classes
 at once; applying it to this class alone was neutral overall. Real examples
 (r/legaladvice, policy forums) are the better fix.
 
-**4. Consider whether `meta_other` should be split.** 12% of traffic, precision
+**5. Consider whether `meta_other` should be split.** 12% of traffic, precision
 0.585 — it absorbs greetings, jailbreaks, questions about the assistant, and
 context-free follow-ups. If the router treats those differently, they need
 separate labels.
@@ -135,6 +146,8 @@ separate labels.
 | multi-encoder feature concatenation | 0.733, 5× cost |
 | standardising embeddings before PCA | −7 points |
 | Kaggle query-domain dataset | wrong taxonomy; collapses to one class |
+| Dolly-15k as task-type training data | 0.700 real vs 0.729 for a constant; harmful when mixed in |
+| EM prior correction for the Dolly/real shift | 0.700 → 0.220; the shift is not label shift |
 | doubling the ensemble, 4 encoders → 8 | 0.7378 → 0.7407 top-1 (fold sd 0.005–0.017) |
 | adding a lexical (tf-idf) member to the 8 | 0.7407 → 0.7411 |
 | stacked logistic regression over member probabilities | 0.715–0.737, *worse* than averaging at every C |
