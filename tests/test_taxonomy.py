@@ -193,3 +193,38 @@ def test_software_tech_owns_questions_about_ai():
     # Hardware lives here too: a separate class was rejected on the data
     # (only 31 hardware-flavoured prompts in 2,441).
     assert "hardware" in software
+
+
+class TestTaskTypes:
+    """Task type: what the user wants *done*, orthogonal to domain."""
+
+    def test_six_distinct_tasks(self):
+        from router.tasktype import TASK_DESCRIPTIONS, TASK_LABELS
+
+        assert len(TASK_LABELS) == len(set(TASK_LABELS)) == 6
+        assert set(TASK_DESCRIPTIONS) == set(TASK_LABELS)
+
+    def test_dolly_question_variants_collapse_to_one_task(self):
+        """open/general/closed_qa differ only by whether a passage was
+        attached (100% vs 0% context), which an instruction-only classifier
+        cannot recover. They are one task."""
+        from router.tasktype import TaskType, task_from_dolly
+
+        for c in ("open_qa", "general_qa", "closed_qa"):
+            assert task_from_dolly(c) is TaskType.ANSWER
+
+    def test_every_dolly_category_maps(self):
+        from router.tasktype import DOLLY_MAP, task_from_dolly
+
+        for category in DOLLY_MAP:
+            assert task_from_dolly(category) is not None
+        assert task_from_dolly("not_a_category") is None
+        assert task_from_dolly("") is None
+
+    def test_task_axis_is_independent_of_domain(self):
+        """The two label spaces must not overlap -- if they shared names, a
+        consumer could not tell which axis a prediction came from."""
+        from router.tasktype import TASK_LABELS
+        from router.taxonomy import DOMAIN_LABELS
+
+        assert not (set(TASK_LABELS) & set(DOMAIN_LABELS))

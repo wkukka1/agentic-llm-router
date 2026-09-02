@@ -241,3 +241,29 @@ def load_synthetic(domains: list[str] | None = None) -> list[Example]:
                                capability=domain))
     log.info("synthetic: %d rows across %d domains", len(out), len(modules))
     return out
+
+
+def load_dolly_tasks() -> list[Example]:
+    """Dolly-15k as task-type supervision.
+
+    Human-written instructions with task labels -- the only sizeable source of
+    them. Only the instruction text is used, never the context passage: at
+    serving time the router should decide from what the user asked, and
+    training on the passage would teach it to read a document it may not have.
+    """
+    from router.tasktype import task_from_dolly
+
+    path = hf_hub_download(
+        "databricks/databricks-dolly-15k", "databricks-dolly-15k.jsonl", repo_type="dataset"
+    )
+    frame = pd.read_json(path, lines=True)
+    out: list[Example] = []
+    for row in frame.itertuples():
+        task = task_from_dolly(row.category)
+        instruction = (row.instruction or "").strip()
+        if task is None or len(instruction) < 10:
+            continue
+        out.append(Example(prompt=instruction, source="dolly", subset=row.category,
+                           capability=task.value))
+    log.info("dolly tasks: %d rows", len(out))
+    return out
