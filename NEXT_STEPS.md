@@ -72,6 +72,22 @@ can accept a shortlist or defer the least-confident tail, the target is met
 today. Best of all: pass `p.distribution` and let the consumer choose its own
 operating point.
 
+## The task classifier is not ready, and the reason is measured
+
+Dolly-15k gets it to 0.822 top-1 / 0.940 top-2 under nested cross-validation.
+On 200 hand-labelled *real* prompts it scores 0.700 — against 0.720 for always
+predicting `answer`. The difference from the majority baseline is not
+significant (−0.020, 95% CI [−0.085, +0.045]).
+
+A head trained on those 200 real prompts scores 0.800 out-of-fold, beating both
+the Dolly head (+0.100, [+0.035, +0.165]) and the baseline (+0.080,
+[+0.015, +0.145]). **200 in-distribution labels beat 14,776 out-of-distribution
+ones**, and prior correction does not close the gap — see `router/tasktype.py`
+for why the label-shift assumption fails here.
+
+The next step is ~1,000 real prompts labelled with the six task types, not a
+better model. `data/handlabelled/real_tasks_200.parquet` is the start.
+
 ## Priorities
 
 **1. Get a *second person* on those 200 prompts.** The self-consistency check is
@@ -82,13 +98,18 @@ project. `data/handlabelled/reannotation_200.parquet` has the prompts and both
 existing label sets; a third column from someone else finishes the measurement.
 ~2 hours.
 
-**2. Fix `law_politics` recall (0.381).** Precision is 0.889 — it is simply too
+**2. Label ~1,000 real prompts with task type.** The evidence above says this is
+worth more than any modelling work on either classifier. It also gives the
+second axis the router wants: `domain x task` is far more routing signal than
+either alone, and both heads already exist.
+
+**3. Fix `law_politics` recall (0.381).** Precision is 0.889 — it is simply too
 cautious, with only ~106 real examples. Synthetic data raised its F1 from 0.500
 to 0.700 in isolation but cost accuracy elsewhere when applied to four classes
 at once; applying it to this class alone was neutral overall. Real examples
 (r/legaladvice, policy forums) are the better fix.
 
-**3. Consider whether `meta_other` should be split.** 12% of traffic, precision
+**4. Consider whether `meta_other` should be split.** 12% of traffic, precision
 0.585 — it absorbs greetings, jailbreaks, questions about the assistant, and
 context-free follow-ups. If the router treats those differently, they need
 separate labels.
