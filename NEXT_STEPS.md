@@ -1,7 +1,40 @@
 # Next steps
 
-Status 2026-08-28. Shipped: 6-member weighted ensemble, **0.758 top-1 /
-0.895 top-2 / 0.953 top-3** on a frozen 400-prompt real-user eval.
+Status 2026-09-02. Shipped: 6-member weighted ensemble, **0.758 top-1 /
+0.895 top-2 / 0.953 top-3** on a frozen 400-prompt real-user eval; 0.923 top-1
+on the 402 externally-labelled prompts.
+
+## The ceiling is a labelling ceiling, and it has now been measured
+
+200 random hand-labelled prompts were re-annotated with the stored labels
+hidden. The re-annotation reproduced the stored label **77.0%** of the time,
+and found a defensible *second* domain on **42.5%** of prompts.
+
+That reframes every accuracy number in this repository. The classifier scores
+0.741 top-1 under nested cross-validation, three points below the rate at which
+the same annotator reproduces their own labels — and a second person would
+agree less than one person agrees with themselves, so 0.770 is an upper bound
+on the upper bound. Splitting the errors accordingly:
+
+| | |
+|---|---|
+| model picks a label the re-annotation also accepts | 47% of errors |
+| model picks a label no annotation accepts | 53% of errors |
+| top-1 lands on *some* defensible label | 0.855 |
+| top-2 contains a defensible label | 0.950 |
+| top-1 on single-domain prompts | 0.826 |
+| top-1 on dual-domain prompts | 0.588 |
+
+The whole accuracy deficit lives in the dual-domain 42.5%. Nothing about a
+larger encoder addresses a target that is genuinely two-valued.
+
+`data/handlabelled/reannotation_200.parquet` holds the re-annotation.
+
+**Corollary: stop optimising single-label top-1 on this taxonomy.** The
+remaining work is in the output contract, not the model — see `shortlist_mass`
+in `router/inference.py`, which sizes the candidate list by probability mass and
+beats a fixed pair on both in-house and external data while emitting fewer
+labels.
 
 ## Read this before running another experiment
 
@@ -19,10 +52,12 @@ test read 76.0% vs 73.75% honest — a 2.25-point illusion.
 
 ## The 93% question
 
-93% top-1 across all traffic is **not reachable** on this taxonomy by the levers
-tried. Measured on the frozen eval, error decays as `n^-0.066` in labelled data,
-which puts 93% at ~10^13 examples. Model scale, hyperparameters, kNN, synthetic
-data and feature concatenation were each worth ≤2 points or nothing.
+93% top-1 across all traffic is **not reachable** on this taxonomy, and the
+re-annotation above explains why: the labels themselves only reproduce at 77%.
+Measured on the frozen eval, error decays as `n^-0.066` in labelled data, which
+puts 93% at ~10^13 examples. Model scale, hyperparameters, kNN, synthetic data,
+feature concatenation, a doubled ensemble and stacking were each worth ≤2 points
+or nothing.
 
 A 95% **top-2** target is met three ways, all measured:
 
@@ -39,12 +74,13 @@ operating point.
 
 ## Priorities
 
-**1. Measure inter-annotator agreement.** Still the highest-value open question
-and still unanswered. All 2,041 labels are single-annotator, and my attempted
-self-consistency check was invalid (the original labels were in context, giving
-a meaningless 150/150). Have a second person label 200 of the frozen eval
-prompts. If they agree with the existing labels ~75% of the time, then 0.738 is
-already near the ceiling and further modelling work is wasted. ~2 hours.
+**1. Get a *second person* on those 200 prompts.** The self-consistency check is
+now done properly (0.770, labels hidden) and it says further modelling work is
+close to wasted. What it cannot say is how much lower true inter-annotator
+agreement is, and that number sets the honest reporting ceiling for the whole
+project. `data/handlabelled/reannotation_200.parquet` has the prompts and both
+existing label sets; a third column from someone else finishes the measurement.
+~2 hours.
 
 **2. Fix `law_politics` recall (0.381).** Precision is 0.889 — it is simply too
 cautious, with only ~106 real examples. Synthetic data raised its F1 from 0.500
@@ -78,3 +114,20 @@ separate labels.
 | multi-encoder feature concatenation | 0.733, 5× cost |
 | standardising embeddings before PCA | −7 points |
 | Kaggle query-domain dataset | wrong taxonomy; collapses to one class |
+| doubling the ensemble, 4 encoders → 8 | 0.7378 → 0.7407 top-1 (fold sd 0.005–0.017) |
+| adding a lexical (tf-idf) member to the 8 | 0.7407 → 0.7411 |
+| stacked logistic regression over member probabilities | 0.715–0.737, *worse* than averaging at every C |
+| longer `max_length` | no prompt in the set exceeds 256 tokens; nothing to gain |
+
+The first three lines are one result, not three: four extra encoders from four
+different pretraining families, a lexical member, and six combination rules
+compared under nested cross-validation move top-1 by **+0.3 points**, less than
+one fold's standard deviation. The one rule that reliably helped was per-member
+temperature scaling before averaging, and it helped log loss (0.93 → 0.75)
+rather than accuracy — which matters, because every threshold in
+`inference.py` depends on the confidences meaning what they say.
+
+Stacking deserves its own note: it is strictly more expressive than a weighted
+average and it lost at every regularisation strength tried. With ~1,950 training
+rows behind each fold's meta-learner, the extra capacity buys variance, not
+signal. That is the overfitting this protocol exists to catch.
