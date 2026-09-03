@@ -53,11 +53,13 @@ def predict_dataset(model, dataset, model_index: dict, batch_size: int = 8192):
 def predict_matrix_from_dataset(model, model_index: dict, dataset) -> pd.DataFrame:
     """Predicted ``P(correct)`` as a dense [query x model] DataFrame for an
     already-built :class:`NIRTDataset` (any obs frame -- named split or OOD)."""
+    from ..data.response_matrix import pivot_qm
+
     _, prob = predict_dataset(model, dataset, model_index)
     frame = pd.DataFrame(
         {"query_id": dataset.query_ids, "model_id": dataset.model_ids, "pred": prob}
     )
-    return frame.pivot_table(index="query_id", columns="model_id", values="pred", aggfunc="mean")
+    return pivot_qm(frame, "pred")
 
 
 def predict_matrix(model, model_index: dict, data, split: str, pathway: str = "irt",

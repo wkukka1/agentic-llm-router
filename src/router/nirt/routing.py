@@ -33,9 +33,10 @@ import pandas as pd
 def dense_matrices(obs: pd.DataFrame):
     """``(true, cost)`` DataFrames [query x model] from a NIRT observation frame,
     keeping only queries with every model's target *and* cost observed."""
-    true = obs.pivot_table(index="query_id", columns="model_id", values="target", aggfunc="mean")
-    cost = obs.pivot_table(index="query_id", columns="model_id", values="cost", aggfunc="mean")
-    cost = cost.reindex(index=true.index, columns=true.columns)
+    from ..data.response_matrix import pivot_qm
+
+    true = pivot_qm(obs, "target")
+    cost = pivot_qm(obs, "cost").reindex(index=true.index, columns=true.columns)
     keep = true.notna().all(axis=1) & cost.notna().all(axis=1)
     return true.loc[keep], cost.loc[keep]
 

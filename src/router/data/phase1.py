@@ -173,9 +173,9 @@ class Phase1Data:
                                 score_kind=score_kind)
         if long.empty:
             raise ValueError(f"no correctness observations for metrics={metrics}")
-        return long.pivot_table(
-            index="query_id", columns="model_id", values="score", aggfunc="mean"
-        )
+        from .response_matrix import pivot_qm
+
+        return pivot_qm(long, "score")
 
     def n_choices(self, split: Optional[str] = None) -> dict[str, int]:
         """`query_id -> n_choices` for multiple-choice queries (reference only)."""

@@ -48,7 +48,9 @@ class ClassicalIRTResult:
 
 
 def _matrix(obs: pd.DataFrame, value: str) -> pd.DataFrame:
-    return obs.pivot_table(index="query_id", columns="model_id", values=value, aggfunc="mean")
+    from ..data.response_matrix import pivot_qm
+
+    return pivot_qm(obs, value)
 
 
 def fit_classical_irt(
@@ -173,7 +175,7 @@ def _train_correctness_matrix(data, *, pathway: str, train_obs: Optional[pd.Data
     if train_obs is None:
         obs = data.nirt_observations()
         train_obs = obs[obs["split"] == "train"]
-    piv = train_obs.pivot_table(index="query_id", columns="model_id", values="target", aggfunc="mean")
+    piv = _matrix(train_obs, "target")
     q_store = data.query_embeddings(pathway)
     if q_store is None:
         raise FileNotFoundError(f"query embeddings for pathway '{pathway}' not built")

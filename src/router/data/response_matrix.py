@@ -169,6 +169,16 @@ def read_responses(cfg: Config) -> pd.DataFrame:
     return df
 
 
+def pivot_qm(frame: pd.DataFrame, value: str, *, aggfunc: str = "mean") -> pd.DataFrame:
+    """Dense ``[query_id x model_id]`` matrix of ``frame[value]``.
+
+    The one place the ``pivot_table(index="query_id", columns="model_id", ...)``
+    idiom lives -- shared by the response matrix, the Phase 1 facade, the routing
+    layer, the classical-IRT baselines and the pool-expansion battery.
+    """
+    return frame.pivot_table(index="query_id", columns="model_id", values=value, aggfunc=aggfunc)
+
+
 def pivot(
     responses: pd.DataFrame,
     metric_type: str,
@@ -179,6 +189,4 @@ def pivot(
     sub = responses[responses["metric_type"] == metric_type]
     if sub.empty:
         raise ValueError(f"no observations with metric_type={metric_type!r}")
-    return sub.pivot_table(
-        index="query_id", columns="model_id", values=score_column, aggfunc=aggfunc
-    )
+    return pivot_qm(sub, score_column, aggfunc=aggfunc)
