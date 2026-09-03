@@ -198,11 +198,21 @@ def test_software_tech_owns_questions_about_ai():
 class TestTaskTypes:
     """Task type: what the user wants *done*, orthogonal to domain."""
 
-    def test_six_distinct_tasks(self):
+    def test_seven_distinct_tasks(self):
         from router.tasktype import TASK_DESCRIPTIONS, TASK_LABELS
 
-        assert len(TASK_LABELS) == len(set(TASK_LABELS)) == 6
+        assert len(TASK_LABELS) == len(set(TASK_LABELS)) == 7
         assert set(TASK_DESCRIPTIONS) == set(TASK_LABELS)
+
+    def test_media_is_its_own_task_not_a_kind_of_create(self):
+        """A request for an image does not go to a cheaper or dearer language
+        model, it goes to a different kind of model entirely. Splitting it out
+        of `create` costs the rest of the taxonomy nothing measurable
+        (-0.013 top-1, 95% CI [-0.026, 0.000]) and reaches F1 0.725 itself."""
+        from router.tasktype import TASK_LABELS, TaskType
+
+        assert TaskType.MEDIA.value in TASK_LABELS
+        assert TaskType.MEDIA is not TaskType.CREATE
 
     def test_dolly_question_variants_collapse_to_one_task(self):
         """open/general/closed_qa differ only by whether a passage was

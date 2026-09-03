@@ -8,7 +8,13 @@ notes: >
   the real rows costs accuracy at every ratio tried, down to 0.460 at equal
   weight. See router/tasktype.py.
 
-  Cross-validated on the 1,000: 0.828 top-1 / 0.952 top-2, macro-F1 0.522.
+  Seven task types. `media` was split out of `create` after re-cutting all 199
+  `create` rows by hand: it is the one task that does not route to a language
+  model at all, it separates (F1 0.725), and taking it costs the rest of the
+  taxonomy nothing measurable. An `edit` class was tried in the same pass and
+  rejected -- it reached F1 0.465 and cost 2.2 points of top-1.
+
+  Cross-validated on the 1,000: 0.802 top-1 / 0.933 top-2, macro-F1 0.524.
 
   The tf-idf member is the strongest single component here at 0.814 solo, above
   every frozen encoder -- task type is announced by the opening verb in a way

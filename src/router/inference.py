@@ -4,7 +4,7 @@ Training writes a run directory. Two of them are served here, and a composite
 that serves both:
 
     :class:`DomainHead`  what the prompt is about   0.763 top-1 / 0.919 top-2
-    :class:`TaskHead`    what it asks to be done    0.828 top-1 / 0.952 top-2
+    :class:`TaskHead`    what it asks to be done    0.802 top-1 / 0.933 top-2
     :class:`RouterHead`  both, over one prompt
 
 The axes are independent by construction -- "summarise this contract" and
@@ -143,6 +143,12 @@ class TaskHead(_CalibratedHead):
     shortlist by mass asks for 3.15 of 6 labels -- the trick that works on the
     domain head does not transfer here. Callers that want a second candidate
     should read `distribution` and decide for themselves.
+
+    `distribution["media"]` is worth reading directly whatever the argmax says.
+    A media request is the one task that leaves the language models entirely, so
+    it is usually a gate rather than a ranking, and the threshold belongs to the
+    caller: 0.5 flags 6.0% of traffic at precision 0.617 and recall 0.841, 0.7
+    flags 2.4% at precision 0.875 and recall 0.477.
     """
 
     def predict(self, prompt: str) -> TaskPrediction:

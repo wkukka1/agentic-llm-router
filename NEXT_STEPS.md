@@ -36,6 +36,30 @@ in `router/inference.py`, which sizes the candidate list by probability mass and
 beats a fixed pair on both in-house and external data while emitting fewer
 labels.
 
+## Overfitting: audited, both heads clean
+
+`router overfit` runs five checks over both label sets. Latest:
+
+| | domain | task |
+|---|---|---|
+| real vs shuffled labels | 0.695 / 0.123 | 0.790 / 0.382 |
+| permutation sd above null | 92× | 21× |
+| train–test gap | +0.166 | +0.088 |
+| learning curve, last step | **+0.001** | **+0.035** |
+| dropping >0.95 near-twins | −0.008 | −0.009 |
+
+Two things to read off that. The permutation check is the load-bearing one and
+both heads pass it by a wide margin — destroying the labels destroys the skill,
+so nothing is leaking. And the learning curves say opposite things: **domain has
+plateaued and task has not.** More domain labels are close to worthless; more
+task labels are the single highest-value thing left.
+
+One trap worth naming: the yardstick for the permutation check is the shuffled
+score, *not* the majority-class rate. A model fitted with
+`class_weight="balanced"` cannot fall back on the majority class, so on shuffled
+labels it lands below the majority rate. Scored against the majority rate that
+looks suspicious; it is the opposite.
+
 ## Read this before running another experiment
 
 **Seed variance is ±3.4 points (95% CI).** Five seeds of one config spanned
@@ -104,13 +128,24 @@ project. `data/handlabelled/reannotation_200.parquet` has the prompts and both
 existing label sets; a third column from someone else finishes the measurement.
 ~2 hours.
 
-**2. Split `create` into prose and code.** Done and shipped: `RouterHead` now
-serves both axes and `RouterPrediction.key` gives `"medicine_health/summarize"`.
-Using it immediately surfaced the next taxonomy problem — `create` covers both
-"write me an email" and "write a python function to reverse a linked list",
-which route to completely different models. That is the most valuable remaining
-label change on either axis, and the existing 1,000 labels can be re-cut for it
-without reading a new prompt.
+**2. Split `create`.** Done, but not the way this file predicted. The prediction
+was that `create` conflated prose with code; a regex for code-generation intent
+over all 1,240 labelled prompts matches **six**, one of them genuine. Code
+generation is as absent from this traffic as `extract` is.
+
+What `create` actually held was media generation (45 rows), text editing (52)
+and new writing (102). Measured, `media` separates and `edit` does not, and
+taking both costs 2.2 points of top-1:
+
+| taxonomy | top-1 | macro-F1 | collapsed vs 6-class |
+|---|---|---|---|
+| six classes | 0.828 | 0.522 | — |
+| eight (create/edit/media) | 0.774 | 0.492 | −0.022 [−0.036, −0.008] **significant** |
+| **seven (media only)** | **0.802** | **0.524** | −0.013 [−0.026, +0.000] not significant |
+
+`media` is now the seventh task type (F1 0.725, recall 0.841). It is the one
+task that does not route to a language model at all. `edit` survives in the
+`task_detail` column for a larger sample later.
 
 **3. Rare task types: measured, and the answer is mostly "don't".** 240 prompts
 were mined from the unlabelled pool by scoring for the rare classes and

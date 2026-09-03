@@ -37,8 +37,16 @@ class TaskType(StrEnum):
     EXTRACT = "extract"
     #: Sort something into categories, or judge which category it belongs to.
     CLASSIFY = "classify"
-    #: Produce prose as the artifact: stories, poems, posts, copy.
+    #: Produce text as the artifact: stories, posts, emails, copy -- and also
+    #: rewriting or translating text the user supplied. Those two were tried as
+    #: separate labels and the boundary is not learnable at this sample size
+    #: (`edit` reached F1 0.465 and cost the rest of the taxonomy); the
+    #: distinction is preserved in the `task_detail` column of the label files.
     CREATE = "create"
+    #: Produce an image, video or other non-text artifact. Split out of
+    #: `create` because it is the one task type that does not route to a
+    #: language model at all.
+    MEDIA = "media"
 
 
 TASK_LABELS: list[str] = [t.value for t in TaskType]
@@ -49,7 +57,8 @@ TASK_DESCRIPTIONS: dict[str, str] = {
     "summarize": "condense or shorten supplied text",
     "extract": "pull specific facts or fields out of supplied text",
     "classify": "sort into categories, decide which group something belongs to",
-    "create": "write a story, poem, post, email or other prose artifact",
+    "create": "write, rewrite or translate text: stories, posts, emails, copy",
+    "media": "produce an image, video or other non-text artifact",
 }
 
 #: Dolly-15k category -> TaskType. The three question-answering variants
@@ -64,6 +73,8 @@ DOLLY_MAP: dict[str, TaskType] = {
     "classification": TaskType.CLASSIFY,
     "creative_writing": TaskType.CREATE,
 }
+#: Dolly has no `media` category -- it predates the question. Another way of
+#: saying that the source was never the right shape for this traffic.
 
 
 def task_from_dolly(category: str) -> TaskType | None:
@@ -158,3 +169,48 @@ CONTEXT_FEATURES = ("has_context", "log_context_length")
 # here: `class_weight="balanced"` is what lifts the rare classes, and it flattens
 # the probabilities enough that mass >= 0.75 asks for 3.15 of 6 labels. Fix the
 # calibration before reaching for that trick on this head.
+
+
+# ---------------------------------------------------------------------------
+# Splitting `create`: what the evidence actually said
+# ---------------------------------------------------------------------------
+#
+# `create` was the largest non-`answer` class and it covered three things that
+# route differently, so it was re-cut by hand across all 199 rows carrying it.
+#
+# The prediction going in was that it conflated prose with code. That was
+# wrong, and measurably so: a regex for code-generation intent over all 1,240
+# labelled prompts matches **six**, of which one ("can u optimise the code") is
+# genuine. Code generation is as absent from this traffic as `extract` is. What
+# `create` actually held was 45 requests for an image or video, 52 requests to
+# transform text the user supplied, and 102 requests to write something new.
+#
+# Both candidate splits were then measured, and the eight-class head was scored
+# against the six-class head collapsed onto identical rows:
+#
+#     six classes (create whole)                0.828 top-1  macro-F1 0.522
+#     eight classes (create/edit/media)         0.774        macro-F1 0.492
+#     seven classes (media only)                0.802        macro-F1 0.524
+#
+#     collapsed back to six, vs the six-class head:
+#       eight-class   -0.022 top-1  [-0.036, -0.008]   significant
+#       seven-class   -0.013 top-1  [-0.026, +0.000]   not significant
+#
+# So `media` separates (F1 0.725, recall 0.841) and `edit` does not (0.465),
+# and taking both costs the rest of the taxonomy a real 2.2 points. Take the one
+# the evidence supports. The `edit` distinction is not discarded -- it survives
+# in the `task_detail` column of the label files, ready for a larger sample.
+#
+# `media` was also tried as a dedicated binary gate rather than a seventh class,
+# on the reasoning that an image request is a routing decision of a different
+# kind: it does not pick a cheaper or dearer language model, it leaves the
+# language models entirely. The gate ranks well (average precision 0.783 against
+# 0.044 for a random ranker) but scores the same as the class does (F1 0.712 vs
+# 0.725), so the seventh class wins on simplicity -- one model, not two -- and
+# the threshold is still available by reading `distribution["media"]`:
+#
+#     threshold   precision   recall   share of traffic flagged
+#       0.4         0.500      0.909            8.0%
+#       0.5         0.617      0.841            6.0%
+#       0.7         0.875      0.477            2.4%
+

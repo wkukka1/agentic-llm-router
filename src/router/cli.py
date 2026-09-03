@@ -168,6 +168,21 @@ def cmd_external(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_overfit(args: argparse.Namespace) -> int:
+    """Audit both heads for overfitting and leakage."""
+    from router.overfit import audit_heads
+
+    results = audit_heads(args.encoder)
+    for r in results:
+        print(r.summary(), end="\n\n")
+    failed = [r.name for r in results if not r.clean]
+    if failed:
+        print(f"NEEDS REVIEW: {', '.join(failed)}")
+        return 1
+    print("all heads clean")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="router", description="Domain classifier training harness")
     parser.add_argument("-v", "--verbose", action="count", default=1)
@@ -229,6 +244,12 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("name", nargs="*", help="experiment name(s); defaults to the leaderboard leader")
     analyze.add_argument("--out-dir", default=str(ARTIFACTS_DIR))
     analyze.set_defaults(func=cmd_analyze)
+
+    overfit = sub.add_parser(
+        "overfit", help="train-test gap, learning curve, label permutation, "
+                        "regularisation sensitivity and near-duplicate leakage")
+    overfit.add_argument("--encoder", default="intfloat/e5-large-v2")
+    overfit.set_defaults(func=cmd_overfit)
 
     diagnose = sub.add_parser("diagnose", help="feature correlation: VIF, PCA structure, redundancy")
     diagnose.add_argument("--encoder", default="BAAI/bge-small-en-v1.5")
