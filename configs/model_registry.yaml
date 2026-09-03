@@ -1,0 +1,197 @@
+# Canonical model registry (human-reviewed).
+#
+# Purpose: map every source-native model string to a stable `canonical_id`
+# WITHOUT conflating distinct checkpoints. The AMIRT model must never think
+# `gpt-4-0314`, `gpt-4-0613`, `gpt-4-1106-preview` are one model.
+#
+# Merge policy
+# ------------
+#   confidence: high    -> alias is merged to canonical_id at load time
+#   confidence: medium  -> recorded, NOT merged (canonical_id = slugified native)
+#   confidence: low     -> recorded, NOT merged
+#
+# Only same-checkpoint identity mappings and unambiguous provider-prefix
+# rewrites are marked `high`. Cross-source merges (e.g. RouterBench `claude-v2`
+# vs Arena `claude-2.0` / `claude-2.1`) are deliberately absent -- they need
+# human confirmation and are tracked in docs/model_registry.md.
+#
+# `family` / `version` are informational (grouping, profile text). `null` =
+# not yet reviewed.
+
+version: 1
+default_confidence_to_merge: high
+
+models:
+  # ---- RouterBench (11) -- native strings are exact provider labels ----
+  - canonical_id: gpt-4-1106-preview
+    provider: openai
+    family: gpt-4
+    version: "1106-preview"
+    aliases:
+      - { native: "gpt-4-1106-preview", confidence: high }
+
+  - canonical_id: gpt-3.5-turbo-1106
+    provider: openai
+    family: gpt-3.5-turbo
+    version: "1106"
+    aliases:
+      - { native: "gpt-3.5-turbo-1106", confidence: high }
+
+  - canonical_id: claude-v1
+    provider: anthropic
+    family: claude
+    version: "v1"
+    notes: "RouterBench label. Arena's `claude-1` is likely the same era but is kept separate (unconfirmed)."
+    aliases:
+      - { native: "claude-v1", confidence: high }
+
+  - canonical_id: claude-v2
+    provider: anthropic
+    family: claude
+    version: "v2 (2.0 or 2.1 unspecified by RouterBench)"
+    notes: "RouterBench label is ambiguous between 2.0 and 2.1; NOT merged with Arena's `claude-2.0` / `claude-2.1`."
+    aliases:
+      - { native: "claude-v2", confidence: high }
+
+  - canonical_id: claude-instant-v1
+    provider: anthropic
+    family: claude-instant
+    version: "v1"
+    aliases:
+      - { native: "claude-instant-v1", confidence: high }
+
+  - canonical_id: llama-2-70b-chat
+    provider: meta
+    family: llama-2
+    version: "70b-chat"
+    aliases:
+      - { native: "meta/llama-2-70b-chat", confidence: high }
+      - { native: "llama-2-70b-chat", confidence: high }
+
+  - canonical_id: code-llama-34b-instruct
+    provider: meta
+    family: code-llama
+    version: "34b-instruct"
+    notes: "Arena's `codellama-34b-instruct` is very likely the same checkpoint but kept separate pending review."
+    aliases:
+      - { native: "meta/code-llama-instruct-34b-chat", confidence: high }
+
+  - canonical_id: mixtral-8x7b-instruct
+    provider: mistralai
+    family: mixtral
+    version: "8x7b-instruct-v0.1"
+    notes: "Only one Mixtral-8x7B-Instruct checkpoint ever existed (v0.1), so RouterBench's `mixtral-8x7b-chat`, Arena's and the GPT-4-Judge's `mixtral-8x7b-instruct-v0.1` are merged."
+    aliases:
+      - { native: "mistralai/mixtral-8x7b-chat", confidence: high }
+      - { native: "mixtral-8x7b-instruct-v0.1", confidence: high }
+
+  - canonical_id: mistral-7b-instruct
+    provider: mistralai
+    family: mistral-7b
+    version: "instruct (RouterBench label; checkpoint unspecified)"
+    notes: "NOT merged with Arena's `mistral-7b-instruct-v0.1` / `-v0.2` (RouterBench does not say which)."
+    aliases:
+      - { native: "mistralai/mistral-7b-chat", confidence: high }
+
+  - canonical_id: wizardlm-13b-v1.2
+    provider: microsoft
+    family: wizardlm
+    version: "13b-v1.2"
+    notes: "Arena's `wizardlm-13b` kept separate (version unconfirmed)."
+    aliases:
+      - { native: "WizardLM/WizardLM-13B-V1.2", confidence: high }
+
+  - canonical_id: yi-34b-chat
+    provider: 01-ai
+    family: yi
+    version: "34b-chat"
+    aliases:
+      - { native: "zero-one-ai/Yi-34B-Chat", confidence: high }
+
+  # ---- Arena / GPT-4-Judge -- lmsys-style slugs; identity mapping ----
+  # Anthropic checkpoints that Arena names distinctly and we do NOT merge
+  # with the ambiguous RouterBench labels above.
+  - { canonical_id: claude-1, provider: anthropic, family: claude, version: "1", aliases: [ { native: claude-1, confidence: high } ] }
+  - { canonical_id: claude-2.0, provider: anthropic, family: claude, version: "2.0", aliases: [ { native: claude-2.0, confidence: high } ] }
+  - { canonical_id: claude-2.1, provider: anthropic, family: claude, version: "2.1", aliases: [ { native: claude-2.1, confidence: high } ] }
+  - { canonical_id: claude-instant-1, provider: anthropic, family: claude-instant, version: "1", aliases: [ { native: claude-instant-1, confidence: high } ] }
+  - { canonical_id: codellama-34b-instruct, provider: meta, family: code-llama, version: "34b-instruct (Arena label)", aliases: [ { native: codellama-34b-instruct, confidence: high } ] }
+  - { canonical_id: mistral-7b-instruct-v0.1, provider: mistralai, family: mistral-7b, version: "instruct-v0.1", aliases: [ { native: mistral-7b-instruct-v0.1, confidence: high } ] }
+  - { canonical_id: mistral-7b-instruct-v0.2, provider: mistralai, family: mistral-7b, version: "instruct-v0.2", aliases: [ { native: mistral-7b-instruct-v0.2, confidence: high } ] }
+  - { canonical_id: wizardlm-13b, provider: microsoft, family: wizardlm, version: "13b (Arena label)", aliases: [ { native: wizardlm-13b, confidence: high } ] }
+
+  - { canonical_id: alpaca-13b, provider: stanford, family: alpaca, version: "13b", aliases: [ { native: alpaca-13b, confidence: high } ] }
+  - { canonical_id: chatglm-6b, provider: zhipu, family: chatglm, version: "6b", aliases: [ { native: chatglm-6b, confidence: high } ] }
+  - { canonical_id: chatglm2-6b, provider: zhipu, family: chatglm, version: "2-6b", aliases: [ { native: chatglm2-6b, confidence: high } ] }
+  - { canonical_id: chatglm3-6b, provider: zhipu, family: chatglm, version: "3-6b", aliases: [ { native: chatglm3-6b, confidence: high } ] }
+  - { canonical_id: deepseek-llm-67b-chat, provider: deepseek, family: deepseek-llm, version: "67b-chat", aliases: [ { native: deepseek-llm-67b-chat, confidence: high } ] }
+  - { canonical_id: dolly-v2-12b, provider: databricks, family: dolly, version: "v2-12b", aliases: [ { native: dolly-v2-12b, confidence: high } ] }
+  - { canonical_id: dolphin-2.2.1-mistral-7b, provider: cognitive-computations, family: dolphin, version: "2.2.1-mistral-7b", aliases: [ { native: dolphin-2.2.1-mistral-7b, confidence: high } ] }
+  - { canonical_id: falcon-180b-chat, provider: tii, family: falcon, version: "180b-chat", aliases: [ { native: falcon-180b-chat, confidence: high } ] }
+  - { canonical_id: fastchat-t5-3b, provider: lmsys, family: fastchat-t5, version: "3b", aliases: [ { native: fastchat-t5-3b, confidence: high } ] }
+  - { canonical_id: gemini-pro, provider: google, family: gemini, version: "pro", aliases: [ { native: gemini-pro, confidence: high } ] }
+  - { canonical_id: gemini-pro-dev-api, provider: google, family: gemini, version: "pro-dev-api", aliases: [ { native: gemini-pro-dev-api, confidence: high } ] }
+  - { canonical_id: gpt-3.5-turbo-0125, provider: openai, family: gpt-3.5-turbo, version: "0125", aliases: [ { native: gpt-3.5-turbo-0125, confidence: high } ] }
+  - { canonical_id: gpt-3.5-turbo-0314, provider: openai, family: gpt-3.5-turbo, version: "0314", aliases: [ { native: gpt-3.5-turbo-0314, confidence: high } ] }
+  - { canonical_id: gpt-3.5-turbo-0613, provider: openai, family: gpt-3.5-turbo, version: "0613", aliases: [ { native: gpt-3.5-turbo-0613, confidence: high } ] }
+  - { canonical_id: gpt-4-0125-preview, provider: openai, family: gpt-4, version: "0125-preview", aliases: [ { native: gpt-4-0125-preview, confidence: high } ] }
+  - { canonical_id: gpt-4-0314, provider: openai, family: gpt-4, version: "0314", aliases: [ { native: gpt-4-0314, confidence: high } ] }
+  - { canonical_id: gpt-4-0613, provider: openai, family: gpt-4, version: "0613", aliases: [ { native: gpt-4-0613, confidence: high } ] }
+  - { canonical_id: gpt4all-13b-snoozy, provider: nomic, family: gpt4all, version: "13b-snoozy", aliases: [ { native: gpt4all-13b-snoozy, confidence: high } ] }
+  - { canonical_id: guanaco-33b, provider: uw, family: guanaco, version: "33b", aliases: [ { native: guanaco-33b, confidence: high } ] }
+  - { canonical_id: koala-13b, provider: lmsys, family: koala, version: "13b", aliases: [ { native: koala-13b, confidence: high } ] }
+  - { canonical_id: llama-13b, provider: meta, family: llama, version: "13b", aliases: [ { native: llama-13b, confidence: high } ] }
+  - { canonical_id: llama-2-13b-chat, provider: meta, family: llama-2, version: "13b-chat", aliases: [ { native: llama-2-13b-chat, confidence: high } ] }
+  - { canonical_id: llama-2-7b-chat, provider: meta, family: llama-2, version: "7b-chat", aliases: [ { native: llama-2-7b-chat, confidence: high } ] }
+  - { canonical_id: llama2-70b-steerlm-chat, provider: nvidia, family: llama-2, version: "70b-steerlm-chat", aliases: [ { native: llama2-70b-steerlm-chat, confidence: high } ] }
+  - { canonical_id: mistral-medium, provider: mistralai, family: mistral, version: "medium (API)", aliases: [ { native: mistral-medium, confidence: high } ] }
+  - { canonical_id: mpt-30b-chat, provider: mosaicml, family: mpt, version: "30b-chat", aliases: [ { native: mpt-30b-chat, confidence: high } ] }
+  - { canonical_id: mpt-7b-chat, provider: mosaicml, family: mpt, version: "7b-chat", aliases: [ { native: mpt-7b-chat, confidence: high } ] }
+  - { canonical_id: nous-hermes-2-mixtral-8x7b-dpo, provider: nous-research, family: nous-hermes, version: "2-mixtral-8x7b-dpo", aliases: [ { native: nous-hermes-2-mixtral-8x7b-dpo, confidence: high } ] }
+  - { canonical_id: oasst-pythia-12b, provider: laion, family: oasst-pythia, version: "12b", aliases: [ { native: oasst-pythia-12b, confidence: high } ] }
+  - { canonical_id: openchat-3.5, provider: openchat, family: openchat, version: "3.5", aliases: [ { native: openchat-3.5, confidence: high } ] }
+  - { canonical_id: openchat-3.5-0106, provider: openchat, family: openchat, version: "3.5-0106", aliases: [ { native: openchat-3.5-0106, confidence: high } ] }
+  - { canonical_id: openhermes-2.5-mistral-7b, provider: nous-research, family: openhermes, version: "2.5-mistral-7b", aliases: [ { native: openhermes-2.5-mistral-7b, confidence: high } ] }
+  - { canonical_id: palm-2, provider: google, family: palm, version: "2 (chat-bison)", aliases: [ { native: palm-2, confidence: high } ] }
+  - { canonical_id: pplx-70b-online, provider: perplexity, family: pplx-online, version: "70b", aliases: [ { native: pplx-70b-online, confidence: high } ] }
+  - { canonical_id: pplx-7b-online, provider: perplexity, family: pplx-online, version: "7b", aliases: [ { native: pplx-7b-online, confidence: high } ] }
+  - { canonical_id: qwen-14b-chat, provider: alibaba, family: qwen, version: "14b-chat", aliases: [ { native: qwen-14b-chat, confidence: high } ] }
+  - { canonical_id: qwen1.5-4b-chat, provider: alibaba, family: qwen1.5, version: "4b-chat", aliases: [ { native: qwen1.5-4b-chat, confidence: high } ] }
+  - { canonical_id: qwen1.5-72b-chat, provider: alibaba, family: qwen1.5, version: "72b-chat", aliases: [ { native: qwen1.5-72b-chat, confidence: high } ] }
+  - { canonical_id: qwen1.5-7b-chat, provider: alibaba, family: qwen1.5, version: "7b-chat", aliases: [ { native: qwen1.5-7b-chat, confidence: high } ] }
+  - { canonical_id: rwkv-4-raven-14b, provider: rwkv, family: rwkv-4-raven, version: "14b", aliases: [ { native: rwkv-4-raven-14b, confidence: high } ] }
+  - { canonical_id: solar-10.7b-instruct-v1.0, provider: upstage, family: solar, version: "10.7b-instruct-v1.0", aliases: [ { native: solar-10.7b-instruct-v1.0, confidence: high } ] }
+  - { canonical_id: stablelm-tuned-alpha-7b, provider: stability-ai, family: stablelm, version: "tuned-alpha-7b", aliases: [ { native: stablelm-tuned-alpha-7b, confidence: high } ] }
+  - { canonical_id: starling-lm-7b-alpha, provider: nexusflow, family: starling-lm, version: "7b-alpha", aliases: [ { native: starling-lm-7b-alpha, confidence: high } ] }
+  - { canonical_id: stripedhyena-nous-7b, provider: together, family: stripedhyena, version: "nous-7b", aliases: [ { native: stripedhyena-nous-7b, confidence: high } ] }
+  - { canonical_id: tulu-2-dpo-70b, provider: allenai, family: tulu, version: "2-dpo-70b", aliases: [ { native: tulu-2-dpo-70b, confidence: high } ] }
+  - { canonical_id: vicuna-13b, provider: lmsys, family: vicuna, version: "13b", aliases: [ { native: vicuna-13b, confidence: high } ] }
+  - { canonical_id: vicuna-33b, provider: lmsys, family: vicuna, version: "33b", aliases: [ { native: vicuna-33b, confidence: high } ] }
+  - { canonical_id: vicuna-7b, provider: lmsys, family: vicuna, version: "7b", aliases: [ { native: vicuna-7b, confidence: high } ] }
+  - { canonical_id: wizardlm-70b, provider: microsoft, family: wizardlm, version: "70b", aliases: [ { native: wizardlm-70b, confidence: high } ] }
+  - { canonical_id: zephyr-7b-alpha, provider: huggingface-h4, family: zephyr, version: "7b-alpha", aliases: [ { native: zephyr-7b-alpha, confidence: high } ] }
+  - { canonical_id: zephyr-7b-beta, provider: huggingface-h4, family: zephyr, version: "7b-beta", aliases: [ { native: zephyr-7b-beta, confidence: high } ] }
+
+  # ---- pool-expansion E3: modern cheap-competent small open-weight models ----
+  # native = the HF repo path (what lm-eval writes into the output dir) and the
+  # bare id. Exact repo -> exact checkpoint, so high confidence.
+  - { canonical_id: phi-3.5-mini-instruct, provider: microsoft, family: phi-3.5, version: "mini-instruct",
+      aliases: [ { native: "microsoft/Phi-3.5-mini-instruct", confidence: high },
+                 { native: "microsoft__Phi-3.5-mini-instruct", confidence: high },
+                 { native: "phi-3.5-mini-instruct", confidence: high } ] }
+  - { canonical_id: qwen2.5-3b-instruct, provider: alibaba, family: qwen2.5, version: "3b-instruct",
+      aliases: [ { native: "Qwen/Qwen2.5-3B-Instruct", confidence: high },
+                 { native: "Qwen__Qwen2.5-3B-Instruct", confidence: high },
+                 { native: "qwen2.5-3b-instruct", confidence: high } ] }
+  - { canonical_id: qwen2.5-1.5b-instruct, provider: alibaba, family: qwen2.5, version: "1.5b-instruct",
+      aliases: [ { native: "Qwen/Qwen2.5-1.5B-Instruct", confidence: high },
+                 { native: "Qwen__Qwen2.5-1.5B-Instruct", confidence: high },
+                 { native: "qwen2.5-1.5b-instruct", confidence: high } ] }
+  - { canonical_id: qwen2.5-0.5b-instruct, provider: alibaba, family: qwen2.5, version: "0.5b-instruct",
+      aliases: [ { native: "Qwen/Qwen2.5-0.5B-Instruct", confidence: high },
+                 { native: "Qwen__Qwen2.5-0.5B-Instruct", confidence: high },
+                 { native: "qwen2.5-0.5b-instruct", confidence: high } ] }
+  - { canonical_id: smollm2-1.7b-instruct, provider: huggingface, family: smollm2, version: "1.7b-instruct",
+      aliases: [ { native: "HuggingFaceTB/SmolLM2-1.7B-Instruct", confidence: high },
+                 { native: "HuggingFaceTB__SmolLM2-1.7B-Instruct", confidence: high },
+                 { native: "smollm2-1.7b-instruct", confidence: high } ] }

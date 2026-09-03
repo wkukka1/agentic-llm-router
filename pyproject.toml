@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentic-llm-router"
+version = "0.1.0"
+description = "Cost-aware LLM router research project (Foundation data pipeline + NIRT baseline)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "pandas",
+    "pyarrow",
+    "pyyaml",
+    "python-dotenv",
+    "tqdm",
+    "datasets",
+    "scikit-learn",
+    "sentence-transformers",
+    "transformers",
+    "torch",
+    "matplotlib",
+    "scipy",
+    # query ability taxonomy (clustering) + FAISS query bank -- used by
+    # router.taxonomy / router.retrieval / Phase 1 relevance + warm-up.
+    "faiss-cpu",
+    "umap-learn",
+    "hdbscan",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+labeling = ["openai", "anthropic"]
+
+[project.scripts]
+router-phase0 = "router.phase0:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]

@@ -1,0 +1,174 @@
+# Phase 0 configuration.
+# All experimental parameters live here; source code must not hard-code them.
+
+seed: 42
+
+paths:
+  raw: data/raw
+  processed: data/processed
+  taxonomy: data/taxonomy
+  splits: data/splits
+  indexes: indexes
+
+sources:
+  routerbench:
+    # Local git-LFS clone of the HF dataset `withmartian/routerbench`.
+    # See scripts/data/download_routerbench.py for how to obtain it.
+    local_dir: routerbench
+    hf_repo: withmartian/routerbench
+    # subset of {"0shot", "5shot"}. Multi-shot item-identity policy: 0-/5-shot of
+    # one question are SEPARATE items (":5shot" query_id suffix) that both carry
+    # the underlying question text and so share a split group. Pool-expansion E2.
+    shots: ["0shot", "5shot"]
+  arena:
+    # HF dataset `lmarena-ai/arena-human-preference-55k`, saved via datasets.save_to_disk.
+    # Human pairwise preferences -> metric_type=arena_preference (its own head).
+    local_dir: data/raw/arena/arena-human-preference-55k
+    hf_repo: lmarena-ai/arena-human-preference-55k
+  gpt4_judge:
+    # HF dataset `routellm/gpt4_judge_battles`. Same battle schema as Arena but
+    # the winner is chosen by a GPT-4 judge, not a human -> metric_type=
+    # judge_preference (separate head; not assumed calibrated like human votes).
+    local_dir: data/raw/arena/gpt4_judge_battles
+    hf_repo: routellm/gpt4_judge_battles
+  lm_harness:
+    # Directory of lm-evaluation-harness JSON result files (see scripts/data/run_lm_harness.py).
+    results_dir: data/raw/lm_harness
+    # Pool-expansion phase E3: modern cheap-competent open-weight models, run
+    # LOCALLY on a 4 GB laptop GPU (RTX 3050 Ti) on the standard-benchmark subset
+    # of RouterBench and joined on (task, sample_index) -- see
+    # src/router/data/benchmark_id.py. Prices in configs/model_prices.yaml.
+    # All ungated (no HF license gate); <=1.7B run fp16, >=3B run 4-bit.
+    models:
+      - { id: phi-3.5-mini-instruct,   hf_repo: "microsoft/Phi-3.5-mini-instruct",      revision: "main", load: "4bit" }
+      - { id: qwen2.5-3b-instruct,     hf_repo: "Qwen/Qwen2.5-3B-Instruct",             revision: "main", load: "4bit" }
+      - { id: qwen2.5-1.5b-instruct,   hf_repo: "Qwen/Qwen2.5-1.5B-Instruct",           revision: "main", load: "fp16" }
+      - { id: smollm2-1.7b-instruct,   hf_repo: "HuggingFaceTB/SmolLM2-1.7B-Instruct",  revision: "main", load: "fp16" }
+      - { id: qwen2.5-0.5b-instruct,   hf_repo: "Qwen/Qwen2.5-0.5B-Instruct",           revision: "main", load: "fp16" }
+    # lm-eval task set matched to the alignable RouterBench evals (MMLU 57 +
+    # HellaSwag + WinoGrande + ARC-Challenge). loglikelihood tasks.
+    tasks: ["mmlu", "hellaswag", "winogrande", "arc_challenge"]
+    device: "cuda:0"
+
+# Which eval_name tasks in RouterBench are multiple-choice, and how many options.
+# Used by chance correction. Anything not listed is treated as free-form (no correction).
+multiple_choice:
+  # exact eval_name -> number of answer choices
+  by_task:
+    hellaswag: 4
+    arc-challenge: 4
+    arc-easy: 4
+    winogrande: 2
+    mmlu-professional-law: 4
+    truthful_qa: 4          # MC1 formulation; overridden per-file when known
+  # eval_name prefixes -> number of answer choices
+  by_prefix:
+    mmlu: 4
+    mmlu-: 4
+    "mmlu_": 4
+
+chance_correction:
+  method: normalized        # {"normalized", "none"}
+  # normalized: c = 1 / n_choices;  corrected = (score - c) / (1 - c), clipped to [0, 1]
+  clip: true
+  # Emit a warning (not an error) when an observation looks MC but n_choices is unknown.
+  warn_on_missing_choices: true
+
+embedding:
+  batch_size: 64
+  device: auto               # {"auto", "cpu", "cuda"}
+  cache_dir: data/processed/embeddings
+  # Named encoder pathways. `retrieval` feeds kNN / the FAISS query bank;
+  # `irt` is the NIRT-paper text pathway shared by queries AND LLM profiles.
+  pathways:
+    retrieval:
+      backend: sentence_transformer
+      model_name: sentence-transformers/all-MiniLM-L6-v2
+      normalize: true
+      max_seq_length: 256
+    irt:
+      backend: bert
+      model_name: bert-base-uncased
+      pooling: mean            # {"cls", "mean"}
+      normalize: false         # raw BERT features, like the NIRT text encoder
+      max_seq_length: 256
+  # Which pathway a plain `load_encoder(cfg)` / build script uses by default.
+  default_pathway: irt
+
+profiles:
+  # LLM profile text = curated description (configs/model_profiles.yaml) plus,
+  # optionally, an addendum summarising the model's OBSERVED behaviour in this
+  # dataset (per benchmark-family accuracy, MC skill-above-chance, mean cost,
+  # pairwise win-rate). Set include_empirical: false for description-only,
+  # exactly as in the paper.
+  config_path: configs/model_profiles.yaml
+  include_empirical: false   # description-only profiles, exactly as in the IRT-Router paper
+  version: 1
+  # Coarse benchmark-family map for the empirical addendum. This is NOT the
+  # learned ability taxonomy (that stage is deferred); it is a fixed grouping of
+  # RouterBench `eval_name` / lm-harness tasks for readable profile text.
+  task_families:
+    math: [gsm8k, grade-school-math, mtbench-math, math, competition_math, asdiv, mathqa, aqua]
+    code: [mbpp, humaneval, mtbench-coding, code, ds1000]
+    knowledge: [mmlu, arc-challenge, arc-easy, openbookqa, nq, triviaqa, truthful_qa]
+    reasoning: [hellaswag, winogrande, piqa, siqa, bbh, logiqa, mtbench-reasoning]
+    language_zh: [chinese, chid, c-eval, cmmlu, ceval]
+    chat: [mtbench, mt-bench, alpaca]
+
+clustering:
+  # Query embedding pathway to cluster (retrieval = MiniLM, full corpus).
+  pathway: retrieval
+  method: umap_hdbscan
+  umap:
+    n_neighbors: 15
+    min_dist: 0.1
+    n_components: 5
+    metric: cosine
+  hdbscan:
+    # Tuned on the 36.5k NIRT queries: min_cluster_size 150 / min_samples 10
+    # -> ~39 ability clusters, ~17% noise (noise points still get an r_q from
+    # the centroid softmax). See docs/query_representation.md.
+    min_cluster_size: 150
+    min_samples: 10
+    metric: euclidean
+    cluster_selection_method: eom
+  representatives_per_cluster: 10
+
+taxonomy:
+  target_dimensions: 20     # aim for ~20-25; not treated as a hard constraint
+  version: 1
+
+labeling:
+  provider: null            # {"openai", "anthropic", "dummy", null}
+  model: null
+  cache_path: data/taxonomy/labeling_cache.json
+  temperature: 0.0
+  max_clusters: null
+
+retrieval:
+  k: 5
+  index_type: flat_ip       # {"flat_ip", "flat_l2"}
+
+split:
+  train_fraction: 0.8
+  validation_fraction: 0.1
+  test_fraction: 0.1
+  # Fraction of (eligible) models held out entirely from train/val/test for
+  # cold-start eval. Chosen deterministically by hashing the model id.
+  cold_start_model_fraction: 0.15
+  # Only models with at least this many observations are eligible to be held
+  # out (a model with very few rows cannot be cold-start-evaluated).
+  cold_start_min_observations: 2000
+  # Group splitting is done on a query-content hash so identical queries from
+  # different datasets never straddle the train/test boundary.
+  dedup_on: normalized_query
+  # Explicit warm/cold overrides -- forced ids skip the cold lottery entirely
+  # (see router.data.splits.make_splits). Used by the candidate-pool-expansion
+  # workstream (docs/pool_expansion.md).
+  #   Phase E1: bring the two held-out RouterBench models warm. The remaining
+  #   cold-start models are Arena-only (no RouterBench correctness), so the
+  #   RouterBench/ZOIB cold-start eval (battery 1e) is PAUSED for E1.
+  force_warm:
+    - yi-34b-chat
+    - code-llama-34b-instruct
+  force_cold: []

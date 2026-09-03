@@ -1,0 +1,82 @@
+# NIRT baseline configuration (Phase 2).
+#
+# Kept separate from configs/phase0.yaml: that file owns the DATA pipeline, this
+# one owns the model. Data still reaches the trainer through the Phase 1 facade
+# (router.data.phase1.load_phase1), which reads configs/phase0.yaml itself.
+#
+# v1 scope: a deliberately simple IRT-structured predictor.
+#   theta_q = f_theta(e_q)            e_q = frozen BERT query embedding (irt pathway)
+#   y_hat   = sigmoid(a_m . theta_q - b_m)
+# The profile embedding e_m INITIALISES / feeds the model side (a_m, b_m); it is
+# not assumed to be the ability vector itself.
+
+seed: 42
+
+data:
+  pathway: irt               # embedding pathway to join against (irt = BERT, 768-d)
+  query_pathway: null        # override for the QUERY store only (profile stays on `pathway`).
+                             #   null -> use `pathway`. Set to a kNN-imputed pathway
+                             #   (e.g. knn10w) to feed the retrieval-smoothed e_q.
+  score_kind: effective      # target column in nirt_observations (effective = chance-corrected where MC)
+  metrics: null              # null = all correctness metrics present in nirt_observations.parquet
+
+model:
+  orientation: query_latent  # {query_latent (ours: theta_q = f(e_q), a_m/b_m on model),
+                             #  model_latent (IRT-Router: theta_m from e_m, a_q/b_q on query)}
+  dim: 1                     # K, number of latent ability dimensions (1 -> classical-IRT-comparable)
+  model_params: projected    # {projected, free}
+                             #   projected: model-side params = linear heads on e_m (cold-start capable)
+                             #   free:      model-side params = per-model free parameters (transductive)
+  query_hidden: 64           # hidden width of the query head(s); null -> a single linear layer
+  difficulty: scalar         # query_latent only. {scalar: logit = a.theta - b (b in R^1);
+                             #  vector: logit = sum_k a_k (theta_k - b_k), b in R^K (per-dim threshold)}
+  constrain_discrimination: auto   # auto -> true iff dim == 1 (softplus keeps discrimination > 0, like 2PL)
+  bound_ability: true        # model_latent only: theta_m = sigmoid(W_theta e_m), as in the paper
+
+train:
+  loss: soft_bce             # {soft_bce, mse, hard_bce}
+  lr: 1.0e-3
+  weight_decay: 1.0e-5
+  batch_size: 4096
+  epochs: 50
+  patience: 6                # early-stop after this many epochs without val improvement
+  val_metric: bce            # {bce, mse} -- lower is better
+  materialize: true          # gather the split into RAM once (fast on CPU; ~1.6 GB for train).
+                             # false -> stream via NIRTDataset.dataloader()
+
+# Classical-IRT baseline (scripts/nirt/compare.py). Free per-query theta_q, no text.
+classical_irt:
+  dim: null                  # null -> match the NIRT run being compared
+  holdout_frac: 0.15         # random (query, model) cells held out for the prediction ceiling
+  epochs: 500
+  lr: 0.05
+  weight_decay: 1.0e-3       # regularises theta_q; without it the factorisation overfits
+
+# kNN-imputed query representation sweep (scripts/nirt/knn_impute_sweep.py).
+# Each query's e_q is replaced by the similarity-weighted mean of its k nearest
+# TRAIN queries (self-excluded) before the query head sees it. See
+# docs/knn_imputed_queries.md.
+knn_impute:
+  k_values: [1, 5, 10, 25]
+  weighting: similarity      # {similarity (cosine-weighted), uniform}
+  dim: 2                     # latent K for the swept runs (matches nirt-2d-projected)
+  retrieval_pathway: retrieval
+  target_pathway: irt
+  ood: true                  # also build a leakage-safe OOD bank + evaluate held-out families
+  reference_runs: [nirt-2d-projected, irt-25d-projected]   # existing models to table alongside
+
+routing:
+  reference_model: gpt-4-1106-preview   # strong fixed model that cost savings are quoted against
+  lambda_sweep: [0.0, 0.05, 0.1, 0.2, 0.35, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 5.0]
+  reward_alphas: [0.5, 0.7, 0.8, 0.9]   # IRT-Router Reward = a*quality - (1-a)*linear(cost)
+
+evaluation:
+  # Held out of training entirely; the OOD test set is exactly these families
+  # (see docs/routing_evaluation.md). Family map = configs/phase0.yaml profiles.task_families.
+  ood_holdout_families: [math, code]
+
+baselines:
+  knn_router:  {k: 5, pathway: retrieval}   # RouterBench-style kNN over MiniLM query embeddings
+  mlp_router:  {hidden: 128, epochs: 40, lr: 1.0e-3, pathway: irt}   # IRT-free ablation
+
+runs_dir: data/processed/nirt_runs   # checkpoints + run.json land here (gitignored)

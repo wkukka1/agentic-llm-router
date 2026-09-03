@@ -1,0 +1,77 @@
+# Phase 2 -- continuous response model (ablation against the Phase 1 Bernoulli arm).
+#
+# SAME representation as Phase 1 (frozen encoder, r_q, warm-up, K=8, a_q/b_q,
+# interaction, splits, cold-start set). The ONLY variable is the response
+# distribution over the graded score y in [0, 1]:
+#
+#   Phase 1 : Bernoulli   p = sigmoid(z)                      L = BCE
+#   Phase 2A: Normal      y ~ N(z, sigma_qm)                  L = Normal NLL   (heteroskedastic)
+#   Phase 2B: Beta        mu = sigmoid(z), y ~ Beta(mu*k,(1-mu)*k)   L = Beta NLL  (interior only)
+#   Phase 2C: ZOIB        pi_0, pi_1 spikes + Beta middle     L = ZOIB NLL
+#
+# z_qm = a_q . theta_m - b_q [+ gamma * interaction]  (the Phase 1 pre-sigmoid logit).
+
+seed: 42
+
+data:
+  pathway: irt
+
+# label construction: KEEP the graded score (y_soft); Arena excluded.
+response:
+  use_arena: false
+  score_kind: effective
+  binary_threshold: 0.5          # only used for the secondary BCE-after-threshold diagnostic
+
+# frozen from Phase 1 -- do not change for the ablation
+model:
+  theta_dim: 8
+  model_params: free
+  bound_ability: true
+  query_hidden: 64
+  constrain_discrimination: true
+  interaction_hidden: 32
+  use_length_head: true
+  warmup: {enabled: false, alpha: 0.5, learnable: false}
+
+ablation:
+  use_relevance: true
+  use_interaction: true
+  use_warmup: false
+
+regularization:
+  theta_l2: 1.0e-4
+  theta_center_l2: 1.0e-3
+  discrimination_l2: 0.0
+  difficulty_l2: 1.0e-4
+
+train:
+  target: soft                   # continuous models train on y_soft
+  lr: 1.0e-3
+  weight_decay: 0.0
+  batch_size: 4096
+  epochs: 60
+  patience: 8
+  device: cpu
+  grad_clip: 5.0                  # max grad-norm for the NLL losses (continuous heads only)
+
+# per-response-model settings; the train script merges the selected one into `response`.
+response_models:
+  bernoulli:
+    model: bernoulli
+  normal:
+    model: normal
+    cfg: {epsilon: 1.0e-6}
+  beta:
+    model: beta
+    cfg: {min_concentration: 1.0e-4, max_concentration: 1.0e4, mu_min: 1.0e-4, epsilon: 1.0e-6}
+  zoib:
+    model: zoib
+    cfg: {min_concentration: 1.0e-4, max_concentration: 1.0e4, mu_min: 1.0e-4, epsilon: 1.0e-6}
+
+retrieval:
+  k: 5
+
+evaluation:
+  split: test
+  confidence_level: 0.90
+  n_icc: 6

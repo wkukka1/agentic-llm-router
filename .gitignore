@@ -1,3 +1,24 @@
 *.env
-**/pycache__/
+.env
+**/__pycache__/
 **/.DS_Store
+.venv/
+.venv-lmeval/
+*.egg-info/
+.pytest_cache/
+
+# Data + build artifacts are reproducible from the scripts; do not commit them.
+data/raw/
+data/processed/
+data/splits/
+data/taxonomy/
+data/taxonomy/labeling_cache.json
+indexes/
+routerbench/
+# Phase 1 training runs / plots — reproducible from scripts
+artifacts/
+
+# keep curated, human-editable taxonomy files under version control
+!data/taxonomy/candidate_abilities.yaml
+!data/taxonomy/final_taxonomy.yaml
+!data/taxonomy/cluster_labels.json
