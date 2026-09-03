@@ -318,3 +318,73 @@ class TestAdaptiveShortlist:
 
         with pytest.raises(ValueError, match="shortlist_mass"):
             DomainHead(TestDomainHead._run_dir(tmp_path), shortlist_mass=bad)
+
+
+class TestTaskAndRouterHeads:
+    """The second axis, and the composite that serves both."""
+
+    @staticmethod
+    def _task_run(tmp_path, name="task_run"):
+        import json
+
+        import yaml
+
+        from router.models import build
+
+        texts = [f"summarise this document {i}" for i in range(12)] + \
+                [f"give me ideas for a project {i}" for i in range(12)]
+        labels = ["summarize"] * 12 + ["ideate"] * 12
+        cfg = {"model": {"name": "tfidf_logreg",
+                         "params": {"char_ngrams": None, "min_df": 1}}}
+        m = build(cfg["model"]["name"], **cfg["model"]["params"])
+        m.fit(texts, labels)
+        d = tmp_path / name
+        d.mkdir()
+        m.save(d / "model")
+        (d / "config.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
+        (d / "metrics.json").write_text(json.dumps({"test": {"temperature": 1.5}}),
+                                        encoding="utf-8")
+        return d
+
+    def test_task_head_returns_a_calibrated_distribution(self, tmp_path):
+        from router.inference import TaskHead
+
+        head = TaskHead(self._task_run(tmp_path))
+        p = head.predict("summarise this document 3")
+        assert p.task in head.labels
+        assert p.task == "summarize"
+        assert sum(p.distribution.values()) == pytest.approx(1.0, abs=1e-6)
+        assert head.temperature == 1.5
+
+    def test_task_head_defers_below_threshold(self, tmp_path):
+        from router.inference import TaskHead
+
+        head = TaskHead(self._task_run(tmp_path), defer_below=1.01)
+        assert head.predict("summarise this document 3").should_defer
+
+    def test_router_head_serves_both_axes(self, tmp_path):
+        from router.inference import RouterHead
+
+        head = RouterHead(TestDomainHead._run_dir(tmp_path), self._task_run(tmp_path))
+        p = head.predict("summarise this document 3")
+        assert p.key == f"{p.domain.domain}/{p.task.task}"
+        assert p.domain.domain in head.domain.labels
+        assert p.task.task in head.task.labels
+
+    def test_router_defers_when_either_axis_is_unsure(self, tmp_path):
+        """A confident domain paired with an unsure task is not a confident route."""
+        from router.inference import RouterHead
+
+        d = TestDomainHead._run_dir(tmp_path)
+        t = self._task_run(tmp_path)
+        assert not RouterHead(d, t).predict("alpha beta doc 1").should_defer
+        assert RouterHead(d, t, task_defer_below=1.01).predict("alpha beta doc 1").should_defer
+        assert RouterHead(d, t, defer_below=1.01).predict("alpha beta doc 1").should_defer
+
+    def test_batch_matches_single_prompt_calls(self, tmp_path):
+        from router.inference import RouterHead
+
+        head = RouterHead(TestDomainHead._run_dir(tmp_path), self._task_run(tmp_path))
+        prompts = ["alpha beta doc 1", "give me ideas for a project 2"]
+        batch = head.predict_batch(prompts)
+        assert [b.key for b in batch] == [head.predict(p).key for p in prompts]

@@ -250,6 +250,51 @@ def build_dataset(
     return splits
 
 
+def build_task_dataset(
+    *,
+    include_mined: bool = False,
+    out_dir: Path = PROCESSED_DIR,
+    variant: str = "task",
+    seed: int = 20260902,
+) -> dict[str, pd.DataFrame]:
+    """Splits for the task-type head: real prompts, hand-labelled by task.
+
+    Dolly-15k is deliberately not here. A head trained on its 14,776 rows scores
+    0.700 on real prompts, below the 0.729 of always predicting `answer`, and
+    mixing it in costs accuracy at every ratio tried. See :mod:`router.tasktype`.
+
+    ``include_mined`` adds 240 prompts found by scoring the unlabelled pool for
+    the rare classes and hand-labelling the top candidates. Those rows are a
+    biased sample -- chosen because the model already leaned that way -- so they
+    are pinned to **train** and never appear in val or test. Even so they are off
+    by default: measured against the random sample they move macro-F1 +0.025 and
+    top-1 -0.013, neither of which clears a paired bootstrap at n=1,000.
+    """
+    from router import sources
+
+    # `to_frame` writes the label into `domain` (the canonical field on
+    # Example); copy it to `task` so a split file carries an unambiguous name
+    # and the experiment runner can select on it.
+    frame = dedupe(to_frame(sources.load_real_tasks()))
+    frame["task"] = frame["domain"]
+    splits = split_frame(frame, stratify_on=["task"], val_size=0.15, test_size=0.20, seed=seed)
+    if include_mined:
+        mined = to_frame(sources.load_mined_tasks())
+        mined["task"] = mined["domain"]
+        held = set(splits["val"]["prompt"]) | set(splits["test"]["prompt"])
+        mined = mined[~mined["prompt"].isin(held)]
+        splits["train"] = pd.concat([splits["train"], mined], ignore_index=True)
+        log.info("task: +%d mined rows into train", len(mined))
+    assert_no_leakage(splits)
+
+    target = out_dir / variant
+    target.mkdir(parents=True, exist_ok=True)
+    for name, part in splits.items():
+        part.to_parquet(target / f"{name}.parquet", index=False)
+    log.info("task splits: %s", {k: len(v) for k, v in splits.items()})
+    return splits
+
+
 def build_real_only_dataset(
     *,
     merge_domains: bool = False,

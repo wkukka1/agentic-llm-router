@@ -104,15 +104,23 @@ project. `data/handlabelled/reannotation_200.parquet` has the prompts and both
 existing label sets; a third column from someone else finishes the measurement.
 ~2 hours.
 
-**2. Combine the two axes.** Both heads now exist and both are trained on real
-prompts. `domain x task` is far more routing signal than either alone, and it
-costs nothing new. The open question is whether the router wants the cross
-product or the two fields separately — that depends on the model pool.
+**2. Split `create` into prose and code.** Done and shipped: `RouterHead` now
+serves both axes and `RouterPrediction.key` gives `"medicine_health/summarize"`.
+Using it immediately surfaced the next taxonomy problem — `create` covers both
+"write me an email" and "write a python function to reverse a linked list",
+which route to completely different models. That is the most valuable remaining
+label change on either axis, and the existing 1,000 labels can be re-cut for it
+without reading a new prompt.
 
-**3. More labels for the rare task types.** `extract` has three examples,
-`summarize` eleven. Either label enough of them to learn (they are rare in
-traffic, so this means targeted sampling, not more random draws) or drop them
-from the label space and let `has_context` carry the distinction.
+**3. Rare task types: measured, and the answer is mostly "don't".** 240 prompts
+were mined from the unlabelled pool by scoring for the rare classes and
+hand-labelling the top candidates (`data/handlabelled/real_tasks_mined.parquet`).
+Mining precision: `ideate` 47/60, `classify` 31/60, `summarize` 16/60,
+**`extract` 1/60**. Hunting the entire unlabelled pool for `extract` found one
+example — the class is not hard, it is absent, and it should probably leave the
+label space. Adding the mined rows to training moves macro-F1 +0.025 and top-1
+-0.013, neither significant under a paired bootstrap, so they are off by default
+(`build_task_dataset(include_mined=True)` turns them on).
 
 **4. Fix `law_politics` recall (0.381).** Precision is 0.889 — it is simply too
 cautious, with only ~106 real examples. Synthetic data raised its F1 from 0.500

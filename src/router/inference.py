@@ -1,8 +1,23 @@
-"""Serving wrapper: the seam between this repo and whatever routes next.
+"""Serving wrappers: the seam between this repo and whatever routes next.
 
-Training writes a run directory. The downstream stage consumes a
-:class:`DomainHead`, which loads that directory and returns a *calibrated*
-distribution plus a shortlist.
+Training writes a run directory. Two of them are served here, and a composite
+that serves both:
+
+    :class:`DomainHead`  what the prompt is about   0.763 top-1 / 0.919 top-2
+    :class:`TaskHead`    what it asks to be done    0.828 top-1 / 0.952 top-2
+    :class:`RouterHead`  both, over one prompt
+
+The axes are independent by construction -- "summarise this contract" and
+"summarise this paper" share a task and differ in domain; "explain contract law"
+and "draft me a contract" share a domain and differ in task -- so neither is
+recoverable from the other, and `RouterPrediction.key` ("medicine_health/
+summarize") is the cell a routing table would look up.
+
+`RouterHead` runs the two heads independently and does not share encoder passes
+between them, because they do not use the same encoder sets. If serving cost
+matters more than the last point of accuracy, that is the first thing to change.
+
+The domain head returns a *calibrated* distribution plus a shortlist.
 
 The shortlist is the point. Measured on the frozen real-prompt eval, top-1 is
 0.758 but top-2 is 0.895 and top-3 is 0.953 -- so a consumer that can accept
@@ -74,15 +89,132 @@ class DomainPrediction:
         return ranked[1] if len(ranked) > 1 else None
 
 
-class DomainHead:
+class _CalibratedHead:
+    """Loads a run directory and serves temperature-scaled probabilities.
+
+    Shared by both heads because both need the same three things: the saved
+    model, the temperature the runner fitted on validation, and a defer
+    threshold that means something only because of that temperature.
+    """
+
+    def __init__(self, run_dir: str | Path, *, defer_below: float = 0.0) -> None:
+        self.run_dir = Path(run_dir)
+        self.defer_below = defer_below
+        config = yaml.safe_load((self.run_dir / "config.yaml").read_text(encoding="utf-8"))
+        metrics = json.loads((self.run_dir / "metrics.json").read_text(encoding="utf-8"))
+        # Fitted on validation by the experiment runner; without it the
+        # confidence scores are not comparable to any threshold.
+        self.temperature = float(metrics["test"].get("temperature", 1.0))
+        params = dict(config["model"].get("params") or {})
+        params.pop("cache_tag", None)
+        self.model = build(config["model"]["name"], **params)
+        self.model.load(self.run_dir / "model")
+
+    @property
+    def labels(self) -> list[str]:
+        # Members may hand back numpy string arrays; coerce so callers get
+        # plain str and JSON serialisation works.
+        return [str(x) for x in self.model.labels]
+
+    def _calibrated(self, proba: np.ndarray) -> np.ndarray:
+        if self.temperature == 1.0:
+            return proba
+        logits = np.log(np.clip(proba, 1e-12, None)) / max(self.temperature, 1e-12)
+        logits -= logits.max(axis=1, keepdims=True)
+        exp = np.exp(logits)
+        return exp / exp.sum(axis=1, keepdims=True)
+
+
+@dataclass(slots=True)
+class TaskPrediction:
+    """What kind of work one prompt asks for."""
+
+    task: str
+    confidence: float
+    distribution: dict[str, float] = field(default_factory=dict)
+    should_defer: bool = False
+
+
+class TaskHead(_CalibratedHead):
+    """Serves the task-type head trained on 1,000 hand-labelled real prompts.
+
+    Deliberately has no shortlist. `class_weight="balanced"` is what lifts the
+    rare classes and it flattens the probabilities enough that sizing a
+    shortlist by mass asks for 3.15 of 6 labels -- the trick that works on the
+    domain head does not transfer here. Callers that want a second candidate
+    should read `distribution` and decide for themselves.
+    """
+
+    def predict(self, prompt: str) -> TaskPrediction:
+        return self.predict_batch([prompt])[0]
+
+    def predict_batch(self, prompts: list[str]) -> list[TaskPrediction]:
+        proba = self._calibrated(self.model.predict_proba(list(prompts)))
+        labels = self.labels
+        out = []
+        for row in proba:
+            best = int(np.argmax(row))
+            out.append(TaskPrediction(
+                task=labels[best],
+                confidence=float(row[best]),
+                distribution={n: float(p) for n, p in zip(labels, row, strict=True)},
+                should_defer=float(row[best]) < self.defer_below,
+            ))
+        return out
+
+
+@dataclass(slots=True)
+class RouterPrediction:
+    """Both axes for one prompt."""
+
+    domain: DomainPrediction
+    task: TaskPrediction
+
+    @property
+    def key(self) -> str:
+        """``"<domain>/<task>"`` -- the cell a routing table would look up."""
+        return f"{self.domain.domain}/{self.task.task}"
+
+    @property
+    def should_defer(self) -> bool:
+        """True if *either* axis is unsure. Deliberately pessimistic: a
+        confident domain paired with an unsure task is not a confident route."""
+        return self.domain.should_defer or self.task.should_defer
+
+
+class RouterHead:
+    """Both classifiers over one prompt, encoded once per head.
+
+    The two axes are independent by construction -- "summarise this contract"
+    and "summarise this paper" share a task and differ in domain; "explain
+    contract law" and "draft me a contract" share a domain and differ in task --
+    so neither head can be derived from the other, and the pair carries more
+    routing signal than either alone.
+    """
+
+    def __init__(self, domain_run: str | Path, task_run: str | Path, **kwargs) -> None:
+        domain_kwargs = {k: v for k, v in kwargs.items() if k != "task_defer_below"}
+        self.domain = DomainHead(domain_run, **domain_kwargs)
+        self.task = TaskHead(task_run, defer_below=kwargs.get("task_defer_below", 0.0))
+
+    def predict(self, prompt: str) -> RouterPrediction:
+        return self.predict_batch([prompt])[0]
+
+    def predict_batch(self, prompts: list[str]) -> list[RouterPrediction]:
+        prompts = list(prompts)
+        return [RouterPrediction(domain=d, task=t) for d, t in
+                zip(self.domain.predict_batch(prompts),
+                    self.task.predict_batch(prompts), strict=True)]
+
+
+class DomainHead(_CalibratedHead):
     """Loads a trained run directory and serves calibrated predictions."""
 
     def __init__(self, run_dir: str | Path, *, defer_below: float = 0.0,
                  shortlist_size: int = 2, shortlist_mass: float | None = None,
                  max_shortlist: int | None = None,
                  merge_domains: bool = False) -> None:
-        self.run_dir = Path(run_dir)
-        self.defer_below = defer_below
+        super().__init__(run_dir, defer_below=defer_below)
         #: Fixed shortlist length, used when ``shortlist_mass`` is not set.
         self.shortlist_size = shortlist_size
         if shortlist_mass is not None and not 0.0 < shortlist_mass <= 1.0:
@@ -98,23 +230,6 @@ class DomainHead:
         # coarse labels throws away distinctions the model can otherwise learn
         # and sum over.
         self.merge_domains = merge_domains
-
-        config = yaml.safe_load((self.run_dir / "config.yaml").read_text(encoding="utf-8"))
-        metrics = json.loads((self.run_dir / "metrics.json").read_text(encoding="utf-8"))
-        # Fitted on validation by the experiment runner; without it the
-        # confidence scores are not comparable to any threshold.
-        self.temperature = float(metrics["test"].get("temperature", 1.0))
-
-        params = dict(config["model"].get("params") or {})
-        params.pop("cache_tag", None)
-        self.model = build(config["model"]["name"], **params)
-        self.model.load(self.run_dir / "model")
-
-    @property
-    def labels(self) -> list[str]:
-        # Members may hand back numpy string arrays; coerce so callers get
-        # plain str and JSON serialisation works.
-        return [str(x) for x in self.model.labels]
 
     def predict(self, prompt: str) -> DomainPrediction:
         return self.predict_batch([prompt])[0]
@@ -162,11 +277,3 @@ class DomainHead:
         for j, g in enumerate(groups):
             out[:, index[g]] += proba[:, j]
         return out, merged
-
-    def _calibrated(self, proba: np.ndarray) -> np.ndarray:
-        if self.temperature == 1.0:
-            return proba
-        logits = np.log(np.clip(proba, 1e-12, None)) / max(self.temperature, 1e-12)
-        logits -= logits.max(axis=1, keepdims=True)
-        exp = np.exp(logits)
-        return exp / exp.sum(axis=1, keepdims=True)

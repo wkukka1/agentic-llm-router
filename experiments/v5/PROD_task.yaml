@@ -1,0 +1,38 @@
+name: PROD_task
+notes: >
+  Task-type head: what kind of work the prompt asks for, orthogonal to domain.
+
+  Trained on 1,000 real prompts hand-labelled with the six task types. Dolly-15k
+  is deliberately absent -- a head trained on its 14,776 rows scores 0.700 on
+  real prompts against 0.729 for always predicting `answer`, and mixing it into
+  the real rows costs accuracy at every ratio tried, down to 0.460 at equal
+  weight. See router/tasktype.py.
+
+  Cross-validated on the 1,000: 0.828 top-1 / 0.952 top-2, macro-F1 0.522.
+
+  The tf-idf member is the strongest single component here at 0.814 solo, above
+  every frozen encoder -- task type is announced by the opening verb in a way
+  domain never is by any single word. It is the one place in this project where
+  the lexical model beats the embeddings, so it carries a full share of the vote.
+
+  `class_weight: balanced` is load-bearing for the rare classes and is what
+  flattens the probabilities, so the `shortlist_mass` trick that works on the
+  domain head does not transfer to this one.
+
+  The lexical member is `tfidf_logreg`, not the calibrated SVM the domain
+  ensemble uses: that one wraps LinearSVC in a 3-fold CalibratedClassifierCV,
+  and `extract` does not have three examples to give it.
+model:
+  name: ensemble
+  params:
+    weights: [0.25, 0.25, 0.25, 0.25]
+    members:
+      - name: embed_logreg
+        params: {encoder_model: intfloat/e5-large-v2, pooling: mean, max_length: 256, C: 1.0, class_weight: balanced}
+      - name: embed_logreg
+        params: {encoder_model: intfloat/multilingual-e5-large-instruct, pooling: mean, max_length: 256, C: 1.0, class_weight: balanced}
+      - name: embed_logreg
+        params: {encoder_model: Alibaba-NLP/gte-Qwen2-1.5B-instruct, pooling: mean, max_length: 256, C: 1.0, class_weight: balanced}
+      - name: tfidf_logreg
+        params: {word_ngrams: [1, 2], char_ngrams: [3, 5], min_df: 2, C: 1.0, class_weight: balanced}
+data: {variant: task, label_column: task}

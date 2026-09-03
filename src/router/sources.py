@@ -40,6 +40,7 @@ log = logging.getLogger(__name__)
 ARENA_REPO = "lmarena-ai/arena-human-preference-140k"
 HANDLABELLED_PATH = "data/handlabelled/real_prompts.parquet"
 REAL_TASKS_PATH = "data/handlabelled/real_tasks.parquet"
+MINED_TASKS_PATH = "data/handlabelled/real_tasks_mined.parquet"
 
 
 def _first_user_text(conversation) -> str:
@@ -257,6 +258,33 @@ def load_real_tasks(path: str = REAL_TASKS_PATH) -> list[Example]:
     out = [Example(prompt=row.prompt, source="handlabelled", subset="real_tasks",
                    capability=row.task) for row in frame.itertuples()]
     log.info("real tasks: %d rows", len(out))
+    return out
+
+
+def load_mined_tasks(path: str = MINED_TASKS_PATH) -> list[Example]:
+    """240 prompts found by targeted search for the rare task types.
+
+    Random sampling cannot reach these: `extract` is 0.3% of traffic, so another
+    thousand random draws would yield about three more. These were found by
+    scoring the 1,441 unlabelled real prompts with the current head and
+    hand-labelling its most confident candidates for each rare class.
+
+    Mining precision, labelled class against the class searched for:
+
+        ideate     47 of 60      summarize  16 of 60
+        classify   31 of 60      extract     1 of 60
+
+    That last row is the finding, not a failure. Hunting the whole unlabelled
+    pool for `extract` turned up one example. It is not that the classifier
+    cannot see `extract`; this traffic does not contain it.
+
+    These rows are a biased sample and belong in training only -- see
+    :func:`router.dataset.build_task_dataset`.
+    """
+    frame = pd.read_parquet(path)
+    out = [Example(prompt=row.prompt, source="handlabelled", subset="mined_tasks",
+                   capability=row.task) for row in frame.itertuples()]
+    log.info("mined tasks: %d rows", len(out))
     return out
 
 
