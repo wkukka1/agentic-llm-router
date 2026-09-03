@@ -15,6 +15,7 @@ from typing import Optional
 
 import numpy as np
 
+from .._normalize import unit_rows as _unit  # re-exported for relevance.py
 from ..config import Config, section
 from ..determinism import seed_everything
 
@@ -85,10 +86,6 @@ class ClusterResult:
             "min_cluster_size_seen": int(counts.min()) if len(counts) else 0,
             "max_cluster_size_seen": int(counts.max()) if len(counts) else 0,
         }
-
-
-def _unit(x: np.ndarray, axis: int = -1, eps: float = 1e-12) -> np.ndarray:
-    return x / np.maximum(np.linalg.norm(x, axis=axis, keepdims=True), eps)
 
 
 def cluster_embeddings(embeddings, config: ClusterConfig, *, ids=None) -> ClusterResult:

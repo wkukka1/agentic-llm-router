@@ -19,9 +19,7 @@ The predictor is frozen -- this module only ever *reads* checkpoints.
 
 from __future__ import annotations
 
-import hashlib
 import json
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Sequence
@@ -30,6 +28,7 @@ import numpy as np
 import pandas as pd
 
 from ..config import Config, load_config
+from ..provenance import file_digest, git_dirty, git_sha
 from ..data.phase1 import load_phase1
 from ..nirt.baseline_data import batched_forward, build_arrays
 from ..nirt.baseline_eval import evaluate_checkpoint
@@ -481,22 +480,12 @@ def _delta_saving(full, reduced):
 # provenance                                                                  #
 # --------------------------------------------------------------------------- #
 def _sha256(path: Path) -> Optional[str]:
-    if not path.exists():
-        return None
-    h = hashlib.sha256()
-    h.update(path.read_bytes())
-    return h.hexdigest()[:16]
+    return file_digest(path)
 
 
 def provenance(cfg: Config, *, phase: str, pool_models: list[str], checkpoints: dict) -> dict:
     root = cfg.root
-    try:
-        sha = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], cwd=root, text=True
-        ).strip()
-        dirty = bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=root, text=True).strip())
-    except Exception:  # noqa: BLE001
-        sha, dirty = None, None
+    sha, dirty = git_sha(root), git_dirty(root)
 
     artefacts = {
         f"config/{p}": _sha256(root / "configs" / p)

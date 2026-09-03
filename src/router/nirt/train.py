@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,23 +25,13 @@ from typing import Optional
 import numpy as np
 
 from ..determinism import seed_everything
+from ..provenance import git_sha as _git_sha
 from .metrics import marginal_baselines, prediction_metrics
 from .model import build_model
 
 _DEFAULT_RUNS_DIR = "data/processed/nirt_runs"
 
 __all__ = ["fit", "load_run", "RunResult", "seed_everything"]
-
-
-def _git_sha() -> Optional[str]:
-    try:
-        return (
-            subprocess.check_output(["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL)
-            .decode()
-            .strip()
-        )
-    except Exception:  # pragma: no cover
-        return None
 
 
 @dataclass

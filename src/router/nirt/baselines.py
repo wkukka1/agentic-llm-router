@@ -30,8 +30,8 @@ from typing import Iterable, Optional
 import numpy as np
 import pandas as pd
 
+from ..determinism import seed_everything
 from .metrics import prediction_metrics
-from .train import seed_everything
 
 
 @dataclass

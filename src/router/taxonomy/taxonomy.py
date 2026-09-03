@@ -12,21 +12,12 @@ from collections import Counter
 from pathlib import Path
 from typing import Optional
 
-from ..config import Config, section
+from ..config import Config
+from ..data.families import family_of as _family_of
+from ..data.families import task_family_map as _family_map
 from .clustering import load_clusters, load_meta
 
 TAXONOMY_FILE = "taxonomy.json"
-
-
-def _family_map(cfg: Config) -> dict:
-    return {str(k).lower(): fam
-            for fam, keys in (section(cfg, "profiles").get("task_families", {}) or {}).items()
-            for k in keys}
-
-
-def _family_of(dataset: str, fam_map: dict) -> Optional[str]:
-    d = (dataset or "").lower()
-    return next((fam for key, fam in fam_map.items() if key in d), None)
 
 
 def _top_terms(texts: list, k: int = 8) -> list:

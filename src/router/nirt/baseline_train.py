@@ -10,7 +10,6 @@ Correctness signal only (Arena excluded); binary targets.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import time
 from dataclasses import dataclass, field
@@ -19,6 +18,7 @@ from typing import Optional
 
 from ..config import Config, load_config
 from ..determinism import seed_everything
+from ..provenance import file_digest
 from .baseline import build_baseline_model
 from .baseline_data import batched_forward, build_arrays, to_tensors
 from .checkpoint import load_checkpoint, save_checkpoint
@@ -235,7 +235,7 @@ def _mean_nll(model, tensors: dict, arr, *, device: str = "cpu") -> float:
 
 def _provenance(cfg: Config, phase1_cfg: dict, tr_arr, va_arr, seed: int) -> dict:
     def _hash(p: Path) -> Optional[str]:
-        return hashlib.sha1(p.read_bytes()).hexdigest()[:16] if p.exists() else None
+        return file_digest(p, algo="sha1")
 
     proc, tax = cfg.path("processed"), cfg.path("taxonomy")
     return {

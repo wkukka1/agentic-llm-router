@@ -38,6 +38,8 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from ..config import coerce_auto_bool, coerce_hidden
+
 MODEL_PARAM_MODES = ("projected", "free")
 ORIENTATIONS = ("query_latent", "model_latent")
 DIFFICULTY_MODES = ("scalar", "vector")
@@ -123,19 +125,15 @@ class NIRTModel(nn.Module):
         profile_dim: int = 768,
     ) -> "NIRTModel":
         dim = int(model_cfg.get("dim", 1))
-        cd = model_cfg.get("constrain_discrimination", "auto")
-        if cd in ("auto", None):
-            cd = dim == 1
-        qh = model_cfg.get("query_hidden", 64)
-        if qh in ("none", "None", 0):
-            qh = None
         return cls(
             query_dim=query_dim,
             dim=dim,
             n_models=n_models,
             model_params=model_cfg.get("model_params", "projected"),
-            query_hidden=None if qh is None else int(qh),
-            constrain_discrimination=bool(cd),
+            query_hidden=coerce_hidden(model_cfg.get("query_hidden", 64)),
+            constrain_discrimination=coerce_auto_bool(
+                model_cfg.get("constrain_discrimination", "auto"), dim == 1
+            ),
             profile_dim=profile_dim,
             difficulty=model_cfg.get("difficulty", "scalar") or "scalar",
         )
@@ -240,19 +238,15 @@ class IRTRouterModel(nn.Module):
     def from_config(cls, model_cfg: dict, *, n_models: int,
                     query_dim: int = 768, profile_dim: int = 768) -> "IRTRouterModel":
         dim = int(model_cfg.get("dim", 1))
-        cd = model_cfg.get("constrain_discrimination", "auto")
-        if cd in ("auto", None):
-            cd = dim == 1
-        qh = model_cfg.get("query_hidden", 64)
-        if qh in ("none", "None", 0):
-            qh = None
         return cls(
             query_dim=query_dim,
             dim=dim,
             n_models=n_models,
             model_params=model_cfg.get("model_params", "projected"),
-            query_hidden=None if qh is None else int(qh),
-            constrain_discrimination=bool(cd),
+            query_hidden=coerce_hidden(model_cfg.get("query_hidden", 64)),
+            constrain_discrimination=coerce_auto_bool(
+                model_cfg.get("constrain_discrimination", "auto"), dim == 1
+            ),
             bound_ability=bool(model_cfg.get("bound_ability", True)),
             profile_dim=profile_dim,
         )

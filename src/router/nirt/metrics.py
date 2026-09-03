@@ -50,16 +50,7 @@ def _auc(y_bin: np.ndarray, y_prob: np.ndarray) -> float:
 
 def _ece(y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = 10) -> float:
     """Expected calibration error against the (soft) outcome rate."""
-    edges = np.linspace(0.0, 1.0, n_bins + 1)
-    idx = np.clip(np.digitize(y_prob, edges[1:-1]), 0, n_bins - 1)
-    total = len(y_true)
-    ece = 0.0
-    for b in range(n_bins):
-        m = idx == b
-        if not m.any():
-            continue
-        ece += m.sum() / total * abs(y_true[m].mean() - y_prob[m].mean())
-    return float(ece)
+    return reliability_curve(y_true, y_prob, n_bins=n_bins)["ece"]
 
 
 def brier_score(y_true: Sequence[float], y_prob: Sequence[float]) -> float:

@@ -28,6 +28,8 @@ import pandas as pd
 
 from ..config import Config, section
 from ..data import schemas
+from ..data.families import family_of as _family_of
+from ..data.families import task_family_map as _task_family_map
 from ..data.model_registry import model_info
 from ..data.response_matrix import read_responses
 
@@ -54,26 +56,6 @@ def load_profile_entries(cfg: Config) -> dict:
 
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return data.get("profiles", {}) or {}
-
-
-def _task_family_map(cfg: Config) -> dict[str, str]:
-    pc = _profiles_cfg(cfg)
-    fams = pc.get("task_families", {}) or {}
-    out: dict[str, str] = {}
-    for family, names in fams.items():
-        for n in names:
-            out[str(n).lower()] = family
-    return out
-
-
-def _family_of(dataset: str, fam_map: dict[str, str]) -> Optional[str]:
-    d = str(dataset).lower()
-    if d in fam_map:
-        return fam_map[d]
-    for key, fam in fam_map.items():
-        if key in d:
-            return fam
-    return None
 
 
 # --------------------------------------------------------------------------- #

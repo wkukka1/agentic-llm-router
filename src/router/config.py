@@ -84,6 +84,24 @@ def section(cfg: Any, dotted: str, default: dict | None = None) -> dict:
     return dict(default or {})
 
 
+def coerce_hidden(value: Any, default: int | None = 64) -> int | None:
+    """Hidden-width config value -> ``int`` or ``None``.
+
+    ``"none"`` / ``"None"`` / ``0`` (a linear head, in every ``*_head`` config)
+    become ``None``; anything else is cast to ``int``. Shared by every model
+    ``from_config``.
+    """
+    v = default if value is None else value
+    if v in ("none", "None", 0, None):
+        return None
+    return int(v)
+
+
+def coerce_auto_bool(value: Any, auto: bool) -> bool:
+    """Tri-state config flag: ``"auto"`` / ``None`` -> ``auto``, else ``bool(value)``."""
+    return bool(auto) if value in ("auto", None) else bool(value)
+
+
 def load_config(path: str | os.PathLike | None = None) -> Config:
     cfg_path = Path(path) if path else DEFAULT_CONFIG_PATH
     if not cfg_path.is_absolute():

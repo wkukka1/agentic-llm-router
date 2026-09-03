@@ -16,7 +16,8 @@ from typing import Optional
 
 import numpy as np
 
-from ..config import Config, load_config, section
+from ..config import Config, load_config
+from ..data.families import family_labels
 from .baseline_data import _join, batched_forward, build_arrays
 from .calibration import calibration_report, plot_reliability, save_calibration
 from .checkpoint import load_run
@@ -47,20 +48,6 @@ def theta_matrix(model, cfg: Config, model_index: dict, pathway: str) -> np.ndar
     if model.model_params == "free":
         return model.theta.weight.detach().numpy()
     return model.theta_table(torch.from_numpy(profile_matrix(cfg, model_index, pathway))).numpy()
-
-
-def family_labels(query_ids, cfg: Config, queries_df=None):
-    keymap = {str(k).lower(): f
-              for f, keys in (section(cfg, "profiles").get("task_families", {}) or {}).items()
-              for k in keys}
-    if queries_df is None:
-        import pandas as pd
-
-        queries_df = pd.read_parquet(cfg.path("processed") / "queries.parquet",
-                                     columns=["query_id", "dataset"])
-    ds = queries_df.set_index("query_id")["dataset"].to_dict()
-    return [next((f for k, f in keymap.items() if k in (ds.get(q, "") or "").lower()), "other")
-            for q in query_ids]
 
 
 def _per_group(y, p, keys) -> dict:

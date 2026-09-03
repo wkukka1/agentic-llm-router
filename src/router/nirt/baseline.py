@@ -20,6 +20,7 @@ from typing import Optional
 import torch
 from torch import nn
 
+from ..config import coerce_auto_bool, coerce_hidden
 from .components import (
     DifficultyHead,
     DiscriminationHead,
@@ -97,10 +98,8 @@ class BaselineNIRT(nn.Module):
         m = dict(model_cfg or {})
         abl, wu = dict(m.get("ablation", {}) or {}), dict(m.get("warmup", {}) or {})
         dim = int(m.get("dim", m.get("theta_dim", 8)))
-        cd = m.get("constrain_discrimination", "auto")
-        cd = (dim == 1) if cd in ("auto", None) else bool(cd)
-        qh = m.get("query_hidden", 64)
-        qh = None if qh in ("none", "None", 0) else int(qh)
+        cd = coerce_auto_bool(m.get("constrain_discrimination", "auto"), dim == 1)
+        qh = coerce_hidden(m.get("query_hidden", 64))
         pick = lambda k, d: abl.get(k, m.get(k, d))  # noqa: E731
         return cls(
             query_dim=query_dim, dim=dim, n_models=n_models, profile_dim=profile_dim,

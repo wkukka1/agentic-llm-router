@@ -13,6 +13,7 @@ from typing import Optional, Sequence
 
 import numpy as np
 
+from .._normalize import unit_rows as _unit
 from ..config import Config
 
 INDEX_FILE, IDS_FILE, MANIFEST_FILE = "index.faiss", "ids.parquet", "manifest.json"
@@ -20,10 +21,6 @@ INDEX_FILE, IDS_FILE, MANIFEST_FILE = "index.faiss", "ids.parquet", "manifest.js
 
 def query_bank_dir(cfg: Config) -> Path:
     return cfg.path("indexes") / "query_bank"
-
-
-def _unit(x: np.ndarray, eps: float = 1e-12) -> np.ndarray:
-    return x / np.maximum(np.linalg.norm(x, axis=-1, keepdims=True), eps)
 
 
 def _bank_query_ids(cfg: Config, split: str) -> list:

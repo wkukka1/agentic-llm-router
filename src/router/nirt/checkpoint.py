@@ -10,24 +10,17 @@ also returns the label-construction settings from ``config.yaml``.
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 from typing import Optional
 
 import yaml
 
+from ..provenance import git_sha
 from .baseline import build_baseline_model
 
 MODEL_PT = "model.pt"
 
-
-def git_sha() -> Optional[str]:
-    try:
-        return subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
-        ).decode().strip()
-    except Exception:  # pragma: no cover
-        return None
+__all__ = ["MODEL_PT", "git_sha", "save_checkpoint", "load_checkpoint", "load_run"]
 
 
 def save_checkpoint(
