@@ -41,6 +41,7 @@ ARENA_REPO = "lmarena-ai/arena-human-preference-140k"
 HANDLABELLED_PATH = "data/handlabelled/real_prompts.parquet"
 REAL_TASKS_PATH = "data/handlabelled/real_tasks.parquet"
 MINED_TASKS_PATH = "data/handlabelled/real_tasks_mined.parquet"
+GENERATED_TASKS_PATH = "data/synthetic/generated_tasks.parquet"
 
 
 def _first_user_text(conversation) -> str:
@@ -299,6 +300,39 @@ def load_synthetic_tasks(tasks: list[str] | None = None) -> list[Example]:
         out.extend(Example(prompt=p, source="synthetic", subset=f"task_{task}",
                            capability=task) for p in prompts)
     log.info("synthetic tasks: %d rows over %s", len(out), names)
+    return out
+
+
+def load_generated_tasks(path: str = GENERATED_TASKS_PATH,
+                         split: str = "train") -> list[Example]:
+    """Agent-generated prompts for the four weakest task types.
+
+    Eight agents wrote 100 prompts each, two per class, each pair given
+    different subject angles and told to avoid the other's. **The split is by
+    generator, not at random**: one agent's output is training, the other's is
+    a held-out generated test set. Shuffling a single pool would put the same
+    house style on both sides and the test score would mostly measure
+    memorisation of it.
+
+    Known limitation, measured rather than assumed: this text is **trivially
+    separable from real prompts** -- a tf-idf classifier tells generated from
+    real at AUC 0.936, and the hand-written set at 0.974. So a model trained on
+    it can learn "synthetic style" alongside the task, which is the mechanism
+    that made the Dolly-trained head score 0.822 on Dolly and 0.700 on real
+    traffic. The same effect is visible here: on the held-out *generated* set
+    the model reaches 0.849 top-1 with per-class F1 of 0.87-0.94, against 0.79
+    and 0.36-0.89 on real prompts. Read the real numbers only.
+
+    It helps anyway, because for `extract` there was nothing to contaminate:
+    F1 0.000 -> 0.364. Restricting synthetic data to the starved classes was
+    tried on the theory that it would keep the gains and drop the losses; it
+    did not beat using all four, so all four are used.
+    """
+    frame = pd.read_parquet(path)
+    frame = frame[frame["split"] == split]
+    out = [Example(prompt=row.prompt, source="generated", subset=f"gen_{row.task}",
+                   capability=row.task) for row in frame.itertuples()]
+    log.info("generated tasks (%s): %d rows", split, len(out))
     return out
 
 
