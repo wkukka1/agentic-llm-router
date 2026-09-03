@@ -252,6 +252,7 @@ def build_dataset(
 
 def build_task_dataset(
     *,
+    include_synthetic: bool = True,
     include_mined: bool = False,
     out_dir: Path = PROCESSED_DIR,
     variant: str = "task",
@@ -262,6 +263,28 @@ def build_task_dataset(
     Dolly-15k is deliberately not here. A head trained on its 14,776 rows scores
     0.700 on real prompts, below the 0.729 of always predicting `answer`, and
     mixing it in costs accuracy at every ratio tried. See :mod:`router.tasktype`.
+
+    ``include_synthetic`` adds 377 hand-written prompts for the three starved
+    classes -- `summarize` (31 real), `classify` (55) and `extract` (6). Like
+    the mined rows they are pinned to **train**; the evaluation set stays real
+    throughout. Measured against the random 1,000:
+
+        real only          0.802 top-1 / 0.933 top-2 / macro-F1 0.524
+        + synthetic        0.787        / 0.944       / macro-F1 0.573
+
+        top-1     -0.015  [-0.031, +0.000]   not significant
+        macro-F1  +0.047  [-0.027, +0.130]   not significant
+
+    On by default despite neither difference being significant, for a reason
+    the intervals do not carry: `extract` goes from never being predicted at
+    all (F1 0.000) to being predicted (0.250), and `classify` from 0.476 to
+    0.552. That is a capability appearing, not a metric drifting, and top-2 --
+    what the router actually consumes -- improves.
+
+    The wide intervals are the eval set, not the effect: 1,000 random real
+    prompts contain 3 `extract` and 11 `summarize` rows, so macro-F1 cannot be
+    measured tightly on them however good the model gets. Fixing that needs
+    more *labelled real* prompts of those classes, not more training data.
 
     ``include_mined`` adds 240 prompts found by scoring the unlabelled pool for
     the rare classes and hand-labelling the top candidates. Those rows are a
@@ -278,6 +301,11 @@ def build_task_dataset(
     frame = dedupe(to_frame(sources.load_real_tasks()))
     frame["task"] = frame["domain"]
     splits = split_frame(frame, stratify_on=["task"], val_size=0.15, test_size=0.20, seed=seed)
+    if include_synthetic:
+        synthetic = to_frame(sources.load_synthetic_tasks())
+        synthetic["task"] = synthetic["domain"]
+        splits["train"] = pd.concat([splits["train"], synthetic], ignore_index=True)
+        log.info("task: +%d synthetic rows into train", len(synthetic))
     if include_mined:
         mined = to_frame(sources.load_mined_tasks())
         mined["task"] = mined["domain"]

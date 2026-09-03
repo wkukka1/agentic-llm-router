@@ -155,6 +155,10 @@ class TaskHead(_CalibratedHead):
         return self.predict_batch([prompt])[0]
 
     def predict_batch(self, prompts: list[str]) -> list[TaskPrediction]:
+        # An empty batch is a legitimate call on a serving path -- a filter
+        # upstream removed everything -- and sklearn raises on it.
+        if not prompts:
+            return []
         proba = self._calibrated(self.model.predict_proba(list(prompts)))
         labels = self.labels
         out = []
@@ -169,6 +173,12 @@ class TaskHead(_CalibratedHead):
         return out
 
 
+def _entropy(p: np.ndarray) -> float:
+    """Shannon entropy in nats, 0 when certain and log(k) when uniform."""
+    p = np.clip(np.asarray(p, dtype=float), 1e-12, 1.0)
+    return float(-(p * np.log(p)).sum())
+
+
 @dataclass(slots=True)
 class RouterPrediction:
     """Both axes for one prompt."""
@@ -180,6 +190,67 @@ class RouterPrediction:
     def key(self) -> str:
         """``"<domain>/<task>"`` -- the cell a routing table would look up."""
         return f"{self.domain.domain}/{self.task.task}"
+
+    def feature_names(self) -> list[str]:
+        """Names for :meth:`vector`, same order, same length.
+
+        Held next to the vector rather than written down elsewhere, because a
+        feature vector whose column meanings live in a different file is one
+        refactor away from being silently wrong.
+        """
+        names = [f"domain.{d}" for d in sorted(self.domain.distribution)]
+        names += [f"task.{t}" for t in sorted(self.task.distribution)]
+        names += ["domain.confidence", "domain.margin", "domain.entropy",
+                  "domain.shortlist_size",
+                  "task.confidence", "task.margin", "task.entropy",
+                  "prompt.log_chars", "prompt.log_words"]
+        return names
+
+    def vector(self, prompt: str | None = None) -> np.ndarray:
+        """Fixed-length float vector for a downstream difficulty model.
+
+        Layout, in order:
+
+          * the full calibrated domain distribution, alphabetical by label
+          * the full calibrated task distribution, alphabetical by label
+          * domain confidence, margin (top-1 minus top-2) and entropy
+          * the adaptive shortlist length, which is how many domains the head
+            could not separate for this prompt
+          * task confidence, margin and entropy
+          * log character and word count, when ``prompt`` is supplied
+
+        The distributions are included whole rather than reduced to an argmax
+        because the shape carries information the label does not: a prompt
+        split 0.45/0.44 between two domains is a different routing problem from
+        one at 0.89, and both have the same argmax. Entropy and margin are
+        derivable from the distribution, and are included anyway -- they are
+        the two summaries a difficulty model is most likely to want, and
+        computing them here means every consumer computes them the same way.
+
+        Length is ``len(self.feature_names())``: 10 domains (or 8 merged) + 7
+        tasks + 9 scalars. Stable for a given head configuration; changing
+        ``merge_domains`` changes it, which is why the names travel alongside.
+        """
+        dom = np.array([self.domain.distribution[k] for k in sorted(self.domain.distribution)])
+        tsk = np.array([self.task.distribution[k] for k in sorted(self.task.distribution)])
+        d_sorted = np.sort(dom)[::-1]
+        t_sorted = np.sort(tsk)[::-1]
+        scalars = [
+            float(d_sorted[0]),
+            float(d_sorted[0] - d_sorted[1]) if len(d_sorted) > 1 else 1.0,
+            _entropy(dom),
+            float(len(self.domain.shortlist)),
+            float(t_sorted[0]),
+            float(t_sorted[0] - t_sorted[1]) if len(t_sorted) > 1 else 1.0,
+            _entropy(tsk),
+        ]
+        # Length is the one prompt property a difficulty model almost always
+        # wants and neither head exposes. Zero when the prompt is not passed,
+        # so the vector keeps its width either way.
+        n_chars = len(prompt or "")
+        n_words = len((prompt or "").split())
+        scalars += [float(np.log1p(n_chars)), float(np.log1p(n_words))]
+        return np.concatenate([dom, tsk, np.array(scalars, dtype=float)])
 
     @property
     def should_defer(self) -> bool:
@@ -208,9 +279,29 @@ class RouterHead:
 
     def predict_batch(self, prompts: list[str]) -> list[RouterPrediction]:
         prompts = list(prompts)
+        if not prompts:
+            return []
         return [RouterPrediction(domain=d, task=t) for d, t in
                 zip(self.domain.predict_batch(prompts),
                     self.task.predict_batch(prompts), strict=True)]
+
+    def feature_names(self) -> list[str]:
+        """Column names for :meth:`vectorise`, resolved from one prediction."""
+        return self.predict("x").feature_names()
+
+    def vectorise(self, prompts: list[str]) -> tuple[np.ndarray, list[str]]:
+        """``(n_prompts, n_features)`` matrix plus its column names.
+
+        The handoff to a downstream difficulty or ability model: one row per
+        prompt, columns fixed and named. Returning the names with the matrix
+        rather than expecting the caller to fetch them separately is deliberate
+        -- these two must not be able to drift apart.
+        """
+        preds = self.predict_batch(prompts)
+        if not preds:
+            return np.zeros((0, len(self.feature_names()))), self.feature_names()
+        rows = np.vstack([p.vector(t) for p, t in zip(preds, prompts, strict=True)])
+        return rows, preds[0].feature_names()
 
 
 class DomainHead(_CalibratedHead):
@@ -241,6 +332,8 @@ class DomainHead(_CalibratedHead):
         return self.predict_batch([prompt])[0]
 
     def predict_batch(self, prompts: list[str]) -> list[DomainPrediction]:
+        if not prompts:
+            return []
         proba = self._calibrated(self.model.predict_proba(list(prompts)))
         labels = self.labels
         if self.merge_domains:

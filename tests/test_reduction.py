@@ -388,3 +388,80 @@ class TestTaskAndRouterHeads:
         prompts = ["alpha beta doc 1", "give me ideas for a project 2"]
         batch = head.predict_batch(prompts)
         assert [b.key for b in batch] == [head.predict(p).key for p in prompts]
+
+
+class TestFeatureVector:
+    """The handoff to a downstream difficulty model."""
+
+    def _head(self, tmp_path):
+        from router.inference import RouterHead
+
+        return RouterHead(TestDomainHead._run_dir(tmp_path),
+                          TestTaskAndRouterHeads._task_run(tmp_path))
+
+    # `_run_dir` creates its directory, so it can only be called once per
+    # tmp_path; tests needing both heads build them here and share them.
+
+    def test_names_and_vector_agree_on_length(self, tmp_path):
+        """These must not be able to drift apart -- a mislabelled column is
+        worse than a missing one, because nothing errors."""
+        head = self._head(tmp_path)
+        p = head.predict("alpha beta doc 1")
+        assert len(p.vector("alpha beta doc 1")) == len(p.feature_names())
+
+    def test_vectorise_returns_one_row_per_prompt_with_its_names(self, tmp_path):
+        head = self._head(tmp_path)
+        prompts = ["alpha beta doc 1", "summarise this document 2", "gamma delta rec 3"]
+        X, names = head.vectorise(prompts)
+        assert X.shape == (len(prompts), len(names))
+        assert names == head.feature_names()
+
+    def test_distributions_lead_the_vector_in_sorted_label_order(self, tmp_path):
+        head = self._head(tmp_path)
+        p = head.predict("alpha beta doc 1")
+        v = p.vector()
+        dom = sorted(p.domain.distribution)
+        assert p.feature_names()[: len(dom)] == [f"domain.{d}" for d in dom]
+        np.testing.assert_allclose(v[: len(dom)], [p.domain.distribution[d] for d in dom])
+
+    def test_margin_and_entropy_match_the_distribution_they_summarise(self, tmp_path):
+        head = self._head(tmp_path)
+        p = head.predict("alpha beta doc 1")
+        v = dict(zip(p.feature_names(), p.vector(), strict=True))
+        probs = sorted(p.domain.distribution.values(), reverse=True)
+        assert v["domain.confidence"] == pytest.approx(probs[0])
+        assert v["domain.margin"] == pytest.approx(probs[0] - probs[1])
+        expected = -sum(q * np.log(max(q, 1e-12)) for q in probs)
+        assert v["domain.entropy"] == pytest.approx(expected, abs=1e-6)
+
+    def test_a_certain_distribution_has_lower_entropy_than_a_split_one(self, tmp_path):
+        """The property a difficulty model relies on: entropy tracks how torn
+        the head is, which the argmax alone cannot express."""
+        from router.inference import _entropy
+
+        assert _entropy(np.array([0.97, 0.03])) < _entropy(np.array([0.5, 0.5]))
+
+    def test_length_features_are_zero_without_a_prompt_but_width_is_unchanged(self, tmp_path):
+        head = self._head(tmp_path)
+        p = head.predict("alpha beta doc 1")
+        bare, withtext = p.vector(), p.vector("alpha beta doc 1")
+        assert len(bare) == len(withtext)
+        i = p.feature_names().index("prompt.log_words")
+        assert bare[i] == 0.0
+        assert withtext[i] > 0.0
+
+    def test_vectorise_of_nothing_keeps_its_width(self, tmp_path):
+        head = self._head(tmp_path)
+        X, names = head.vectorise([])
+        assert X.shape == (0, len(names))
+
+    def test_an_empty_batch_is_not_an_error(self, tmp_path):
+        """A filter upstream can legitimately remove every prompt; sklearn
+        raises on a zero-row matrix, so the heads short-circuit before it."""
+        from router.inference import DomainHead, RouterHead, TaskHead
+
+        dom = TestDomainHead._run_dir(tmp_path)
+        task = TestTaskAndRouterHeads._task_run(tmp_path)
+        assert DomainHead(dom).predict_batch([]) == []
+        assert TaskHead(task).predict_batch([]) == []
+        assert RouterHead(dom, task).predict_batch([]) == []

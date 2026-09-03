@@ -261,6 +261,47 @@ def load_real_tasks(path: str = REAL_TASKS_PATH) -> list[Example]:
     return out
 
 
+def load_synthetic_tasks(tasks: list[str] | None = None) -> list[Example]:
+    """Hand-written prompts for the three starved task types.
+
+    `summarize` has 31 real examples (F1 0.444), `classify` 55 (0.476) and
+    `extract` 6 (0.000). Targeted mining across the whole unlabelled pool found
+    one further `extract`, so more real data is not available at any reasonable
+    cost; writing it is the remaining option.
+
+    Written in real-user register -- lowercase, typos, bare URLs, exam
+    formatting pasted verbatim, fragments -- and shaped from the real examples
+    rather than from an idea of what the task looks like. Clean instruction
+    prose would be trivially separable from real traffic, and the model would
+    learn to spot synthetic style instead of the task. That is exactly the
+    mechanism that made the Dolly-trained head score 0.822 on Dolly and 0.700
+    on real prompts.
+
+    Tagged ``source="synthetic"`` so its contribution stays measurable and can
+    be dropped in one line. Whether it helps is settled on real held-out
+    prompts, never on itself.
+    """
+    import importlib.util
+    import sys
+
+    names = list(tasks) if tasks else ["summarize", "classify", "extract"]
+    out: list[Example] = []
+    for task in names:
+        path = f"{SYNTHETIC_DIR}/task_{task}.py"
+        spec = importlib.util.spec_from_file_location(f"synthetic_task_{task}", path)
+        if spec is None or spec.loader is None:
+            log.warning("no synthetic task file at %s", path)
+            continue
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        prompts = getattr(module, task.upper())
+        out.extend(Example(prompt=p, source="synthetic", subset=f"task_{task}",
+                           capability=task) for p in prompts)
+    log.info("synthetic tasks: %d rows over %s", len(out), names)
+    return out
+
+
 def load_mined_tasks(path: str = MINED_TASKS_PATH) -> list[Example]:
     """240 prompts found by targeted search for the rare task types.
 
