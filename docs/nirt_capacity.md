@@ -1,10 +1,20 @@
 # NIRT capacity / ceiling decomposition (P1)
 
 Part of the capacity workstream (`start-researching-on-how-velvet-thunder` plan).
-The 2026-09-03 head search saturated latent width `K` and MLP width with **no
-overfitting at 5× params** — the `query_latent` model *underfits*. This doc
-decomposes the gap between NIRT and "perfect" so the capacity work targets the
-real bottleneck.
+
+> **CORRECTION (2026-09-04).** This doc originally concluded the `query_latent`
+> model *underfits* (train ≈ val BCE, flat across a param sweep). That was an
+> **early-stopping artifact** — those numbers were all measured at the val
+> minimum (epoch ~15), where train and val are close *by construction*. Trained to
+> convergence with no early stopping the model **overfits**: RouterBench train BCE
+> 0.59→0.36 while val 0.61→**1.06**; IRT-Router train 0.55→0.45 while val
+> 0.50→0.51. See "Trained-to-convergence behaviour" and "The RouterBench 0-/5-shot
+> confound" below. The architecture / capacity / encoder levers (P2, P4a) are dead
+> for a different reason than first thought: the model already has enough capacity,
+> it does not *generalise*.
+
+The 2026-09-03 head search saturated latent width `K` and MLP width **at the
+early-stop point**. This doc decomposes the gap between NIRT and "perfect".
 
 Script: `scripts/nirt/capacity_diagnostics.py`.
 Artifacts: `artifacts/phase2/capacity_diagnostics.json` (RouterBench),
@@ -133,19 +143,74 @@ ability vector instead of a linear projection of the profile-text embedding) —
 RouterBench BCE 0.612 → 0.598, IRT-Router BCE 0.511 → 0.494 / regret 0.146 →
 0.134. With only 9–20 LLMs, projecting `θ_m` from a short description loses signal.
 
-## Conclusions → where the capacity goes
+## Trained-to-convergence behaviour (2026-09-04) — it OVERFITS
 
-1. **Representation is the dominant bottleneck** — ~0.13–0.14 BCE above the
-   oracle-rep ceiling on *both* suites, and the underfit families (code,
-   reasoning, math) are exactly where a frozen general-text encoder is weakest.
-   **→ P4a (swap encoder) is the highest-value next step.**
-2. **The bilinear form is a real but smaller bottleneck** (MLP-router beats
-   NIRT-ours by ~0.01–0.017 on both suites). **→ P2c (interaction term)** is worth
-   a focused sweep, done cheaply alongside P4.
-3. **Head width / depth / dropout / `model_hidden` (P2a/P2b)** buy ~−0.016 BCE and
-   do not touch routing — keep the best config but do not invest more there.
-4. **Routing responds to capacity on IRT-Router (~1 pt), not on RouterBench.**
-   Evaluate everything from here on the IRT-Router `test` + `ood` splits.
-5. **OOD calibration regresses below `model_mean`** for learned predictors — P5
-   (routing-aware / robust loss) and a shrinkage-to-`model_mean` prior are the
-   levers there, not raw capacity.
+`model_params=free`, K=16, 2-layer head, **no early stopping**, minibatched:
+
+| epoch | RB train | RB val | IRT-R train | IRT-R val |
+|---|--:|--:|--:|--:|
+| ~15 (early-stop point) | 0.59 | **0.61** (min) | 0.49 | **0.50** (min) |
+| ~60 | 0.48 | 0.70 | 0.47 | 0.50 |
+| ~120–200 | **0.36** | **1.06** | 0.45 | 0.51 |
+
+RouterBench val BCE *explodes*; IRT-Router's barely moves. The model has ample
+capacity — early stopping at epoch ~15 is near-optimal and is the operative
+regulariser. Regularisation swept to convergence (dropout 0.3–0.5, wd 1e-4–1e-3)
+moves the RouterBench val minimum by **−0.003 at best** (0.6055 → 0.6030); heavy
+reg hurts. So val BCE ~0.60 (RB) / ~0.50 (IRT-R) is a **generalisation ceiling**,
+not a capacity or optimisation floor.
+
+`head(e_q)` is *not* information-bottlenecked (an earlier probe that suggested this
+had an obs-vs-query indexing bug): with correct per-query indexing a plain head
+fits 100 training queries to BCE 0.072. The issue is transfer to unseen queries.
+
+## The RouterBench 0-/5-shot confound (2026-09-04) — the biggest single lever
+
+RouterBench pool-expansion E2 made 0-shot and 5-shot versions of a question
+**separate items that carry the identical question text** (hence identical `e_q`)
+with different outcomes, and shot count is not a feature. The model memorises one
+twin on train and its twin contradicts it in val — the mechanism behind the val
+explosion above.
+
+| RouterBench training data / features | best val BCE |
+|---|--:|
+| 0-shot + 5-shot, `e_q` only (default) | 0.602 |
+| **0-shot only** | **0.557** (−0.045) |
+| 0-shot + 5-shot, **`e_q` + 1 shot-indicator feature** | **0.569** (−0.033, all data) |
+|   ↳ 0-shot regime | 0.558 (was 0.593) |
+|   ↳ 5-shot regime | 0.580 (was 0.611) |
+
+**One binary feature recovers ~all of the 0-shot-only performance and makes the
+5-shot regime predictable too** — bigger than P2 (−0.016), kNN-impute (−0.002),
+encoder swap (0), or regularisation (−0.003) combined. IRT-Router has no such
+twins.
+
+## Conclusions (2026-09-04, corrected)
+
+The model does **not** underfit — trained to convergence it overfits, and early
+stopping at epoch ~15 is near-optimal. Capacity, architecture (P2), encoder swap
+(P4a), and regularisation are **all near-dead levers** for prediction BCE — each
+tested directly. The exploitable gaps are **data quality** and **objective**, not
+model complexity:
+
+1. **RouterBench: add a shot-count feature.** The 0-/5-shot twin items
+   (identical text, different labels, no shot feature) are the largest single
+   loss: **−0.033 val BCE** from one binary feature, or −0.045 by dropping 5-shot.
+   → build a structured per-query feature vector (shot count, task family, prompt
+   length, `n_choices`) and concat it to `e_q`.
+2. **More training queries.** ~29k RouterBench / ~22k IRT-Router queries over a
+   768-d input is data-starved — the model overfits within ~5 epochs. → P6
+   (Arena/judge adds ~50k queries + a related signal), more benchmarks, pooling
+   the two suites.
+3. **Routing objective + parameterisation** (already done): `model_params: free`
+   (−0.017 BCE both suites, IRT-Router regret 0.146→0.134) and P5 `bce_pairwise`
+   (regret →0.132, oracle-hit 0.843→0.863). These generalise better than raw BCE.
+4. **IRT-Router is near its ceiling** — val 0.50 vs transductive ceiling 0.37, no
+   twin problem, gentle overfitting. Little prediction headroom; routing is the
+   lever.
+5. **Fine-tuning the encoder (P4b)**: deprioritised. The model already overfits;
+   a trainable encoder overfits harder and needs careful regularisation for an
+   uncertain payoff. Only revisit if (1)+(2) plateau.
+6. **OOD calibration regresses below `model_mean`** — a shrinkage-to-`model_mean`
+   prior (blend `p̂` toward the per-model rate for low-confidence / far-from-train
+   queries) is the lever, not capacity.
