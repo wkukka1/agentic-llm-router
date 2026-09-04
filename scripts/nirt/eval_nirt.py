@@ -8,33 +8,27 @@ Writes <runs_dir>/<run>/eval_<split>.json and prints the table.
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
-from pathlib import Path
 
 import yaml
 
+from router.cli import raw_parser, resolve, write_json
 from router.config import load_config
 from router.nirt.evaluate import evaluate_split
 from router.nirt.train import load_run
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = raw_parser(__doc__)
     ap.add_argument("--run", required=True, help="run name under runs_dir")
     ap.add_argument("--split", default="test", choices=["train", "validation", "test"])
     ap.add_argument("--config", default="configs/nirt.yaml")
     ap.add_argument("--phase0-config", default=None)
     args = ap.parse_args()
 
-    root = Path(load_config().root)
-    cfg_path = Path(args.config)
-    if not cfg_path.is_absolute():
-        cfg_path = root / cfg_path
-    nirt_cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-    runs_dir = nirt_cfg.get("runs_dir", "data/processed/nirt_runs")
-    runs_dir = Path(runs_dir) if Path(runs_dir).is_absolute() else root / runs_dir
+    nirt_cfg = yaml.safe_load(resolve(args.config).read_text(encoding="utf-8"))
+    runs_dir = resolve(nirt_cfg.get("runs_dir", "data/processed/nirt_runs"))
 
     model, run_cfg, model_index = load_run(args.run, runs_dir=runs_dir)
     p0 = load_config(args.phase0_config) if args.phase0_config else load_config()
@@ -49,9 +43,7 @@ def main() -> int:
     }
     print(json.dumps(printable, indent=2, default=float))
 
-    out = runs_dir / args.run / f"eval_{args.split}.json"
-    out.write_text(json.dumps(metrics, indent=2, default=float), encoding="utf-8")
-    print(f"\nwrote {out}")
+    write_json(runs_dir / args.run / f"eval_{args.split}.json", metrics)
     return 0
 
 

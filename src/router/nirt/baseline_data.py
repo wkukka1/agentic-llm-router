@@ -212,3 +212,30 @@ def batched_forward(model, source, *, fields=("proba",), batch: int = 16384, dev
                     v = r.params[f]
                 acc[f].append(v.cpu().numpy())
     return {f: np.concatenate(a) for f, a in acc.items()}
+
+
+def checkpoint_matrix(ckpt, cfg: Config, split: str, field: str = "proba", *,
+                      level: float = 0.9):
+    """Predicted ``[query_id x model_id]`` DataFrame for a saved Phase-1/2 checkpoint.
+
+    ``field`` -> ``proba`` (Bernoulli P(correct)), ``mean`` (E[Y]), ``lower`` /
+    ``upper`` (predictive interval at ``level``), or any response-head param.
+    The one place the ``load_run`` -> ``build_arrays`` -> ``batched_forward`` ->
+    pivot chain lives -- was copy-pasted into ``route_compare``, ``route_eval`` and
+    ``pool_expansion.battery``.
+    """
+    import pandas as pd
+
+    from ..data.response_matrix import pivot_qm
+    from .checkpoint import load_run
+
+    model, blob, s = load_run(ckpt)
+    ev = build_arrays(
+        cfg, split=split, pathway=s["pathway"], binary_threshold=s["binary_threshold"],
+        score_kind=s["score_kind"], use_relevance=model.use_relevance,
+        use_warmup=model.use_warmup, model_index=blob["model_index"],
+    )
+    v = batched_forward(model, ev, fields=(field,), level=level)[field]
+    return pivot_qm(
+        pd.DataFrame({"query_id": ev.query_ids, "model_id": ev.model_ids, field: v}), field
+    )

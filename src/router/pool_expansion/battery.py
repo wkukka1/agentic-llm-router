@@ -28,12 +28,12 @@ import numpy as np
 import pandas as pd
 
 from ..config import Config, load_config
-from ..provenance import file_digest, git_dirty, git_sha
 from ..data.phase1 import load_phase1
-from ..nirt.baseline_data import batched_forward, build_arrays
+from ..nirt.baseline_data import checkpoint_matrix as _pred_matrix
 from ..nirt.baseline_eval import evaluate_checkpoint
 from ..nirt.checkpoint import load_run
 from ..nirt.continuous_eval import evaluate_continuous
+from ..provenance import file_digest, git_dirty, git_sha
 from ..nirt.routing import (
     add_reward_columns,
     aiq,
@@ -67,22 +67,9 @@ LEDGER_COLUMNS = [
 
 
 # --------------------------------------------------------------------------- #
-# prediction matrices (frozen checkpoints)                                    #
+# prediction matrices (frozen checkpoints)  --  _pred_matrix is                 #
+# router.nirt.baseline_data.checkpoint_matrix (imported above)                  #
 # --------------------------------------------------------------------------- #
-def _pred_matrix(ckpt, cfg: Config, split: str, field: str, level: float = 0.9) -> pd.DataFrame:
-    model, blob, s = load_run(ckpt)
-    ev = build_arrays(
-        cfg, split=split, pathway=s["pathway"], binary_threshold=s["binary_threshold"],
-        score_kind=s["score_kind"], use_relevance=model.use_relevance,
-        use_warmup=model.use_warmup, model_index=blob["model_index"],
-    )
-    v = batched_forward(model, ev, fields=(field,), level=level)[field]
-    return (
-        pd.DataFrame({"query_id": ev.query_ids, "model_id": ev.model_ids, "v": v})
-        .pivot_table(index="query_id", columns="model_id", values="v", aggfunc="mean")
-    )
-
-
 def _nirt_matrix(run_name: str, data, split: str):
     from ..nirt.evaluate import predict_matrix
     from ..nirt.train import load_run as nirt_load_run

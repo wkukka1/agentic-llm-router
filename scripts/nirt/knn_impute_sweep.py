@@ -16,7 +16,6 @@ artifacts/phase2/knn_impute_sweep.json.
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
 from pathlib import Path
@@ -25,6 +24,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from router.cli import float_table, raw_parser, write_json, zeroshot_only
 from router.config import load_config
 from router.data.phase1 import load_phase1
 from router.embeddings import EmbeddingStore
@@ -38,14 +38,6 @@ from router.retrieval.knn_impute import build_knn_imputed_store, imputed_pathway
 from router.retrieval.query_bank import QueryBank, build_query_bank, query_bank_dir
 
 _KEEP = ("bce", "brier", "auc", "acc@0.5", "spearman_r")
-
-
-def _zeroshot(true_df, cost_df):
-    """Drop RouterBench ':5shot' variants so every row is scored on the same
-    query set regardless of which query store covers the multishot ids
-    (matches scripts/route_compare.py)."""
-    keep = [not str(q).endswith(":5shot") for q in true_df.index]
-    return true_df.loc[keep], cost_df.loc[keep]
 
 
 def _metrics_row(true_df, cost_df, pred_df) -> dict:
@@ -93,7 +85,7 @@ def _ensure_ood_bank(cfg, nirt_cfg, verbose=True) -> Path:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = raw_parser(__doc__)
     ap.add_argument("--config", default="configs/nirt.yaml")
     ap.add_argument("--phase0-config", default=None)
     ap.add_argument("--k", default=None, help="comma list of k (default: knn_impute.k_values)")
@@ -139,12 +131,12 @@ def main() -> int:
         print("[sweep] FAISS query bank missing; run scripts/retrieval/build_query_bank.py first")
         return 1
 
-    id_true, id_cost = _zeroshot(*eval_matrices(d, split="test"))
+    id_true, id_cost = zeroshot_only(*eval_matrices(d, split="test"))
     ood_true = ood_cost = None
     ood_bank_dir = None
     if do_ood:
         fams = list(ood_families(nirt_cfg))
-        ood_true, ood_cost = _zeroshot(*ood_matrices(d, fams))
+        ood_true, ood_cost = zeroshot_only(*ood_matrices(d, fams))
         ood_bank_dir = _ensure_ood_bank(cfg, nirt_cfg)
 
     id_rows: list[dict] = []
@@ -199,20 +191,17 @@ def main() -> int:
     ood_df = pd.DataFrame(ood_rows)
     show = ["k", "run", "bce", "brier", "auc", "acc@0.5", "spearman_r",
             "optimal_rate", "regret", "oracle_hit_any_best", "sel_quality"]
-    with pd.option_context("display.width", 220, "display.float_format", lambda x: f"{x:.4f}"):
+    with float_table(220):
         print("\n=== ID (test) — kNN-imputed query representation sweep ===")
         print(id_df[[c for c in show if c in id_df]].to_string(index=False))
         if not ood_df.empty:
             print("\n=== OOD (held-out families) ===")
             print(ood_df[[c for c in show if c in ood_df]].to_string(index=False))
 
-    out = root / args.out
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({
+    write_json(root / args.out, {
         "k_values": k_values, "weighting": weighting, "dim": dim,
         "id": id_rows, "ood": ood_rows,
-    }, indent=2, default=float), encoding="utf-8")
-    print(f"\nwrote {out}")
+    })
     return 0
 
 

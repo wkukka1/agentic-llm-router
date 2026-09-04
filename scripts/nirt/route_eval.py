@@ -18,17 +18,15 @@ Writes  <runs_dir>/<run>/route_eval_<split>.json
 
 from __future__ import annotations
 
-import argparse
-import json
 import sys
-from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import yaml
 
+from router.cli import float_table, raw_parser, resolve, write_json
 from router.config import load_config
 from router.data.phase1 import load_phase1
+from router.nirt.baseline_data import checkpoint_matrix
 from router.nirt.evaluate import predict_matrix
 from router.nirt.routing import align, eval_matrices
 from router.nirt.routing_eval import (
@@ -42,18 +40,7 @@ from router.nirt.train import load_run as nirt_load_run
 
 def _zoib_matrix(ckpt: str, cfg, split: str, field: str, true_df) -> np.ndarray:
     """Predicted [Q,M] for a continuous / Bernoulli checkpoint (field: mean|proba|lower)."""
-    from router.nirt.baseline_data import batched_forward, build_arrays
-    from router.nirt.checkpoint import load_run
-
-    model, blob, s = load_run(ckpt)
-    ev = build_arrays(cfg, split=split, pathway=s["pathway"],
-                      binary_threshold=s["binary_threshold"], score_kind=s["score_kind"],
-                      use_relevance=model.use_relevance, use_warmup=model.use_warmup,
-                      model_index=blob["model_index"])
-    v = batched_forward(model, ev, fields=(field,))[field]
-    m = pd.DataFrame({"query_id": ev.query_ids, "model_id": ev.model_ids, "v": v}) \
-        .pivot_table(index="query_id", columns="model_id", values="v", aggfunc="mean")
-    return align(m, true_df)
+    return align(checkpoint_matrix(ckpt, cfg, split, field), true_df)
 
 
 def _fmt_pct(x):
@@ -108,7 +95,7 @@ def _summary(run: str, split: str, nirt_q: dict, nirt_ca: dict, n_models: int) -
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = raw_parser(__doc__)
     ap.add_argument("--run", required=True, help="NIRT run name under runs_dir")
     ap.add_argument("--split", default="test")
     ap.add_argument("--config", default=None, help="phase0 / data config")
@@ -124,12 +111,8 @@ def main() -> int:
                     help="also dump the full [Q x M] predicted/actual/rank table")
     args = ap.parse_args()
 
-    root = Path(load_config().root)
-    ncfg_path = Path(args.nirt_config)
-    ncfg_path = ncfg_path if ncfg_path.is_absolute() else root / ncfg_path
-    ncfg = yaml.safe_load(ncfg_path.read_text(encoding="utf-8"))
-    runs_dir = Path(ncfg.get("runs_dir", "data/processed/nirt_runs"))
-    runs_dir = runs_dir if runs_dir.is_absolute() else root / runs_dir
+    ncfg = yaml.safe_load(resolve(args.nirt_config).read_text(encoding="utf-8"))
+    runs_dir = resolve(ncfg.get("runs_dir", "data/processed/nirt_runs"))
 
     p0 = load_config(args.config)
     d = load_phase1(p0)
@@ -181,8 +164,7 @@ def main() -> int:
 
     print(_summary(args.run, args.split, nirt_q, nirt_ca, len(model_ids)))
     print("\n=== routing strategies (§9) ===")
-    with pd.option_context("display.width", 220, "display.max_colwidth", 40,
-                           "display.float_format", lambda x: f"{x:.4f}"):
+    with float_table(220, **{"display.max_colwidth": 40}):
         print(summary_df.to_string(index=False))
 
     # -- artifacts --------------------------------------------------------
@@ -216,8 +198,7 @@ def main() -> int:
             ),
         },
     }
-    ev_path = out_dir / f"route_eval_{args.split}.json"
-    ev_path.write_text(json.dumps(payload, indent=2, default=float), encoding="utf-8")
+    ev_path = write_json(out_dir / f"route_eval_{args.split}.json", payload, announce=False)
 
     if args.per_query_model:
         from router.nirt.routing_eval import per_query_model_table

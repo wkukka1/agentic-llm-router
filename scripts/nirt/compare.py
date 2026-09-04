@@ -17,15 +17,13 @@ trained with `train_nirt.py --ood`) and evaluates only on those families. Writes
 
 from __future__ import annotations
 
-import argparse
-import json
 import sys
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import yaml
 
+from router.cli import float_table, raw_parser, resolve, write_json
 from router.config import load_config
 from router.data.phase1 import load_phase1
 from router.nirt.baselines import fit_classical_irt, fit_mlp_router, knn_router_matrix, mlp_router_matrix
@@ -43,9 +41,6 @@ from router.nirt.routing import (
     train_quality,
 )
 from router.nirt.train import load_run
-
-pd.set_option("display.width", 200)
-pd.set_option("display.max_columns", 30)
 
 
 def _round(o, n=4):
@@ -69,7 +64,7 @@ def _pred_metrics(true: np.ndarray, pred: np.ndarray) -> dict:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = raw_parser(__doc__)
     ap.add_argument("--run", required=True)
     ap.add_argument("--split", default="test", choices=["validation", "test"])
     ap.add_argument("--ood", action="store_true", help="evaluate on held-out benchmark families")
@@ -79,12 +74,8 @@ def main() -> int:
     ap.add_argument("--reference", default=None)
     args = ap.parse_args()
 
-    root = Path(load_config().root)
-    cfg_path = Path(args.config)
-    cfg_path = cfg_path if cfg_path.is_absolute() else root / cfg_path
-    nirt_cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-    runs_dir = Path(nirt_cfg.get("runs_dir", "data/processed/nirt_runs"))
-    runs_dir = runs_dir if runs_dir.is_absolute() else root / runs_dir
+    nirt_cfg = yaml.safe_load(resolve(args.config).read_text(encoding="utf-8"))
+    runs_dir = resolve(nirt_cfg.get("runs_dir", "data/processed/nirt_runs"))
 
     p0 = load_config(args.phase0_config) if args.phase0_config else load_config()
     d = load_phase1(p0)
@@ -203,20 +194,21 @@ def main() -> int:
     # -- print ------------------------------------------------------
     print(f"\n################ COMPARISON  run={args.run}  eval={label}  "
           f"({n_q} queries, {len(model_ids)} models) ################")
-    print("\n== 1. PREDICTION QUALITY ==")
-    print(pred_table.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
-    print("\n== 2. RANKING (per query) ==")
-    print(rank_table.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
-    print("\n== 3. ROUTING + COST + REWARD ==")
-    print(routing.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
-    print("\n== 4. AIQ (area under cost/quality curve) ==")
-    print(aiq_table.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
-    print("\n-- NIRT Pareto --")
-    print(paretos["NIRT"][["lam", "quality", "accuracy", "cost_per_1k_queries"]]
-          .to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+    with float_table(200, **{"display.max_columns": 30}):
+        print("\n== 1. PREDICTION QUALITY ==")
+        print(pred_table.to_string(index=False))
+        print("\n== 2. RANKING (per query) ==")
+        print(rank_table.to_string(index=False))
+        print("\n== 3. ROUTING + COST + REWARD ==")
+        print(routing.to_string(index=False))
+        print("\n== 4. AIQ (area under cost/quality curve) ==")
+        print(aiq_table.to_string(index=False))
+        print("\n-- NIRT Pareto --")
+        print(paretos["NIRT"][["lam", "quality", "accuracy", "cost_per_1k_queries"]]
+              .to_string(index=False))
 
-    out = runs_dir / args.run / f"comparison_{label.replace('[','_').replace(']','').replace('+','-')}.json"
-    out.write_text(json.dumps(_round({
+    tag = label.replace("[", "_").replace("]", "").replace("+", "-")
+    write_json(runs_dir / args.run / f"comparison_{tag}.json", _round({
         "run": args.run, "eval": label, "n_queries": int(n_q), "model_ids": model_ids,
         "prediction": pred_table.to_dict(orient="records"),
         "ranking": rank_table.to_dict(orient="records"),
@@ -224,8 +216,7 @@ def main() -> int:
         "aiq": aiq_table.to_dict(orient="records"),
         "pareto": {k: v.to_dict(orient="records") for k, v in paretos.items()},
         "classical_irt_ceiling_metrics": irt_cell.metrics,
-    }), indent=2, default=float), encoding="utf-8")
-    print(f"\nwrote {out}")
+    }))
     return 0
 
 
