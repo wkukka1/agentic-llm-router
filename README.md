@@ -6,7 +6,12 @@ model. No LLM at inference, no network calls, no fine-tuned weights.
 | head | question | classes | top-1 | top-2 |
 |---|---|---|---|---|
 | **domain** | what is it about | 8 (merged from 10) | 0.763 | 0.919 |
-| **task** | what does it ask to be done | 7 | 0.802 | 0.933 |
+| **task** | what does it ask to be done | 7 | 0.793 | 0.950 |
+
+Both cross-validated on hand-labelled real prompts, in the configuration that
+ships. On 402 prompts labelled by someone outside this project the domain head
+reaches 0.923 top-1, and its adaptive shortlist holds the true domain 0.985 of
+the time using 1.40 labels.
 
 Every number in this repository is measured on **hand-labelled real user
 prompts**, cross-validated. Benchmark accuracy is not reported anywhere: v1

@@ -126,12 +126,19 @@ benchmarks and 0.47 in the wild, and that lesson cost two rebuilds.
 | 402 external prompts (labels not ours) | 0.923 | 0.980 | — |
 | adaptive shortlist, external | **0.985 at 1.40 labels** | | |
 
-**Task** — 1,000 prompts, 7 classes, 5-fold CV:
+**Task** — 1,000 prompts, 7 classes, 5-fold CV. Non-real rows are training-only;
+the evaluation set is real throughout:
 
-| | top-1 | top-2 | macro-F1 |
+| training data | top-1 | top-2 | macro-F1 |
 |---|---|---|---|
+| majority-class baseline | 0.729 | — | — |
 | real labels only | 0.802 | 0.933 | 0.524 |
-| + hand-written and generated data | 0.793 | **0.950** | **0.581** |
+| **+ hand-written and generated (shipped)** | 0.793 | **0.950** | **0.581** |
+
+The shipped configuration trades 1 point of top-1 for 1.7 of top-2 and 5.7 of
+macro-F1. Neither difference is significant on 1,000 rows, but `extract` goes
+from never being predicted at all to F1 0.364, and top-2 is what the router
+consumes.
 
 **Overfitting audit** (`router overfit`), both heads clean:
 
