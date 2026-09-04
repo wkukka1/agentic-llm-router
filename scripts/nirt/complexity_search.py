@@ -35,11 +35,19 @@ from router.nirt.routing_eval import routing_evaluation
 from router.nirt.train import fit, load_run
 
 SPACE = {
-    "dim": [4, 8, 16, 32, 48, 64],
-    "query_hidden": [None, 64, 128, 256],
+    "dim": [8, 16, 32],
+    "query_hidden": [128, 256],
     "difficulty": ["scalar", "vector"],
     "lr": [1.0e-3, 2.0e-3],
     "weight_decay": [1.0e-5, 1.0e-4],
+    # P2 capacity knobs (all default to the legacy head / bilinear logit)
+    "query_head_layers": [1, 2, 3],
+    "query_head_norm": ["none", "layernorm"],
+    "query_head_dropout": [0.0, 0.1, 0.2],
+    "model_hidden": [None, 128],
+    "interaction": [False, True],
+    "grad_clip": [0.0, 1.0],
+    "lr_schedule": ["none", "cosine"],
 }
 _KEEP = ("bce", "brier", "auc", "acc@0.5", "spearman_r")
 
@@ -67,9 +75,18 @@ def _nirt_cfg(base: dict, combo: dict, query_pathway: str | None) -> dict:
         dim=int(combo["dim"]), difficulty=combo["difficulty"],
         query_hidden=("none" if combo["query_hidden"] is None else int(combo["query_hidden"])),
         constrain_discrimination="auto",
+        query_head_layers=int(combo.get("query_head_layers", 1)),
+        query_head_norm=combo.get("query_head_norm", "none"),
+        query_head_dropout=float(combo.get("query_head_dropout", 0.0)),
+        model_hidden=(None if combo.get("model_hidden") is None else int(combo["model_hidden"])),
+        interaction=bool(combo.get("interaction", False)),
     )
     cfg.setdefault("train", {})
-    cfg["train"].update(lr=float(combo["lr"]), weight_decay=float(combo["weight_decay"]))
+    cfg["train"].update(
+        lr=float(combo["lr"]), weight_decay=float(combo["weight_decay"]),
+        grad_clip=float(combo.get("grad_clip", 0.0)),
+        lr_schedule=combo.get("lr_schedule", "none"),
+    )
     cfg.setdefault("data", {})["query_pathway"] = query_pathway
     return cfg
 
@@ -137,9 +154,12 @@ def main() -> int:
         print(f"[cx] baseline run '{args.baseline_run}' not found; skipping reference row")
 
     for i, combo in enumerate(combos):
+        import hashlib
+
         h = "none" if combo["query_hidden"] is None else combo["query_hidden"]
+        tag = hashlib.sha1(repr(sorted(combo.items())).encode()).hexdigest()[:6]
         name = f"nirt-cx-K{combo['dim']}h{h}{'v' if combo['difficulty']=='vector' else 's'}" \
-               f"-lr{combo['lr']:g}wd{combo['weight_decay']:g}"
+               f"-lr{combo['lr']:g}wd{combo['weight_decay']:g}-{tag}"
         print(f"\n[cx {i+1}/{len(combos)}] {name}")
         cfg = _nirt_cfg(base, combo, qp)
         if not args.retrain:

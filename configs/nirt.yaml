@@ -30,17 +30,42 @@ model:
   query_hidden: 64           # hidden width of the query head(s); null -> a single linear layer
   difficulty: scalar         # query_latent only. {scalar: logit = a.theta - b (b in R^1);
                              #  vector: logit = sum_k a_k (theta_k - b_k), b in R^K (per-dim threshold)}
+  # -- query-head capacity (P2a). Defaults reproduce the legacy
+  #    Linear->ReLU->Linear head bit-for-bit; existing checkpoints load unchanged.
+  query_head_layers: 1       # number of hidden Linear->act blocks (1 = the legacy head)
+  query_head_norm: none      # {none, layernorm} -- LayerNorm after each hidden Linear
+  query_head_activation: relu  # {relu, gelu}
+  query_head_dropout: 0.0    # dropout after each hidden activation (NIRT's first regulariser)
+  query_head_residual: false # residual connections between equal-width hidden blocks (layers >= 2)
+  model_hidden: null         # P2b, projected mode only: a_m/b_m via a 1-hidden-layer MLP on e_m
+                             #   instead of a bare linear projection. null -> legacy linear heads.
+  # -- non-additive interaction residual (P2c, query_latent only). off -> strictly
+  #    bilinear logit, byte-identical state_dict. on -> logit += gamma * MLP([theta_q, a_m, theta_q*a_m])
+  #    with gamma init 0 (no-op at start).
+  interaction: false
+  interaction_hidden: 32
   constrain_discrimination: auto   # auto -> true iff dim == 1 (softplus keeps discrimination > 0, like 2PL)
   bound_ability: true        # model_latent only: theta_m = sigmoid(W_theta e_m), as in the paper
 
 train:
-  loss: soft_bce             # {soft_bce, mse, hard_bce}
+  loss: soft_bce             # {soft_bce, mse, hard_bce}  (per-cell)
+                             # P5 routing-aware (force sampler=query): {pairwise (RankNet/BT on
+                             # model pairs within a query), listwise (ListNet top-1),
+                             # bce_pairwise (soft_bce + loss_aux_weight * pairwise)}
+  sampler: cell              # {cell (per-observation shuffle, legacy), query (whole query
+                             #  groups per batch -- required by the routing-aware losses)}
+  batch_queries: 512         # queries per batch when sampler=query
+  loss_aux_weight: 0.5       # weight on the pairwise term in loss=bce_pairwise
+  listwise_tau: 0.1          # softmax temperature on the graded label for loss=listwise
   lr: 1.0e-3
   weight_decay: 1.0e-5
   batch_size: 4096
   epochs: 50
   patience: 6                # early-stop after this many epochs without val improvement
-  val_metric: bce            # {bce, mse} -- lower is better
+  val_metric: bce            # {bce, mse, regret} -- lower is better (regret = mean per-query
+                             #   routing regret; use it with the P5 routing-aware losses)
+  grad_clip: 0.0             # max grad-norm (0 -> off); a deeper query head can spike
+  lr_schedule: none          # {none, cosine, plateau} -- constant LR by default
   materialize: true          # gather the split into RAM once (fast on CPU; ~1.6 GB for train).
                              # false -> stream via NIRTDataset.dataloader()
 

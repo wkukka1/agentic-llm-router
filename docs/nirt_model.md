@@ -76,12 +76,45 @@ relevance-masked N-IRT head; kNN query-embedding warm-up. Then multi-source Aren
 | `model.dim` | `K` — latent ability dimensions |
 | `model.model_params` | `projected` \| `free` |
 | `model.query_hidden` | query-head hidden width; `null` → single linear layer |
+| `model.query_head_{layers,norm,activation,dropout,residual}` | **P2a** query-head capacity — depth, LayerNorm, GELU, dropout, residual. Defaults reproduce the legacy `Linear→ReLU→Linear` head bit-for-bit |
+| `model.model_hidden` | **P2b** `projected` only: `a_m`/`b_m` via a 1-hidden-layer MLP on `e_m` instead of a bare linear projection; `null` → legacy linear |
+| `model.interaction` / `model.interaction_hidden` | **P2c** `query_latent` only: add `gamma · MLP([θ_q, a_m, θ_q·a_m])` to the bilinear logit (`gamma` init 0 → no-op at start); `false` → strictly bilinear, byte-identical `state_dict` |
 | `model.constrain_discrimination` | `auto` → true iff `dim == 1` |
 | `model.bound_ability` | `model_latent` only: `theta_m = sigmoid(W_theta e_m)` |
 | `train.loss` | `soft_bce` \| `hard_bce` \| `mse` |
 | `train.{lr,weight_decay,batch_size,epochs,patience,val_metric}` | Adam + early stop |
+| `train.grad_clip` / `train.lr_schedule` | **P2** max grad-norm (`0` = off) and LR schedule (`none` \| `cosine` \| `plateau`); constant LR by default |
 | `train.materialize` | gather the split into RAM once (fast on CPU) vs stream |
 | `runs_dir` | `data/processed/nirt_runs` (gitignored) |
+
+### Capacity knobs (P2) — background
+
+The 2026-09-03 head search (`scripts/nirt/complexity_search.py`) found that latent
+width `K` and single-hidden-layer MLP width had both saturated with **no
+overfitting at 5× params** (`docs/knn_imputed_queries.md`) — the `query_latent`
+core was *underfitting*. P2 adds three orthogonal capacity levers to
+`NIRTModel`, each **off by default and bit-identical to the pre-P2 architecture**
+so existing checkpoints load under `strict=True` (verify with
+`test_query_head_default_identical` / `test_interaction_off_identical` /
+`test_model_hidden_default_and_mlp` in `tests/test_nirt_model.py`):
+
+- **P2a — query head** (`_query_head` / `_MLPHead` in `model.py`): stack depth,
+  LayerNorm, GELU, dropout (NIRT's first regulariser — lets `fit` push the head
+  without early-stop firing at epoch ~6), residual connections between
+  equal-width hidden blocks.
+- **P2b — model side** (`model_hidden`): the discrimination/difficulty heads
+  `a_m`, `b_m` were a *linear* projection of the frozen profile embedding; a
+  1-hidden-layer MLP is now optional.
+- **P2c — non-additive interaction** (`interaction`): the logit was strictly
+  `a_m·θ_q − b_m`; a gated residual MLP on `[θ_q, a_m, θ_q·a_m]` (ported from
+  `components.InteractionLayer`) can represent query×model effects the rank-`K`
+  bilinear form cannot.
+
+`complexity_search.py`'s search space now grids these knobs. Evaluate every run
+on **both** suites (RouterBench `route_compare.py` and the IRT-Router 20-model
+suite `--config configs/irt_router.yaml`); the routing decision (regret /
+oracle-hit on IRT-Router test + ood) is the success metric, not prediction BCE
+alone.
 
 ## Run
 

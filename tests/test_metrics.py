@@ -8,6 +8,7 @@ from router.nirt.calibration import calibration_report
 from router.nirt.metrics import (
     brier_score,
     log_loss,
+    per_group_metrics,
     prediction_metrics,
     reliability_curve,
 )
@@ -59,3 +60,15 @@ def test_calibration_report_fields():
     rep = calibration_report(y, p, n_bins=10)
     assert {"ece", "mce", "brier", "log_loss", "reliability_curve"} <= set(rep)
     assert len(rep["reliability_curve"]) == 10
+
+
+def test_per_group_metrics():
+    rng = np.random.default_rng(0)
+    y = rng.integers(0, 2, 300).astype(float)
+    p = rng.random(300)
+    groups = np.where(np.arange(300) < 150, "math", "code")
+    groups[:5] = "tiny"                      # below min_n -> pooled into "(small)"
+    out = per_group_metrics(y, p, groups, min_n=20)
+    assert "overall" in out and out["overall"]["n"] == 300
+    assert out["math"]["n"] + out["code"]["n"] + out["(small)"]["n"] == 300
+    assert "tiny" not in out

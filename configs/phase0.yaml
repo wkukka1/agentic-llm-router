@@ -92,6 +92,17 @@ embedding:
       pooling: mean            # {"cls", "mean"}
       normalize: false         # raw BERT features, like the NIRT text encoder
       max_seq_length: 256
+    # P4a of the capacity workstream: a modern sentence encoder (bge-small-en-v1.5,
+    # 384-d, MTEB ~62 vs bert-base mean-pool ~30) in the same "shared query+profile"
+    # role as `irt` -- the P1 diagnostic showed the frozen bert-base-uncased
+    # representation is the dominant BCE bottleneck (~0.13 vs the oracle-rep ceiling).
+    #   scripts/embeddings/build_query_embeddings.py   --pathway bge --from-nirt
+    #   scripts/embeddings/build_profile_embeddings.py --pathway bge
+    bge:
+      backend: sentence_transformer
+      model_name: BAAI/bge-small-en-v1.5
+      normalize: true
+      max_seq_length: 384
   # Which pathway a plain `load_encoder(cfg)` / build script uses by default.
   default_pathway: irt
 

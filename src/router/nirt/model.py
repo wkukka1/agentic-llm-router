@@ -43,15 +43,86 @@ from ..config import coerce_auto_bool, coerce_hidden
 MODEL_PARAM_MODES = ("projected", "free")
 ORIENTATIONS = ("query_latent", "model_latent")
 DIFFICULTY_MODES = ("scalar", "vector")
+HEAD_NORMS = ("none", "layernorm")
+HEAD_ACTIVATIONS = ("relu", "gelu")
+
+_ACT = {"relu": nn.ReLU, "gelu": nn.GELU}
 
 
-def _query_head(in_dim: int, out_dim: int, hidden: Optional[int]) -> nn.Module:
-    """Linear ``in_dim -> out_dim``, or a 1-hidden-layer MLP when ``hidden`` is set."""
-    if hidden:
+class _MLPHead(nn.Module):
+    """``in_dim -> hidden -> ... -> out_dim`` with configurable depth / norm /
+    activation / dropout / residual. Only instantiated when at least one of those
+    is non-default; the default single-hidden-layer ReLU head stays a bare
+    :class:`nn.Sequential` (see :func:`_query_head`) so old checkpoints load."""
+
+    def __init__(self, in_dim: int, out_dim: int, hidden: int, *, layers: int,
+                 norm: str, activation: str, dropout: float, residual: bool):
+        super().__init__()
+        act = _ACT[activation]
+
+        def block(d_in: int, d_out: int) -> nn.Sequential:
+            seq: list[nn.Module] = [nn.Linear(d_in, d_out)]
+            if norm == "layernorm":
+                seq.append(nn.LayerNorm(d_out))
+            seq.append(act())
+            if dropout > 0:
+                seq.append(nn.Dropout(dropout))
+            return nn.Sequential(*seq)
+
+        self.blocks = nn.ModuleList(
+            [block(in_dim, hidden)] + [block(hidden, hidden) for _ in range(layers - 1)]
+        )
+        self.head = nn.Linear(hidden, out_dim)
+        self.residual = bool(residual)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        h = self.blocks[0](x)
+        for blk in self.blocks[1:]:
+            h = h + blk(h) if self.residual else blk(h)
+        return self.head(h)
+
+
+def _query_head(
+    in_dim: int,
+    out_dim: int,
+    hidden: Optional[int],
+    *,
+    layers: int = 1,
+    norm: str = "none",
+    activation: str = "relu",
+    dropout: float = 0.0,
+    residual: bool = False,
+) -> nn.Module:
+    """``e -> R^out``. Linear when ``hidden`` is falsy; the legacy
+    ``Linear -> ReLU -> Linear`` :class:`nn.Sequential` when every extra knob is at
+    its default (so existing ``state_dict``s load unchanged); otherwise an
+    :class:`_MLPHead`."""
+    if not hidden:
+        return nn.Linear(in_dim, out_dim)
+    if layers == 1 and norm == "none" and activation == "relu" and dropout == 0.0 and not residual:
         return nn.Sequential(
             nn.Linear(in_dim, int(hidden)), nn.ReLU(), nn.Linear(int(hidden), out_dim)
         )
-    return nn.Linear(in_dim, out_dim)
+    return _MLPHead(in_dim, out_dim, int(hidden), layers=int(layers), norm=norm,
+                    activation=activation, dropout=float(dropout), residual=bool(residual))
+
+
+def _head_kwargs(model_cfg: dict) -> dict:
+    """Pull the P2a query-head knobs out of ``model_cfg`` (all default to the
+    legacy single-hidden-layer ReLU head)."""
+    norm = str(model_cfg.get("query_head_norm", "none") or "none")
+    act = str(model_cfg.get("query_head_activation", "relu") or "relu")
+    if norm not in HEAD_NORMS:
+        raise ValueError(f"query_head_norm must be one of {HEAD_NORMS}, got {norm!r}")
+    if act not in HEAD_ACTIVATIONS:
+        raise ValueError(f"query_head_activation must be one of {HEAD_ACTIVATIONS}, got {act!r}")
+    return {
+        "layers": int(model_cfg.get("query_head_layers", 1) or 1),
+        "norm": norm,
+        "activation": act,
+        "dropout": float(model_cfg.get("query_head_dropout", 0.0) or 0.0),
+        "residual": bool(model_cfg.get("query_head_residual", False)),
+    }
 
 
 class NIRTModel(nn.Module):
@@ -79,6 +150,10 @@ class NIRTModel(nn.Module):
         constrain_discrimination: bool = True,
         profile_dim: int = 768,
         difficulty: str = "scalar",
+        head_kwargs: Optional[dict] = None,
+        model_hidden: Optional[int] = None,
+        interaction: bool = False,
+        interaction_hidden: int = 32,
     ):
         super().__init__()
         if model_params not in MODEL_PARAM_MODES:
@@ -97,20 +172,40 @@ class NIRTModel(nn.Module):
         self.constrain_discrimination = bool(constrain_discrimination)
         self.profile_dim = int(profile_dim)
         self.difficulty = difficulty
+        self.head_kwargs = dict(head_kwargs or {})
+        self.model_hidden = model_hidden
+        self.interaction = bool(interaction)
+        self.interaction_hidden = int(interaction_hidden)
         b_dim = self.dim if difficulty == "vector" else 1
 
         # -- query head: e_q -> theta_q in R^K -------------------------------
-        self.query_head = _query_head(self.query_dim, self.dim, query_hidden)
+        self.query_head = _query_head(self.query_dim, self.dim, query_hidden, **self.head_kwargs)
 
         # -- model side: (a_m, b_m) ----------------------------------------
+        # ``model_hidden`` (P2b): a 1-hidden-layer MLP on the profile embedding
+        # instead of a bare linear projection (``projected`` mode only). ``None``
+        # keeps the legacy ``nn.Linear`` heads, so old checkpoints load.
         if model_params == "projected":
-            self.a_head = nn.Linear(self.profile_dim, self.dim)
-            self.b_head = nn.Linear(self.profile_dim, b_dim)
+            from .components import mlp
+
+            self.a_head = mlp(self.profile_dim, self.dim, model_hidden)
+            self.b_head = mlp(self.profile_dim, b_dim, model_hidden)
         else:  # free
             self.a = nn.Embedding(self.n_models, self.dim)
             self.b = nn.Embedding(self.n_models, b_dim)
             nn.init.normal_(self.a.weight, std=0.1)
             nn.init.zeros_(self.b.weight)
+
+        # -- optional non-additive interaction residual (P2c) --------------
+        # ``logit = bilinear_base + gamma * net([theta_q, a_m, theta_q * a_m])``.
+        # ``gamma`` starts at 0 so switching it on is a no-op at init; the module
+        # is only created when enabled, so a disabled model's state_dict is
+        # byte-identical to the pre-P2c architecture.
+        if self.interaction:
+            from .components import mlp
+
+            self.interaction_net = mlp(3 * self.dim, 1, self.interaction_hidden)
+            self.interaction_gamma = nn.Parameter(torch.zeros(()))
 
     # ------------------------------------------------------------------ #
     # construction                                                       #
@@ -136,6 +231,10 @@ class NIRTModel(nn.Module):
             ),
             profile_dim=profile_dim,
             difficulty=model_cfg.get("difficulty", "scalar") or "scalar",
+            head_kwargs=_head_kwargs(model_cfg),
+            model_hidden=coerce_hidden(model_cfg.get("model_hidden")),
+            interaction=bool(model_cfg.get("interaction", False)),
+            interaction_hidden=int(model_cfg.get("interaction_hidden", 32) or 32),
         )
 
     # ------------------------------------------------------------------ #
@@ -177,8 +276,13 @@ class NIRTModel(nn.Module):
         theta = self.latent_query(e_q)              # (B, K)
         a, b = self.model_parameters(model_ref)     # (B, K), (B,) or (B, K)
         if self.difficulty == "vector":
-            return (a * (theta - b)).sum(-1)
-        return (a * theta).sum(-1) - b
+            base = (a * (theta - b)).sum(-1)
+        else:
+            base = (a * theta).sum(-1) - b
+        if self.interaction:
+            feats = torch.cat([theta, a, theta * a], dim=-1)      # (B, 3K)
+            base = base + self.interaction_gamma * self.interaction_net(feats).squeeze(-1)
+        return base
 
     @torch.no_grad()
     def predict_proba(
@@ -208,6 +312,7 @@ class IRTRouterModel(nn.Module):
         constrain_discrimination: bool = True,
         bound_ability: bool = True,
         profile_dim: int = 768,
+        head_kwargs: Optional[dict] = None,
     ):
         super().__init__()
         if model_params not in MODEL_PARAM_MODES:
@@ -222,10 +327,11 @@ class IRTRouterModel(nn.Module):
         self.constrain_discrimination = bool(constrain_discrimination)
         self.bound_ability = bool(bound_ability)
         self.profile_dim = int(profile_dim)
+        self.head_kwargs = dict(head_kwargs or {})
 
         # -- query side: e_q -> (a_q discrimination, b_q difficulty) --------
-        self.a_head = _query_head(self.query_dim, self.dim, query_hidden)
-        self.b_head = _query_head(self.query_dim, 1, query_hidden)
+        self.a_head = _query_head(self.query_dim, self.dim, query_hidden, **self.head_kwargs)
+        self.b_head = _query_head(self.query_dim, 1, query_hidden, **self.head_kwargs)
 
         # -- model side: theta_m ability ---------------------------------
         if model_params == "projected":
@@ -249,6 +355,7 @@ class IRTRouterModel(nn.Module):
             ),
             bound_ability=bool(model_cfg.get("bound_ability", True)),
             profile_dim=profile_dim,
+            head_kwargs=_head_kwargs(model_cfg),
         )
 
     def latent_ability(self, model_ref: Union[torch.Tensor, np.ndarray]) -> torch.Tensor:

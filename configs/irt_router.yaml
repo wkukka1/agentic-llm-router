@@ -97,6 +97,13 @@ embedding:
       # The imported IRT-Router vectors are L2-normalized (utils/embedding.py).
       normalize: true
       max_seq_length: 256
+    # P4a: modern sentence encoder (bge-small-en-v1.5, 384-d), shared query+profile role.
+    #   python scripts/data/encode_irt_router_pathway.py --config configs/irt_router.yaml --pathway bge
+    bge:
+      backend: sentence_transformer
+      model_name: BAAI/bge-small-en-v1.5
+      normalize: true
+      max_seq_length: 384
   default_pathway: irt
 
 profiles:

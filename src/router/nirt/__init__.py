@@ -32,6 +32,7 @@ from .metrics import (
     brier_score,
     log_loss,
     marginal_baselines,
+    per_group_metrics,
     prediction_metrics,
     reliability_curve,
 )
@@ -115,6 +116,7 @@ __all__ = [
     "predict_matrix",
     "ranking_metrics",
     "prediction_metrics",
+    "per_group_metrics",
     "marginal_baselines",
     "fit_classical_irt",
     "ClassicalIRTResult",

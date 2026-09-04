@@ -40,7 +40,9 @@ def test_coerce_helpers():
     assert coerce_hidden("128") == 128
     assert coerce_hidden("none") is None
     assert coerce_hidden(0) is None
-    assert coerce_hidden(None, default=32) == 32
+    assert coerce_hidden(None) is None          # explicit null -> linear head
+    # a *missing* key still resolves to the caller's default
+    assert coerce_hidden({}.get("query_hidden", 64)) == 64
     assert coerce_auto_bool("auto", True) is True
     assert coerce_auto_bool("auto", False) is False
     assert coerce_auto_bool(None, True) is True

@@ -131,6 +131,33 @@ def _bce_mse(y_true: np.ndarray, y_prob: np.ndarray) -> dict:
     }
 
 
+def per_group_metrics(
+    y_true: Sequence[float],
+    y_prob: Sequence[float],
+    groups: Sequence[str],
+    *,
+    min_n: int = 20,
+) -> dict:
+    """``prediction_metrics`` computed within each ``groups`` label plus an
+    ``overall`` row. Groups with fewer than ``min_n`` observations are pooled into
+    ``"(small)"``. Used by the P1 capacity diagnostic to see which benchmark
+    families the model underfits (``groups`` = per-observation family labels)."""
+    y_true = np.asarray(y_true, dtype=np.float64)
+    y_prob = np.asarray(y_prob, dtype=np.float64)
+    g = np.asarray(groups).astype(str)
+    out: dict[str, dict] = {"overall": prediction_metrics(y_true, y_prob)}
+    counts = {lbl: int((g == lbl).sum()) for lbl in np.unique(g)}
+    small = np.array([counts[lbl] < min_n for lbl in g])
+    for lbl in sorted(counts):
+        if counts[lbl] < min_n:
+            continue
+        m = g == lbl
+        out[lbl] = prediction_metrics(y_true[m], y_prob[m])
+    if small.any():
+        out["(small)"] = prediction_metrics(y_true[small], y_prob[small])
+    return out
+
+
 def marginal_baselines(
     train_targets: Sequence[float],
     train_model_ids: Sequence[str],

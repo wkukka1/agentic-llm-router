@@ -1,5 +1,38 @@
 # kNN-imputed query embeddings
 
+> **CORRECTION (2026-09-03, P0 of the capacity workstream).** The headline result
+> below — "kNN imputation is a clearly better calibrated predictor, BCE 0.612 →
+> 0.579, AUC 0.739 → 0.772" — was **largely a training-data confound**.
+> `query__retrieval` (MiniLM) had never been built for RouterBench's `:5shot`
+> ids, so the `nirt-knn*` runs trained on **0-shot observations only** while the
+> raw/paper baselines trained on 0-shot + 5-shot. After rebuilding
+> `query__retrieval` / the FAISS bank / all `query__knn*` stores over the full
+> 72,966-query set and **retraining every run on the identical full observation
+> set** (`scripts/nirt/knn_impute_sweep.py --retrain`, `artifacts/phase2/knn_impute_sweep.json`):
+>
+> | k | ID test BCE (confounded) | **ID test BCE (clean)** | ID AUC (clean) | OOD BCE (clean) |
+> |---|---|---|---|---|
+> | 0 raw | 0.612 | **0.6117** | 0.739 | 0.692 |
+> | 5 | 0.581 | 0.6095 | 0.740 | 0.727 |
+> | 10 | 0.580 | **0.6093** | 0.745 | 0.711 |
+> | 25 | 0.579 | 0.6103 | 0.742 | 0.705 |
+>
+> Clean effect of kNN imputation: **BCE −0.002, AUC +0.006 at k≈10** (was −0.033 /
+> +0.033), and it still *hurts* OOD calibration. Routing regret flat everywhere
+> (~0.141), as always on the GPT-4-dominated RouterBench pool. **Net: retrieval
+> smoothing of `e_q` is not a meaningful lever.**
+>
+> **P2 head/capacity sweep re-run clean** (`complexity_search.py --n 24
+> --query-pathway none`, raw `irt` pathway, RouterBench 0-shot test,
+> `artifacts/phase2/complexity_search.json`): best config `K16 h128 scalar,
+> 3-layer head` → **test BCE 0.5954 / AUC 0.759** vs baseline `nirt-2d-projected`
+> 0.6117 / 0.739. So a wider/deeper head buys **~−0.016 BCE / +0.02 AUC** clean
+> (the confounded ladder claimed −0.04). **`train_bce` still floors ~0.578** —
+> the model keeps underfitting at 500k params. **Routing regret 0.1386–0.1411
+> across all 24 configs** (baseline 0.1415) — *zero* movement, as in every prior
+> RouterBench experiment. The routing decision is tested on the IRT-Router
+> 20-model suite instead; see `docs/nirt_capacity.md` / the capacity workstream.
+
 ## Why
 
 `NIRTModel` (`query_latent`) turns a frozen `bert-base-uncased` query embedding

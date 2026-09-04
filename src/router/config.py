@@ -84,17 +84,19 @@ def section(cfg: Any, dotted: str, default: dict | None = None) -> dict:
     return dict(default or {})
 
 
-def coerce_hidden(value: Any, default: int | None = 64) -> int | None:
+def coerce_hidden(value: Any) -> int | None:
     """Hidden-width config value -> ``int`` or ``None``.
 
-    ``"none"`` / ``"None"`` / ``0`` (a linear head, in every ``*_head`` config)
-    become ``None``; anything else is cast to ``int``. Shared by every model
-    ``from_config``.
+    ``None`` / ``"none"`` / ``"None"`` / ``0`` -- an explicit *linear* head, i.e.
+    ``query_hidden: null`` in the YAML -- become ``None``; anything else is cast to
+    ``int``. Shared by every model ``from_config``. A *missing* key still means
+    "default width": callers pass ``coerce_hidden(cfg.get("query_hidden", 64))``,
+    so a missing key resolves to ``64`` while an explicit ``null`` stays a linear
+    head.
     """
-    v = default if value is None else value
-    if v in ("none", "None", 0, None):
+    if value in ("none", "None", 0, None):
         return None
-    return int(v)
+    return int(value)
 
 
 def coerce_auto_bool(value: Any, auto: bool) -> bool:

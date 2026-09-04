@@ -8,7 +8,7 @@ torch = pytest.importorskip("torch")
 
 from router.nirt.evaluate import cold_start_eval, nearest_profile_model, predict_dataset
 from router.nirt.metrics import marginal_baselines, prediction_metrics
-from router.nirt.model import IRTRouterModel, NIRTModel, build_model
+from router.nirt.model import IRTRouterModel, NIRTModel, _query_head, build_model
 from router.nirt.train import fit
 
 
@@ -215,6 +215,215 @@ def test_vector_difficulty_recovers_and_checkpoints(tmp_path):
 
     model, loaded_cfg, midx = load_run("cx-vec", runs_dir=tmp_path)
     assert model.difficulty == "vector"
+    _, y_prob = predict_dataset(model, val_ds, midx)
+    rho = prediction_metrics(val_ds.obs["p_true"].to_numpy(), y_prob)["pearson_r"]
+    assert rho > 0.8, rho
+
+
+# --------------------------------------------------------------------------- #
+# P2a: query-head capacity knobs                                               #
+# --------------------------------------------------------------------------- #
+def test_query_head_default_identical():
+    """The default P2a knobs must reproduce the legacy Linear->ReLU->Linear head
+    exactly -- same module type and same state_dict keys -- so old checkpoints
+    load under strict=True."""
+    legacy = _query_head(16, 4, 8)
+    withkw = _query_head(16, 4, 8, layers=1, norm="none", activation="relu",
+                         dropout=0.0, residual=False)
+    assert isinstance(legacy, torch.nn.Sequential) and isinstance(withkw, torch.nn.Sequential)
+    assert list(legacy.state_dict()) == list(withkw.state_dict()) == ["0.weight", "0.bias", "2.weight", "2.bias"]
+
+    torch.manual_seed(0)
+    m_plain = NIRTModel(query_dim=12, dim=3, n_models=4, model_params="projected",
+                        query_hidden=16, profile_dim=6)
+    torch.manual_seed(0)
+    m_defaults = NIRTModel.from_config(
+        {"dim": 3, "model_params": "projected", "query_hidden": 16,
+         "constrain_discrimination": True,
+         "query_head_layers": 1, "query_head_norm": "none", "query_head_activation": "relu",
+         "query_head_dropout": 0.0, "query_head_residual": False},
+        n_models=4, query_dim=12, profile_dim=6,
+    )
+    assert list(m_plain.state_dict()) == list(m_defaults.state_dict())
+    e_q, ref = torch.randn(8, 12), torch.randn(8, 6)
+    assert torch.allclose(m_plain(e_q, ref), m_defaults(e_q, ref))
+    assert not any("interaction" in k for k in m_plain.state_dict())
+
+
+@pytest.mark.parametrize("norm", ["none", "layernorm"])
+@pytest.mark.parametrize("activation", ["relu", "gelu"])
+@pytest.mark.parametrize("layers,residual", [(1, False), (2, False), (3, True)])
+def test_query_head_knob_shapes(norm, activation, layers, residual):
+    m = NIRTModel.from_config(
+        {"dim": 4, "model_params": "projected", "query_hidden": 16,
+         "query_head_layers": layers, "query_head_norm": norm,
+         "query_head_activation": activation, "query_head_dropout": 0.1,
+         "query_head_residual": residual},
+        n_models=5, query_dim=10, profile_dim=7,
+    )
+    m.eval()
+    e_q, ref = torch.randn(9, 10), torch.randn(9, 7)
+    assert m(e_q, ref).shape == (9,)
+    p = m.predict_proba(e_q, ref)
+    assert torch.all((p >= 0) & (p <= 1))
+
+
+def test_model_hidden_default_and_mlp():
+    """model_hidden=None keeps bare Linear a_m/b_m heads (legacy state_dict);
+    an int makes them a 1-hidden-layer MLP."""
+    m_lin = NIRTModel.from_config(
+        {"dim": 4, "model_params": "projected", "query_hidden": None}, n_models=3,
+        query_dim=10, profile_dim=8,
+    )
+    assert isinstance(m_lin.a_head, torch.nn.Linear)
+    assert [k for k in m_lin.state_dict() if k.startswith("a_head")] == ["a_head.weight", "a_head.bias"]
+
+    m_mlp = NIRTModel.from_config(
+        {"dim": 4, "model_params": "projected", "query_hidden": None, "model_hidden": 16},
+        n_models=3, query_dim=10, profile_dim=8,
+    )
+    assert isinstance(m_mlp.a_head, torch.nn.Sequential)
+    m_mlp.eval()
+    e_q, ref = torch.randn(6, 10), torch.randn(6, 8)
+    assert m_mlp(e_q, ref).shape == (6,)
+    assert torch.all((m_mlp.predict_proba(e_q, ref) >= 0) & (m_mlp.predict_proba(e_q, ref) <= 1))
+
+
+def test_query_head_config_validation():
+    with pytest.raises(ValueError, match="query_head_norm"):
+        NIRTModel.from_config({"dim": 2, "query_head_norm": "batchnorm"}, n_models=2)
+    with pytest.raises(ValueError, match="query_head_activation"):
+        NIRTModel.from_config({"dim": 2, "query_head_activation": "silu"}, n_models=2)
+
+
+@pytest.mark.parametrize("schedule", ["cosine", "plateau"])
+def test_trainer_grad_clip_and_lr_schedule(schedule, tmp_path):
+    train_obs, val_obs, q_store, m_store = _synthetic(n_queries=200, seed=6)
+    ds = _datasets(train_obs, val_obs, q_store, m_store)
+    cfg = _cfg(model_params="free", dim=2)
+    cfg["train"].update(epochs=6, patience=10, grad_clip=1.0, lr_schedule=schedule)
+    res = fit(cfg, datasets=ds, save=False, verbose=False)
+    assert np.isfinite(res.val_metrics["bce"])
+
+
+def test_trainer_defaults_unchanged():
+    """grad_clip=0 + lr_schedule=none reproduces the legacy training path."""
+    train_obs, val_obs, q_store, m_store = _synthetic(n_queries=200, seed=7)
+    ds = _datasets(train_obs, val_obs, q_store, m_store)
+    a = fit(_cfg(), datasets=ds, save=False, verbose=False)
+    cfg = _cfg()
+    cfg["train"].update(grad_clip=0.0, lr_schedule="none")
+    b = fit(cfg, datasets=ds, save=False, verbose=False)
+    assert a.val_metrics["bce"] == pytest.approx(b.val_metrics["bce"])
+
+
+# --------------------------------------------------------------------------- #
+# P5: query-grouped sampler + routing-aware losses                             #
+# --------------------------------------------------------------------------- #
+def test_grouped_batches_partition():
+    from router.nirt.train import _grouped_batches
+
+    qgroup = np.array([0, 0, 1, 1, 1, 2, 3, 3])
+    gen = torch.Generator().manual_seed(0)
+    batches = list(_grouped_batches(qgroup, batch_queries=2, gen=gen))
+    allrows = np.concatenate(batches)
+    assert sorted(allrows.tolist()) == list(range(len(qgroup)))     # every row once
+    for b in batches:                                               # whole groups only
+        gs = set(qgroup[b].tolist())
+        assert all((qgroup == g).sum() == (qgroup[b] == g).sum() for g in gs)
+
+
+def test_sampler_default_unchanged():
+    """sampler=cell + loss=soft_bce reproduces the legacy training path."""
+    ds = _datasets(*_synthetic(n_queries=200, seed=7))
+    a = fit(_cfg(), datasets=ds, save=False, verbose=False)
+    cfg = _cfg()
+    cfg["train"].update(sampler="cell", loss="soft_bce")
+    b = fit(cfg, datasets=ds, save=False, verbose=False)
+    assert a.val_metrics["bce"] == pytest.approx(b.val_metrics["bce"])
+
+
+@pytest.mark.parametrize("loss", ["pairwise", "listwise", "bce_pairwise"])
+def test_routing_aware_loss_learns_ranking(loss):
+    """A within-query loss should recover a low routing regret on a synthetic
+    world (and auto-switch the sampler to 'query')."""
+    train_obs, val_obs, q_store, m_store = _synthetic(seed=1, n_models=6, K=2)
+    train_ds, val_ds = _datasets(train_obs, val_obs, q_store, m_store)
+    cfg = _cfg(model_params="free", dim=4, query_hidden=32)
+    cfg["train"].update(loss=loss, epochs=60, patience=20, lr=1e-2,
+                        batch_queries=128, val_metric="regret")
+    res = fit(cfg, datasets=(train_ds, val_ds), save=False, verbose=False)
+    assert "regret" in res.val_metrics
+    # oracle regret on this world is ~0.05-0.15; a working ranker gets well under 0.25
+    assert res.val_metrics["regret"] < 0.25, res.val_metrics["regret"]
+
+
+def test_val_metric_regret_early_stops(tmp_path):
+    ds = _datasets(*_synthetic(n_queries=200, seed=3))
+    cfg = _cfg()
+    cfg["train"].update(val_metric="regret", epochs=8, patience=3)
+    res = fit(cfg, datasets=ds, name="rg", runs_dir=tmp_path, verbose=False)
+    assert "regret" in res.val_metrics and np.isfinite(res.val_metrics["regret"])
+    assert any("val_regret" in h for h in res.history)
+
+
+def test_deeper_head_fits_synthetic(tmp_path):
+    """A deeper/normed query head still recovers a well-specified IRT world and
+    round-trips through a checkpoint."""
+    train_obs, val_obs, q_store, m_store = _synthetic(seed=1, K=2)
+    train_ds, val_ds = _datasets(train_obs, val_obs, q_store, m_store)
+    cfg = _cfg(model_params="free", dim=2, query_hidden=32, query_head_layers=2,
+               query_head_norm="layernorm", query_head_activation="gelu",
+               query_head_dropout=0.1)
+    cfg["train"].update(epochs=120, patience=25, lr=1e-2)
+    fit(cfg, datasets=(train_ds, val_ds), name="cx-head", runs_dir=tmp_path, verbose=False)
+
+    from router.nirt.train import load_run
+
+    model, _, midx = load_run("cx-head", runs_dir=tmp_path)
+    from router.nirt.model import _MLPHead
+
+    assert isinstance(model.query_head, _MLPHead)
+    _, y_prob = predict_dataset(model, val_ds, midx)
+    rho = prediction_metrics(val_ds.obs["p_true"].to_numpy(), y_prob)["pearson_r"]
+    assert rho > 0.8, rho
+
+
+# --------------------------------------------------------------------------- #
+# P2c: non-additive interaction residual                                       #
+# --------------------------------------------------------------------------- #
+def test_interaction_off_identical():
+    torch.manual_seed(0)
+    base = NIRTModel(query_dim=10, dim=3, n_models=4, model_params="projected",
+                     query_hidden=8, profile_dim=6)
+    assert not any("interaction" in k for k in base.state_dict())
+
+
+def test_interaction_noop_at_init():
+    """gamma starts at 0 so an interaction model's logit == the bilinear base at init."""
+    torch.manual_seed(0)
+    plain = NIRTModel(query_dim=10, dim=3, n_models=4, model_params="projected",
+                      query_hidden=8, profile_dim=6)
+    torch.manual_seed(0)
+    inter = NIRTModel(query_dim=10, dim=3, n_models=4, model_params="projected",
+                      query_hidden=8, profile_dim=6, interaction=True)
+    e_q, ref = torch.randn(7, 10), torch.randn(7, 6)
+    assert float(inter.interaction_gamma.detach()) == 0.0
+    assert torch.allclose(plain(e_q, ref), inter(e_q, ref))
+
+
+def test_interaction_from_config_and_checkpoint(tmp_path):
+    train_obs, val_obs, q_store, m_store = _synthetic(seed=2, K=2)
+    train_ds, val_ds = _datasets(train_obs, val_obs, q_store, m_store)
+    cfg = _cfg(model_params="free", dim=2, query_hidden=16, interaction=True,
+               interaction_hidden=16)
+    cfg["train"].update(epochs=60, patience=20, lr=1e-2)
+    fit(cfg, datasets=(train_ds, val_ds), name="cx-int", runs_dir=tmp_path, verbose=False)
+
+    from router.nirt.train import load_run
+
+    model, _, midx = load_run("cx-int", runs_dir=tmp_path)
+    assert model.interaction and "interaction_gamma" in model.state_dict()
     _, y_prob = predict_dataset(model, val_ds, midx)
     rho = prediction_metrics(val_ds.obs["p_true"].to_numpy(), y_prob)["pearson_r"]
     assert rho > 0.8, rho
