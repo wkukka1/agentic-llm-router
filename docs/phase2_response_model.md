@@ -96,7 +96,7 @@ guessing back (Phase 0 decision: no guessing parameter, fitted or fixed).
 
 ## 8. Synthetic recovery
 
-`scripts/synthetic_continuous.py --response {normal,beta,zoib}` — a
+`scripts/synthetic.py --response {normal,beta,zoib}` — a
 well-specified world with known `theta_true`, `a_true`, `b_true`, and the head's
 dispersion (`sigma`/`kappa`) + (ZOIB) `pi` parameters. Checks: finite NLL,
 predictive-mean correlation, difficulty/ability Spearman, dispersion Spearman,

@@ -67,8 +67,8 @@ warm/cold`. Plus: number of warm models, GPT-4:cheapest cost ratio, count of
 models priced ≤ 1/30 of the most expensive and their mean accuracy.
 
 ### 1b. Prediction quality (ZOIB, and Bernoulli control)
-`scripts/evaluate_continuous.py --checkpoint <zoib> --split test` and
-`scripts/evaluate_baseline.py --checkpoint <bernoulli> --split test`:
+`scripts/evaluate.py --checkpoint <zoib> --split test` and
+`scripts/evaluate.py --checkpoint <bernoulli> --split test`:
 NLL, MAE, RMSE, mean-calibration ECE, 50/90 % interval coverage, boundary
 calibration (ZOIB `P(y=0)`/`P(y=1)` vs empirical), θ effective rank, per-family
 breakdown, pathology flags.
@@ -180,7 +180,7 @@ the 1/30 claim, and which additions moved the needle".
   `Qwen2.5-7B-Instruct`, `Qwen2.5-14B-Instruct`, `Gemma-2-9B-it`,
   `Mistral-Nemo-Instruct`, `gpt-4o-mini`, `claude-3-5-haiku`,
   `gemini-1.5-flash`. Pick the exact set and pin versions.
-* `scripts/data/run_lm_harness.py --print-only` emits the `lm_eval` command +
+* `scripts/data/run_lm_harness.py` (no flag) emits the `lm_eval` command +
   task list matched to the RouterBench eval set. Run it (`--log_samples`),
   local GPU for open models / OpenAI-compatible endpoint for hosted ones.
 * Drop `*samples*.jsonl` per-sample logs into `data/raw/lm_harness/`.

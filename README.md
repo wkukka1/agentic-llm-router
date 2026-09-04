@@ -111,9 +111,9 @@ warm-up blend, an inert length head (no token labels in Phase 0). Lives in
 [docs/phase1_baseline.md](docs/phase1_baseline.md).
 
 ```bash
-python scripts/synthetic_recovery.py                                    # synthetic multidim-IRT recovery gate
+python scripts/synthetic.py                                             # synthetic multidim-IRT recovery gate
 python scripts/train_baseline.py --config configs/phase1.yaml           # -> artifacts/phase1/baseline/
-python scripts/evaluate_baseline.py --checkpoint artifacts/phase1/baseline --split test
+python scripts/evaluate.py --checkpoint artifacts/phase1/baseline --split test
 python scripts/inspect_baseline.py --checkpoint artifacts/phase1/baseline
 ```
 
@@ -136,9 +136,9 @@ Same representation, **different response likelihood** over the graded score
 
 ```bash
 python scripts/boundary_stats.py
-python scripts/synthetic_continuous.py --response zoib
+python scripts/synthetic.py --response zoib
 python scripts/train_continuous.py --response zoib
-python scripts/evaluate_continuous.py --checkpoint artifacts/phase2/zoib
+python scripts/evaluate.py --checkpoint artifacts/phase2/zoib
 python scripts/compare_response_models.py
 ```
 
@@ -276,7 +276,7 @@ python -m router.phase0
 # 1. obtain raw data (idempotent; download_arena.py also fetches judge battles)
 python scripts/data/download_routerbench.py
 python scripts/data/download_arena.py
-python scripts/data/run_lm_harness.py --print-only        # prints the eval command
+python scripts/data/run_lm_harness.py                     # prints the eval command (default)
 
 # 2. normalize everything → data/processed/*.parquet  (+ quality report)
 python scripts/data/build_response_matrix.py
@@ -448,7 +448,7 @@ effective rank, ICC monotonicity). Phase 2 adds `tests/test_response_heads.py`
 (shared `ResponseHead` API + factory + `BaselineNIRT` wiring),
 `tests/test_continuous_{normal,beta,zoib}.py` (positivity, analytic likelihood,
 boundary handling, synthetic recovery) and `tests/test_phase2_evaluation.py`.
-**173 tests.**
+**280+ tests** (`pytest -q`).
 
 ---
 

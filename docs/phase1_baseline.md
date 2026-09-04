@@ -188,7 +188,7 @@ dimensions.
 
 ## 15. Synthetic recovery experiment
 
-`scripts/synthetic_recovery.py` -- generate a well-specified multidimensional
+`scripts/synthetic.py` -- generate a well-specified multidimensional
 IRT world (`theta_true`, `a_true`, `b_true`, `y ~ Bernoulli(sigma(a.theta-b))`),
 train `BaselineNIRT` on it, check recovery up to the unidentifiable
 rotation/scale:
