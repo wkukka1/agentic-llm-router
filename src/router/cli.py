@@ -4,7 +4,6 @@
     describe-data  split statistics
     train          run one or more experiments, write the leaderboard
     analyze        per-class precision/recall, confusion, error slices
-    diagnose       feature correlation: VIF, PCA structure, redundancy
 """
 
 from __future__ import annotations
@@ -125,30 +124,6 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_diagnose(args: argparse.Namespace) -> int:
-    """Feature-correlation diagnostics: which dimensions carry redundant signal."""
-    from router.embeddings import EmbeddingEncoder
-    from router.reduction import correlation_report
-
-    splits = load_splits(args.variant, Path(args.data_dir))
-    frame = splits["train"]
-    if args.limit:
-        frame = frame.head(args.limit)
-
-    encoder = EmbeddingEncoder(args.encoder, pooling=args.pooling, max_length=args.max_length)
-    print(f"encoding {len(frame)} prompts with {args.encoder}...")
-    features = encoder.encode_cached(frame["prompt"].tolist(), tag=f"{args.variant}/diagnose")
-
-    text = correlation_report(features, vif_threshold=args.vif_threshold)
-    print("\n" + text)
-
-    out = Path(args.out_dir)
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "feature_diagnostics.md").write_text(text, encoding="utf-8")
-    print(f"wrote {out / 'feature_diagnostics.md'}")
-    return 0
-
-
 def cmd_external(args: argparse.Namespace) -> int:
     """Score a trained run against externally-labelled prompt sets."""
     import pandas as pd
@@ -251,16 +226,6 @@ def build_parser() -> argparse.ArgumentParser:
     overfit.add_argument("--encoder", default="intfloat/e5-large-v2")
     overfit.set_defaults(func=cmd_overfit)
 
-    diagnose = sub.add_parser("diagnose", help="feature correlation: VIF, PCA structure, redundancy")
-    diagnose.add_argument("--encoder", default="BAAI/bge-small-en-v1.5")
-    diagnose.add_argument("--pooling", default="cls", choices=["cls", "mean"])
-    diagnose.add_argument("--max-length", type=int, default=256)
-    diagnose.add_argument("--variant", default="domain_v3")
-    diagnose.add_argument("--data-dir", default=str(PROCESSED_DIR))
-    diagnose.add_argument("--out-dir", default=str(ARTIFACTS_DIR))
-    diagnose.add_argument("--vif-threshold", type=float, default=10.0)
-    diagnose.add_argument("--limit", type=int, default=2000)
-    diagnose.set_defaults(func=cmd_diagnose)
 
     return parser
 

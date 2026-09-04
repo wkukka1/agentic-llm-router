@@ -1,6 +1,0 @@
-name: D1_tfidf
-notes: Lexical baseline on the 12-domain space. Fast reference point.
-model:
-  name: tfidf_logreg
-  params: {word_ngrams: [1, 2], char_ngrams: [3, 5], min_df: 2, C: 4.0, class_weight: null}
-data: {variant: domain_v3, label_column: domain}

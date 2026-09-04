@@ -8,8 +8,7 @@ from router.models import available, build
 def test_all_expected_models_are_registered():
     assert set(available()) == {
         "tfidf_logreg", "tfidf_linear_svm", "embed_logreg", "embed_mlp",
-        "embed_reduced_logreg", "finetune_transformer", "zeroshot_similarity",
-        "knn_embed", "ensemble",
+        "ensemble",
     }
 
 
@@ -35,8 +34,11 @@ def test_config_requires_name_and_model():
 
 
 def test_shipped_experiment_configs_all_load_and_are_uniquely_named():
-    configs = load_experiments(["experiments/v3"])
-    assert len(configs) >= 5
+    """Only the two shipped configs remain. The exploratory sweeps that
+    produced them are described in EXPERIMENTS.md rather than kept as YAML --
+    a config directory full of superseded runs reads as a menu of options."""
+    configs = load_experiments(["experiments/v4", "experiments/v5"])
+    assert len(configs) == 2
     names = [c.name for c in configs]
     assert len(names) == len(set(names)), "duplicate experiment names would overwrite each other"
     for config in configs:

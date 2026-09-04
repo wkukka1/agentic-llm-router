@@ -9,8 +9,11 @@ file naming one.
 threshold on confidence, and a threshold on a miscalibrated score is
 meaningless, which is why every run is temperature-scaled and reports ECE.
 
-The fine-tuned transformer lives in ``router.finetune``; it carries a training
-loop and does not belong in the same file as three sklearn wrappers.
+Four types survive: two lexical heads over tf-idf, two over frozen sentence
+embeddings, and the ensemble that averages any of them. Fine-tuning, dimension
+reduction, zero-shot similarity and kNN each had a registered model here and
+each was removed after being measured -- the findings are in EXPERIMENTS.md,
+the code is not, because dead options in a registry read as live ones.
 """
 
 from __future__ import annotations
@@ -286,190 +289,6 @@ class EmbeddingMLP(_FrozenEncoderModel):
         )
 
 
-@register("embed_reduced_logreg")
-class EmbeddingReducedLogisticRegression(_FrozenEncoderModel):
-    """Frozen encoder -> decorrelation (VIF / PCA) -> linear head.
-
-    Embedding dimensions are heavily collinear, so a linear head spends capacity
-    modelling redundancy. This measures whether removing it helps, hurts, or does
-    nothing -- the answer is not obvious a priori, since L2 regularisation
-    already handles collinearity to a degree.
-    """
-
-    def __init__(self, *, order="vif_then_pca", n_components=0.95, vif_threshold=10.0,
-                 max_vif_drop=200, standardize=True, C=8.0, class_weight="balanced",
-                 max_iter=3000, **kw):
-        super().__init__(order=order, n_components=n_components, vif_threshold=vif_threshold,
-                         max_vif_drop=max_vif_drop, standardize=standardize, C=C,
-                         class_weight=class_weight, max_iter=max_iter, **kw)
-
-    def _build_head(self):
-        from sklearn.pipeline import Pipeline
-
-        from router.reduction import DenseReducer
-
-        p = self.params
-        reducer = DenseReducer(
-            order=p["order"], n_components=p["n_components"],
-            vif_threshold=p["vif_threshold"], max_vif_drop=p["max_vif_drop"],
-            standardize=p["standardize"],
-        )
-        head = LogisticRegression(C=p["C"], class_weight=p["class_weight"], max_iter=p["max_iter"])
-        # Pipeline delegates `classes_` to the final estimator, so the shared
-        # _FrozenEncoderModel.fit reads it without any extra plumbing.
-        return Pipeline([("reduce", reducer), ("clf", head)])
-
-
-#: Human-readable descriptions of each domain, used as the "anchor" text a
-#: zero-shot classifier compares prompts against. Bare slugs ("cs_general")
-#: embed poorly; the encoder needs real words to place a label in its space.
-DOMAIN_DESCRIPTIONS: dict[str, str] = {
-    "cs_general": "computer science, programming, algorithms, software, data structures, information systems",
-    "technology": "technology, engineering, medicine, health, applied sciences, management",
-    "science": "science, mathematics, physics, chemistry, biology, earth science, geology",
-    "history": "history, historical events, civilisations, wars, historical figures",
-    "literature": "literature, novels, poetry, fiction, literary criticism, rhetoric",
-    "language": "language, linguistics, grammar, translation, vocabulary, word meaning",
-    "arts_recreation": "arts, music, sports, games, entertainment, film, recreation",
-    "social_science": "social science, economics, law, politics, sociology, business",
-    "philosophy_psychology": "philosophy, psychology, ethics, logic, reasoning, the mind",
-}
-
-
-@register("zeroshot_similarity")
-class ZeroShotSimilarity(DomainClassifier):
-    """Nearest-label classification with no training at all.
-
-    Embed a description of each label, embed the prompt, and pick the closest
-    label by cosine similarity. Nothing is fitted -- ``fit`` only records the
-    label set -- so this is the honest floor for "what does the base encoder
-    already know", and the only approach here that cannot overfit the training
-    distribution, because it never sees it.
-
-    Scores are softmaxed similarities. They are comparable within a row but are
-    not probabilities in any calibrated sense, which is why the temperature step
-    matters more here than elsewhere.
-    """
-
-    def __init__(self, *, encoder_model: str = "BAAI/bge-small-en-v1.5", pooling: str = "cls",
-                 max_length: int = 256, batch_size: int = 64, temperature: float = 0.05,
-                 descriptions: dict[str, str] | None = None, device: str | None = None, **kw):
-        super().__init__(encoder_model=encoder_model, pooling=pooling, max_length=max_length,
-                         batch_size=batch_size, temperature=temperature,
-                         descriptions=descriptions, device=device, **kw)
-        self.encoder = EmbeddingEncoder(
-            encoder_model, pooling=pooling, max_length=max_length,
-            batch_size=batch_size, normalize=True, device=device,
-        )
-        self._anchors = None
-
-    def fit(self, train_texts, train_labels, val_texts=None, val_labels=None) -> None:
-        # No training. The label set is all that is taken from the data, and the
-        # anchors come from the descriptions, not from any example.
-        self.labels = sorted(set(train_labels))
-        descriptions = self.params.get("descriptions") or DOMAIN_DESCRIPTIONS
-        missing = [label for label in self.labels if label not in descriptions]
-        if missing:
-            raise ValueError(f"no description for label(s): {missing}")
-        self._anchors = self.encoder.encode([descriptions[label] for label in self.labels])
-
-    def predict_proba(self, texts: list[str]) -> np.ndarray:
-        if self._anchors is None:
-            raise RuntimeError("call fit() first to establish the label set")
-        # Both sides are L2-normalised, so a dot product is cosine similarity.
-        similarity = self.encoder.encode(list(texts)) @ self._anchors.T
-        scaled = similarity / max(self.params["temperature"], 1e-6)
-        scaled -= scaled.max(axis=1, keepdims=True)
-        exp = np.exp(scaled)
-        return exp / exp.sum(axis=1, keepdims=True)
-
-    def save(self, path: Path) -> None:
-        path.mkdir(parents=True, exist_ok=True)
-        with (path / "zeroshot.pkl").open("wb") as fh:
-            pickle.dump({"labels": self.labels, "anchors": self._anchors, "params": self.params}, fh)
-
-    def load(self, path: Path) -> None:
-        with (path / "zeroshot.pkl").open("rb") as fh:
-            state = pickle.load(fh)
-        self.labels, self._anchors = state["labels"], state["anchors"]
-
-    def size_bytes(self) -> int:
-        return 0 if self._anchors is None else self._anchors.nbytes
-
-
-
-@register("knn_embed")
-class EmbeddingKNN(DomainClassifier):
-    """Frozen encoder + k-nearest-neighbour vote.
-
-    Worth testing rather than assuming: with few examples per class, kNN can
-    beat a fine-tune, because it makes no attempt to learn a decision boundary
-    from data too sparse to define one. It also degrades gracefully, exposes
-    *which* training prompts drove a prediction, and absorbs a new class by
-    appending rows rather than retraining.
-
-    Probabilities come from distance-weighted neighbour votes, so they are
-    genuinely soft rather than a hard vote rounded off.
-    """
-
-    def __init__(self, *, encoder_model: str = "BAAI/bge-small-en-v1.5", pooling: str = "cls",
-                 max_length: int = 256, batch_size: int = 64, k: int = 15,
-                 weights: str = "distance", temperature: float = 0.05,
-                 device: str | None = None, **kw):
-        super().__init__(encoder_model=encoder_model, pooling=pooling, max_length=max_length,
-                         batch_size=batch_size, k=k, weights=weights,
-                         temperature=temperature, device=device, **kw)
-        self.encoder = EmbeddingEncoder(encoder_model, pooling=pooling, max_length=max_length,
-                                        batch_size=batch_size, normalize=True, device=device)
-        self._bank = None
-        self._bank_labels = None
-
-    def fit(self, train_texts, train_labels, val_texts=None, val_labels=None) -> None:
-        self.labels = sorted(set(train_labels))
-        self._bank = self.encoder.encode(list(train_texts))
-        index = {label: i for i, label in enumerate(self.labels)}
-        self._bank_labels = np.array([index[label] for label in train_labels])
-
-    def predict_proba(self, texts: list[str]) -> np.ndarray:
-        if self._bank is None:
-            raise RuntimeError("call fit() first")
-        p = self.params
-        query = self.encoder.encode(list(texts))
-        # Both sides L2-normalised, so a dot product is cosine similarity.
-        similarity = query @ self._bank.T
-        k = min(p["k"], similarity.shape[1])
-        top = np.argpartition(-similarity, k - 1, axis=1)[:, :k]
-
-        out = np.zeros((len(texts), len(self.labels)))
-        for row, neighbours in enumerate(top):
-            sims = similarity[row, neighbours]
-            if p["weights"] == "distance":
-                # Softmax over similarity: near neighbours dominate, but a
-                # tie among the top few stays genuinely uncertain.
-                w = np.exp((sims - sims.max()) / max(p["temperature"], 1e-6))
-            else:
-                w = np.ones_like(sims)
-            for weight, label_idx in zip(w, self._bank_labels[neighbours], strict=True):
-                out[row, label_idx] += weight
-        return out / out.sum(axis=1, keepdims=True).clip(min=1e-12)
-
-    def save(self, path: Path) -> None:
-        path.mkdir(parents=True, exist_ok=True)
-        with (path / "knn.pkl").open("wb") as fh:
-            pickle.dump({"bank": self._bank, "bank_labels": self._bank_labels,
-                         "labels": self.labels, "params": self.params}, fh)
-
-    def load(self, path: Path) -> None:
-        with (path / "knn.pkl").open("rb") as fh:
-            state = pickle.load(fh)
-        self._bank, self._bank_labels = state["bank"], state["bank_labels"]
-        self.labels = state["labels"]
-
-    def size_bytes(self) -> int:
-        return 0 if self._bank is None else self._bank.nbytes
-
-
-
 @register("ensemble")
 class EnsembleClassifier(DomainClassifier):
     """Averages the probabilities of several member classifiers.
@@ -545,11 +364,3 @@ class EnsembleClassifier(DomainClassifier):
 
     def size_bytes(self) -> int:
         return sum(m.size_bytes() for m in self._members)
-
-
-# Imported for its side effect: FineTunedTransformer self-registers on import.
-# This sits at the bottom, after DomainClassifier and register are defined, so
-# that router.finetune's import of them resolves against this partially
-# initialised module. Without it, `build("finetune_transformer")` raises even
-# though the class exists.
-from router import finetune as _finetune  # noqa: E402,F401
