@@ -9,16 +9,15 @@ artifacts/phase1/baseline and artifacts/phase2/{normal,beta,zoib}.
 
 from __future__ import annotations
 
-import argparse
-import json
 import sys
 
+from router.cli import raw_parser
 from router.config import load_config
 from router.nirt.continuous_eval import compare_response_models
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = raw_parser(__doc__)
     ap.add_argument("--split", default="test")
     ap.add_argument("--config", default=None)
     args = ap.parse_args()

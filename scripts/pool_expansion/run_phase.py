@@ -11,16 +11,15 @@ docs/pool_expansion_results.md.
 
 from __future__ import annotations
 
-import argparse
-import json
 import sys
 
+from router.cli import raw_parser
 from router.config import load_config
 from router.pool_expansion import run_battery
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = raw_parser(__doc__)
     ap.add_argument("--phase", required=True, help="phase id, e.g. E0")
     ap.add_argument("--config", default=None)
     ap.add_argument("--split", default="test")

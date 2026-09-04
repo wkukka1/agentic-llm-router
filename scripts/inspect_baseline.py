@@ -9,12 +9,12 @@ P(correct | q, m) with the base IRT score for a chosen pair.
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
 
 import numpy as np
 
+from router.cli import raw_parser
 from router.config import load_config
 from router.nirt.baseline_data import batched_forward, build_arrays
 from router.nirt.baseline_eval import theta_matrix
@@ -23,7 +23,7 @@ from router.nirt.diagnostics import parameter_summary
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = raw_parser(__doc__)
     ap.add_argument("--checkpoint", default="artifacts/phase1/baseline")
     ap.add_argument("--config", default=None)
     ap.add_argument("--split", default="test")

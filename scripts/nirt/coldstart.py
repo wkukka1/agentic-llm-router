@@ -14,26 +14,17 @@ Writes <runs_dir>/<run>/coldstart_<split>.json.
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
-from pathlib import Path
 
 import pandas as pd
 import yaml
 
+from router.cli import float_table, raw_parser, resolve, write_json
 from router.config import load_config
 from router.data.phase1 import load_phase1
 from router.nirt.evaluate import cold_start_eval
 from router.nirt.train import load_run
-
-pd.set_option("display.width", 160)
-
-
-def _runs_dir(cfg_path: Path, root: Path) -> Path:
-    c = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-    d = Path(c.get("runs_dir", "data/processed/nirt_runs"))
-    return d if d.is_absolute() else root / d
 
 
 def _table(res: dict) -> pd.DataFrame:
@@ -53,7 +44,7 @@ def _table(res: dict) -> pd.DataFrame:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = raw_parser(__doc__)
     ap.add_argument("--run", required=True)
     ap.add_argument("--split", default="test", choices=["validation", "test"])
     ap.add_argument("--config", default="configs/nirt.yaml")
@@ -61,10 +52,8 @@ def main() -> int:
     ap.add_argument("--also-free", default=None, help="a 'free' run name to contrast (should fail)")
     args = ap.parse_args()
 
-    root = Path(load_config().root)
-    cfg_path = Path(args.config)
-    cfg_path = cfg_path if cfg_path.is_absolute() else root / cfg_path
-    runs_dir = _runs_dir(cfg_path, root)
+    ncfg = yaml.safe_load(resolve(args.config).read_text(encoding="utf-8"))
+    runs_dir = resolve(ncfg.get("runs_dir", "data/processed/nirt_runs"))
 
     p0 = load_config(args.phase0_config) if args.phase0_config else load_config()
     d = load_phase1(p0)
@@ -75,15 +64,15 @@ def main() -> int:
 
     print(f"\n=== cold-start ({res['orientation']}, run={args.run}, split={args.split}) ===")
     print(f"cold LLMs: {res['cold_models']}")
-    print("\n-- per-model prediction + placement --")
-    print(_table(res).to_string(index=False, float_format=lambda x: f"{x:.4f}"))
-
     pooled = res["pooled_prediction"]
-    print("\n-- pooled: NIRT vs no-NIRT references (BCE / MSE) --")
-    print(pd.DataFrame([
-        {"method": k, "bce": v["bce"], "mse": v["mse"], "auc": v.get("auc", float("nan"))}
-        for k, v in pooled.items()
-    ]).to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+    with float_table(160):
+        print("\n-- per-model prediction + placement --")
+        print(_table(res).to_string(index=False))
+        print("\n-- pooled: NIRT vs no-NIRT references (BCE / MSE) --")
+        print(pd.DataFrame([
+            {"method": k, "bce": v["bce"], "mse": v["mse"], "auc": v.get("auc", float("nan"))}
+            for k, v in pooled.items()
+        ]).to_string(index=False))
 
     print("\n-- by benchmark family (does it know the specialisation?) --")
     for m, r in res["per_model"].items():
@@ -105,9 +94,7 @@ def main() -> int:
         except ValueError as e:
             print(f"  free run correctly refused: {e}")
 
-    out = runs_dir / args.run / f"coldstart_{args.split}.json"
-    out.write_text(json.dumps(res, indent=2, default=float), encoding="utf-8")
-    print(f"\nwrote {out}")
+    write_json(runs_dir / args.run / f"coldstart_{args.split}.json", res)
     return 0
 
 

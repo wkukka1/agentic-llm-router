@@ -12,15 +12,14 @@ Writes <runs_dir>/_ab_orientation_<split>.json.
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import yaml
 
+from router.cli import float_table, raw_parser, resolve, write_json
 from router.config import load_config
 from router.data.phase1 import load_phase1
 from router.nirt.baselines import fit_classical_irt
@@ -29,21 +28,18 @@ from router.nirt.metrics import prediction_metrics
 from router.nirt.routing import align, eval_matrices, pareto, routing_report, train_quality
 from router.nirt.train import fit, load_run
 
-pd.set_option("display.width", 200)
-pd.set_option("display.max_columns", 30)
-
 _ORI = {"query_latent": "nirt", "model_latent": "irt"}
 
 
-def _load_cfg(path: Path) -> dict:
-    c = yaml.safe_load(path.read_text(encoding="utf-8"))
+def _load_cfg(path) -> dict:
+    c = yaml.safe_load(resolve(path).read_text(encoding="utf-8"))
     c.setdefault("model", {})
     c.setdefault("train", {})
     return c
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = raw_parser(__doc__)
     ap.add_argument("--dim", type=int, default=2)
     ap.add_argument("--model-params", choices=["projected", "free"], default="projected")
     ap.add_argument("--epochs", type=int, default=None)
@@ -53,12 +49,8 @@ def main() -> int:
     ap.add_argument("--phase0-config", default=None)
     args = ap.parse_args()
 
-    root = Path(load_config().root)
-    cfg_path = Path(args.config)
-    cfg_path = cfg_path if cfg_path.is_absolute() else root / cfg_path
-    base_cfg = _load_cfg(cfg_path)
-    runs_dir = Path(base_cfg.get("runs_dir", "data/processed/nirt_runs"))
-    runs_dir = runs_dir if runs_dir.is_absolute() else root / runs_dir
+    base_cfg = _load_cfg(args.config)
+    runs_dir = resolve(base_cfg.get("runs_dir", "data/processed/nirt_runs"))
 
     p0 = load_config(args.phase0_config) if args.phase0_config else load_config()
     d = load_phase1(p0)
@@ -104,7 +96,8 @@ def main() -> int:
     table = pd.DataFrame(rows)
     print(f"\n================ ORIENTATION A/B  (split={args.split}, dim={args.dim}, "
           f"{args.model_params}) ================")
-    print(table.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+    with float_table(200, **{"display.max_columns": 30}):
+        print(table.to_string(index=False))
 
     # verdict
     ql, ml = table[table.method == "query_latent"].iloc[0], table[table.method == "model_latent"].iloc[0]
@@ -114,15 +107,12 @@ def main() -> int:
           f"ranking optimal_rate {ql['optimal_rate']:.3f} vs {ml['optimal_rate']:.3f}; "
           f"both vs ceiling {rows[0]['bce']:.4f}.")
 
-    out = runs_dir / f"_ab_orientation_{args.split}.json"
-    payload = {
+    write_json(runs_dir / f"_ab_orientation_{args.split}.json", {
         "split": args.split, "dim": args.dim, "model_params": args.model_params,
         "model_ids": model_ids, "table": table.to_dict(orient="records"),
         "pareto": {o: pareto(p, true, cost).to_dict(orient="records") for o, p in preds.items()},
         "classical_irt_ceiling": ceil.metrics,
-    }
-    out.write_text(json.dumps(payload, indent=2, default=float), encoding="utf-8")
-    print(f"\nwrote {out}")
+    })
     return 0
 
 
