@@ -31,7 +31,9 @@ from sklearn.model_selection import train_test_split
 log = logging.getLogger(__name__)
 
 PROCESSED_DIR = Path("data/processed")
-#: Never regenerated. See build_dataset for why.
+#: Never regenerated: it was once resampled per build, which silently made
+#: runs incomparable and produced a learning curve fitted across two
+#: different test sets.
 FROZEN_EVAL_PATH = Path("data/handlabelled/eval_frozen.parquet")
 SPLIT_NAMES = ("train", "val", "test")
 
@@ -154,102 +156,6 @@ def load_splits(variant: str = "domain_v3", out_dir: Path = PROCESSED_DIR) -> di
     return {name: pd.read_parquet(target / f"{name}.parquet") for name in SPLIT_NAMES}
 
 
-def build_dataset(
-    *,
-    arena_shards: int = 3,
-    use_mmlu_pro: bool = True,
-    use_routerarena: bool = True,
-    use_bigbench: bool = True,
-    synthetic_domains: list[str] | None = None,
-    real_eval_size: int = 250,
-    hand_oversample: int = 4,
-    cap_per_source_domain: int | None = 1200,
-    out_dir: Path = PROCESSED_DIR,
-    variant: str = "domain_v3",
-    seed: int = 20260826,
-) -> dict[str, pd.DataFrame]:
-    """Assemble every source, then split.
-
-    ``real_eval_size`` hand-labelled real prompts are held out *before* anything
-    else and placed directly into the test split. They are the honest measure:
-    genuine user traffic, labelled by hand, never seen in training.
-    """
-    from router import sources
-
-    # Dedupe hand labels *before* carving off the eval set: a prompt labelled
-    # twice would otherwise put one copy in eval and one in train.
-    hand = dedupe(to_frame(sources.load_handlabelled()))
-
-    # The eval set is FROZEN on disk and matched by prompt text, not resampled
-    # per run. Earlier versions drew a fresh sample each build, which silently
-    # made results from different runs incomparable -- including a learning
-    # curve that was fitted across two different test sets. Never resample this.
-    frozen = pd.read_parquet(FROZEN_EVAL_PATH)
-    eval_keys = set(frozen["prompt"].map(normalize_prompt))
-    is_eval = hand["prompt"].map(normalize_prompt).isin(eval_keys)
-    hand_eval = hand[is_eval].assign(source="handlabelled_eval").reset_index(drop=True)
-    hand_train = hand[~is_eval].reset_index(drop=True)
-    log.info("frozen eval set: %d rows; %d hand rows remain for training",
-             len(hand_eval), len(hand_train))
-
-    # Hand labels are the only rows pairing real traffic with all 12 domains,
-    # and there are ~750 of them against tens of thousands of benchmark rows.
-    # Repeating them raises their weight in the loss without discarding the
-    # benchmark signal; duplicates are added after dedupe so they survive it.
-    hand_repeated = pd.concat([hand_train] * max(hand_oversample, 1), ignore_index=True)
-
-    # Ordered most-trusted-first: dedupe keeps the first occurrence.
-    parts = [hand_train, to_frame(sources.load_arena_flagged(max_shards=arena_shards))]
-    if use_mmlu_pro:
-        parts.append(to_frame(sources.load_mmlu_pro()))
-    if use_routerarena:
-        parts.append(to_frame(sources.load_routerarena_bycategory()))
-    if use_bigbench:
-        parts.append(to_frame(sources.load_bigbench()))
-    if synthetic_domains:
-        parts.append(to_frame(sources.load_synthetic(synthetic_domains)))
-
-    frame = dedupe(pd.concat(parts, ignore_index=True))
-
-    # The eval prompts are carved out before dedupe runs, so a benchmark row
-    # with identical text would survive here and leak into training. Drop any
-    # such row: the held-out real prompts must appear nowhere else.
-    eval_keys = set(hand_eval["prompt"].map(normalize_prompt))
-    before = len(frame)
-    frame = frame[~frame["prompt"].map(normalize_prompt).isin(eval_keys)].reset_index(drop=True)
-    if before != len(frame):
-        log.info("dropped %d row(s) colliding with the held-out eval set", before - len(frame))
-
-    # Cap any one (source, domain) cell. Without this, arena's `is_code` flag
-    # contributes ~7k software_tech rows and the model learns that domain at the
-    # expense of the eleven others.
-    if cap_per_source_domain:
-        capped = []
-        for _, group in frame.groupby(["source", "domain"], observed=True):
-            capped.append(group.sample(min(len(group), cap_per_source_domain),
-                                       random_state=seed))
-        frame = pd.concat(capped, ignore_index=True)
-        log.info("after per-(source,domain) cap: %d rows", len(frame))
-
-    splits = split_frame(frame, stratify_on=["domain", "source"], seed=seed)
-
-    # Oversampling applies to training only -- never to val or test.
-    extra = hand_repeated[~hand_repeated["uid"].isin(
-        set(splits["val"]["uid"]) | set(splits["test"]["uid"]))]
-    splits["train"] = pd.concat([splits["train"], extra], ignore_index=True)
-
-    # Held-out real prompts join the test split only.
-    splits["test"] = pd.concat([splits["test"], hand_eval], ignore_index=True)
-    assert_no_leakage(splits)
-
-    target = out_dir / variant
-    target.mkdir(parents=True, exist_ok=True)
-    for name, part in splits.items():
-        part.to_parquet(target / f"{name}.parquet", index=False)
-        log.info("wrote %s: %d rows", target / f"{name}.parquet", len(part))
-    return splits
-
-
 def build_task_dataset(
     *,
     include_synthetic: bool = True,
@@ -337,8 +243,8 @@ def build_real_only_dataset(
     This is what the shipped model trains on. Benchmark rows are excluded
     entirely: they are exam-formatted, and a model trained on them scored 0.91
     on benchmarks and 0.47 on real traffic. They remain useful for pretraining
-    a transformer (see ``build_dataset``), but the frozen-encoder ensemble does
-    not need them and is measurably better without.
+    a transformer, but fine-tuning was rejected for seed instability and the
+    loaders went with it -- see EXPERIMENTS.md.
 
     The evaluation rows are the frozen set, matched by prompt text, so results
     stay comparable across runs and across changes to the label pool.

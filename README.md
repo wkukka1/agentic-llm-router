@@ -50,7 +50,7 @@ python -m router.cli build-real --variant real_only
 python -m router.cli train experiments/v4/PROD_ensemble.yaml --save-model
 
 # task: same, with the synthetic supplements folded into train only
-python -m router.cli build-data --variant task        # or build_task_dataset()
+python -m router.cli build-task
 python -m router.cli train experiments/v5/PROD_task.yaml --save-model
 
 # checks
@@ -74,7 +74,7 @@ src/router/
   analysis.py    confusion matrices, per-class F1, error slices
   overfit.py     the five-check audit
   inference.py   serving: DomainHead, TaskHead, RouterHead, the vector
-  cli.py         build-data / build-real / train / analyze / external / overfit
+  cli.py         build-task / build-real / train / analyze / external / overfit
 
 data/handlabelled/   the labels. The asset. Committed deliberately.
 data/synthetic/      written and generated supplements, training only

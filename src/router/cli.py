@@ -19,8 +19,8 @@ from router.analysis import report
 from router.config import load_experiments
 from router.dataset import (
     PROCESSED_DIR,
-    build_dataset,
     build_real_only_dataset,
+    build_task_dataset,
     load_splits,
 )
 from router.experiment import ARTIFACTS_DIR, run_all
@@ -58,20 +58,18 @@ def cmd_build_real(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_build_data(args: argparse.Namespace) -> int:
-    splits = build_dataset(
-        arena_shards=args.arena_shards,
-        use_bigbench=not args.no_bigbench,
-        synthetic_domains=args.synthetic_domains,
-        real_eval_size=args.real_eval_size,
-        hand_oversample=args.hand_oversample,
-        out_dir=Path(args.out_dir), variant=args.variant, seed=args.seed,
+def cmd_build_task(args: argparse.Namespace) -> int:
+    """Build the task-head splits."""
+    splits = build_task_dataset(
+        include_synthetic=not args.no_synthetic,
+        include_mined=args.include_mined,
+        out_dir=Path(args.out_dir),
+        variant=args.variant,
+        seed=args.seed,
     )
     for name, frame in splits.items():
-        print(f"\n{name}: {len(frame)} rows")
-        print(pd.crosstab(frame["domain"], frame["source"]).to_string())
+        print(f"{name}: {len(frame)} rows")
     return 0
-
 
 def cmd_describe_data(args: argparse.Namespace) -> int:
     label = "domain"
@@ -126,7 +124,6 @@ def cmd_analyze(args: argparse.Namespace) -> int:
 
 def cmd_external(args: argparse.Namespace) -> int:
     """Score a trained run against externally-labelled prompt sets."""
-    import pandas as pd
 
     from router.inference import DomainHead
 
@@ -163,17 +160,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-v", "--verbose", action="count", default=1)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    build = sub.add_parser("build-data", help="assemble all sources and write splits")
-    build.add_argument("--arena-shards", type=int, default=3)
-    build.add_argument("--no-bigbench", action="store_true")
-    build.add_argument("--synthetic-domains", nargs="*", default=None,
-                       help="domains to supplement with synthetic prompts; omit for none")
-    build.add_argument("--real-eval-size", type=int, default=250)
-    build.add_argument("--hand-oversample", type=int, default=4)
-    build.add_argument("--variant", default="domain_v3")
+    build = sub.add_parser(
+        "build-task", help="hand-labelled task splits (synthetic rows into train only)")
+    build.add_argument("--no-synthetic", action="store_true",
+                       help="train on the 1,000 real task labels alone")
+    build.add_argument("--include-mined", action="store_true",
+                       help="also add the 240 targeted-search rows (off by default: "
+                            "macro-F1 +0.025, top-1 -0.013, neither significant)")
+    build.add_argument("--variant", default="task")
     build.add_argument("--out-dir", default=str(PROCESSED_DIR))
-    build.add_argument("--seed", type=int, default=20260826)
-    build.set_defaults(func=cmd_build_data)
+    build.add_argument("--seed", type=int, default=20260902)
+    build.set_defaults(func=cmd_build_task)
+
 
     build_real = sub.add_parser(
         "build-real",

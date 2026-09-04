@@ -46,7 +46,6 @@ distribution. The design rules:
 
 from __future__ import annotations
 
-import re
 from enum import StrEnum
 
 
@@ -96,116 +95,6 @@ DIFFICULTY_LABELS: list[str] = [d.value for d in Difficulty]
 # --------------------------------------------------------------------------
 
 #: MMLU-Pro's 14 academic categories.
-_MMLU_PRO: dict[str, Domain] = {
-    "math": Domain.SCIENCE_MATH,
-    "physics": Domain.SCIENCE_MATH,
-    "chemistry": Domain.SCIENCE_MATH,
-    "biology": Domain.SCIENCE_MATH,
-    "computer science": Domain.SOFTWARE_TECH,
-    "engineering": Domain.SOFTWARE_TECH,
-    "health": Domain.MEDICINE_HEALTH,
-    "psychology": Domain.MEDICINE_HEALTH,
-    "economics": Domain.BUSINESS_FINANCE,
-    "business": Domain.BUSINESS_FINANCE,
-    "law": Domain.LAW_POLITICS,
-    "history": Domain.HUMANITIES,
-    "philosophy": Domain.HUMANITIES,
-    # MMLU-Pro's own "other" is a grab-bag of miscellany, not our meta class.
-    "other": None,
-}
-
-
-def domain_from_mmlu_pro(category: str) -> Domain | None:
-    return _MMLU_PRO.get((category or "").strip().lower())
-
-
-#: RouterArena's ``Category`` column -- its Dewey *sub*class, which is far more
-#: specific than the ``Domain`` column that failed in v1. "61 Medicine and
-#: health" is unambiguous; "6 Technology" (its parent) was not.
-_ROUTERARENA_CATEGORY: dict[str, Domain] = {
-    "00": Domain.SOFTWARE_TECH, "02": Domain.SOFTWARE_TECH, "62": Domain.SOFTWARE_TECH,
-    "51": Domain.SCIENCE_MATH, "16": Domain.SCIENCE_MATH,
-    "50": Domain.SCIENCE_MATH, "53": Domain.SCIENCE_MATH, "54": Domain.SCIENCE_MATH,
-    "55": Domain.SCIENCE_MATH, "57": Domain.SCIENCE_MATH, "58": Domain.SCIENCE_MATH,
-    "61": Domain.MEDICINE_HEALTH, "15": Domain.MEDICINE_HEALTH,
-    "33": Domain.BUSINESS_FINANCE, "65": Domain.BUSINESS_FINANCE,
-    "34": Domain.LAW_POLITICS, "32": Domain.LAW_POLITICS,
-    "10": Domain.HUMANITIES, "17": Domain.HUMANITIES, "20": Domain.HUMANITIES,
-    "90": Domain.HUMANITIES, "91": Domain.HUMANITIES, "30": Domain.HUMANITIES,
-    "70": Domain.ARTS_ENTERTAINMENT, "78": Domain.ARTS_ENTERTAINMENT,
-    "79": Domain.ARTS_ENTERTAINMENT, "77": Domain.ARTS_ENTERTAINMENT,
-    "80": Domain.ARTS_ENTERTAINMENT,
-    "40": Domain.LANGUAGE, "41": Domain.LANGUAGE, "42": Domain.LANGUAGE,
-}
-
-
-def domain_from_routerarena_category(category: str) -> Domain | None:
-    """RouterArena categories are prefixed with their Dewey subclass number."""
-    match = re.match(r"\s*(\d{2})", category or "")
-    return _ROUTERARENA_CATEGORY.get(match.group(1)) if match else None
-
-
-#: BIG-bench task name -> domain. Only tasks with an unambiguous subject are
-#: mapped; the many synthetic-reasoning tasks are deliberately excluded, since
-#: their prompts look like nothing a user would send.
-_BIGBENCH: tuple[tuple[str, Domain], ...] = (
-    ("arithmetic", Domain.SCIENCE_MATH),
-    ("math", Domain.SCIENCE_MATH),
-    ("algebra", Domain.SCIENCE_MATH),
-    ("logical", Domain.SCIENCE_MATH),
-    ("logic_grid", Domain.SCIENCE_MATH),
-    ("cs_algorithms", Domain.SOFTWARE_TECH),
-    ("code_line", Domain.SOFTWARE_TECH),
-    ("auto_debugging", Domain.SOFTWARE_TECH),
-    ("programming", Domain.SOFTWARE_TECH),
-    ("physics", Domain.SCIENCE_MATH),
-    ("chemistry", Domain.SCIENCE_MATH),
-    ("biology", Domain.SCIENCE_MATH),
-    ("cryobiology", Domain.SCIENCE_MATH),
-    ("medical", Domain.MEDICINE_HEALTH),
-    ("economics", Domain.BUSINESS_FINANCE),
-    ("business", Domain.BUSINESS_FINANCE),
-    ("law", Domain.LAW_POLITICS),
-    ("social", Domain.LAW_POLITICS),
-    ("history", Domain.HUMANITIES),
-    ("anachronisms", Domain.HUMANITIES),
-    ("proverbs", Domain.HUMANITIES),
-    ("moral", Domain.HUMANITIES),
-    ("ethic", Domain.HUMANITIES),
-    ("philosophy", Domain.HUMANITIES),
-    ("religio", Domain.HUMANITIES),
-    ("movie", Domain.ARTS_ENTERTAINMENT),
-    ("emoji_movie", Domain.ARTS_ENTERTAINMENT),
-    ("music", Domain.ARTS_ENTERTAINMENT),
-    ("sports", Domain.ARTS_ENTERTAINMENT),
-    ("chess", Domain.ARTS_ENTERTAINMENT),
-    ("checkmate", Domain.ARTS_ENTERTAINMENT),
-    ("codenames", Domain.ARTS_ENTERTAINMENT),
-    ("narrative", Domain.ARTS_ENTERTAINMENT),
-    ("humor", Domain.ARTS_ENTERTAINMENT),
-    ("joke", Domain.ARTS_ENTERTAINMENT),
-    ("riddle", Domain.ARTS_ENTERTAINMENT),
-    ("translation", Domain.LANGUAGE),
-    ("linguistic", Domain.LANGUAGE),
-    ("language_identification", Domain.LANGUAGE),
-    ("word", Domain.LANGUAGE),
-    ("morpheme", Domain.LANGUAGE),
-    ("anagram", Domain.LANGUAGE),
-    ("spelling", Domain.LANGUAGE),
-    ("rhyme", Domain.LANGUAGE),
-    ("emotion", Domain.PERSONAL_LIFE),
-)
-
-
-def domain_from_bigbench_task(task: str) -> Domain | None:
-    """Map a BIG-bench task name, or None if its subject is ambiguous."""
-    name = (task or "").strip().lower()
-    for needle, domain in _BIGBENCH:
-        if needle in name:
-            return domain
-    return None
-
-
 def domain_from_arena_flags(
     *, is_code: bool, is_math: bool, is_creative_writing: bool
 ) -> Domain | None:
