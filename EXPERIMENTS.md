@@ -101,12 +101,39 @@ meaning what they say.
 
 Four things not previously tried, run before shipping.
 
-| tried | result |
-|---|---|
-| Task distribution as a domain feature | −0.005 (scale 1) and −0.009 (scale 4). Both negative, neither significant. The axes are independent, as designed. |
-| Self-training on 2,000 unlabelled real prompts | *see run output* |
-| Label correction from the 200-prompt re-annotation | *see run output* |
-| Two-stage specialist on confusable pairs | *see run output* |
+All four came back negative. Baseline 0.7378 top-1 / 0.8955 top-2.
+
+| tried | top-1 | vs baseline |
+|---|---|---|
+| Task distribution as a domain feature, scale 1 | 0.7329 | −0.005 [−0.014, +0.003] |
+| Task distribution as a domain feature, scale 4 | 0.7284 | −0.009 [−0.019, +0.000] |
+| Self-training, 244 pseudo-labels at conf ≥ 0.7 | 0.7395 | +0.002 [−0.003, +0.006] |
+| Self-training, 940 pseudo-labels at conf ≥ 0.5 | 0.7349 | −0.003 [−0.010, +0.004] |
+| Label correction, scored on the 2,395 untouched rows | 0.7386 | −0.004 [−0.014, +0.006] |
+| Two-stage specialist, hard override | 0.7349 | −0.003 [−0.014, +0.008] |
+| Two-stage specialist, soft 50/50 blend | 0.7378 | −0.000 [−0.009, +0.009] |
+
+Not one interval clears zero. Three of these deserve a note.
+
+**Cross-head features are not just neutral, they are slightly negative.** The
+task distribution is free at serving time, so it was worth testing, but domain
+and task really are independent — knowing a prompt asks for a summary tells you
+almost nothing about what it is a summary of.
+
+**Label correction not helping is the ceiling result again, from another angle.**
+The re-annotation disagreed with 46 stored labels. Correcting them and scoring
+on the 2,395 rows the correction never touched gives −0.004. If those 46 had
+been *mistakes*, fixing them should have cleaned the decision boundary and
+helped everywhere. It did not, because they were not mistakes — they were the
+other defensible choice on an ambiguous prompt.
+
+**The two-stage specialist is a leakage demonstration.** Fitted on all rows of
+its two classes it scored **+0.101, significant** — a big, clean-looking win.
+Refitted inside the training fold, where nothing it sees is scored, it gives
+−0.003 hard and −0.000 soft. The entire effect was the specialist having seen
+its test rows. It was run in the leaky form first deliberately, as a cheap upper
+bound: an idea that cannot win with leakage cannot win without it. This one won
+with leakage and lost without, which is the case the honest protocol exists for.
 
 ## Overfitting audit
 
