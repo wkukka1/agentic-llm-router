@@ -158,25 +158,62 @@ and a simpler model makes both easier to read. The shipped ensemble scores
 
 ## The ceiling
 
-200 prompts were re-annotated with the stored labels hidden. The re-annotation
-reproduced the stored label **77.0%** of the time and found a defensible second
-domain on **42.5%** of prompts.
+Two measurements, and they disagree in a way that matters.
 
-The domain head sits at 0.741 — three points under the rate one annotator
-reproduces their own labels, which is itself an upper bound on what two people
-would agree on. 47% of its errors are labels the re-annotation also accepts.
-Top-1 lands on *some* defensible label 0.855 of the time; top-2 on 0.950.
+**Second annotator, with the rubric written down.** 300 prompts relabelled by
+three agents from the ten tie-break rules in this document, stored labels
+hidden: **0.817 raw agreement, Cohen's kappa 0.793** (0.830 / 0.795 on the
+merged eight). `data/handlabelled/domain_second_annotator.parquet`.
 
-**All of the accuracy deficit is in the dual-domain 42.5%**: 0.826 top-1 on
-single-domain prompts against 0.588 on dual-domain ones. No encoder addresses a
-target that is genuinely two-valued, which is why the shortlist exists and why
-the domain learning curve is flat.
+**Same annotator, from memory.** 200 prompts re-annotated by the original
+annotator without a written rubric: **0.770**, with a defensible second domain
+on 42.5% of prompts.
+`data/handlabelled/reannotation_200.parquet`.
+
+The gap between them is the rubric. Codifying the boundaries -- every ruling
+made during this project, written down -- raised agreement by 4.7 points over
+re-deriving them from memory.
+
+    second annotator, rubric written down   0.817
+    same annotator, from memory             0.770
+    classifier top-1, nested CV             0.741
+    classifier top-2                        0.899
+
+**This corrects an earlier conclusion.** On the 0.770 figure alone this project
+reported that the classifier was at its labelling ceiling and that further
+modelling was wasted. The first half of that was wrong: there is roughly **7.6
+points of headroom** to what a second annotator achieves.
+
+The second half survives. Every model lever tried failed to reach it -- eight
+encoders, stacking, self-training, cross-head features, two-stage specialists,
+all inside the noise band. What the evidence now points at is **label
+consistency**: the 2,441 training labels predate the rubric that raised
+agreement, so they encode boundary decisions made before `software_tech` /
+`meta_other` was settled, before hardware was folded in, and before the merge
+rules existed.
+
+Per class, where the second annotator agreed least:
+
+| class | n | agreement |
+|---|---|---|
+| `medicine_health` | 13 | 0.538 |
+| `meta_other` | 38 | 0.684 |
+| `software_tech` | 28 | 0.750 |
+| `humanities` | 31 | 0.806 |
+| `law_politics` | 26 | 0.808 |
+| `language` | 18 | 0.944 |
+
+`meta_other` is the model's worst class (F1 0.659) and the annotators'
+second-worst. That is one underspecified label showing up twice, not two
+separate problems.
 
 ## Known limits
 
-- **Single-annotator labels.** Every domain and task label was written by one
-  annotator. The 0.770 self-agreement bounds the ceiling from above; a second
-  person would agree less. This is the load-bearing caveat.
+- **Single-annotator training labels.** All 2,441 domain labels were written by
+  one annotator, before the taxonomy rubric existed. A second annotator working
+  from that rubric agrees with them 0.817 of the time, which is both the ceiling
+  estimate and a measure of how much the training labels drifted from the rules
+  eventually written down.
 - **The task eval set is too small for its rare classes.** 1,000 random real
   prompts contain 3 `extract` and 11 `summarize`, so macro-F1 cannot be measured
   tightly on them however good the model gets.

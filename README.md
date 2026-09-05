@@ -90,10 +90,15 @@ docs/                the prompts used to source more labels
 
 ## The one thing to know
 
-The domain classifier is at its **labelling** ceiling, not its modelling
-ceiling. Re-annotating 200 prompts with the stored labels hidden reproduced them
-77.0% of the time, and found a defensible second domain on 42.5%. The model
-scores 0.741 — three points under one annotator's agreement with themselves.
+The domain classifier is limited by its **labels**, not its architecture. A
+second annotator working from the written rubric agrees with the stored labels
+**81.7%** of the time (kappa 0.793); the same annotator re-deriving the rules
+from memory manages 77.0%; the model scores 74.1%.
 
-So the shortlist is the product, not the argmax. Pass `distribution` downstream
-and let the consumer choose its operating point.
+So there is real headroom — but no model lever reaches it. Eight encoders,
+stacking, self-training, cross-head features and two-stage specialists all land
+inside the noise band. The 2,441 training labels predate the rubric, and making
+them consistent with it is the open lever.
+
+Meanwhile the shortlist is the product, not the argmax. Pass `distribution`
+downstream and let the consumer pick its operating point.
