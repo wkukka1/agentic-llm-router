@@ -170,8 +170,10 @@ def build_task_dataset(
     0.700 on real prompts, below the 0.729 of always predicting `answer`, and
     mixing it in costs accuracy at every ratio tried. See :mod:`router.tasktype`.
 
-    ``include_synthetic`` adds 780 non-real prompts for the four weakest
-    classes: 377 hand-written and 403 agent-generated. Like the mined rows they
+    ``include_synthetic`` adds 1,981 rows to training: 377 hand-written and 403
+    agent-generated prompts for the four weakest classes, plus the 1,201 real
+    prompts that were task-labelled by agent (kappa 0.819 against hand labels --
+    see :func:`router.sources.load_agent_tasks`). Like the mined rows they
     are pinned to **train**; the evaluation set stays real throughout. Measured
     against the random 1,000:
 
@@ -210,7 +212,9 @@ def build_task_dataset(
     frame["task"] = frame["domain"]
     splits = split_frame(frame, stratify_on=["task"], val_size=0.15, test_size=0.20, seed=seed)
     if include_synthetic:
-        extra = to_frame(sources.load_synthetic_tasks() + sources.load_generated_tasks())
+        extra = to_frame(sources.load_synthetic_tasks()
+                         + sources.load_generated_tasks()
+                         + sources.load_agent_tasks())
         extra["task"] = extra["domain"]
         splits["train"] = pd.concat([splits["train"], extra], ignore_index=True)
         log.info("task: +%d synthetic rows into train", len(extra))

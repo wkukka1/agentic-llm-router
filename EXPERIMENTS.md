@@ -34,6 +34,47 @@ Protocol notes that apply throughout:
 | Adding mined rows to training | macro-F1 +0.025, top-1 −0.013, neither significant. Off by default. |
 | Agent-generated task prompts, split by generator | macro-F1 0.573 → 0.581, top-2 0.944 → 0.950. Kept, with the caveat below. |
 | Is synthetic text separable from real? | **AUC 0.936 generated, 0.974 hand-written.** Trivially separable. A model trained on it partly learns synthetic style. It helps only where a class had nothing. |
+| Agent-labelling the remaining 1,201 real prompts | **Cohen's kappa 0.819** against hand labels on a 60-prompt overlap — the first inter-annotator measurement in this project. But adding them moves nothing: see below. |
+
+### Agent-labelled real prompts: high agreement, no gain
+
+The task learning curve was still climbing (+0.035 over its last quarter of
+data) where the domain curve had gone flat (+0.001), so more real task labels
+were the highest-value work left. Six agents labelled the 1,201 real prompts
+that had never been task-labelled, from the written rubric in
+`docs/TASK_LABELLING_PROMPT.md`.
+
+The labels are good. On a 60-prompt overlap labelled by hand without seeing the
+agent's answer: **0.967 raw agreement, Cohen's kappa 0.819**, two disagreements
+in sixty and both on the `answer`/`create` boundary.
+
+They still did not help. Scored on the hand-labelled 1,000, agent rows in
+training only:
+
+| training data | top-1 | top-2 | macro-F1 | `extract` F1 |
+|---|---|---|---|---|
+| 1,000 hand labels only | 0.802 | 0.933 | 0.524 | 0.000 |
+| + synthetic | 0.793 | 0.950 | 0.581 | 0.364 |
+| + agent labels alone | 0.771 | 0.938 | 0.512 | 0.000 |
+| **+ agent + synthetic (shipped)** | 0.783 | **0.951** | **0.587** | **0.400** |
+| + agent reweighted + synthetic | 0.785 | 0.949 | 0.579 | 0.364 |
+
+Against "+ synthetic", the shipped combination is −0.010 top-1 [−0.026, +0.006]
+and +0.005 macro-F1 [−0.015, +0.026]. Neither clears zero.
+
+Two candidate explanations, and the evidence does not separate them. The agent
+set is **80.1% `answer`** against 72.9% in the hand-labelled set — the rubric
+tells a torn annotator to prefer `answer`, and they did, so per-item accuracy is
+high while the marginal distribution shifted. And the 1,000-prompt eval set
+holds 3 `extract` and 11 `summarize`, so it cannot resolve differences this size
+whatever causes them. Reweighting the agent rows to match the hand-labelled
+class shares recovers the top-1 loss but not the macro-F1, so the marginal shift
+is part of the story and not all of it.
+
+**The lesson is that per-item label quality and dataset usefulness are different
+things.** Kappa 0.819 is near-perfect agreement and bought nothing measurable.
+What the task head needs is not more labels of the traffic it already sees well;
+it is more *eval* rows in the classes it sees rarely.
 
 ## Encoders and heads
 

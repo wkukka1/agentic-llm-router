@@ -36,6 +36,7 @@ ARENA_REPO = "lmarena-ai/arena-human-preference-140k"
 HANDLABELLED_PATH = "data/handlabelled/real_prompts.parquet"
 REAL_TASKS_PATH = "data/handlabelled/real_tasks.parquet"
 MINED_TASKS_PATH = "data/handlabelled/real_tasks_mined.parquet"
+AGENT_TASKS_PATH = "data/handlabelled/real_tasks_agent.parquet"
 GENERATED_TASKS_PATH = "data/synthetic/generated_tasks.parquet"
 SYNTHETIC_DIR = "data/synthetic"
 
@@ -206,6 +207,54 @@ def load_synthetic_tasks(tasks: list[str] | None = None) -> list[Example]:
         out.extend(Example(prompt=p, source="synthetic", subset=f"task_{task}",
                            capability=task) for p in prompts)
     log.info("synthetic tasks: %d rows over %s", len(out), names)
+    return out
+
+
+def load_agent_tasks(path: str = AGENT_TASKS_PATH) -> list[Example]:
+    """The remaining 1,201 real prompts, task-labelled by agent.
+
+    Real prompts from the same corpus as the hand-labelled 1,000 -- the right
+    distribution, which is why these were preferred over writing more synthetic
+    text. Labelled by six agents working from the written rubric in
+    ``docs/TASK_LABELLING_PROMPT.md``.
+
+    **Agreement is high.** 60 of them were hand-labelled against the same rubric
+    without seeing the agent's answer: 0.967 raw agreement, **Cohen's kappa
+    0.819**, two disagreements in sixty and both on the `answer`/`create`
+    boundary. That is the first inter-annotator measurement this project has
+    had, and it says these labels mean what the hand labels mean.
+
+    **They still did not move the number**, which is the more interesting half.
+    Added to training and scored on the hand-labelled 1,000:
+
+        1,000 hand labels only               0.802 top-1 / 0.933 top-2 / mF1 0.524
+        + synthetic                          0.793        / 0.950       / 0.581
+        + agent labels alone                 0.771        / 0.938       / 0.512
+        + agent + synthetic                  0.783        / 0.951       / 0.587
+        + agent reweighted + synthetic       0.785        / 0.949       / 0.579
+
+        vs "+ synthetic": agent+synthetic is -0.010 top-1 [-0.026, +0.006] and
+        +0.005 macro-F1 [-0.015, +0.026]. Neither clears zero.
+
+    The learning curve had predicted a gain -- the task head was still climbing
+    at +0.035 over its last quarter of data where the domain head had gone flat.
+    It did not arrive. Two candidate reasons, and the evidence does not separate
+    them: the agent set is 80.1% `answer` against 72.9% in the hand-labelled set
+    (the rubric tells a torn annotator to prefer `answer`, and they did), and
+    the 1,000-prompt eval set holds 3 `extract` and 11 `summarize`, so it cannot
+    resolve differences of this size whatever their cause. Reweighting the agent
+    rows to match the hand-labelled class shares was tried and recovers the
+    top-1 loss but not the macro-F1, so the marginal shift is part of it and not
+    all of it.
+
+    On by default because the combination is nominally best on the two metrics
+    the router consumes -- top-2 0.951 and `extract` F1 0.400, both the highest
+    of any configuration -- and costs nothing significant anywhere.
+    """
+    frame = pd.read_parquet(path)
+    out = [Example(prompt=row.prompt, source="agent_labelled", subset="agent_tasks",
+                   capability=row.task) for row in frame.itertuples()]
+    log.info("agent tasks: %d rows", len(out))
     return out
 
 
