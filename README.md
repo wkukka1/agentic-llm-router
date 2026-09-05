@@ -95,10 +95,14 @@ second annotator working from the written rubric agrees with the stored labels
 **81.7%** of the time (kappa 0.793); the same annotator re-deriving the rules
 from memory manages 77.0%; the model scores 74.1%.
 
-So there is real headroom — but no model lever reaches it. Eight encoders,
-stacking, self-training, cross-head features and two-stage specialists all land
-inside the noise band. The 2,441 training labels predate the rubric, and making
-them consistent with it is the open lever.
+That gap looked like headroom, so it was tested: all 2,441 labels were
+relabelled against the rubric and the classifier retrained. On the external
+prompts it got **significantly worse** (0.930 → 0.896). The original labels beat
+the rubric-consistent ones against ground truth neither saw — the written rules
+are a lossy summary of a partly tacit policy.
+
+Every lever tried is now neutral or negative: eight encoders, stacking,
+self-training, cross-head features, two-stage specialists, and relabelling.
 
 Meanwhile the shortlist is the product, not the argmax. Pass `distribution`
 downstream and let the consumer pick its operating point.

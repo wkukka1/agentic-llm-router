@@ -348,6 +348,50 @@ Per class, where the second annotator agreed least:
 second-worst. That is one underspecified label showing up twice, not two
 separate problems.
 
+## Relabelling the training set against the rubric: significantly worse
+
+The second-annotator measurement showed 0.817 agreement with the stored labels
+and this was read as ~7.6 points of headroom, on the theory that the 2,441
+training labels predate the rubric and drifted from it. So the whole corpus was
+relabelled by twelve agents following the written rubric, changing **20.1% of
+rows**. The moves were the rubric's explicit rules firing:
+
+    medicine_health -> personal_life   43 rows   (rule 6: wellbeing is not clinical)
+    meta_other       shrinks by 63              (rule 10: not a shortcut)
+    personal_life    grows by 79
+    software_tech -> science_math      24 rows
+
+Scored on the 402 externally-labelled prompts -- the only target neither
+labelling pass touched, written by someone outside this project:
+
+| training labels | top-1 | top-2 | macro-F1 |
+|---|---|---|---|
+| **original** | **0.930** | **0.985** | **0.922** |
+| rubric-relabelled | 0.896 | 0.980 | 0.878 |
+
+**−0.035 top-1, 95% CI [−0.062, −0.008]. Significant, and every class got
+worse** -- `meta_other` most (F1 0.848 → 0.722), then `science_math` (−0.058)
+and `medicine_health` (−0.039), which are exactly the classes the rubric's rules
+moved most.
+
+So the hypothesis was wrong, and in an instructive way. The original labels are
+not drifted or inconsistent versions of the rubric; they are **better** than the
+rubric, judged against ground truth neither of them saw. The written rules are a
+lossy summary of a labelling policy that was partly tacit, and enforcing the
+summary destroyed the part that did not get written down.
+
+**This also re-frames the 0.817 figure.** It is agreement between an annotator
+and a *written rubric*, not a measurement of label noise, and it does not imply
+7.6 points of headroom -- the direction of the disagreement matters and here it
+points the wrong way. An earlier revision of this document claimed that headroom
+on the strength of 0.817 alone. That claim was premature; this experiment is
+what a test of it looks like.
+
+The rubric labels stay committed as `real_prompts_rubric.parquet` with the
+originals alongside in `domain_original`, because the disagreement between them
+is a useful map of where the taxonomy is genuinely ambiguous. They are not used
+for training.
+
 ## What actually moved the number
 
 In order of size, across the whole project:

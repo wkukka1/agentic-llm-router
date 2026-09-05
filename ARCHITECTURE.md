@@ -179,18 +179,18 @@ re-deriving them from memory.
     classifier top-1, nested CV             0.741
     classifier top-2                        0.899
 
-**This corrects an earlier conclusion.** On the 0.770 figure alone this project
-reported that the classifier was at its labelling ceiling and that further
-modelling was wasted. The first half of that was wrong: there is roughly **7.6
-points of headroom** to what a second annotator achieves.
+**What 0.817 does and does not mean.** It is agreement between an annotator and
+a *written rubric*. It was briefly read as ~7.6 points of headroom, on the theory
+that the training labels had drifted from the rules. That was tested directly:
+all 2,441 labels were relabelled against the rubric (20.1% changed) and the
+classifier retrained. On the 402 external prompts it got **significantly worse**
+-- 0.930 → 0.896 top-1, [−0.062, −0.008], every class down.
 
-The second half survives. Every model lever tried failed to reach it -- eight
-encoders, stacking, self-training, cross-head features, two-stage specialists,
-all inside the noise band. What the evidence now points at is **label
-consistency**: the 2,441 training labels predate the rubric that raised
-agreement, so they encode boundary decisions made before `software_tech` /
-`meta_other` was settled, before hardware was folded in, and before the merge
-rules existed.
+So the original labels are not a drifted version of the rubric; they are better
+than it, judged against ground truth neither saw. The written rules are a lossy
+summary of a policy that is partly tacit, and enforcing the summary destroyed
+what was not written down. There is no demonstrated headroom here -- every lever
+tried, model-side and label-side, has now come back neutral or negative.
 
 Per class, where the second annotator agreed least:
 
