@@ -7,8 +7,13 @@ only a problem if they carry the score. What makes the set useful is that the
 failure modes they catch are different, and the one that matters most --
 permutation -- is the one most often skipped.
 
-Run with ``router overfit``. Current results are in the module docstring of
-whichever head you are auditing; as of the last run both are clean:
+Run with ``router overfit``. **The accuracies below are not the shipped
+numbers.** This deliberately runs one encoder with a plain logistic head -- no
+ensemble, no calibration, no domain merge -- because what is being measured is
+the train/test gap and the shape of the learning curve, and a simpler model
+makes both legible. The shipped domain ensemble scores 0.763 top-1 / 0.919 top-2
+where the single encoder here scores 0.695. As of the last run both heads are
+clean:
 
                                      domain          task
     real vs shuffled           0.695 / 0.123   0.803 / 0.436

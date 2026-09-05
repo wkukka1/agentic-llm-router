@@ -140,7 +140,13 @@ macro-F1. Neither difference is significant on 1,000 rows, but `extract` goes
 from never being predicted at all to F1 0.364, and top-2 is what the router
 consumes.
 
-**Overfitting audit** (`router overfit`), both heads clean:
+**Overfitting audit** (`router overfit`), both heads clean.
+
+**These are not the product numbers.** The audit deliberately runs a *single*
+encoder with a plain logistic head — no ensemble, no calibration, no merge —
+because it measures the train/test *gap* and the shape of the learning curve,
+and a simpler model makes both easier to read. The shipped ensemble scores
+0.763 / 0.919 where the audit's single encoder scores 0.695.
 
 | | domain | task |
 |---|---|---|

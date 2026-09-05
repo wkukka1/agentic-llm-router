@@ -139,6 +139,10 @@ with leakage and lost without, which is the case the honest protocol exists for.
 
 `router overfit`. Five checks; both heads clean.
 
+**Not the product numbers** — the audit runs one encoder with a plain logistic
+head so the gap and the curve are readable. The shipped ensemble reaches
+0.763 / 0.919 against the audit's 0.695.
+
 | | domain | task |
 |---|---|---|
 | real vs shuffled labels | 0.695 / 0.123 | 0.790 / 0.382 |
