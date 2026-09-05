@@ -232,10 +232,34 @@ coefficients are not worth reading closely -- confidence and entropy are
 strongly collinear by construction, so the fit distributes weight between them
 arbitrarily. Only the aggregate AUC is stable.)
 
-**It is weak, and should be budgeted as weak.** AUC 0.577 is a real effect and a
-small one. It is a contributing feature, not a difficulty model; anything
-relying on this alone will underperform. And there is nothing at all for
-discrimination -- the `tie` column never separates from chance.
+**It is weak because the problem is, not because the vector is.** AUC 0.577 is
+small, so the obvious next question is what the ceiling is. Measured on the same
+3,000 prompts and the same target:
+
+| features | AUC |
+|---|---|
+| prompt length alone (1 feature) | 0.527 [0.499, 0.558] |
+| **our 24-dim handoff vector** | **0.577 [0.541, 0.607]** |
+| full e5-large embedding, 1024-d | 0.567 [0.537, 0.600] |
+| tf-idf bag of words | 0.508 [0.478, 0.538] |
+| 24-dim + full embedding | 0.541 [0.513, 0.572] |
+
+**The 24-dimensional summary beats the full 1024-dimensional embedding it was
+derived from.** Forty times more information about the prompt does not help, and
+combining the two is worse than either -- 1,048 features over 326 positives is
+simply overfitting.
+
+So ~0.577 is close to everything there is. **Prompt text does not predict
+difficulty.** That is a fact about the problem, not a shortcoming of the
+handoff, and it is the single most consequential thing here for anyone building
+the difficulty model: it will need signal that is not in the prompt --
+model responses, per-model historical performance, output length, or agreement
+between actual generations. The 24 dims are worth passing because they are the
+best prompt-side features available and beat the label alone (0.518, chance),
+but they belong in the model as a minor input, not as its backbone.
+
+There is nothing at all for discrimination -- the `tie` column never separates
+from chance.
 
 One caveat bounds all of it: each prompt carries a single human judgement of a
 single model pair. That target is extremely noisy, which caps how high any AUC
