@@ -348,6 +348,62 @@ Per class, where the second annotator agreed least:
 second-worst. That is one underspecified label showing up twice, not two
 separate problems.
 
+## Inference-time correction for the domain head: no effect
+
+The external per-class numbers are lopsided in a specific way -- `business_law`
+precision 0.864 / recall 1.000, `personal_life` 1.000 / 0.789, `meta_other`
+0.923 / 0.667. A model that never wrongly assigns a class but misses a fifth of
+it has a shifted boundary, not a capacity problem, and that is correctable after
+training.
+
+Both corrections were fitted on the internal 2,441 out-of-fold and applied
+unchanged to the external 402 -- fitting on external and reporting external is
+the selection mistake that once read 76.0% here against an honest 75.75%.
+
+| | top-1 | macro-F1 | vs shipped |
+|---|---|---|---|
+| shipped, no correction | 0.9303 | 0.9216 | — |
+| flat-prior correction | 0.9353 | 0.9215 | +0.005 [−0.012, +0.022] |
+| per-class coefficients | 0.9303 | 0.9216 | +0.000 |
+
+Neither helps. The per-class optimiser is the more interesting failure: starting
+from unit coefficients it found **no scaling that improved balanced accuracy at
+all**, so the argmax is already optimal within that family. The lopsidedness is
+real but it is not correctable by reweighting -- it reflects genuine asymmetry
+in how separable the classes are, not a misplaced threshold.
+
+## Task taxonomy variants: one real gain, two metric artefacts
+
+macro-F1 is 0.581 against top-1 0.793 and the whole gap is four thin classes.
+Three changes, 5-fold CV on the 1,000 real prompts:
+
+| taxonomy | classes | top-1 | top-2 | macro-F1 |
+|---|---|---|---|---|
+| shipped | 7 | 0.793 | 0.950 | 0.581 |
+| A. drop `extract` | 6 | 0.798 | 0.951 | 0.617 |
+| B. merge `summarize`+`extract` → `transform` | 6 | 0.793 | 0.948 | 0.606 |
+| **C. merge `ideate` → `answer`** | 6 | **0.844** | **0.967** | 0.613 |
+| B + C | 5 | 0.844 | 0.964 | **0.651** |
+
+**A and B are metric artefacts, not improvements.** Dropping `extract` raises
+macro-F1 by removing a bad class from an average; `summarize` actually falls
+0.471 → 0.441. B is worse than it looks: the merged `transform` class scores
+**0.35**, below `summarize` alone at 0.47. Putting three examples and eleven
+together did not make fourteen learnable.
+
+**C is a real gain.** `answer` rises 0.88 → 0.91 and top-1 by 5.1 points. The
+`ideate`/`answer` boundary was actively harmful -- the model was losing genuine
+`answer` prompts to a distinction it could not make, and removing it cleaned up
+the class next door. Part of the top-1 rise is mechanical (69 rows join a class
+the model predicts well), but the F1 improvement on `answer` is not.
+
+**C is not adopted, and the reason is not statistical.** "Give me 10 startup
+ideas" and "what is the capital of Peru" would become one label, and those
+plausibly route to different models -- ideation wants a creative one, answering
+an accurate one. This is the same trade as the `science_math` + `software_tech`
+merge earlier in this document: better on the metric, worse as a router. It
+belongs to whoever owns the model pool, not to the classifier.
+
 ## Relabelling the training set against the rubric: significantly worse
 
 The second-annotator measurement showed 0.817 agreement with the stored labels
