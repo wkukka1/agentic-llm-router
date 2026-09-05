@@ -159,6 +159,7 @@ def load_splits(variant: str = "domain_v3", out_dir: Path = PROCESSED_DIR) -> di
 def build_task_dataset(
     *,
     include_synthetic: bool = True,
+    include_agent: bool = False,
     include_mined: bool = False,
     out_dir: Path = PROCESSED_DIR,
     variant: str = "task",
@@ -170,10 +171,20 @@ def build_task_dataset(
     0.700 on real prompts, below the 0.729 of always predicting `answer`, and
     mixing it in costs accuracy at every ratio tried. See :mod:`router.tasktype`.
 
-    ``include_synthetic`` adds 1,981 rows to training: 377 hand-written and 403
-    agent-generated prompts for the four weakest classes, plus the 1,201 real
-    prompts that were task-labelled by agent (kappa 0.819 against hand labels --
-    see :func:`router.sources.load_agent_tasks`). Like the mined rows they
+    ``include_synthetic`` adds 780 rows to training: 377 hand-written and 403
+    agent-generated prompts for the four weakest classes.
+
+    ``include_agent`` adds the 1,201 real prompts that were task-labelled by
+    agent. **Off by default, on the evidence.** Cross-validation made them look
+    marginally favourable (top-2 0.951 against 0.950, macro-F1 0.587 against
+    0.581, neither significant) and they were briefly defaulted on for that
+    reason. Retraining the shipped artifact settled it -- on the same held-out
+    201-row split, adding them costs top-1 0.756 -> 0.741, top-2 0.950 -> 0.945,
+    macro-F1 0.507 -> 0.484 and balanced accuracy 0.756 -> 0.729. Worse on every
+    metric. Nominally-best-in-CV was not enough to ship on, and the held-out
+    split said so. The labels stay committed -- kappa 0.819 against hand labels,
+    they are good data -- and the flag is there for anyone who wants to revisit
+    with a larger eval set. Like the mined rows they
     are pinned to **train**; the evaluation set stays real throughout. Measured
     against the random 1,000:
 
@@ -212,9 +223,10 @@ def build_task_dataset(
     frame["task"] = frame["domain"]
     splits = split_frame(frame, stratify_on=["task"], val_size=0.15, test_size=0.20, seed=seed)
     if include_synthetic:
-        extra = to_frame(sources.load_synthetic_tasks()
-                         + sources.load_generated_tasks()
-                         + sources.load_agent_tasks())
+        rows = sources.load_synthetic_tasks() + sources.load_generated_tasks()
+        if include_agent:
+            rows += sources.load_agent_tasks()
+        extra = to_frame(rows)
         extra["task"] = extra["domain"]
         splits["train"] = pd.concat([splits["train"], extra], ignore_index=True)
         log.info("task: +%d synthetic rows into train", len(extra))

@@ -56,7 +56,7 @@ training only:
 | 1,000 hand labels only | 0.802 | 0.933 | 0.524 | 0.000 |
 | + synthetic | 0.793 | 0.950 | 0.581 | 0.364 |
 | + agent labels alone | 0.771 | 0.938 | 0.512 | 0.000 |
-| **+ agent + synthetic (shipped)** | 0.783 | **0.951** | **0.587** | **0.400** |
+| + agent + synthetic | 0.783 | 0.951 | 0.587 | 0.400 |
 | + agent reweighted + synthetic | 0.785 | 0.949 | 0.579 | 0.364 |
 
 Against "+ synthetic", the shipped combination is −0.010 top-1 [−0.026, +0.006]
@@ -71,10 +71,32 @@ whatever causes them. Reweighting the agent rows to match the hand-labelled
 class shares recovers the top-1 loss but not the macro-F1, so the marginal shift
 is part of the story and not all of it.
 
-**The lesson is that per-item label quality and dataset usefulness are different
-things.** Kappa 0.819 is near-perfect agreement and bought nothing measurable.
-What the task head needs is not more labels of the traffic it already sees well;
-it is more *eval* rows in the classes it sees rarely.
+**Off by default, and the retrain is why.** Cross-validation made the
+combination look marginally favourable, so it was briefly defaulted on. Then the
+shipped artifact was rebuilt with it and scored on the same held-out 201-row
+split:
+
+| | without agent labels | with | delta |
+|---|---|---|---|
+| top-1 | 0.756 | 0.741 | −0.015 |
+| top-2 | 0.950 | 0.945 | −0.005 |
+| macro-F1 | 0.507 | 0.484 | −0.023 |
+| balanced accuracy | 0.756 | 0.729 | −0.027 |
+| ECE (calibrated) | 0.085 | 0.094 | +0.008 |
+
+Worse on every metric. "Nominally best in cross-validation, significant nowhere"
+was not a good enough reason to ship, and the held-out split said so plainly.
+The flag stays (`build_task_dataset(include_agent=True)`) and the labels stay
+committed, because kappa 0.819 says they are good data and a larger eval set may
+yet find the gain.
+
+**Two lessons.** Per-item label quality and dataset usefulness are different
+things: kappa 0.819 is near-perfect agreement and bought nothing. And a
+cross-validated margin inside the noise band is not evidence — when it was
+checked against a held-out split it reversed sign on all five metrics.
+
+What the task head needs is not more labels of traffic it already reads well; it
+is more *eval* rows in the classes it sees rarely.
 
 ## Encoders and heads
 
