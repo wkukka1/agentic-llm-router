@@ -198,6 +198,51 @@ its test rows. It was run in the leaky form first deliberately, as a cheap upper
 bound: an idea that cannot win with leakage cannot win without it. This one won
 with leakage and lost without, which is the case the honest protocol exists for.
 
+## Does the router vector carry difficulty signal?
+
+The handoff to the difficulty head is a 24-dimensional vector, and whether that
+is worth passing at all was never checked. Tested against real LMArena pairwise
+outcomes on 28,819 English prompts (3,000 sampled), with `both_bad` read as "the
+prompt was hard" and `tie` as "the prompt did not discriminate".
+
+Baselines are the point. A vector that cannot beat prompt length is not adding
+anything a difficulty model could not compute for free.
+
+| features | `both_bad` (HARD) | `tie` (no discrimination) |
+|---|---|---|
+| prompt length alone | 0.538 [0.510, 0.570] | 0.457 |
+| domain argmax alone (one-hot) | 0.518 [0.483, 0.546] | 0.508 |
+| domain distribution alone | 0.537 [0.508, 0.571] | 0.524 |
+| **full 24-dim vector** | **0.577 [0.541, 0.607]** | 0.516 [0.490, 0.543] |
+
+Three conclusions, in order of how much they should change what gets built.
+
+**Send the vector, not the label.** The domain argmax on its own is
+indistinguishable from chance (0.518, interval spanning 0.5). The full vector
+reaches 0.577 and its interval clears both baselines. Reducing the handoff to a
+label would throw away all of the signal there is.
+
+**The signal is in the uncertainty, not the classes.** Ranked by coefficient
+magnitude, the columns carrying it are `task.confidence`, `domain.entropy`,
+`task.entropy`, `domain.margin`, `domain.confidence` and
+`domain.shortlist_size` -- every one a measure of how torn the classifiers were,
+not of what they decided. Which is intuitive after the fact: a prompt that two
+classifiers find ambiguous is a prompt models find hard. (The individual
+coefficients are not worth reading closely -- confidence and entropy are
+strongly collinear by construction, so the fit distributes weight between them
+arbitrarily. Only the aggregate AUC is stable.)
+
+**It is weak, and should be budgeted as weak.** AUC 0.577 is a real effect and a
+small one. It is a contributing feature, not a difficulty model; anything
+relying on this alone will underperform. And there is nothing at all for
+discrimination -- the `tie` column never separates from chance.
+
+One caveat bounds all of it: each prompt carries a single human judgement of a
+single model pair. That target is extremely noisy, which caps how high any AUC
+measured against it can go. 0.577 against a noisy target is not the same as
+0.577 against a clean one, and the true signal is likely somewhat higher than
+this measures.
+
 ## Overfitting audit
 
 `router overfit`. Five checks; both heads clean.
