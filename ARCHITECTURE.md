@@ -217,6 +217,11 @@ separate problems.
 - **The task eval set is too small for its rare classes.** 1,000 random real
   prompts contain 3 `extract` and 11 `summarize`, so macro-F1 cannot be measured
   tightly on them however good the model gets.
+- **The task head over-fires rare classes.** On 402 held-out prompts, `create`
+  and `ideate` reach precisions of 0.071 and 0.087 -- cross-validation
+  understated this because its class mix is gentler. Trust the head's `answer`
+  prediction (precision 0.980); treat rare-class predictions as suggestions and
+  threshold `distribution` rather than taking the argmax. See EXPERIMENTS.md.
 - **Synthetic training data is separable from real text** at AUC 0.94–0.97. It
   helps where a class had nothing, and it is a stopgap, not a fix.
 - **Prevalence claims are invalid.** The labelled set was sampled to cover rare

@@ -267,6 +267,49 @@ measured against it can go. 0.577 against a noisy target is not the same as
 0.577 against a clean one, and the true signal is likely somewhat higher than
 this measures.
 
+## Held-out validation for the task head
+
+Everything previously reported for this head was cross-validation over the same
+1,000 prompts it trains on. The 402 external prompts have never appeared in any
+task training file (verified: zero overlap), so they are the first genuinely
+held-out test of it.
+
+| | |
+|---|---|
+| majority baseline (`answer`) | **0.9527** |
+| task head, top-1 | 0.8582 |
+| task head, top-2 | 0.9677 |
+| macro-F1 | 0.4727 |
+
+**The head scores below the majority baseline on this set**, and the confusions
+say why: 24 real `answer` prompts predicted `create`, 21 predicted `ideate`,
+giving those classes precisions of **0.071 and 0.087**.
+
+**Read the set composition before concluding too much.** These 402 are **95.3%
+`answer`**, against 73% in a random sample of real traffic. They were curated for
+*domain* evaluation and over-represent plain questions, so almost nothing beats
+the majority class on them. This is not a fair test of task-type accuracy, and
+the representative figure remains the cross-validated 0.793 against a 0.729
+baseline.
+
+**The precision finding is real regardless.** Cross-validation understated how
+often the head fires a rare class on an `answer` prompt, because the CV set has
+a gentler class mix. `class_weight="balanced"` is doing what it was asked --
+it bought `extract` its first non-zero F1 -- and the bill is precision.
+
+For a router that matters concretely: predicting `create` on a question sends it
+to the wrong model. **The head's `answer` predictions are trustworthy
+(precision 0.980); its rare-class predictions are suggestions.** Read
+`distribution` and set a threshold rather than taking the argmax.
+
+Inference-time corrections were tried -- multiplying by the real-traffic prior,
+and requiring a rare class to clear a confidence threshold. On the held-out set
+the best of them reaches 0.9403, still under the 0.9527 baseline. Whether they
+help on *representative* traffic could not be settled: the only representative
+labelled set is the 1,000 the head trains on, so measuring a correction there is
+in-sample. **That is the missing measurement** -- a held-out set with a realistic
+class mix -- and no correction should ship without it.
+
 ## Overfitting audit
 
 `router overfit`. Five checks; both heads clean.
