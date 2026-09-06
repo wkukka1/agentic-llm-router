@@ -32,8 +32,6 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import FeatureUnion, Pipeline, make_pipeline
 from sklearn.svm import LinearSVC
 
-from router.embeddings import EmbeddingEncoder
-
 
 class DomainClassifier(ABC):
     """Predicts a distribution over :data:`~router.taxonomy.DOMAIN_LABELS`.
@@ -213,6 +211,12 @@ class _FrozenEncoderModel(DomainClassifier):
                  batch_size: int = 64, device: str | None = None, cache_tag: str | None = None, **kw):
         super().__init__(encoder_model=encoder_model, pooling=pooling, max_length=max_length,
                          batch_size=batch_size, device=device, cache_tag=cache_tag, **kw)
+        # Imported here rather than at module scope: this is the only place
+        # torch and transformers are needed, and importing them eagerly would
+        # make every consumer of the registry -- including the lexical models
+        # and the whole test suite -- pay for a dependency they never touch.
+        from router.embeddings import EmbeddingEncoder
+
         self.encoder = EmbeddingEncoder(
             encoder_model, pooling=pooling, max_length=max_length,
             batch_size=batch_size, device=device,

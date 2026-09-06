@@ -4,6 +4,19 @@ version = "0.1.0"
 description = "Domain/difficulty aware router over a pool of LLMs"
 requires-python = ">=3.11"
 
+# The core is deliberately light: label spaces, splitting, the lexical models,
+# serving and the audit need only these. Frozen sentence encoders pull in torch
+# and transformers, which is most of a gigabyte, so they live in an extra --
+# `pip install -e .[encoders]`. CI installs the core and runs offline.
+dependencies = [
+  "numpy",
+  "pandas",
+  "pyarrow",
+  "PyYAML",
+  "scikit-learn",
+  "scipy",
+]
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
@@ -17,6 +30,8 @@ testpaths = ["tests"]
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
+encoders = ["torch", "transformers", "huggingface_hub"]
+data = ["datasets", "huggingface_hub", "tqdm"]
 
 [tool.ruff]
 line-length = 110
