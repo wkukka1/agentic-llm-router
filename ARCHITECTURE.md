@@ -54,9 +54,9 @@ at inference:
 Merged: `business_finance`+`law_politics` → `business_law`,
 `humanities`+`arts_entertainment` → `culture`.
 
-**Task — what the prompt asks to be done.** Seven classes:
+**Task — what the prompt asks to be done.** Six classes:
 
-`answer` `create` `ideate` `media` `classify` `summarize` `extract`
+`answer` `create` `media` `classify` `summarize` `extract`
 
 The axes are independent by construction. "Summarise this contract" and
 "summarise this paper" share a task and differ in domain; "explain contract law"
@@ -129,16 +129,23 @@ benchmarks and 0.47 in the wild, and that lesson cost two rebuilds.
 **Task** — 1,000 prompts, 7 classes, 5-fold CV. Non-real rows are training-only;
 the evaluation set is real throughout:
 
-| training data | top-1 | top-2 | macro-F1 |
+| | top-1 | top-2 | macro-F1 |
 |---|---|---|---|
-| majority-class baseline | 0.729 | — | — |
-| real labels only | 0.802 | 0.933 | 0.524 |
-| **+ hand-written and generated (shipped)** | 0.793 | **0.950** | **0.581** |
+| majority-class baseline (`answer`) | 0.798 | — | — |
+| **shipped, 6 classes** | **0.844** | **0.967** | **0.613** |
 
-The shipped configuration trades 1 point of top-1 for 1.7 of top-2 and 5.7 of
-macro-F1. Neither difference is significant on 1,000 rows, but `extract` goes
-from never being predicted at all to F1 0.364, and top-2 is what the router
-consumes.
+`ideate` was merged into `answer` — see `router/tasktype.py` for the measurement
+and the reasoning. Read the baseline alongside the headline: merging moved it
+from 0.729 to 0.798, so while top-1 rose 5.1 points the head's **margin over a
+constant predictor fell from +6.4 to +4.6**. macro-F1 rose genuinely
+(0.581 → 0.613) and `answer` F1 went 0.88 → 0.91, so the merge did help; but the
+top-1 gain is partly `answer` simply being a larger class now.
+
+On the 402 held-out prompts (never trained on, 97.5% `answer` after the merge):
+top-1 0.910, **top-2 1.000**, against a 0.975 baseline.
+
+Per class on cross-validation: `answer` 0.909 · `media` 0.752 · `create` 0.664 ·
+`classify` 0.484 · `summarize` 0.471 · `extract` 0.400.
 
 **Overfitting audit** (`router overfit`), both heads clean.
 
@@ -217,9 +224,10 @@ separate problems.
 - **The task eval set is too small for its rare classes.** 1,000 random real
   prompts contain 3 `extract` and 11 `summarize`, so macro-F1 cannot be measured
   tightly on them however good the model gets.
-- **The task head over-fires rare classes.** On 402 held-out prompts, `create`
-  and `ideate` reach precisions of 0.071 and 0.087 -- cross-validation
-  understated this because its class mix is gentler. Trust the head's `answer`
+- **The task head over-fires rare classes, `create` worst.** On 402 held-out
+  prompts `create` reaches precision **0.033** -- it labels `answer` prompts
+  `create` far more often than it is right. Cross-validation understates this
+  (0.589 there) because its class mix is gentler. Trust the head's `answer`
   prediction (precision 0.980); treat rare-class predictions as suggestions and
   threshold `distribution` rather than taking the argmax. See EXPERIMENTS.md.
 - **Synthetic training data is separable from real text** at AUC 0.94–0.97. It

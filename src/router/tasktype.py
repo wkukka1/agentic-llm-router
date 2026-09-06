@@ -27,10 +27,11 @@ from enum import StrEnum
 class TaskType(StrEnum):
     """What kind of work the prompt asks for."""
 
-    #: Answer a question. Open, closed, factual or explanatory -- all one task.
+    #: Answer a question. Open, closed, factual or explanatory -- and, since the
+    #: merge described at the bottom of this module, requests for suggestions
+    #: and ideas too. "what should I do about X" and "give me 10 ideas for X"
+    #: are one task here.
     ANSWER = "answer"
-    #: Generate options, suggestions, possibilities. "give me ideas for..."
-    IDEATE = "ideate"
     #: Condense supplied material.
     SUMMARIZE = "summarize"
     #: Pull specific fields or facts out of supplied material.
@@ -52,8 +53,7 @@ class TaskType(StrEnum):
 TASK_LABELS: list[str] = [t.value for t in TaskType]
 
 TASK_DESCRIPTIONS: dict[str, str] = {
-    "answer": "answer a question, explain a concept, look up a fact",
-    "ideate": "brainstorm options, suggest possibilities, generate ideas",
+    "answer": "answer a question, explain, look up a fact, or suggest options",
     "summarize": "condense or shorten supplied text",
     "extract": "pull specific facts or fields out of supplied text",
     "classify": "sort into categories, decide which group something belongs to",
@@ -67,7 +67,7 @@ DOLLY_MAP: dict[str, TaskType] = {
     "open_qa": TaskType.ANSWER,
     "general_qa": TaskType.ANSWER,
     "closed_qa": TaskType.ANSWER,
-    "brainstorming": TaskType.IDEATE,
+    "brainstorming": TaskType.ANSWER,   # merged; see the note at the bottom
     "summarization": TaskType.SUMMARIZE,
     "information_extraction": TaskType.EXTRACT,
     "classification": TaskType.CLASSIFY,
@@ -214,3 +214,35 @@ CONTEXT_FEATURES = ("has_context", "log_context_length")
 #       0.5         0.617      0.841            6.0%
 #       0.7         0.875      0.477            2.4%
 
+
+# ---------------------------------------------------------------------------
+# Why `ideate` is not a class
+# ---------------------------------------------------------------------------
+#
+# It was one, and merging it into `answer` is the single largest accuracy change
+# available to this head. Measured on 5-fold cross-validation over the 1,000
+# hand-labelled real prompts:
+#
+#     7 classes, `ideate` separate     0.793 top-1 / 0.950 top-2 / macro-F1 0.581
+#     6 classes, merged into `answer`  0.844        / 0.967       / 0.613
+#
+# The gain is not arithmetic. `answer` F1 rises 0.88 -> 0.91, which means the
+# boundary was *costing* genuine `answer` prompts: the head was losing them to a
+# distinction it could not reliably make. Removing it cleaned up the class next
+# door. Some of the +5.1 top-1 is mechanical -- 69 rows join a class the head
+# predicts well -- but the F1 improvement is not.
+#
+# Held-out evidence agrees. On the 402 prompts in no task training file,
+# `ideate` reached precision 0.087: of the prompts the head called `ideate`,
+# fewer than one in ten was. It was not a working class.
+#
+# **This is a routing decision, not a statistical one, and it was made
+# deliberately.** "Give me 10 startup ideas" and "what is the capital of Peru"
+# now share a label, and a model pool that sends ideation somewhere different
+# from factual answering loses that distinction. The same trade was refused
+# earlier in this project for `science_math` + `software_tech`, where merging
+# also scored better and maths and code route to different models. Here the
+# owner of the model pool judged the distinction not worth 5 points.
+#
+# It stays recoverable: every label file keeps a `task_detail` column with the
+# pre-merge value, so re-splitting needs no relabelling.

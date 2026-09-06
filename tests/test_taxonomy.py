@@ -125,10 +125,10 @@ def test_software_tech_owns_questions_about_ai():
 class TestTaskTypes:
     """Task type: what the user wants *done*, orthogonal to domain."""
 
-    def test_seven_distinct_tasks(self):
+    def test_six_distinct_tasks(self):
         from router.tasktype import TASK_DESCRIPTIONS, TASK_LABELS
 
-        assert len(TASK_LABELS) == len(set(TASK_LABELS)) == 7
+        assert len(TASK_LABELS) == len(set(TASK_LABELS)) == 6
         assert set(TASK_DESCRIPTIONS) == set(TASK_LABELS)
 
     def test_media_is_its_own_task_not_a_kind_of_create(self):
@@ -165,3 +165,13 @@ class TestTaskTypes:
         from router.taxonomy import DOMAIN_LABELS
 
         assert not (set(TASK_LABELS) & set(DOMAIN_LABELS))
+
+    def test_ideate_is_merged_into_answer(self):
+        """Merging it took the head from 0.793 top-1 to 0.844, and `answer` F1
+        from 0.88 to 0.91 -- the boundary was costing real `answer` prompts. On
+        held-out data `ideate` had precision 0.087. The pre-merge value is kept
+        in each label file's `task_detail` column so the split is recoverable."""
+        from router.tasktype import TASK_LABELS, TaskType, task_from_dolly
+
+        assert "ideate" not in TASK_LABELS
+        assert task_from_dolly("brainstorming") is TaskType.ANSWER
