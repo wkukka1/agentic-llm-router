@@ -13,7 +13,7 @@
 # Only same-checkpoint identity mappings and unambiguous provider-prefix
 # rewrites are marked `high`. Cross-source merges (e.g. RouterBench `claude-v2`
 # vs Arena `claude-2.0` / `claude-2.1`) are deliberately absent -- they need
-# human confirmation and are tracked in docs/model_registry.md.
+# human confirmation and are tracked in docs/data_sources.md.
 #
 # `family` / `version` are informational (grouping, profile text). `null` =
 # not yet reviewed.

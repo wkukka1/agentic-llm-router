@@ -42,8 +42,8 @@ pathway) embeds **both** queries and per-model *profile* texts into one 768-d
 space. Phase 1 projects the query vector to item parameters `(b_q, a_q, r_q)` and
 the profile vector to an initial ability `theta_m` — so a cold-start model is
 placed from its description alone. A separate `retrieval` pathway (MiniLM) serves
-the kNN / FAISS bank. See [docs/embedding_pathways.md](docs/embedding_pathways.md)
-and [docs/model_profiles.md](docs/model_profiles.md).
+the kNN / FAISS bank. See
+[docs/query_and_model_representation.md](docs/query_and_model_representation.md).
 
 ---
 
@@ -70,7 +70,7 @@ and [docs/model_profiles.md](docs/model_profiles.md).
 | 17 | Relevance vectors `r_q` (`sum = 1`, `>= 0`) + FAISS query bank | **implemented** (`router.taxonomy` / `router.retrieval`) |
 
 Stages 14/15/17 were built for the Phase 1 baseline (they condition `a_q` and
-feed the warm-up blend); see [docs/query_representation.md](docs/query_representation.md).
+feed the warm-up blend); see [docs/query_and_model_representation.md](docs/query_and_model_representation.md).
 Stage 16 (LLM cluster labelling) is still deferred as an opt-in refinement.
 
 ```bash
@@ -109,7 +109,7 @@ warm-up blend, an inert length head (no token labels in Phase 0). Isolated in
 `calibration.py`, `diagnostics.py`, `synthetic.py`; `components.py` is shared
 with the active NIRT model and stays at `src/router/nirt/`) +
 [`configs/phase1.yaml`](configs/phase1.yaml). Full write-up:
-[docs/baseline_bernoulli.md](docs/baseline_bernoulli.md).
+[docs/baseline_control_arm.md](docs/baseline_control_arm.md).
 
 ```bash
 python scripts/nirt/baseline/synthetic.py                               # synthetic multidim-IRT recovery gate
@@ -133,7 +133,7 @@ Same representation, **different response likelihood** over the graded score
 (explicit `π₀`,`π₁` boundary masses + Beta middle). `configs/phase2.yaml`,
 `scripts/nirt/baseline/{train_continuous,evaluate,synthetic}.py`,
 `scripts/nirt/baseline/{boundary_stats,compare_response_models}.py`. Full write-up:
-[docs/baseline_continuous.md](docs/baseline_continuous.md).
+[docs/baseline_control_arm.md](docs/baseline_control_arm.md).
 
 ```bash
 python scripts/nirt/baseline/boundary_stats.py
@@ -157,7 +157,7 @@ the query head, snapping every query onto the training manifold. New
 `data.query_pathway` key swaps only the query store;
 `router.retrieval.knn_impute` builds it. Leakage-safe OOD bank drops the held-out
 families. Full write-up + how to run:
-[docs/knn_imputed_queries.md](docs/knn_imputed_queries.md).
+[docs/nirt_model.md](docs/nirt_model.md#knn-imputed-queries).
 
 ```bash
 python scripts/retrieval/build_query_bank.py --exclude-ood-families
@@ -199,9 +199,8 @@ labelling stage), `pip install lm-eval` (to run the harness yourself).
 | **GPT-4 Judge** | `gpt4_judge` / `judge_preference` | HF `routellm/gpt4_judge_battles` → `data/raw/arena/gpt4_judge_battles/` | 109,101 LLM-judged battles, all `gpt-4-1106-preview` vs `mixtral-8x7b-instruct`. Separate head — not assumed calibrated like human votes. |
 | **lm-evaluation-harness** | `lm_eval_harness` / `acc`, `acc_norm`, … | you run it → `data/raw/lm_harness/*samples*.jsonl` | Phase 0 does **not** run expensive evals. `scripts/data/run_lm_harness.py` emits the reproducible command; the loader consumes per-sample logs (`--log_samples`). Aggregate-only results are skipped with a warning. |
 
-Pairwise interpretation and the separate-heads rationale:
-[docs/arena_interpretation.md](docs/arena_interpretation.md). Model identity /
-alias-merge policy: [docs/model_registry.md](docs/model_registry.md).
+Pairwise interpretation, the separate-heads rationale, and the model
+identity / alias-merge policy: [docs/data_sources.md](docs/data_sources.md).
 
 ---
 
@@ -234,20 +233,22 @@ Embeddings live in a dedicated store keyed by `query_id`, not inline.
 `model_id, model_name, provider, family, version, profile_text, source_datasets,
 n_observations, sources, metadata`. Identity comes from the human-reviewed
 [`configs/model_registry.yaml`](configs/model_registry.yaml) — see
-[docs/model_registry.md](docs/model_registry.md).
+[docs/data_sources.md](docs/data_sources.md).
 
 ### `data/processed/model_profiles.parquet` — one row per `model_id`
 
 `model_id, model_name, provider, family, version, has_curated, feature,
 profile_text, profile_version, n_observations, n_datasets, structured (json),
 empirical (json)`. `feature` = curated description; `profile_text` = curated +
-empirical behaviour summary. See [docs/model_profiles.md](docs/model_profiles.md).
+empirical behaviour summary. See
+[docs/query_and_model_representation.md](docs/query_and_model_representation.md).
 
 ### `data/processed/nirt_observations.parquet` — one row per training example
 
 `query_id, model_id, target, score_raw, metric_type, source, split, cost,
 is_multiple_choice, n_choices`. Correctness signal only, **no embeddings** —
-`NIRTDataset` joins those by id. See [docs/nirt_dataset.md](docs/nirt_dataset.md).
+`NIRTDataset` joins those by id. See
+[docs/query_and_model_representation.md](docs/query_and_model_representation.md).
 
 ### `data/processed/embeddings/<kind>__<pathway>/`
 
@@ -355,7 +356,7 @@ default), `raw`, or `corrected`. `models`: `warm` (default, excludes cold-start)
 rescaling `corrected = (score − 1/n) / (1 − 1/n)`, clipped, applied per
 observation only where `n_choices` is known; original `score` preserved;
 unknown-`n` MC rows left alone with a warning. Full write-up + per-model bias
-diagnostic: [docs/chance_correction.md](docs/chance_correction.md). Which tasks
+diagnostic: [docs/data_sources.md](docs/data_sources.md). Which tasks
 are MC (and their option counts) is set in `configs/phase0.yaml → multiple_choice`.
 
 ### How train/test splits work
@@ -387,8 +388,7 @@ Deterministic inference (eval, `no_grad`, seeded), **not** fine-tuned. Backends:
 [`src/router/models/profiles.py`](src/router/models/profiles.py) builds the
 profile text (curated `configs/model_profiles.yaml` + optional empirical
 behaviour summary). Details:
-[docs/embedding_pathways.md](docs/embedding_pathways.md),
-[docs/model_profiles.md](docs/model_profiles.md).
+[docs/query_and_model_representation.md](docs/query_and_model_representation.md).
 
 ### Taxonomy / clustering / relevance / FAISS
 
@@ -399,7 +399,7 @@ vector `r_q ∈ R³⁹` (`softmax(cos(e_q, centroid)/τ)`, `sum=1`, `≥0`).
 `router.retrieval` builds the FAISS **query bank** over the train split only
 (`retrieval.k`) and the pre-computed warm-up representations. LLM cluster
 labelling stays deferred as an opt-in refinement. Full write-up:
-[docs/query_representation.md](docs/query_representation.md).
+[docs/query_and_model_representation.md](docs/query_and_model_representation.md).
 
 ---
 
@@ -484,7 +484,7 @@ NIRT observations : 328,347  (train 262,548 / val 32,706 / test 33,093; 9 warm m
   `*_preference` rows with the opponent in metadata and returned separately by
   the facade; how Phase 1's preference heads consume them (BT layer vs win-rate
   vs held-out eval) is an open modeling decision —
-  [docs/arena_interpretation.md](docs/arena_interpretation.md).
+  [docs/data_sources.md](docs/data_sources.md).
 * **GPT-4 Judge is one matchup.** All 109k battles are `gpt-4-1106-preview` vs
   `mixtral-8x7b-instruct`, so `judge_preference` only constrains those two
   models' relative placement per query.
@@ -498,7 +498,7 @@ NIRT observations : 328,347  (train 262,548 / val 32,706 / test 33,093; 9 warm m
   get correction; others warn. Review as tasks are added.
 * **Model registry cross-source merges** are conservative — several probably-safe
   merges (`codellama-34b-instruct`, `wizardlm-13b`) are kept separate pending
-  review. See [docs/model_registry.md](docs/model_registry.md).
+  review. See [docs/data_sources.md](docs/data_sources.md).
 * **Cold-start split** holds out whole models by hashed rank per source; a
   coverage-aware selection may be worth adding.
 * **Embedding stores**: all four are built and `manifest.json → complete` — including
