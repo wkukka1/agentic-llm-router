@@ -58,7 +58,10 @@ class TrainCfg:
     @classmethod
     def from_dict(cls, d: dict) -> "TrainCfg":
         d = d or {}
-        g = lambda k, alt=None: d.get(k, d.get(alt, getattr(cls, k)))  # noqa: E731
+
+        def g(k, alt=None):
+            return d.get(k, d.get(alt, getattr(cls, k)))
+
         return cls(
             seed=int(d.get("seed", 42)), lr=float(g("lr", "learning_rate")),
             weight_decay=float(g("weight_decay")), batch_size=int(g("batch_size")),

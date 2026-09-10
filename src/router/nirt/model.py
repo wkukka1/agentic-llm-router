@@ -38,7 +38,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from ..config import coerce_auto_bool, coerce_hidden
+from ..config import coerce_auto_bool, coerce_hidden, require_choice
 
 MODEL_PARAM_MODES = ("projected", "free")
 ORIENTATIONS = ("query_latent", "model_latent")
@@ -156,14 +156,8 @@ class NIRTModel(nn.Module):
         interaction_hidden: int = 32,
     ):
         super().__init__()
-        if model_params not in MODEL_PARAM_MODES:
-            raise ValueError(
-                f"model_params must be one of {MODEL_PARAM_MODES}, got {model_params!r}"
-            )
-        if difficulty not in DIFFICULTY_MODES:
-            raise ValueError(
-                f"difficulty must be one of {DIFFICULTY_MODES}, got {difficulty!r}"
-            )
+        require_choice(model_params, MODEL_PARAM_MODES, field="model_params")
+        require_choice(difficulty, DIFFICULTY_MODES, field="difficulty")
         self.query_dim = int(query_dim)
         self.dim = int(dim)
         self.n_models = int(n_models)
@@ -315,10 +309,7 @@ class IRTRouterModel(nn.Module):
         head_kwargs: Optional[dict] = None,
     ):
         super().__init__()
-        if model_params not in MODEL_PARAM_MODES:
-            raise ValueError(
-                f"model_params must be one of {MODEL_PARAM_MODES}, got {model_params!r}"
-            )
+        require_choice(model_params, MODEL_PARAM_MODES, field="model_params")
         self.query_dim = int(query_dim)
         self.dim = int(dim)
         self.n_models = int(n_models)
@@ -397,8 +388,7 @@ def build_model(
 ):
     """Instantiate the model for ``model_cfg['orientation']`` (default ``query_latent``)."""
     orientation = model_cfg.get("orientation") or "query_latent"
-    if orientation not in _MODEL_CLASSES:
-        raise ValueError(f"orientation must be one of {ORIENTATIONS}, got {orientation!r}")
+    require_choice(orientation, _MODEL_CLASSES, field="orientation")
     return _MODEL_CLASSES[orientation].from_config(
         model_cfg, n_models=n_models, query_dim=query_dim, profile_dim=profile_dim
     )

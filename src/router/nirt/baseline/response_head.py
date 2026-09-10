@@ -30,6 +30,8 @@ from typing import Optional
 import torch
 from torch import nn
 
+from router.config import require_choice
+
 
 @dataclass
 class ResponseOutput:
@@ -130,21 +132,25 @@ class BernoulliResponseHead(ResponseHead):
         p = out["p"].unsqueeze(0).expand(n, -1)
         return torch.bernoulli(p)
 
-    @staticmethod
-    def predict_proba(logit: torch.Tensor) -> torch.Tensor:  # back-compat
-        return torch.sigmoid(logit)
-
 
 # --------------------------------------------------------------------------- #
 # factory                                                                     #
 # --------------------------------------------------------------------------- #
-def _registry() -> dict:
-    from .continuous_beta import BetaResponseHead
-    from .continuous_normal import NormalResponseHead
-    from .continuous_zoib import ZOIBResponseHead
+_REGISTRY: Optional[dict] = None
 
-    return {"bernoulli": BernoulliResponseHead, "normal": NormalResponseHead,
-            "beta": BetaResponseHead, "zoib": ZOIBResponseHead}
+
+def _registry() -> dict:
+    """``{name: ResponseHead subclass}``, built once. The continuous heads are
+    imported lazily here to break the ``response_head <-> continuous_*`` cycle."""
+    global _REGISTRY
+    if _REGISTRY is None:
+        from .continuous_beta import BetaResponseHead
+        from .continuous_normal import NormalResponseHead
+        from .continuous_zoib import ZOIBResponseHead
+
+        _REGISTRY = {"bernoulli": BernoulliResponseHead, "normal": NormalResponseHead,
+                     "beta": BetaResponseHead, "zoib": ZOIBResponseHead}
+    return _REGISTRY
 
 
 RESPONSE_MODELS = ("bernoulli", "normal", "beta", "zoib")
@@ -154,8 +160,7 @@ def build_response_head(name: str, cfg: Optional[dict] = None, *, feature_dim: i
                         hidden: Optional[int] = 64) -> ResponseHead:
     name = (name or "bernoulli").lower()
     reg = _registry()
-    if name not in reg:
-        raise ValueError(f"response model must be one of {tuple(reg)}, got {name!r}")
+    require_choice(name, reg, field="response model")
     if name == "bernoulli":
         return BernoulliResponseHead()
     return reg[name](feature_dim=feature_dim, hidden=hidden, cfg=cfg or {})

@@ -104,6 +104,14 @@ def coerce_auto_bool(value: Any, auto: bool) -> bool:
     return bool(auto) if value in ("auto", None) else bool(value)
 
 
+def require_choice(value: Any, allowed, *, field: str) -> Any:
+    """Assert ``value`` is one of ``allowed`` (any container / dict); raise a
+    uniform ``ValueError`` otherwise. Returns ``value`` so it can wrap an assign."""
+    if value not in allowed:
+        raise ValueError(f"{field} must be one of {tuple(allowed)}, got {value!r}")
+    return value
+
+
 def load_config(path: str | os.PathLike | None = None) -> Config:
     cfg_path = Path(path) if path else DEFAULT_CONFIG_PATH
     if not cfg_path.is_absolute():

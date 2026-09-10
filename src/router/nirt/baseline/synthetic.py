@@ -229,8 +229,3 @@ def _recovery_continuous(model, syn: Synthetic, val_arrays) -> dict:
         rep["nll_finite"] and mean_corr > 0.85 and b_rho > 0.5 and abil_rho > 0.5
         and abs(disp_rho) > 0.25)
     return rep
-
-
-# back-compat aliases (some callers import the old dataclass names)
-SyntheticIRT = Synthetic
-SyntheticContinuous = Synthetic

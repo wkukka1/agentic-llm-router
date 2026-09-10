@@ -20,7 +20,7 @@ from typing import Optional
 import torch
 from torch import nn
 
-from router.config import coerce_auto_bool, coerce_hidden
+from router.config import coerce_auto_bool, coerce_hidden, require_choice
 from router.nirt.components import (
     DifficultyHead,
     DiscriminationHead,
@@ -63,8 +63,7 @@ class BaselineNIRT(nn.Module):
         response_cfg: Optional[dict] = None,
     ):
         super().__init__()
-        if model_params not in MODEL_PARAM_MODES:
-            raise ValueError(f"model_params must be one of {MODEL_PARAM_MODES}, got {model_params!r}")
+        require_choice(model_params, MODEL_PARAM_MODES, field="model_params")
         self.query_dim, self.dim, self.n_models = int(query_dim), int(dim), int(n_models)
         self.profile_dim, self.relevance_dim = int(profile_dim), int(relevance_dim)
         self.model_params = model_params
@@ -101,7 +100,10 @@ class BaselineNIRT(nn.Module):
         dim = int(m.get("dim", m.get("theta_dim", 8)))
         cd = coerce_auto_bool(m.get("constrain_discrimination", "auto"), dim == 1)
         qh = coerce_hidden(m.get("query_hidden", 64))
-        pick = lambda k, d: abl.get(k, m.get(k, d))  # noqa: E731
+
+        def pick(k, d):
+            return abl.get(k, m.get(k, d))
+
         return cls(
             query_dim=query_dim, dim=dim, n_models=n_models, profile_dim=profile_dim,
             relevance_dim=relevance_dim, model_params=m.get("model_params", "free"),

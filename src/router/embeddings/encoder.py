@@ -28,7 +28,7 @@ from typing import Iterable, Optional, Sequence
 
 import numpy as np
 
-from ..config import Config, section
+from ..config import Config, require_choice, section
 from ..determinism import seed_everything as _seed_everything
 
 _BACKENDS = ("sentence_transformer", "bert")
@@ -58,8 +58,7 @@ class EncoderConfig:
     seed: int = 42
 
     def __post_init__(self):
-        if self.backend not in _BACKENDS:
-            raise ValueError(f"unknown embedding backend {self.backend!r}; use one of {_BACKENDS}")
+        require_choice(self.backend, _BACKENDS, field="embedding backend")
 
     def fingerprint(self) -> str:
         payload = json.dumps(
