@@ -23,7 +23,7 @@ facade (`router.data.phase1`). **Phase 2 — the NIRT baseline** — has started
 > objectives. The pairwise / M-IRT path stays isolated from N-IRT. No bandits or serving
 > router yet.
 
-### Architecture this data feeds (Phase 1, not built)
+### Downstream architecture (multi-task AMIRT, not yet built)
 
 ```
  RouterBench ──correctness──┐
@@ -98,23 +98,24 @@ python scripts/nirt/coldstart.py      --run nirt-2d-projected --split test      
 | *findings* | NIRT (text only) matches the matrix-factorisation ceiling on prediction (test BCE ≈0.59); `model_latent` edges `query_latent` (better at 1D, better cost frontier). GPT-4-dominated pool → quality routing ≈ always-GPT-4; cost-aware routing gives ≈−54 % spend at −3 accuracy points. **Cold-start from a profile alone does not beat the `warm_mean` baseline** — 9 training LLMs is too few for the projection. See [docs/nirt_model.md](docs/nirt_model.md). |
 | *next (part 2)* | OOD held-out-benchmark split; `Reward(α)` + AIQ metrics; in-house KNN/MLP router baselines; clustering → relevance `r_q` → relevance-masked N-IRT head + kNN query warm-up. Then multi-source Arena / GPT-4-Judge (M-IRT). |
 
-### Phase 1 baseline — plain Bernoulli / BCE control arm
+### Baseline control arm — plain Bernoulli / BCE
 
 A deliberately simple, faithful control arm that the continuous response model
 will replace. `model_latent` IRT core `logit = a_q·θ_m − b_q`, `p = sigmoid`,
 BCE loss; `a_q` conditioned on the relevance vector `r_q`, optional FAISS
-warm-up blend, an inert length head (no token labels in Phase 0). Lives in
-[`src/router/nirt/`](src/router/nirt/) (`baseline.py`, `components.py`,
-`response_head.py`, `losses.py`, `checkpoint.py`, `baseline_train.py`,
-`baseline_eval.py`, `calibration.py`, `diagnostics.py`, `synthetic.py`) +
+warm-up blend, an inert length head (no token labels in Phase 0). Isolated in
+[`src/router/nirt/baseline/`](src/router/nirt/baseline/) (`model.py`,
+`response_head.py`, `losses.py`, `checkpoint.py`, `train.py`, `eval.py`,
+`calibration.py`, `diagnostics.py`, `synthetic.py`; `components.py` is shared
+with the active NIRT model and stays at `src/router/nirt/`) +
 [`configs/phase1.yaml`](configs/phase1.yaml). Full write-up:
-[docs/phase1_baseline.md](docs/phase1_baseline.md).
+[docs/baseline_bernoulli.md](docs/baseline_bernoulli.md).
 
 ```bash
-python scripts/synthetic.py                                             # synthetic multidim-IRT recovery gate
-python scripts/train_baseline.py --config configs/phase1.yaml           # -> artifacts/phase1/baseline/
-python scripts/evaluate.py --checkpoint artifacts/phase1/baseline --split test
-python scripts/inspect_baseline.py --checkpoint artifacts/phase1/baseline
+python scripts/nirt/baseline/synthetic.py                               # synthetic multidim-IRT recovery gate
+python scripts/nirt/baseline/train_baseline.py --config configs/phase1.yaml  # -> artifacts/phase1/baseline/
+python scripts/nirt/baseline/evaluate.py --checkpoint artifacts/phase1/baseline --split test
+python scripts/nirt/baseline/inspect_baseline.py --checkpoint artifacts/phase1/baseline
 ```
 
 Binary label = `1[score_effective ≥ 0.5]` on RouterBench correctness only
@@ -123,23 +124,23 @@ BCE 0.55, Brier 0.19, AUC 0.78, ECE 0.015, ΔBCE vs per-model-mean −0.076;
 theta effective rank 6.5/8 (not collapsed). Synthetic recovery passes
 (difficulty ρ 0.85, ability ρ 0.98).
 
-### Phase 2 — continuous response model
+### Baseline control arm — continuous response model
 
 Same representation, **different response likelihood** over the graded score
-`y ∈ [0,1]`. Pluggable `ResponseHead`s (`src/router/nirt/response_head.py` +
-`continuous_{normal,beta,zoib}.py`): heteroskedastic **Normal**
+`y ∈ [0,1]`. Pluggable `ResponseHead`s (`src/router/nirt/baseline/response_head.py`
++ `continuous_{normal,beta,zoib}.py`): heteroskedastic **Normal**
 `y ~ N(z, σ_qm)`, **Beta** `μ=σ(z), y~Beta(μκ,(1−μ)κ)` (interior only), **ZOIB**
 (explicit `π₀`,`π₁` boundary masses + Beta middle). `configs/phase2.yaml`,
-`scripts/{train,evaluate,synthetic}_continuous.py`,
-`scripts/{boundary_stats,compare_response_models}.py`. Full write-up:
-[docs/phase2_response_model.md](docs/phase2_response_model.md).
+`scripts/nirt/baseline/{train_continuous,evaluate,synthetic}.py`,
+`scripts/nirt/baseline/{boundary_stats,compare_response_models}.py`. Full write-up:
+[docs/baseline_continuous.md](docs/baseline_continuous.md).
 
 ```bash
-python scripts/boundary_stats.py
-python scripts/synthetic.py --response zoib
-python scripts/train_continuous.py --response zoib
-python scripts/evaluate.py --checkpoint artifacts/phase2/zoib
-python scripts/compare_response_models.py
+python scripts/nirt/baseline/boundary_stats.py
+python scripts/nirt/baseline/synthetic.py --response zoib
+python scripts/nirt/baseline/train_continuous.py --response zoib
+python scripts/nirt/baseline/evaluate.py --checkpoint artifacts/phase2/zoib
+python scripts/nirt/baseline/compare_response_models.py
 ```
 
 Boundary stats: **~79 % of graded scores are exactly 0 or 1** (≈37 % / ≈41 %),
@@ -431,7 +432,7 @@ untouched, missing-`n` warns, score preserved & in range),
 co-located), `tests/test_phase1.py` (facade), `tests/test_embeddings.py` (both
 backends, determinism, **streaming build + resume-from-checkpoint**, memmap
 load), `tests/test_profiles.py` (empirical stats, curated vs template,
-`include_empirical` toggle), `tests/test_nirt.py` (observation schema has no
+`include_empirical` toggle), `tests/test_nirt_data.py` (observation schema has no
 vectors, target `score_kind`, dataset joins by id without copying, drops
 missing-embedding rows, `gather`/`collate`), `tests/test_nirt_model.py` (forward
 shapes / range, softplus discrimination, known-value metrics, **synthetic

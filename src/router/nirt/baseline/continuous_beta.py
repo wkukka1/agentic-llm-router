@@ -23,7 +23,8 @@ from typing import Optional
 import torch
 from torch import nn
 
-from .components import mlp
+from router.nirt.components import mlp
+
 from .response_head import ResponseHead, ResponseOutput
 
 

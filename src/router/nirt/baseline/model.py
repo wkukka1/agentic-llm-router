@@ -20,14 +20,15 @@ from typing import Optional
 import torch
 from torch import nn
 
-from ..config import coerce_auto_bool, coerce_hidden
-from .components import (
+from router.config import coerce_auto_bool, coerce_hidden
+from router.nirt.components import (
     DifficultyHead,
     DiscriminationHead,
     InteractionLayer,
     LengthHead,
     WarmupBlender,
 )
+
 from .response_head import ResponseOutput, build_response_head
 
 MODEL_PARAM_MODES = ("free", "projected")

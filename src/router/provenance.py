@@ -2,7 +2,7 @@
 
 ``git_sha`` / ``git_dirty`` describe the code; ``file_digest`` / ``artifact_digests``
 hash the input artifacts a run consumed. Keeping one copy here stops the three
-former inline implementations (``nirt.train``, ``nirt.checkpoint``,
+former inline implementations (``nirt.train``, ``nirt.baseline.checkpoint``,
 ``pool_expansion.battery``) from drifting apart.
 """
 

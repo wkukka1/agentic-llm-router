@@ -6,8 +6,8 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from router.nirt.baseline import BaselineNIRT
-from router.nirt.response_head import RESPONSE_MODELS, build_response_head
+from router.nirt.baseline.model import BaselineNIRT
+from router.nirt.baseline.response_head import RESPONSE_MODELS, build_response_head
 
 
 @pytest.mark.parametrize("name", RESPONSE_MODELS)

@@ -16,10 +16,10 @@ import numpy as np
 
 from router.cli import raw_parser
 from router.config import load_config
-from router.nirt.baseline_data import batched_forward, build_arrays
-from router.nirt.baseline_eval import theta_matrix
-from router.nirt.checkpoint import load_run
-from router.nirt.diagnostics import parameter_summary
+from router.nirt.baseline.checkpoint import load_run
+from router.nirt.baseline.data import batched_forward, build_arrays
+from router.nirt.baseline.diagnostics import parameter_summary
+from router.nirt.baseline.eval import theta_matrix
 
 
 def main() -> int:

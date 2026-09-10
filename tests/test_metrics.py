@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from router.nirt.calibration import calibration_report
+from router.nirt.baseline.calibration import calibration_report
 from router.nirt.metrics import (
     brier_score,
     log_loss,

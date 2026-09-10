@@ -16,7 +16,7 @@ Predictive quality (NLL, calibration) and routing quality are reported
 
 | concern | where |
 |---|---|
-| predictive: ZOIB NLL / calibration | `scripts/evaluate.py`, `router.nirt.continuous_eval` |
+| predictive: ZOIB NLL / calibration | `scripts/nirt/baseline/evaluate.py`, `router.nirt.baseline.continuous_eval` |
 | predictive: Bernoulli BCE / AUC | `scripts/nirt/eval_nirt.py`, `router.nirt.evaluate.evaluate_split` |
 | **routing: oracle hit / regret / cost-aware** | **`scripts/nirt/route_eval.py`, `router.nirt.routing_eval`** |
 | routing policy table + λ frontier + AIQ | `scripts/route_compare.py`, `router.nirt.routing` |

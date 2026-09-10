@@ -18,7 +18,7 @@ from typing import Optional
 
 import numpy as np
 
-from ..config import Config
+from router.config import Config
 
 
 @dataclass
@@ -89,7 +89,7 @@ def build_arrays(
     use_warmup: bool = True,
     model_index: Optional[dict] = None,
 ) -> BaselineArrays:
-    from ..data.phase1 import load_phase1
+    from router.data.phase1 import load_phase1
 
     d = data or load_phase1(cfg)
     pathway = pathway or cfg.get("data.pathway", "irt")
@@ -125,13 +125,13 @@ def build_arrays(
 
     r_q = nbr = None
     if use_relevance:
-        from ..taxonomy import load_relevance
+        from router.taxonomy import load_relevance
 
         rel = load_relevance(cfg)
         if rel is not None:
             r_q = _join(rel, query_ids, fill=1.0 / rel.dim)   # uniform for unclustered queries
     if use_warmup:
-        from ..retrieval import load_warmup
+        from router.retrieval import load_warmup
 
         wu = load_warmup(cfg, pathway)
         if wu is not None:
@@ -226,7 +226,7 @@ def checkpoint_matrix(ckpt, cfg: Config, split: str, field: str = "proba", *,
     """
     import pandas as pd
 
-    from ..data.response_matrix import pivot_qm
+    from router.data.response_matrix import pivot_qm
     from .checkpoint import load_run
 
     model, blob, s = load_run(ckpt)

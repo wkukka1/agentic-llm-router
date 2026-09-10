@@ -27,8 +27,8 @@ import numpy as np
 from router.cli import float_table, raw_parser, write_json, zeroshot_only
 from router.config import load_config
 from router.data.phase1 import load_phase1
-from router.nirt.baseline_data import checkpoint_matrix as _pred_matrix
-from router.nirt.checkpoint import load_run
+from router.nirt.baseline.checkpoint import load_run
+from router.nirt.baseline.data import checkpoint_matrix as _pred_matrix
 from router.nirt.routing import (
     add_reward_columns,
     aiq,

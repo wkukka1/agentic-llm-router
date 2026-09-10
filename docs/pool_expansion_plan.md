@@ -67,8 +67,8 @@ warm/cold`. Plus: number of warm models, GPT-4:cheapest cost ratio, count of
 models priced ≤ 1/30 of the most expensive and their mean accuracy.
 
 ### 1b. Prediction quality (ZOIB, and Bernoulli control)
-`scripts/evaluate.py --checkpoint <zoib> --split test` and
-`scripts/evaluate.py --checkpoint <bernoulli> --split test`:
+`scripts/nirt/baseline/evaluate.py --checkpoint <zoib> --split test` and
+`scripts/nirt/baseline/evaluate.py --checkpoint <bernoulli> --split test`:
 NLL, MAE, RMSE, mean-calibration ECE, 50/90 % interval coverage, boundary
 calibration (ZOIB `P(y=0)`/`P(y=1)` vs empirical), θ effective rank, per-family
 breakdown, pathology flags.

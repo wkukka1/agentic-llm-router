@@ -1,10 +1,10 @@
-# Phase 2 — continuous response model
+# Baseline control arm — continuous response model
 
-An ablation against the Phase 1 Bernoulli arm: **same NIRT representation**
+An ablation against the Bernoulli baseline arm: **same NIRT representation**
 (frozen encoder, `r_q`, warm-up, `K=8`, `a_q`/`b_q`, interaction, splits,
 cold-start set), **different response likelihood** over the graded score
 `y ∈ [0, 1]`. Implemented as pluggable `ResponseHead`s
-(`src/router/nirt/response_head.py` + `continuous_{normal,beta,zoib}.py`);
+(`src/router/nirt/baseline/response_head.py` + `continuous_{normal,beta,zoib}.py`);
 `BaselineNIRT` produces the latent score `z_qm` and hands `(z, [e_q, θ_m])` to
 the head without knowing which distribution is used.
 
@@ -96,7 +96,7 @@ guessing back (Phase 0 decision: no guessing parameter, fitted or fixed).
 
 ## 8. Synthetic recovery
 
-`scripts/synthetic.py --response {normal,beta,zoib}` — a
+`scripts/nirt/baseline/synthetic.py --response {normal,beta,zoib}` — a
 well-specified world with known `theta_true`, `a_true`, `b_true`, and the head's
 dispersion (`sigma`/`kappa`) + (ZOIB) `pi` parameters. Checks: finite NLL,
 predictive-mean correlation, difficulty/ability Spearman, dispersion Spearman,

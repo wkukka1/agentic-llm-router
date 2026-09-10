@@ -18,8 +18,8 @@ import sys
 
 from router.cli import raw_parser, write_json
 from router.config import load_config
-from router.nirt.baseline_train import fit
-from router.nirt.synthetic import make_synthetic, make_synthetic_continuous, recovery_report, to_arrays
+from router.nirt.baseline.train import fit
+from router.nirt.baseline.synthetic import make_synthetic, make_synthetic_continuous, recovery_report, to_arrays
 
 
 def main() -> int:

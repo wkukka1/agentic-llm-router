@@ -1,6 +1,6 @@
 """Evaluate a trained Phase 1 baseline checkpoint.
 
-    from router.nirt.baseline_eval import evaluate_checkpoint
+    from router.nirt.baseline.eval import evaluate_checkpoint
     evaluate_checkpoint("artifacts/phase1/baseline", split="test")
 
 Prediction metrics, calibration, per-model / per-family breakdowns, theta
@@ -16,11 +16,12 @@ from typing import Optional
 
 import numpy as np
 
-from ..config import Config, load_config
-from ..data.families import family_labels
-from .baseline_data import _join, batched_forward, build_arrays
+from router.config import Config, load_config
+from router.data.families import family_labels
+
 from .calibration import calibration_report, plot_reliability, save_calibration
 from .checkpoint import load_run
+from .data import _join, batched_forward, build_arrays
 from .diagnostics import (
     icc_curve,
     parameter_summary,
@@ -29,12 +30,12 @@ from .diagnostics import (
     save_theta_spectrum,
     theta_spectrum,
 )
-from .metrics import marginal_baselines, prediction_metrics
+from router.nirt.metrics import marginal_baselines, prediction_metrics
 
 
 def profile_matrix(cfg: Config, model_index: dict, pathway: str) -> np.ndarray:
     """``(M, profile_dim)`` profile embeddings in ``model_index`` order."""
-    from ..data.phase1 import load_phase1
+    from router.data.phase1 import load_phase1
 
     store = load_phase1(cfg).profile_embeddings(pathway)
     order = [m for m in sorted(model_index, key=model_index.get) if m in store]
@@ -155,9 +156,9 @@ def cold_start_baseline(
     import pandas as pd
     import torch
 
-    from ..data.phase1 import load_phase1
-    from ..retrieval import load_warmup
-    from ..taxonomy import load_relevance
+    from router.data.phase1 import load_phase1
+    from router.retrieval import load_warmup
+    from router.taxonomy import load_relevance
 
     if model.model_params != "projected":
         return {"skipped": "cold-start needs a model_params='projected' run"}

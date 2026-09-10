@@ -9,9 +9,9 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from router.nirt.baseline_train import fit
-from router.nirt.continuous_normal import NormalResponseHead
-from router.nirt.continuous_synthetic import make_synthetic_continuous, recovery_report, to_arrays
+from router.nirt.baseline.train import fit
+from router.nirt.baseline.continuous_normal import NormalResponseHead
+from router.nirt.baseline.continuous_synthetic import make_synthetic_continuous, recovery_report, to_arrays
 
 
 def _head():

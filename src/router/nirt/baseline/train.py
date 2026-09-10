@@ -1,6 +1,6 @@
 """Train the Phase 1 plain Bernoulli / BCE NIRT baseline.
 
-    from router.nirt.baseline_train import fit
+    from router.nirt.baseline.train import fit
     res = fit(yaml.safe_load(open("configs/phase1.yaml")))
 
 Phase 1 facade -> ``build_arrays`` (materialised numpy, CPU RAM, never a block on
@@ -16,14 +16,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from ..config import Config, load_config
-from ..determinism import seed_everything
-from ..provenance import file_digest
-from .baseline import build_baseline_model
-from .baseline_data import batched_forward, build_arrays, to_tensors
+from router.config import Config, load_config
+from router.determinism import seed_everything
+from router.nirt.metrics import prediction_metrics
+from router.provenance import file_digest
+
 from .checkpoint import load_checkpoint, save_checkpoint
+from .data import batched_forward, build_arrays, to_tensors
 from .losses import RegConfig, bce_loss, class_balance_pos_weight, regularization
-from .metrics import prediction_metrics
+from .model import build_baseline_model
 
 _DEFAULT_DIR = "artifacts/phase1/baseline"
 
@@ -91,7 +92,7 @@ def fit(
     if arrays is not None:
         tr_arr, va_arr = arrays
     else:
-        from ..data.phase1 import load_phase1
+        from router.data.phase1 import load_phase1
 
         d = load_phase1(p0)
         common = dict(data=d, pathway=cfg.get("data", {}).get("pathway", "irt"),

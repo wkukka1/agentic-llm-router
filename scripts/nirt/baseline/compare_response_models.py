@@ -13,7 +13,7 @@ import sys
 
 from router.cli import raw_parser
 from router.config import load_config
-from router.nirt.continuous_eval import compare_response_models
+from router.nirt.baseline.continuous_eval import compare_response_models
 
 
 def main() -> int:

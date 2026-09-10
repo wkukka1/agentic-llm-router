@@ -29,10 +29,10 @@ import pandas as pd
 
 from ..config import Config, load_config
 from ..data.phase1 import load_phase1
-from ..nirt.baseline_data import checkpoint_matrix as _pred_matrix
-from ..nirt.baseline_eval import evaluate_checkpoint
-from ..nirt.checkpoint import load_run
-from ..nirt.continuous_eval import evaluate_continuous
+from ..nirt.baseline.checkpoint import load_run
+from ..nirt.baseline.continuous_eval import evaluate_continuous
+from ..nirt.baseline.data import checkpoint_matrix as _pred_matrix
+from ..nirt.baseline.eval import evaluate_checkpoint
 from ..provenance import file_digest, git_dirty, git_sha
 from ..nirt.routing import (
     add_reward_columns,
@@ -68,7 +68,7 @@ LEDGER_COLUMNS = [
 
 # --------------------------------------------------------------------------- #
 # prediction matrices (frozen checkpoints)  --  _pred_matrix is                 #
-# router.nirt.baseline_data.checkpoint_matrix (imported above)                  #
+# router.nirt.baseline.data.checkpoint_matrix (imported above)                  #
 # --------------------------------------------------------------------------- #
 def _nirt_matrix(run_name: str, data, split: str):
     from ..nirt.evaluate import predict_matrix

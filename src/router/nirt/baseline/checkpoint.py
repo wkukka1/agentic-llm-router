@@ -15,8 +15,9 @@ from typing import Optional
 
 import yaml
 
-from ..provenance import git_sha
-from .baseline import build_baseline_model
+from router.provenance import git_sha
+
+from .model import build_baseline_model
 
 MODEL_PT = "model.pt"
 

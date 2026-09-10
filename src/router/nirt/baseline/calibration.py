@@ -12,8 +12,9 @@ from typing import Optional, Sequence
 
 import numpy as np
 
+from router.nirt.metrics import brier_score, log_loss, reliability_curve
+
 from .diagnostics import _write_json, pyplot, savefig
-from .metrics import brier_score, log_loss, reliability_curve
 
 
 def calibration_report(y_true: Sequence[float], y_prob: Sequence[float], n_bins: int = 15) -> dict:

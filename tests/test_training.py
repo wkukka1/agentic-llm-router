@@ -7,8 +7,8 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from router.nirt.baseline_train import fit
-from router.nirt.synthetic import make_synthetic, recovery_report, to_arrays
+from router.nirt.baseline.train import fit
+from router.nirt.baseline.synthetic import make_synthetic, recovery_report, to_arrays
 
 
 def _tiny_cfg(k=3, epochs=20):
@@ -65,7 +65,7 @@ def test_cold_start_models_not_optimized():
     theta = res.model.theta.weight.detach().numpy()
     # row 7 was never in a batch -> unchanged from the seeded init
     from router.determinism import seed_everything
-    from router.nirt.baseline import BaselineNIRT
+    from router.nirt.baseline.model import BaselineNIRT
 
     seed_everything(0)
     ref = BaselineNIRT(query_dim=tr.query_dim, dim=3, n_models=8, model_params="free",

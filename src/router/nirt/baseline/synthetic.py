@@ -21,7 +21,7 @@ from typing import Optional
 
 import numpy as np
 
-from .baseline_data import BaselineArrays
+from .data import BaselineArrays
 
 
 @dataclass
@@ -150,8 +150,9 @@ def recovery_report(model, syn: Synthetic, val_arrays) -> dict:
 def _recovery_bernoulli(model, syn: Synthetic, val_arrays) -> dict:
     from scipy.stats import spearmanr
 
-    from .baseline_data import batched_forward
-    from .metrics import prediction_metrics
+    from router.nirt.metrics import prediction_metrics
+
+    from .data import batched_forward
 
     fwd = batched_forward(model, val_arrays, fields=("proba", "b_q"))
     pm = prediction_metrics(val_arrays.y, fwd["proba"])
@@ -181,7 +182,7 @@ def _recovery_bernoulli(model, syn: Synthetic, val_arrays) -> dict:
 def _recovery_continuous(model, syn: Synthetic, val_arrays) -> dict:
     from scipy.stats import spearmanr
 
-    from .baseline_data import batched_forward
+    from .data import batched_forward
 
     disp_field = "sigma" if syn.head == "normal" else "kappa"
     fw = batched_forward(model, val_arrays, fields=("mean", "b_q", disp_field, "nll", "std"),

@@ -26,7 +26,7 @@ import yaml
 from router.cli import float_table, raw_parser, resolve, write_json
 from router.config import load_config
 from router.data.phase1 import load_phase1
-from router.nirt.baseline_data import checkpoint_matrix
+from router.nirt.baseline.data import checkpoint_matrix
 from router.nirt.evaluate import predict_matrix
 from router.nirt.routing import align, eval_matrices
 from router.nirt.routing_eval import (

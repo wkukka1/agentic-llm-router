@@ -86,9 +86,9 @@ $PY scripts/data/build_nirt_dataset.py            --config $CFG
 
 # --- train the four policy families (checkpoints under artifacts/irt_router/ and
 #     data/processed/nirt_runs/irtrouter-*) ---
-$PY scripts/train_continuous.py --response bernoulli --phase0-config $CFG \
+$PY scripts/nirt/baseline/train_continuous.py --response bernoulli --phase0-config $CFG \
     --checkpoint artifacts/irt_router/bernoulli
-$PY scripts/train_continuous.py --response zoib --phase0-config $CFG \
+$PY scripts/nirt/baseline/train_continuous.py --response zoib --phase0-config $CFG \
     --checkpoint artifacts/irt_router/zoib
 $PY scripts/nirt/train_nirt.py --phase0-config $CFG --dim 2 --model-params projected \
     --name irtrouter-nirt-2d-projected

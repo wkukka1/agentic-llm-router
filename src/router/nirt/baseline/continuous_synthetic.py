@@ -1,5 +1,5 @@
 """Back-compat shim -- the continuous synthetic gates now live in
-:mod:`router.nirt.synthetic` alongside the Bernoulli one."""
+:mod:`router.nirt.baseline.synthetic` alongside the Bernoulli one."""
 
 from __future__ import annotations
 

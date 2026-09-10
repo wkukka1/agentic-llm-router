@@ -11,7 +11,7 @@ import json
 import sys
 
 from router.config import load_config
-from router.nirt.continuous_eval import boundary_statistics
+from router.nirt.baseline.continuous_eval import boundary_statistics
 
 
 def main() -> int:

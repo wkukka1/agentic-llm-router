@@ -64,7 +64,7 @@ independent binary correctness, and are already kept out of
 `nirt_observations.parquet`. A pairwise auxiliary head is Phase 2+ work. This is
 documented in `docs/arena_interpretation.md`.
 
-## 5. Model architecture (`router.nirt.baseline.BaselineNIRT`)
+## 5. Model architecture (`router.nirt.baseline.model.BaselineNIRT`)
 
 Composed from `router.nirt.components`:
 
@@ -120,7 +120,7 @@ mean fall back to `e_q`.
 `sigmoid` -> `BCELoss`). `target: binary` (default) or `soft`. Optional
 `pos_weight = #neg/#pos` (`class_weighting`, default off).
 
-## 10. Regularization (`router.nirt.losses`)
+## 10. Regularization (`router.nirt.baseline.losses`)
 
 ```
 + theta_l2        * mean(theta_m^2)          = 1e-4   shrink ability scale
@@ -155,7 +155,7 @@ CPU arrays (never a block on GPU). CLI: `--seed --device --epochs --batch-size
 --learning-rate --theta-dim --model-params --no-relevance --no-interaction
 --warmup --checkpoint --resume`.
 
-## 13. Evaluation metrics (`router.nirt.metrics`, `.calibration`)
+## 13. Evaluation metrics (`router.nirt.metrics`, `router.nirt.baseline.calibration`)
 
 accuracy (@0.5), log loss (BCE), Brier (`mean((p-y)^2)`), AUC, Spearman,
 reliability curve + ECE / MCE, per-model and per-benchmark-family breakdowns,
@@ -188,7 +188,7 @@ dimensions.
 
 ## 15. Synthetic recovery experiment
 
-`scripts/synthetic.py` -- generate a well-specified multidimensional
+`scripts/nirt/baseline/synthetic.py` -- generate a well-specified multidimensional
 IRT world (`theta_true`, `a_true`, `b_true`, `y ~ Bernoulli(sigma(a.theta-b))`),
 train `BaselineNIRT` on it, check recovery up to the unidentifiable
 rotation/scale:

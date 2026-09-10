@@ -13,13 +13,14 @@ from typing import Optional
 
 import numpy as np
 
-from ..config import Config, load_config
-from .baseline_data import batched_forward, build_arrays
-from .baseline_eval import _per_group, family_labels, theta_matrix
+from router.config import Config, load_config
+
 from .checkpoint import load_run
+from .data import batched_forward, build_arrays
+from .eval import _per_group, family_labels, theta_matrix
 from .diagnostics import _write_json, parameter_summary, plot_theta_spectrum, pyplot, savefig, \
     save_theta_spectrum, theta_spectrum
-from .metrics import prediction_metrics, reliability_curve
+from router.nirt.metrics import prediction_metrics, reliability_curve
 
 
 # --------------------------------------------------------------------------- #
@@ -28,7 +29,7 @@ from .metrics import prediction_metrics, reliability_curve
 def boundary_statistics(cfg: Optional[Config] = None, *, splits=("train", "validation", "test"),
                         write: bool = True) -> dict:
     cfg = cfg or load_config()
-    from ..data.phase1 import load_phase1
+    from router.data.phase1 import load_phase1
 
     d = load_phase1(cfg)
     out: dict = {"by_split": {}, "by_model": {}}
@@ -132,7 +133,7 @@ def evaluate_continuous(directory: str | Path, *, phase0_cfg: Optional[Config] =
 
     cold = None
     if model.model_params == "projected":
-        from .baseline_eval import cold_start_baseline
+        from .eval import cold_start_baseline
 
         cold = cold_start_baseline(model, cfg, blob, split=split, **s)
 
@@ -213,7 +214,7 @@ def compare_response_models(dirs: dict, *, cfg: Optional[Config] = None, split: 
             continue
         model, blob, _ = load_run(p)
         if model.response_model == "bernoulli":
-            from .baseline_eval import evaluate_checkpoint
+            from .eval import evaluate_checkpoint
 
             r = evaluate_checkpoint(p, phase0_cfg=cfg, split=split, write=False)
             pred = r["prediction"]
