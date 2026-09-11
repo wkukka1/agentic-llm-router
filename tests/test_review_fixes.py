@@ -9,6 +9,7 @@ error, which is the class of bug that survives a green test suite.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -266,13 +267,19 @@ class TestSharedSettings:
         from router.settings import settings
 
         env = tmp_path / ".env"
-        env.write_text("ROUTER_SEED=77\n# a comment\nROUTER_DATA_DIR='/tmp/d'\n")
+        env.write_text("ROUTER_SEED=77\n# a comment\nROUTER_DATA_DIR='some/dir'\n")
         monkeypatch.delenv("ROUTER_SEED", raising=False)
+        monkeypatch.delenv("ROUTER_DATA_DIR", raising=False)
         settings.cache_clear()
         try:
             s = settings(env)
             assert s.seed == 77
-            assert str(s.data_dir) == "/tmp/d"
+            # Compared as a Path, not a string: `Path("a/b")` stringifies with
+            # backslashes on Windows, so a string comparison here passes on the
+            # Linux runner and fails on the Windows one -- which is the entire
+            # reason Windows is in the CI matrix.
+            assert s.data_dir == Path("some/dir")
+            assert s.handlabelled_dir == Path("some/dir") / "handlabelled"
         finally:
             settings.cache_clear()
 
