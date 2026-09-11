@@ -348,7 +348,7 @@ class TestFeatureVector:
     def test_a_certain_distribution_has_lower_entropy_than_a_split_one(self, tmp_path):
         """The property a difficulty model relies on: entropy tracks how torn
         the head is, which the argmax alone cannot express."""
-        from router.inference import _entropy
+        from router.heads.base import _entropy
 
         assert _entropy(np.array([0.97, 0.03])) < _entropy(np.array([0.5, 0.5]))
 
