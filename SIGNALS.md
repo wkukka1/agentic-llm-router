@@ -140,50 +140,77 @@ decision.
 5-fold cross-validated, scored against the cheapest possible baseline — prompt
 length alone — so "better than nothing" is visible rather than assumed.
 
-### Response length: the one genuinely learnable new signal
+### Response length: learnable, and worth an encoder pass
 
 | features | Spearman rho | AUC (top-quartile length) |
 |---|---|---|
-| prompt length alone | +0.232 | 0.618 [0.612, 0.624] |
-| **23 surface features** | **+0.337** | **0.673 [0.667, 0.679]** |
+| prompt length alone | +0.227 | 0.618 |
+| 23 surface features (free) | +0.335 | 0.673 [0.662, 0.686] |
+| **1024-d sentence embedding** | **+0.542** | **0.744 [0.733, 0.754]** |
+| surface + embedding | +0.552 | 0.745 |
 
-A 45% improvement in rank correlation over the one-feature baseline, for regex.
-This is the cost driver, it has 38,434 free labels, and nothing has to be
-annotated to use it. **Build the length estimator next.**
+**This is the signal to build next.** It is the cost driver, it already has
+38,434 labels nobody has to annotate — every arena row carries the responses
+both models actually produced — and it is genuinely predictable.
 
-What carries it, by coefficient magnitude: `log_chars` and `log_words` dominate
-(they are collinear and split weight between them; the net is positive), then
-`punct_ratio`, `log_lines`, and — interpretably — `asks_length_limit` at −0.128.
-Asking for brevity does produce shorter answers, and the feature catches it.
+The encoder earns its keep here: rho +0.542 against +0.335 for regex. Surface
+features add essentially nothing on top (+0.552, AUC 0.745), so this is an
+encoder job, not a feature-engineering job. The free features remain a
+reasonable fallback if an encoder pass is unaffordable, but they leave a lot on
+the table.
 
-### Difficulty: free regex gets nearly all of the little that exists
+Among the surface features, the interpretable one is `asks_length_limit` at
+−0.143: asking for brevity does produce shorter answers, and the regex catches
+it. `log_chars` and `log_words` dominate but are collinear and split weight.
+
+### Difficulty: not learnable at any price
 
 | features | AUC predicting "both models failed" |
 |---|---|
 | prompt length alone | 0.516 |
-| **23 surface features** | **0.562 [0.553, 0.570]** |
+| 23 surface features | 0.562 [0.553, 0.570] |
+| 1024-d sentence embedding | 0.565 [0.545, 0.587] |
 | the full 24-dim classifier vector | 0.577 |
-| full 1024-d sentence embedding | 0.567 |
+| surface + embedding | 0.564 |
 
-This sharpens the earlier negative result rather than softening it. Two trained
-classifiers, six encoder passes and 3,441 hand labels buy **0.015 AUC over
-regex**. Difficulty is not merely hard to read from the prompt — the expensive
-machinery adds essentially nothing to the cheap version of reading it.
+Nothing separates from anything. Regex, a 1024-dimensional embedding, and two
+trained classifiers all land between 0.56 and 0.58, and combining them does not
+help. This is the same wall the earlier experiment hit from a different
+direction.
+
+### The asymmetry is the finding
+
+Put the two tables side by side and the same feature sets behave oppositely:
+
+| | surface | embedding | gain from semantics |
+|---|---|---|---|
+| response length | 0.673 | 0.744 | **+0.071** |
+| both models failed | 0.530 | 0.565 | +0.035, from a far lower base |
+
+**Semantics predict how much work a prompt needs. They do not predict whether
+models will succeed at it.** Understanding what is being asked tells you the
+size of the job and nothing about whether it is within reach — which is
+intuitive in hindsight and is exactly why the difficulty head has to read model
+behaviour rather than prompt text.
 
 ### Underspecification: not predictable, idea dropped
 
 `len_ratio` — how differently two models sized the same job — was the proposed
-free proxy for ambiguity. Surface features reach rho **+0.063** against +0.045
-for length alone. That is nothing. Either the proxy does not measure ambiguity,
-or ambiguity is not readable from the prompt; the data cannot separate those and
-neither reading justifies building it.
+free proxy for ambiguity. Surface features reach rho +0.023, embeddings +0.044,
+against −0.031 for length alone. Nothing. Either the proxy does not measure
+ambiguity or ambiguity is not readable from the prompt; the data cannot separate
+those and neither reading justifies building it.
 
 ### What this changes
 
-1. **Ship the length estimator.** Free target, free features, real signal.
-   It feeds cost estimation directly and needs no annotation.
-2. **Use surface features as the difficulty input, not the classifier vector.**
-   0.562 versus 0.577 does not justify six encoder passes if difficulty is all
-   you want from them. The classifiers earn their cost on domain and task, which
-   they predict at 0.923 and 0.844 — not on difficulty, which neither predicts.
-3. **Drop the ambiguity signal** until a better target than `len_ratio` exists.
+1. **Build the length estimator with an encoder**, not with the surface
+   features. rho +0.542 vs +0.335 is the difference between useful and marginal,
+   and the target is free.
+2. **Stop trying to predict difficulty from the prompt.** Three independent
+   feature families have now failed at it. The difficulty head must read model
+   behaviour — response length, disagreement between generations, per-model
+   history.
+3. **Keep the surface features for gating, not for prediction.** They are
+   preconditions (`has_code_fence`, `needs_recency`, `asks_format`), and they
+   are free, deterministic and drift-proof. That is what they are good at.
+4. **Drop the ambiguity signal** until a better target than `len_ratio` exists.
