@@ -32,13 +32,23 @@ from sklearn.metrics import (
 
 
 def expected_calibration_error(confidence: np.ndarray, correct: np.ndarray, n_bins: int = 15) -> float:
-    """Standard equal-width-bin ECE over the top-1 confidence."""
+    """Standard equal-width-bin ECE over the top-1 confidence.
+
+    Bins are half-open on the right, ``(lo, hi]``, *except* the first, which is
+    closed on both sides so that a confidence of exactly 0.0 lands somewhere.
+    With an argmax over a probability simplex that cannot happen -- the top
+    class is always at least ``1/n_classes`` -- but this function also gets
+    handed scores that are not simplex-derived, and a sample silently belonging
+    to no bin is the kind of thing that makes a calibration number quietly
+    wrong rather than loudly broken.
+    """
     if len(confidence) == 0:
         return float("nan")
     edges = np.linspace(0.0, 1.0, n_bins + 1)
     error = 0.0
-    for lo, hi in zip(edges[:-1], edges[1:], strict=True):
-        mask = (confidence > lo) & (confidence <= hi)
+    for i, (lo, hi) in enumerate(zip(edges[:-1], edges[1:], strict=True)):
+        mask = (confidence >= lo) if i == 0 else (confidence > lo)
+        mask &= confidence <= hi
         if not mask.any():
             continue
         error += mask.mean() * abs(correct[mask].mean() - confidence[mask].mean())
@@ -46,8 +56,15 @@ def expected_calibration_error(confidence: np.ndarray, correct: np.ndarray, n_bi
 
 
 def top_k_accuracy(proba: np.ndarray, y_true_idx: np.ndarray, k: int) -> float:
-    if proba.shape[1] < k:
-        return float("nan")
+    """Share of rows whose true label is among the k highest-scoring.
+
+    When ``k`` is at least the number of classes every row trivially qualifies,
+    so this returns 1.0 rather than NaN. That case is degenerate but it is not
+    undefined, and NaN propagates into leaderboards as a blank cell that reads
+    like a failed run.
+    """
+    if proba.shape[1] <= k:
+        return 1.0
     topk = np.argsort(-proba, axis=1)[:, :k]
     return float((topk == y_true_idx[:, None]).any(axis=1).mean())
 

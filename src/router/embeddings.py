@@ -10,15 +10,21 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
+import threading
 from pathlib import Path
 
 import numpy as np
 import torch
 from transformers import AutoModel, AutoTokenizer
 
+from router.settings import settings
+
 log = logging.getLogger(__name__)
 
-CACHE_DIR = Path("data/processed/embeddings")
+#: Overridable with ROUTER_EMBEDDING_CACHE so a shared disk can be used
+#: across machines -- the cache is keyed by content, so sharing is safe.
+CACHE_DIR = settings().embedding_cache_dir
 
 
 def resolve_device(requested: str | None = None) -> str:
@@ -126,6 +132,17 @@ class EmbeddingEncoder:
             return np.load(path)
 
         vectors = self.encode(texts)
-        np.save(path, vectors)
+        # Write to a unique temp file in the same directory, then rename.
+        # np.save is not atomic: two runs encoding the same rows -- which the
+        # sweep does constantly, since experiments share encoders -- can
+        # interleave inside one file and leave a truncated array that loads
+        # without error on the next run. os.replace is atomic on POSIX and on
+        # Windows, and same-directory keeps it on one filesystem.
+        tmp = path.with_name(f"{path.stem}.{os.getpid()}.{threading.get_ident()}.tmp.npy")
+        try:
+            np.save(tmp, vectors)
+            os.replace(tmp, path)
+        finally:
+            tmp.unlink(missing_ok=True)
         log.info("embedding cache write: %s %s", path.name, vectors.shape)
         return vectors

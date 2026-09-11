@@ -32,9 +32,21 @@ class CalibratedHead:
         self.defer_below = defer_below
         config = yaml.safe_load((self.run_dir / "config.yaml").read_text(encoding="utf-8"))
         metrics = json.loads((self.run_dir / "metrics.json").read_text(encoding="utf-8"))
-        # Fitted on validation by the experiment runner; without it the
-        # confidence scores are not comparable to any threshold.
-        self.temperature = float(metrics["test"].get("temperature", 1.0))
+        # The temperature is fitted on the VALIDATION split -- see
+        # `router.experiment`, which calls `fit_temperature(val_proba, ...)`
+        # before scoring test. It is *stored* under the "test" key only because
+        # it sits alongside the test metrics it was used to produce, which
+        # reads as though it were fitted there. New runs also write it to a
+        # top-level "calibration" block with its provenance attached; prefer
+        # that, and fall back for artifacts written before that existed.
+        calibration = metrics.get("calibration") or {}
+        self.temperature = float(
+            calibration.get("temperature", metrics.get("test", {}).get("temperature", 1.0))
+        )
+        #: Which split the temperature was fitted on. Unknown for older runs,
+        #: which is not the same as "test" -- they were validation-fitted too,
+        #: they just did not record it.
+        self.temperature_fitted_on = calibration.get("fitted_on", "validation")
         params = dict(config["model"].get("params") or {})
         params.pop("cache_tag", None)
         self.model = build(config["model"]["name"], **params)

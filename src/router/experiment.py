@@ -130,6 +130,15 @@ def run_experiment(
     )
     test_metrics["temperature"] = temperature
     test_metrics["ece_calibrated"] = calibrated_test["ece"]
+    # Also recorded at the top level with its provenance attached. Under
+    # "test" it reads as though it were fitted on the test split; it was not,
+    # and a serving head that cannot tell the difference is one refactor away
+    # from shipping a leaked threshold.
+    metrics_calibration = {
+        "temperature": temperature,
+        "fitted_on": "validation",
+        "n_fitted_on": int(len(val)),
+    }
     test_metrics["log_loss_calibrated"] = calibrated_test["log_loss"]
     for coverage in (50, 70, 90):
         test_metrics[f"acc@coverage{coverage}_calibrated"] = calibrated_test[f"acc@coverage{coverage}"]
@@ -155,7 +164,8 @@ def run_experiment(
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "config.yaml").write_text(_as_yaml(config.to_dict()), encoding="utf-8")
     (run_dir / "metrics.json").write_text(
-        json.dumps({"val": val_metrics, "test": test_metrics, "runtime": runtime}, indent=2),
+        json.dumps({"val": val_metrics, "test": test_metrics, "runtime": runtime,
+                    "calibration": metrics_calibration}, indent=2),
         encoding="utf-8",
     )
     _write_predictions(run_dir, test, test_proba, model.labels, text_col, label_col)

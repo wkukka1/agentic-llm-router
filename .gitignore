@@ -1,5 +1,7 @@
 *.env
 .env
+# ...but the template is committed: it documents every variable.
+!.env.example
 __pycache__/
 **/__pycache__/
 *.pyc

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 import numpy as np
 import pandas as pd
@@ -51,6 +52,9 @@ class AuditResult:
     fold_sd: float
     shuffled_mean: float
     shuffled_sd: float
+    #: Every permutation score, kept so the null can be reported as an
+    #: empirical p-value rather than only as a distance in standard deviations.
+    shuffled_scores: list[float] = field(default_factory=list)
     learning_curve: list[tuple[int, float, float]] = field(default_factory=list)
     regularisation: list[tuple[float, float, float]] = field(default_factory=list)
     near_dupe_pairs: int = 0
@@ -63,6 +67,20 @@ class AuditResult:
     @property
     def gap(self) -> float:
         return self.train_acc - self.test_acc
+
+    @property
+    def permutation_p(self) -> float:
+        """Share of permutations scoring at least as well as the real fit.
+
+        The add-one form: with ``n`` permutations the smallest reportable value
+        is ``1/(n+1)``, so this is bounded below by the experiment's resolution
+        rather than pretending to be zero. Five permutations could never report
+        better than 0.17, which is why the default is 100.
+        """
+        if not self.shuffled_scores:
+            return float("nan")
+        at_least = sum(1 for s in self.shuffled_scores if s >= self.test_acc)
+        return (1 + at_least) / (1 + len(self.shuffled_scores))
 
     @property
     def permutation_sd(self) -> float:
@@ -99,7 +117,25 @@ class AuditResult:
 
     @property
     def clean(self) -> bool:
+        """True when no check that *can* fail has failed.
+
+        Only two of the five gate: permutation and near-duplicates. The other
+        three -- train-test gap, learning curve, regularisation sweep -- are
+        reported because they are diagnostic, not because there is a threshold
+        worth enforcing. A gap of +0.166 is unremarkable for a well-regularised
+        model and alarming for a memorising one, and nothing in the number
+        itself distinguishes those; the curve and the sweep are read the same
+        way. Hard-coding a cutoff for any of them would turn a judgement into a
+        false alarm.
+
+        :attr:`gating_checks` names the two, so a caller reading ``clean`` can
+        see what it actually covers.
+        """
         return self.passes_permutation and self.passes_near_dupe
+
+    #: The checks ``clean`` is a conjunction of. The remaining three are
+    #: reported in :meth:`summary` for a human to interpret.
+    gating_checks: ClassVar[tuple[str, ...]] = ("permutation", "near-duplicates")
 
     def summary(self) -> str:
         lines = [
@@ -109,7 +145,8 @@ class AuditResult:
             f"gap {self.gap:+.4f}  (fold sd {self.fold_sd:.4f})",
             f"  permutation: real {self.test_acc:.4f} vs shuffled "
             f"{self.shuffled_mean:.4f}+/-{self.shuffled_sd:.4f} "
-            f"({self.permutation_sd:.0f} sd) -> "
+            f"({self.permutation_sd:.0f} sd, p={self.permutation_p:.3g} "
+            f"over {len(self.shuffled_scores)} permutations) -> "
             f"{'clean' if self.passes_permutation else 'SUSPECT'}",
         ]
         if self.learning_curve:
@@ -148,9 +185,29 @@ def _cv(X, y, *, C=4.0, balanced=False, seed=0, shuffle=False, folds=5):
     return float(np.mean(tr_acc)), float(np.mean(te_acc)), float(np.std(te_acc))
 
 
+#: Rows above which the pairwise similarity matrix is subsampled rather than
+#: built. It is O(n^2) in memory: 40,000 rows is 1.6e9 float64 entries, about
+#: 13 GB, which is an out-of-memory kill rather than a slow check.
+MAX_SIMILARITY_ROWS = 12_000
+
+
 def audit(X: np.ndarray, y: np.ndarray, name: str, *, balanced: bool = False,
-          permutations: int = 5, seed: int = 0) -> AuditResult:
-    """Run the five checks over one feature matrix and label vector."""
+          permutations: int = 100, seed: int = 0,
+          max_similarity_rows: int = MAX_SIMILARITY_ROWS) -> AuditResult:
+    """Run the five checks over one feature matrix and label vector.
+
+    ``permutations`` defaults to 100. It was 5, which is too few to do the job:
+    the null's standard deviation is estimated from these samples, and five
+    draws give an estimate loose enough that the reported "sigma above null"
+    was really a statement about sampling noise. 100 also makes an empirical
+    p-value meaningful -- the smallest one obtainable is 1/(n+1), so five
+    permutations could never report better than p=0.17 however separated the
+    real score was.
+
+    The cost is linear: each permutation is a full k-fold refit. On the 2,441
+    hand-labelled prompts that is a few minutes, which is the right trade for a
+    check that runs rarely and is the only one here that can catch leakage.
+    """
     y = np.asarray(y)
     train_acc, test_acc, fold_sd = _cv(X, y, balanced=balanced, seed=seed)
     perms = [_cv(X, y, balanced=balanced, seed=s, shuffle=True)[1] for s in range(permutations)]
@@ -167,16 +224,26 @@ def audit(X: np.ndarray, y: np.ndarray, name: str, *, balanced: bool = False,
 
     reg = [(C, *_cv(X, y, C=C, balanced=balanced, seed=seed)[:2]) for C in (0.25, 1.0, 4.0, 16.0)]
 
-    Xn = X / np.clip(np.linalg.norm(X, axis=1, keepdims=True), 1e-12, None)
+    # O(n^2) in memory, so cap it. Subsampling changes what the check means --
+    # a near-twin outside the sample is invisible -- so the sample is reported
+    # rather than silently substituted for the whole set.
+    sim_idx = np.arange(len(y))
+    if len(y) > max_similarity_rows:
+        sim_idx = np.sort(np.random.default_rng(seed).choice(
+            len(y), max_similarity_rows, replace=False))
+        log.info("near-duplicate check on a %d-row sample of %d", len(sim_idx), len(y))
+    Xs, ys = X[sim_idx], y[sim_idx]
+
+    Xn = Xs / np.clip(np.linalg.norm(Xs, axis=1, keepdims=True), 1e-12, None)
     sim = Xn @ Xn.T
     np.fill_diagonal(sim, -1.0)
     nearest = sim.max(axis=1)
     pairs = int((sim > 0.95).sum() // 2)
     keep = nearest <= 0.95
     without, checked = float("nan"), False
-    enough = keep.sum() >= max(5 * len(set(y)), 0.5 * len(y))
-    if 0 < keep.sum() < len(y) and enough and len(set(y[keep])) == len(set(y)):
-        without = _cv(X[keep], y[keep], balanced=balanced, seed=seed)[1]
+    enough = keep.sum() >= max(5 * len(set(ys)), 0.5 * len(ys))
+    if 0 < keep.sum() < len(ys) and enough and len(set(ys[keep])) == len(set(ys)):
+        without = _cv(Xs[keep], ys[keep], balanced=balanced, seed=seed)[1]
         checked = True
 
     return AuditResult(
@@ -184,6 +251,7 @@ def audit(X: np.ndarray, y: np.ndarray, name: str, *, balanced: bool = False,
         majority_rate=float(pd.Series(y).value_counts(normalize=True).max()),
         train_acc=train_acc, test_acc=test_acc, fold_sd=fold_sd,
         shuffled_mean=float(np.mean(perms)), shuffled_sd=float(np.std(perms)),
+        shuffled_scores=[float(v) for v in perms],
         learning_curve=curve, regularisation=reg,
         near_dupe_pairs=pairs, test_without_near_dupes=without,
         near_dupe_checked=checked,
@@ -202,6 +270,14 @@ def audit_heads(encoder_model: str = DEFAULT_ENCODER) -> list[AuditResult]:
     out = [audit(X, domain["domain"].to_numpy(), "DOMAIN head", balanced=False)]
 
     tasks = pd.read_parquet("data/handlabelled/real_tasks.parquet")
+    # A prompt appearing twice would map to the same embedding row twice, so the
+    # same vector would sit on both sides of a fold split -- the exact leakage
+    # the near-duplicate check exists to find, introduced by the loader. The
+    # domain frame is deduped above; this one is not guaranteed to be.
+    before = len(tasks)
+    tasks = tasks.drop_duplicates(subset=["prompt"])
+    if len(tasks) != before:
+        log.warning("task file had %d duplicate prompts; dropped", before - len(tasks))
     pos = {p: i for i, p in enumerate(domain["prompt"])}
     tasks = tasks[tasks["prompt"].isin(pos)].reset_index(drop=True)
     rows = np.array([pos[p] for p in tasks["prompt"]])

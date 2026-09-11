@@ -13,6 +13,8 @@ from typing import Any
 
 import yaml
 
+from router.settings import settings
+
 
 @dataclass(slots=True)
 class DataConfig:
@@ -38,7 +40,11 @@ class ExperimentConfig:
     name: str
     model: ModelConfig
     data: DataConfig = field(default_factory=DataConfig)
-    seed: int = 20260824
+    #: Shared across every experiment so results are comparable. Sourced from
+    #: ROUTER_SEED / .env rather than hard-coded here -- seed variance in this
+    #: project is +/- 3.4 points, so two sweeps run with different seeds can
+    #: differ by more than most effects worth measuring.
+    seed: int = field(default_factory=lambda: settings().seed)
     notes: str = ""
 
     @classmethod

@@ -16,34 +16,77 @@ import pandas as pd
 
 from router.experiment import ARTIFACTS_DIR
 
+#: Metrics that :func:`top_up_metrics` must not write back over a stored run.
+#: ``temperature`` and everything derived from it were fitted on the
+#: *validation* split by the experiment runner; recomputing here would refit on
+#: test and quietly relabel a test-fitted number as the original. The accuracy
+#: family is excluded for a different reason -- see :func:`top_up_metrics`.
+_NOT_RECOMPUTABLE = frozenset({
+    "temperature", "ece_calibrated", "log_loss_calibrated",
+    "acc@coverage50_calibrated", "acc@coverage70_calibrated", "acc@coverage90_calibrated",
+})
+
+#: Metrics that depend on the model's decision rule rather than on the
+#: probability matrix alone. ``evaluate`` derives them by argmax, which is only
+#: the same thing when the model actually predicts by argmax -- a head with a
+#: threshold, a shortlist rule or a prior correction disagrees. The stored
+#: values came from the real ``y_pred``, so they win.
+_DECISION_DEPENDENT = frozenset({
+    "accuracy", "balanced_accuracy", "macro_f1", "weighted_f1", "per_class",
+})
+
 
 def load_run(name: str, out_dir: Path = ARTIFACTS_DIR) -> tuple[pd.DataFrame, dict]:
     """Load one run's test predictions and metrics.
 
-    Metrics written by an older version of the harness are topped up from the
-    stored per-row predictions rather than requiring a retrain -- the
-    predictions file carries the full probability matrix, so any metric can be
-    recomputed from it exactly.
+    Metrics missing from an older run are topped up from the stored per-row
+    probabilities rather than requiring a retrain, but only the ones that are
+    genuinely pure functions of that matrix -- see :func:`top_up_metrics`.
     """
     run_dir = out_dir / name
     predictions = pd.read_parquet(run_dir / "test_predictions.parquet")
     metrics = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
 
-    if "per_class" not in metrics.get("test", {}):
-        metrics["test"].update(recompute_from_predictions(predictions, metrics["test"]["labels"]))
+    test = metrics.setdefault("test", {})
+    if "per_class" not in test and "labels" in test:
+        top_up_metrics(test, predictions)
     return predictions, metrics
 
 
-def recompute_from_predictions(predictions: pd.DataFrame, labels: list[str]) -> dict:
-    """Re-derive the full metric bundle from stored per-row probabilities."""
+def top_up_metrics(test: dict, predictions: pd.DataFrame) -> dict:
+    """Fill in *missing* metrics from stored probabilities; overwrite nothing.
+
+    Three things this deliberately does not do, each of which the obvious
+    ``test.update(evaluate(...))`` would:
+
+    * **Overwrite decision-dependent metrics.** ``evaluate`` takes the argmax of
+      the probability matrix. The stored ``accuracy`` came from the model's own
+      ``y_pred``, which is only the same thing for a plain-argmax head. Letting
+      the recomputed value win makes ``accuracy`` disagree with the confusion
+      matrix in the same report.
+    * **Refit calibration on test.** ``temperature`` and its derived fields were
+      fitted on validation. Recomputing them here fits them on the test split
+      and stores the result under the same name, so a leaked number becomes
+      indistinguishable from an honest one.
+    * **Assume the run has a ``test`` block at all.**
+
+    Returns the keys it added, so a caller can see what was inferred rather
+    than measured.
+    """
     from router.metrics import evaluate
 
-    columns = [f"p_{label}" for label in labels]
-    missing = [c for c in columns if c not in predictions.columns]
-    if missing:
+    labels = test.get("labels")
+    columns = [f"p_{label}" for label in labels or []]
+    if not labels or any(c not in predictions.columns for c in columns):
         return {}
-    proba = predictions[columns].to_numpy()
-    return evaluate(predictions["y_true"].tolist(), proba, labels)
+
+    recomputed = evaluate(predictions["y_true"].tolist(), predictions[columns].to_numpy(), labels)
+    added = {
+        k: v for k, v in recomputed.items()
+        if k not in test and k not in _NOT_RECOMPUTABLE and k not in _DECISION_DEPENDENT
+    }
+    test.update(added)
+    return added
 
 
 def per_class_table(test_metrics: dict) -> pd.DataFrame:
@@ -69,10 +112,24 @@ def per_class_table(test_metrics: dict) -> pd.DataFrame:
     return frame.sort_values("f1").round(3)
 
 
-def confusion_table(predictions: pd.DataFrame) -> pd.DataFrame:
-    """Row-normalised confusion matrix (rows = true, values = share of row)."""
+def confusion_table(predictions: pd.DataFrame, labels: list[str] | None = None) -> pd.DataFrame:
+    """Row-normalised confusion matrix (rows = true, values = share of row).
+
+    Both axes span the *union* of true and predicted labels, or ``labels`` if
+    given. Using the true labels for both -- the obvious shortcut, since the
+    matrix is usually square anyway -- silently deletes any class the model
+    predicts but never actually occurs, and because rows are normalised after
+    the reindex the remaining mass renormalises to 1. The table still looks
+    well-formed with the evidence removed.
+
+    That failure lands precisely on the classes worth watching. `extract` has
+    three rows in the 1,000-prompt task eval, so a run where the model finally
+    starts predicting it -- the thing you would want to see -- is also a run
+    where those predictions disappear from the matrix.
+    """
     counts = pd.crosstab(predictions["y_true"], predictions["y_pred"])
-    counts = counts.reindex(index=sorted(counts.index), columns=sorted(counts.index), fill_value=0)
+    axis = list(labels) if labels else sorted(set(counts.index) | set(counts.columns))
+    counts = counts.reindex(index=axis, columns=axis, fill_value=0)
     return counts.div(counts.sum(axis=1).clip(lower=1), axis=0)
 
 
@@ -164,7 +221,9 @@ def report(name: str, out_dir: Path = ARTIFACTS_DIR) -> str:
         "",
         "## Confusion (row-normalised, rows = true label)",
         "",
-        confusion_table(predictions).round(3).to_markdown(),
+        # The run's own label list, so the matrix spans the full label space
+        # even for classes that neither occur nor get predicted in this split.
+        confusion_table(predictions, test.get("labels")).round(3).to_markdown(),
         "",
         "## Most frequent confusions",
         "",

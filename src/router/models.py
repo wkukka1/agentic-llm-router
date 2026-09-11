@@ -204,6 +204,12 @@ class TfidfLinearSVM(_SklearnClassifier):
         )
 
 
+#: Constructor params that determine what the encoder produces. A head fitted on
+#: one encoder's output cannot be served another's, so these must agree between
+#: the saved pickle and the instance loading it.
+_ENCODER_PARAMS = frozenset({"encoder_model", "pooling", "max_length", "prefix"})
+
+
 class _FrozenEncoderModel(DomainClassifier):
     """Encodes once, then delegates to an sklearn head."""
 
@@ -253,6 +259,25 @@ class _FrozenEncoderModel(DomainClassifier):
             state = pickle.load(fh)
         self.head = state["head"]
         self.labels = state["labels"]
+        # `params` is saved but deliberately not restored: the encoder was
+        # already constructed from this instance's params in __init__, so
+        # overwriting them now would leave the two disagreeing. What matters is
+        # that they match, and a mismatch is silent and severe -- the head was
+        # fitted on vectors from one encoder and would be served vectors from
+        # another. Serving builds these from the run's config.yaml, so a drift
+        # between that file and the pickle is exactly the case to catch.
+        saved = state.get("params") or {}
+        differing = {
+            k: (saved[k], self.params.get(k))
+            for k in _ENCODER_PARAMS & saved.keys()
+            if saved[k] != self.params.get(k)
+        }
+        if differing:
+            raise ValueError(
+                f"{path} was fitted with different encoder settings than this "
+                f"instance was built with: {differing}. The head expects vectors "
+                f"from the saved encoder; serving it others is silently wrong."
+            )
 
     def size_bytes(self) -> int:
         return len(pickle.dumps(self.head))
