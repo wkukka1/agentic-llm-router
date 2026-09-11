@@ -136,8 +136,54 @@ decision.
 
 ## Measurement: what the free signals actually buy
 
-*(Filled in from `artifacts/push_signals.log`; see the "Signals" section of
-EXPERIMENTS.md for the protocol.)*
+38,434 LMArena prompts, each with both models' responses and a human preference.
+5-fold cross-validated, scored against the cheapest possible baseline — prompt
+length alone — so "better than nothing" is visible rather than assumed.
 
-The question each row answers: given only the prompt, how well can you predict
-something the router needs, and does an expensive encoder beat free regex?
+### Response length: the one genuinely learnable new signal
+
+| features | Spearman rho | AUC (top-quartile length) |
+|---|---|---|
+| prompt length alone | +0.232 | 0.618 [0.612, 0.624] |
+| **23 surface features** | **+0.337** | **0.673 [0.667, 0.679]** |
+
+A 45% improvement in rank correlation over the one-feature baseline, for regex.
+This is the cost driver, it has 38,434 free labels, and nothing has to be
+annotated to use it. **Build the length estimator next.**
+
+What carries it, by coefficient magnitude: `log_chars` and `log_words` dominate
+(they are collinear and split weight between them; the net is positive), then
+`punct_ratio`, `log_lines`, and — interpretably — `asks_length_limit` at −0.128.
+Asking for brevity does produce shorter answers, and the feature catches it.
+
+### Difficulty: free regex gets nearly all of the little that exists
+
+| features | AUC predicting "both models failed" |
+|---|---|
+| prompt length alone | 0.516 |
+| **23 surface features** | **0.562 [0.553, 0.570]** |
+| the full 24-dim classifier vector | 0.577 |
+| full 1024-d sentence embedding | 0.567 |
+
+This sharpens the earlier negative result rather than softening it. Two trained
+classifiers, six encoder passes and 3,441 hand labels buy **0.015 AUC over
+regex**. Difficulty is not merely hard to read from the prompt — the expensive
+machinery adds essentially nothing to the cheap version of reading it.
+
+### Underspecification: not predictable, idea dropped
+
+`len_ratio` — how differently two models sized the same job — was the proposed
+free proxy for ambiguity. Surface features reach rho **+0.063** against +0.045
+for length alone. That is nothing. Either the proxy does not measure ambiguity,
+or ambiguity is not readable from the prompt; the data cannot separate those and
+neither reading justifies building it.
+
+### What this changes
+
+1. **Ship the length estimator.** Free target, free features, real signal.
+   It feeds cost estimation directly and needs no annotation.
+2. **Use surface features as the difficulty input, not the classifier vector.**
+   0.562 versus 0.577 does not justify six encoder passes if difficulty is all
+   you want from them. The classifiers earn their cost on domain and task, which
+   they predict at 0.923 and 0.844 — not on difficulty, which neither predicts.
+3. **Drop the ambiguity signal** until a better target than `len_ratio` exists.
