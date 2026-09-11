@@ -217,17 +217,29 @@ class _FrozenEncoderModel(DomainClassifier):
                  batch_size: int = 64, device: str | None = None, cache_tag: str | None = None, **kw):
         super().__init__(encoder_model=encoder_model, pooling=pooling, max_length=max_length,
                          batch_size=batch_size, device=device, cache_tag=cache_tag, **kw)
-        # Imported here rather than at module scope: this is the only place
-        # torch and transformers are needed, and importing them eagerly would
-        # make every consumer of the registry -- including the lexical models
-        # and the whole test suite -- pay for a dependency they never touch.
-        from router.embeddings import EmbeddingEncoder
-
-        self.encoder = EmbeddingEncoder(
-            encoder_model, pooling=pooling, max_length=max_length,
-            batch_size=batch_size, device=device,
-        )
+        self._encoder: Any = None
         self.head = None
+
+    @property
+    def encoder(self):
+        """The frozen sentence encoder, built on first use.
+
+        Constructed lazily, and the import lives here rather than at module
+        scope, because torch and transformers are close to a gigabyte and this
+        is the only place they are needed. Building a model object should not
+        load a deep-learning stack: the registry, `load`, and the encoder-param
+        check all work without one, which is what lets CI run the suite against
+        the light core.
+        """
+        if self._encoder is None:
+            from router.embeddings import EmbeddingEncoder
+
+            p = self.params
+            self._encoder = EmbeddingEncoder(
+                p["encoder_model"], pooling=p["pooling"], max_length=p["max_length"],
+                batch_size=p["batch_size"], device=p["device"],
+            )
+        return self._encoder
 
     def _build_head(self):
         raise NotImplementedError

@@ -207,7 +207,12 @@ class TestEncoderParamMismatchIsAnError:
 
 
 class TestEmbeddingCacheIsAtomic:
+    """Needs `router.embeddings`, which imports torch. CI installs the light
+    core deliberately -- the encoders are a ~1GB extra -- so these skip there
+    and run wherever `.[encoders]` is installed."""
+
     def test_no_temp_file_survives_a_successful_write(self, tmp_path, monkeypatch):
+        pytest.importorskip("torch")
         """np.save is not atomic; two runs encoding the same rows can interleave
         and leave a truncated array that loads without error."""
         from router.embeddings import EmbeddingEncoder
@@ -222,6 +227,7 @@ class TestEmbeddingCacheIsAtomic:
         assert len(list(tmp_path.glob("*.npy"))) == 1
 
     def test_a_second_call_hits_the_cache(self, tmp_path, monkeypatch):
+        pytest.importorskip("torch")
         from router.embeddings import EmbeddingEncoder
 
         calls = []
