@@ -1,0 +1,141 @@
+"""Domain label space for the router's first stage.
+
+Two earlier attempts failed, and this design is shaped by both:
+
+**v1 -- Dewey decimal topics (9 classes).** Scored 91% on benchmark questions
+and **47% on real user prompts**. It had learned exam formatting: its best class
+(`language`, 0.99 F1) was the WMT translation subset, identifiable because the
+text is not English. On real traffic that class became a dumping ground.
+
+**v2 -- capability labels (5 classes).** Fixed the distribution problem (77% on
+real prompts) but collapsed everything non-code, non-maths into a single
+`other` class holding 58% of traffic. Useful for routing, useless as a domain
+signal.
+
+**v3 -- this.** Domains that are *distinct*, *intuitive*, and *cover real
+traffic*, with every class grounded in labelled data from more than one
+distribution. The design rules:
+
+1. **A class must be assignable from real prompts**, not only benchmarks. A
+   label no real data can supply is a label the model will invent.
+2. **Boundaries follow how people ask, not how librarians file.** Medicine is
+   its own domain rather than a subdivision of technology; a question about
+   Python and a question about buying a laptop are both `software_tech`.
+3. **Questions *about* AI, ML and models are `software_tech`, not `meta_other`.**
+   "What is a large language model?", "is my macro-F1 of 0.72 good?" and "how
+   do I evaluate a classifier?" are technical questions about software, no
+   different from a question about databases. `meta_other` is reserved for
+   questions about *this assistant* ("what can you help me with?", "how
+   confident are you?"), greetings, and prompts with no answerable content.
+
+   This boundary was the single largest error source measured against
+   externally-labelled sets -- 18 of 44 errors across 402 prompts, worth ~4.5
+   points of accuracy -- and it was a definition disagreement, not a model
+   failure.
+
+   Hardware and devices also sit here. A separate hardware class was
+   considered and rejected on the data: only 31 of 2,441 labelled prompts are
+   hardware-flavoured, which is far too few to learn (the weakest current
+   class has 203 examples and still only reaches F1 0.62). Revisit if the
+   volume ever justifies it.
+
+4. **`personal_life` and `meta_other` exist.** Roughly a third of real traffic
+   is advice, chat, or questions about the assistant itself. v1 had nowhere to
+   put these, which is what created its dumping ground.
+"""
+
+from __future__ import annotations
+
+from enum import StrEnum
+
+
+class Domain(StrEnum):
+    """What a prompt is about. Twelve mutually distinct domains."""
+
+    SOFTWARE_TECH = "software_tech"
+    SCIENCE_MATH = "science_math"
+    MEDICINE_HEALTH = "medicine_health"
+    BUSINESS_FINANCE = "business_finance"
+    LAW_POLITICS = "law_politics"
+    HUMANITIES = "humanities"
+    ARTS_ENTERTAINMENT = "arts_entertainment"
+    LANGUAGE = "language"
+    PERSONAL_LIFE = "personal_life"
+    META_OTHER = "meta_other"
+
+
+DOMAIN_LABELS: list[str] = [d.value for d in Domain]
+
+#: One-line descriptions, used for zero-shot anchors and for documentation.
+DOMAIN_DESCRIPTIONS: dict[str, str] = {
+    "software_tech": "programming, software, IT, devops, AI and machine learning, models, prompts, hardware, devices and consumer electronics",
+    "science_math": "mathematics, statistics, logic, physics, chemistry, biology, earth science, astronomy",
+    "medicine_health": "medicine, health, symptoms, fitness, nutrition, mental health treatment",
+    "business_finance": "business, economics, finance, investing, marketing, careers, management",
+    "law_politics": "law, regulation, government, policy, politics, current affairs",
+    "humanities": "history, geography, philosophy, religion, culture, society",
+    "arts_entertainment": "music, film, games, sports, art, design, celebrities, and writing stories, poems or jokes",
+    "language": "translation, grammar, vocabulary, linguistics, wordplay, writing style",
+    "personal_life": "personal advice, relationships, emotions, daily life, planning, travel",
+    "meta_other": "questions about the assistant, greetings, unclear or off-taxonomy requests",
+}
+
+
+# --------------------------------------------------------------------------
+# Source mappings. Each returns a Domain or None (None = unusable, drop it).
+# --------------------------------------------------------------------------
+
+#: MMLU-Pro's 14 academic categories.
+def domain_from_arena_flags(
+    *, is_code: bool, is_math: bool, is_creative_writing: bool
+) -> Domain | None:
+    """LMArena's flags, the only domain-ish annotation on real user prompts.
+
+    Returns ``None`` when no flag fires. That is *not* a label -- an unflagged
+    prompt could be about medicine, law, or anything else, and guessing would
+    poison the training set. Those rows need a real label from elsewhere.
+    """
+    if is_code:
+        return Domain.SOFTWARE_TECH
+    if is_math:
+        return Domain.SCIENCE_MATH
+    if is_creative_writing:
+        return Domain.ARTS_ENTERTAINMENT
+    return None
+
+
+#: Optional coarser grouping. Two pairs are merged because the distinction is
+#: not one a labeller can make reliably *and* not one a router needs:
+#:
+#:   business_finance + law_politics -> business_law
+#:       The largest genuine confusion. "Statute of limitations on unpaid
+#:       invoices", "restricted payment baskets in credit agreements" -- both
+#:       labels are defensible, and both route to the same kind of model.
+#:   humanities + arts_entertainment -> culture
+#:       History, philosophy, film and music behave alike for routing.
+#:
+#: Measured on the frozen eval: 0.7575 -> 0.7725 top-1, 0.8950 -> 0.9100 top-2.
+#:
+#: `science_math + software_tech -> technical` scores better still (0.7850 /
+#: 0.9250) and is deliberately NOT included: maths and code route to different
+#: models, so collapsing them buys accuracy on this metric by destroying a
+#: distinction the router actually needs.
+#:
+#: Applied at build time, never in the stored labels. Merging is lossy and
+#: one-way; the 10-class labels remain the source of truth so a future router
+#: with different needs can regroup differently.
+DOMAIN_MERGES: dict[str, str] = {
+    "business_finance": "business_law",
+    "law_politics": "business_law",
+    "humanities": "culture",
+    "arts_entertainment": "culture",
+}
+
+MERGED_DOMAIN_LABELS: list[str] = sorted(
+    {DOMAIN_MERGES.get(d, d) for d in DOMAIN_LABELS}
+)
+
+
+def apply_domain_merges(domain: str) -> str:
+    """Map a fine-grained domain onto its merged group, if it has one."""
+    return DOMAIN_MERGES.get(domain, domain)

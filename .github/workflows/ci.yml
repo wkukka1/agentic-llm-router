@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    # Windows is in the matrix deliberately: file encoding and path handling
+    # are the two things that silently break there, and only CI catches it.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest ruff
+
+      - name: Lint
+        run: ruff check src tests
+
+      - name: Test
+        # Offline by design: no API keys, no dataset downloads. Tests that need
+        # a trained artifact skip themselves.
+        run: pytest -q

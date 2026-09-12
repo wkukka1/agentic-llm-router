@@ -1,0 +1,32 @@
+name: PROD_ensemble
+notes: >
+  Production configuration: weighted average of frozen-encoder heads.
+
+  Weights and membership were both fitted on validation, optimising top-2.
+  Selecting either against test inflates the result -- an earlier test-side
+  search read 76.0% where the honest protocol gives 75.75%.
+
+  Frozen encoders rather than fine-tuning: five seeds of one fine-tune config
+  spanned 63.5-67.8% (sd 1.75), wider than most effects worth measuring.
+  These are deterministic.
+
+  `intfloat/*` models get the "query: " prefix their training used, applied
+  automatically. Omitting it cost e5-large 3.25 points and was a real bug.
+model:
+  name: ensemble
+  params:
+    weights: [0.397, 0.242, 0.057, 0.048, 0.043, 0.213]
+    members:
+      - name: embed_logreg
+        params: {encoder_model: intfloat/e5-large-v2, pooling: mean, max_length: 256, C: 4.0, class_weight: null}
+      - name: embed_logreg
+        params: {encoder_model: Alibaba-NLP/gte-Qwen2-1.5B-instruct, pooling: mean, max_length: 256, C: 4.0, class_weight: null}
+      - name: tfidf_linear_svm
+        params: {word_ngrams: [1, 2], char_ngrams: [3, 5], min_df: 2, C: 0.5, class_weight: null}
+      - name: embed_mlp
+        params: {encoder_model: intfloat/multilingual-e5-large-instruct, pooling: mean, max_length: 256, hidden_sizes: [512]}
+      - name: embed_logreg
+        params: {encoder_model: sentence-transformers/all-mpnet-base-v2, pooling: mean, max_length: 256, C: 4.0, class_weight: null}
+      - name: embed_logreg
+        params: {encoder_model: intfloat/multilingual-e5-large-instruct, pooling: mean, max_length: 256, C: 4.0, class_weight: null}
+data: {variant: real_only, label_column: domain}

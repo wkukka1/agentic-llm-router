@@ -1,2 +1,24 @@
 *.env
-**/pycache__/
+.env
+# ...but the template is committed: it documents every variable.
+!.env.example
+__pycache__/
+**/__pycache__/
+*.pyc
+.venv/
+.DS_Store
+
+# data + run outputs are reproducible from scripts
+data/raw/
+data/processed/
+artifacts/
+!artifacts/.gitkeep
+*.egg-info/
+src/*.egg-info/
+Thumbs.db
+desktop.ini
+
+# The hand-labelled real-prompt set is the project's key asset, not a
+# regenerable artifact. It is committed deliberately.
+!data/handlabelled/
+!data/handlabelled/*.parquet
