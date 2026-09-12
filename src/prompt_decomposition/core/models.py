@@ -32,6 +32,8 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import FeatureUnion, Pipeline, make_pipeline
 from sklearn.svm import LinearSVC
 
+from prompt_decomposition.core.metrics import apply_temperature
+
 
 class DomainClassifier(ABC):
     """Predicts a distribution over :data:`~prompt_decomposition.domain_classifier.taxonomy.DOMAIN_LABELS`.
@@ -383,10 +385,7 @@ class EnsembleClassifier(DomainClassifier):
             return stacked
         # Temperature is fitted on validation by the experiment runner; applying
         # it here keeps the served probabilities calibrated (ECE 0.25 -> 0.05).
-        logits = np.log(np.clip(stacked, 1e-12, None)) / max(temperature, 1e-12)
-        logits -= logits.max(axis=1, keepdims=True)
-        exp = np.exp(logits)
-        return exp / exp.sum(axis=1, keepdims=True)
+        return apply_temperature(stacked, temperature)
 
     def save(self, path: Path) -> None:
         path.mkdir(parents=True, exist_ok=True)

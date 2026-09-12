@@ -7,13 +7,13 @@ back into the results directory alongside its metrics.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from prompt_decomposition.core.settings import settings
+from prompt_decomposition.core.settings import DEFAULT_SEED, settings
 
 
 @dataclass(slots=True)
@@ -63,23 +63,19 @@ class ExperimentConfig:
             name=raw["name"],
             model=model,
             data=data,
-            seed=int(raw.get("seed", 20260824)),
+            seed=int(raw.get("seed", DEFAULT_SEED)),
             notes=raw.get("notes", ""),
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "name": self.name,
-            "seed": self.seed,
-            "notes": self.notes,
-            "data": {
-                "variant": self.data.variant,
-                "text_column": self.data.text_column,
-                "label_column": self.data.label_column,
-                "max_train_rows": self.data.max_train_rows,
-            },
-            "model": {"name": self.model.name, "params": self.model.params},
-        }
+        """The config as plain data, for the copy written into the run directory.
+
+        ``asdict`` rather than a hand-written mirror of the fields: the mirror
+        had to be edited every time a field was added, and a field it forgot
+        would vanish from the record of the run without anything failing. Every
+        field here is a str, int, None or dict, so the conversion is total.
+        """
+        return asdict(self)
 
 
 def load_experiments(paths: list[str | Path]) -> list[ExperimentConfig]:

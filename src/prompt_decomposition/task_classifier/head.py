@@ -50,11 +50,7 @@ class TaskHead(CalibratedHead):
         return self.predict_batch([prompt])[0]
 
     def predict_batch(self, prompts: list[str]) -> list[TaskPrediction]:
-        # An empty batch is a legitimate call on a serving path -- a filter
-        # upstream removed everything -- and sklearn raises on it.
-        if not prompts:
-            return []
-        proba = self._calibrated(self.model.predict_proba(list(prompts)))
+        proba = self._calibrated_proba(prompts)
         labels = self.labels
         out = []
         for row in proba:

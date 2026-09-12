@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 import yaml
 
+from prompt_decomposition.core.metrics import apply_temperature
 from prompt_decomposition.core.models import build
 
 
@@ -59,15 +60,25 @@ class CalibratedHead:
         return [str(x) for x in self.model.labels]
 
     def _calibrated(self, proba: np.ndarray) -> np.ndarray:
+        """Temperature-scaled probabilities.
+
+        One implementation, shared with the experiment runner that fitted the
+        temperature: serving and evaluation must not be able to disagree about
+        what it means. ``T == 1.0`` returns the input untouched rather than
+        round-tripping it through log and exp.
+        """
         if self.temperature == 1.0:
             return proba
-        logits = np.log(np.clip(proba, 1e-12, None)) / max(self.temperature, 1e-12)
-        logits -= logits.max(axis=1, keepdims=True)
-        exp = np.exp(logits)
-        return exp / exp.sum(axis=1, keepdims=True)
+        return apply_temperature(proba, self.temperature)
 
+    def _calibrated_proba(self, prompts: list[str]) -> np.ndarray:
+        """Calibrated probabilities for a batch, an empty one included.
 
-def _entropy(p: np.ndarray) -> float:
-    """Shannon entropy in nats, 0 when certain and log(k) when uniform."""
-    p = np.clip(np.asarray(p, dtype=float), 1e-12, 1.0)
-    return float(-(p * np.log(p)).sum())
+        An empty batch is a legitimate serving call -- a filter upstream
+        removed everything -- and sklearn raises on a zero-row matrix. Both
+        heads carried that guard; it lives here instead.
+        """
+        prompts = list(prompts)
+        if not prompts:
+            return np.zeros((0, len(self.labels)))
+        return self._calibrated(self.model.predict_proba(prompts))

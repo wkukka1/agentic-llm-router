@@ -69,9 +69,7 @@ class DomainHead(CalibratedHead):
         return self.predict_batch([prompt])[0]
 
     def predict_batch(self, prompts: list[str]) -> list[DomainPrediction]:
-        if not prompts:
-            return []
-        proba = self._calibrated(self.model.predict_proba(list(prompts)))
+        proba = self._calibrated_proba(prompts)
         labels = self.labels
         if self.merge_domains:
             proba, labels = self._merge(proba, labels)

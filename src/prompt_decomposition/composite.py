@@ -17,9 +17,14 @@ from pathlib import Path
 
 import numpy as np
 
-from prompt_decomposition.core.head import _entropy
 from prompt_decomposition.domain_classifier.head import DomainHead, DomainPrediction
 from prompt_decomposition.task_classifier.head import TaskHead, TaskPrediction
+
+
+def _entropy(p: np.ndarray) -> float:
+    """Shannon entropy in nats, 0 when certain and log(k) when uniform."""
+    p = np.clip(np.asarray(p, dtype=float), 1e-12, 1.0)
+    return float(-(p * np.log(p)).sum())
 
 
 @dataclass(slots=True)
@@ -34,6 +39,42 @@ class RouterPrediction:
         """``"<domain>/<task>"`` -- the cell a routing table would look up."""
         return f"{self.domain.domain}/{self.task.task}"
 
+    def _distributions(self) -> tuple[np.ndarray, np.ndarray]:
+        """Both calibrated distributions as arrays, alphabetical by label."""
+        dom = np.array([self.domain.distribution[k] for k in sorted(self.domain.distribution)])
+        tsk = np.array([self.task.distribution[k] for k in sorted(self.task.distribution)])
+        return dom, tsk
+
+    def _scalars(self, prompt: str | None) -> dict[str, float]:
+        """The named scalar tail of the vector, in column order.
+
+        Names and values are defined together, once. They used to be written
+        twice -- an ordered list of names in one method and an ordered list of
+        floats in the other -- which is exactly the drift :meth:`feature_names`
+        promises cannot happen. Now a column cannot be added, moved or removed
+        in one without the other following.
+        """
+        dom, tsk = self._distributions()
+        d_sorted = np.sort(dom)[::-1]
+        t_sorted = np.sort(tsk)[::-1]
+        # Length is the one prompt property a difficulty model almost always
+        # wants and neither head exposes. Zero when the prompt is not passed,
+        # so the vector keeps its width either way.
+        n_chars = len(prompt or "")
+        n_words = len((prompt or "").split())
+        return {
+            "domain.confidence": float(d_sorted[0]),
+            "domain.margin": float(d_sorted[0] - d_sorted[1]) if len(d_sorted) > 1 else 1.0,
+            "domain.entropy": _entropy(dom),
+            # How many domains the head could not separate for this prompt.
+            "domain.shortlist_size": float(len(self.domain.shortlist)),
+            "task.confidence": float(t_sorted[0]),
+            "task.margin": float(t_sorted[0] - t_sorted[1]) if len(t_sorted) > 1 else 1.0,
+            "task.entropy": _entropy(tsk),
+            "prompt.log_chars": float(np.log1p(n_chars)),
+            "prompt.log_words": float(np.log1p(n_words)),
+        }
+
     def feature_names(self) -> list[str]:
         """Names for :meth:`vector`, same order, same length.
 
@@ -43,11 +84,7 @@ class RouterPrediction:
         """
         names = [f"domain.{d}" for d in sorted(self.domain.distribution)]
         names += [f"task.{t}" for t in sorted(self.task.distribution)]
-        names += ["domain.confidence", "domain.margin", "domain.entropy",
-                  "domain.shortlist_size",
-                  "task.confidence", "task.margin", "task.entropy",
-                  "prompt.log_chars", "prompt.log_words"]
-        return names
+        return names + list(self._scalars(None))
 
     def vector(self, prompt: str | None = None) -> np.ndarray:
         """Fixed-length float vector for a downstream difficulty model.
@@ -74,26 +111,9 @@ class RouterPrediction:
         tasks + 9 scalars. Stable for a given head configuration; changing
         ``merge_domains`` changes it, which is why the names travel alongside.
         """
-        dom = np.array([self.domain.distribution[k] for k in sorted(self.domain.distribution)])
-        tsk = np.array([self.task.distribution[k] for k in sorted(self.task.distribution)])
-        d_sorted = np.sort(dom)[::-1]
-        t_sorted = np.sort(tsk)[::-1]
-        scalars = [
-            float(d_sorted[0]),
-            float(d_sorted[0] - d_sorted[1]) if len(d_sorted) > 1 else 1.0,
-            _entropy(dom),
-            float(len(self.domain.shortlist)),
-            float(t_sorted[0]),
-            float(t_sorted[0] - t_sorted[1]) if len(t_sorted) > 1 else 1.0,
-            _entropy(tsk),
-        ]
-        # Length is the one prompt property a difficulty model almost always
-        # wants and neither head exposes. Zero when the prompt is not passed,
-        # so the vector keeps its width either way.
-        n_chars = len(prompt or "")
-        n_words = len((prompt or "").split())
-        scalars += [float(np.log1p(n_chars)), float(np.log1p(n_words))]
-        return np.concatenate([dom, tsk, np.array(scalars, dtype=float)])
+        dom, tsk = self._distributions()
+        scalars = np.array(list(self._scalars(prompt).values()), dtype=float)
+        return np.concatenate([dom, tsk, scalars])
 
     @property
     def should_defer(self) -> bool:
@@ -112,10 +132,10 @@ class RouterHead:
     routing signal than either alone.
     """
 
-    def __init__(self, domain_run: str | Path, task_run: str | Path, **kwargs) -> None:
-        domain_kwargs = {k: v for k, v in kwargs.items() if k != "task_defer_below"}
+    def __init__(self, domain_run: str | Path, task_run: str | Path, *,
+                 task_defer_below: float = 0.0, **domain_kwargs) -> None:
         self.domain = DomainHead(domain_run, **domain_kwargs)
-        self.task = TaskHead(task_run, defer_below=kwargs.get("task_defer_below", 0.0))
+        self.task = TaskHead(task_run, defer_below=task_defer_below)
 
     def predict(self, prompt: str) -> RouterPrediction:
         return self.predict_batch([prompt])[0]
@@ -142,6 +162,7 @@ class RouterHead:
         """
         preds = self.predict_batch(prompts)
         if not preds:
-            return np.zeros((0, len(self.feature_names()))), self.feature_names()
+            names = self.feature_names()
+            return np.zeros((0, len(names))), names
         rows = np.vstack([p.vector(t) for p, t in zip(preds, prompts, strict=True)])
         return rows, preds[0].feature_names()
