@@ -294,3 +294,123 @@ class TestSharedSettings:
             assert settings(env).seed == 88
         finally:
             settings.cache_clear()
+
+
+class TestCalibrationProvenanceIsRecorded:
+    """The temperature was always fitted on validation, but it was *stored*
+    under the `test` key, which reads as though it were fitted there."""
+
+    @staticmethod
+    def _run(tmp_path, metrics):
+        import yaml
+
+        from prompt_decomposition.core.models import build
+
+        m = build("tfidf_logreg", char_ngrams=None, min_df=1)
+        m.fit(["alpha one", "alpha two", "beta one", "beta two"], ["a", "a", "b", "b"])
+        d = tmp_path / "run"
+        d.mkdir()
+        m.save(d / "model")
+        (d / "config.yaml").write_text(yaml.safe_dump(
+            {"model": {"name": "tfidf_logreg",
+                       "params": {"char_ngrams": None, "min_df": 1}}}), encoding="utf-8")
+        (d / "metrics.json").write_text(json.dumps(metrics), encoding="utf-8")
+        return d
+
+    def test_the_calibration_block_wins_over_the_legacy_location(self, tmp_path):
+        from prompt_decomposition import DomainHead
+
+        run = self._run(tmp_path, {
+            "test": {"temperature": 9.0},
+            "calibration": {"temperature": 2.0, "fitted_on": "validation"},
+        })
+        head = DomainHead(run)
+        assert head.temperature == 2.0
+        assert head.temperature_fitted_on == "validation"
+
+    def test_an_older_run_still_loads_from_the_test_key(self, tmp_path):
+        """Artifacts written before the calibration block existed were
+        validation-fitted too; they just did not record it."""
+        from prompt_decomposition import DomainHead
+
+        head = DomainHead(self._run(tmp_path, {"test": {"temperature": 3.0}}))
+        assert head.temperature == 3.0
+        assert head.temperature_fitted_on == "validation"
+
+    def test_the_runner_records_which_split_it_fitted_on(self):
+        import inspect
+
+        from prompt_decomposition.core import experiment
+
+        src = inspect.getsource(experiment)
+        assert '"fitted_on": "validation"' in src
+        # And it must still fit on val, not test -- the comment is not the fix.
+        assert "fit_temperature(\n        val_proba" in src or "fit_temperature(val_proba" in src
+
+
+class TestAlignToCorpusDeduplicates:
+    """A prompt appearing twice maps to one corpus row twice, putting the same
+    vector on both sides of a fold split -- the leakage the audit looks for,
+    introduced by the loader."""
+
+    @staticmethod
+    def _frame(prompts, tasks):
+        return pd.DataFrame({"prompt": prompts, "task": tasks})
+
+    def test_duplicate_prompts_are_dropped(self):
+        from prompt_decomposition.core.overfit import align_to_corpus
+
+        rows, labels = align_to_corpus(
+            self._frame(["a", "b", "a"], ["x", "y", "x"]), ["a", "b", "c"], "task")
+        assert len(rows) == len(set(rows)) == 2
+        assert list(labels) == ["x", "y"]
+
+    def test_prompts_absent_from_the_corpus_are_dropped(self):
+        from prompt_decomposition.core.overfit import align_to_corpus
+
+        rows, labels = align_to_corpus(
+            self._frame(["a", "zzz"], ["x", "y"]), ["a", "b"], "task")
+        assert list(rows) == [0]
+        assert list(labels) == ["x"]
+
+    def test_rows_index_the_corpus_not_the_frame(self):
+        from prompt_decomposition.core.overfit import align_to_corpus
+
+        rows, labels = align_to_corpus(
+            self._frame(["c", "a"], ["z", "x"]), ["a", "b", "c"], "task")
+        assert list(rows) == [2, 0]
+        assert list(labels) == ["z", "x"]
+
+
+class TestSimilarityMatrixIsCapped:
+    """`Xn @ Xn.T` is O(n^2): 40,000 rows is ~13 GB, an OOM kill rather than a
+    slow check."""
+
+    @staticmethod
+    def _separable(n, d=64, classes=3, seed=0):
+        rng = np.random.default_rng(seed)
+        y = np.array([str(i % classes) for i in range(n)])
+        centres = rng.normal(size=(classes, d)) * 2
+        return centres[[int(v) for v in y]] + rng.normal(size=(n, d)), y
+
+    def test_a_cap_below_the_row_count_still_completes(self):
+        from prompt_decomposition.core.overfit import audit
+
+        X, y = self._separable(400)
+        r = audit(X, y, "capped", permutations=3, max_similarity_rows=100)
+        assert r.test_acc > 0.9
+
+    def test_the_default_cap_exists_and_is_finite(self):
+        from prompt_decomposition.core.overfit import MAX_SIMILARITY_ROWS
+
+        assert 1_000 <= MAX_SIMILARITY_ROWS <= 50_000
+
+    def test_capping_does_not_change_the_headline_accuracy(self):
+        """The cap is about memory, not about the model -- only the
+        near-duplicate rescore is computed on the sample."""
+        from prompt_decomposition.core.overfit import audit
+
+        X, y = self._separable(300)
+        full = audit(X, y, "full", permutations=3, max_similarity_rows=10_000)
+        capped = audit(X, y, "capped", permutations=3, max_similarity_rows=80)
+        assert full.test_acc == pytest.approx(capped.test_acc)

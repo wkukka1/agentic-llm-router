@@ -258,6 +258,31 @@ def audit(X: np.ndarray, y: np.ndarray, name: str, *, balanced: bool = False,
     )
 
 
+def align_to_corpus(frame: pd.DataFrame, corpus_prompts: list[str],
+                    label_col: str) -> tuple[np.ndarray, np.ndarray]:
+    """Map a labelled frame onto rows of an already-encoded corpus.
+
+    Returns the corpus row indices and their labels, for the frame's prompts
+    that appear in the corpus.
+
+    **Deduplicates first.** A prompt appearing twice in the frame maps to the
+    same corpus row twice, so one embedding vector would land on both sides of
+    a fold split -- which is precisely the leakage the near-duplicate check
+    exists to detect, introduced by the loader rather than by the data. The
+    domain frame is deduplicated where it is read; a frame arriving here is not
+    guaranteed to be, so this does not assume it.
+    """
+    before = len(frame)
+    frame = frame.drop_duplicates(subset=["prompt"])
+    if len(frame) != before:
+        log.warning("%s file had %d duplicate prompts; dropped",
+                    label_col, before - len(frame))
+    position = {p: i for i, p in enumerate(corpus_prompts)}
+    frame = frame[frame["prompt"].isin(position)].reset_index(drop=True)
+    rows = np.array([position[p] for p in frame["prompt"]], dtype=int)
+    return rows, frame[label_col].to_numpy()
+
+
 def audit_heads(encoder_model: str = DEFAULT_ENCODER) -> list[AuditResult]:
     """Audit the domain and task label sets over one shared encoder."""
     from prompt_decomposition.core.embeddings import EmbeddingEncoder
@@ -270,16 +295,6 @@ def audit_heads(encoder_model: str = DEFAULT_ENCODER) -> list[AuditResult]:
     out = [audit(X, domain["domain"].to_numpy(), "DOMAIN head", balanced=False)]
 
     tasks = pd.read_parquet("data/handlabelled/real_tasks.parquet")
-    # A prompt appearing twice would map to the same embedding row twice, so the
-    # same vector would sit on both sides of a fold split -- the exact leakage
-    # the near-duplicate check exists to find, introduced by the loader. The
-    # domain frame is deduped above; this one is not guaranteed to be.
-    before = len(tasks)
-    tasks = tasks.drop_duplicates(subset=["prompt"])
-    if len(tasks) != before:
-        log.warning("task file had %d duplicate prompts; dropped", before - len(tasks))
-    pos = {p: i for i, p in enumerate(domain["prompt"])}
-    tasks = tasks[tasks["prompt"].isin(pos)].reset_index(drop=True)
-    rows = np.array([pos[p] for p in tasks["prompt"]])
-    out.append(audit(X[rows], tasks["task"].to_numpy(), "TASK head", balanced=True))
+    rows, labels = align_to_corpus(tasks, domain["prompt"].tolist(), "task")
+    out.append(audit(X[rows], labels, "TASK head", balanced=True))
     return out
