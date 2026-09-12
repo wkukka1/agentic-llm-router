@@ -193,6 +193,43 @@ size of the job and nothing about whether it is within reach — which is
 intuitive in hindsight and is exactly why the difficulty head has to read model
 behaviour rather than prompt text.
 
+### Distance from training data: adds nothing over confidence
+
+Proposed as an abstain signal — a prompt unlike anything in the training set is
+one the classifier should not be trusted on. Built as four features (nearest
+neighbour cosine, mean top-10 cosine, centroid similarity, centroid margin),
+cross-fitted so a prompt is never in its own reference set, and scored on
+whether it predicts a domain-classifier **error**:
+
+| features | AUC predicting classifier error |
+|---|---|
+| **the classifier's own confidence** | **0.783 [0.765, 0.801]** |
+| distance from training (4 features) | 0.663 [0.640, 0.689] |
+| confidence + distance | 0.785 [0.766, 0.802] |
+
+Combined gains **+0.002** over confidence alone. Per feature, three of the four
+are at or below chance: `nn_similarity` 0.529, `knn_similarity` 0.505,
+`centroid_similarity` 0.486. The one that carries signal — `centroid_margin`
+at 0.656 — is a crude restatement of confidence, which is why adding it changes
+nothing.
+
+The 402 external prompts also sit as close to training as training prompts sit
+to each other (knn 0.818 vs 0.829), so there is no distribution gap in the data
+to detect even in principle. Module deleted; the measurement is the deliverable.
+
+### Perplexity: worse than nothing
+
+Also proposed. Scored with `distilgpt2` over both targets that matter:
+
+| | classifier error | response length |
+|---|---|---|
+| perplexity alone | AUC 0.483 | rho +0.047 |
+| baseline | 0.783 (confidence) | +0.317 (surface features) |
+| baseline + perplexity | 0.783 | +0.320 |
+
+Below chance on error, near-zero on length, and adds nothing to either baseline
+— while costing a forward pass through a second model at serving time. Rejected.
+
 ### Underspecification: not predictable, idea dropped
 
 `len_ratio` — how differently two models sized the same job — was the proposed
