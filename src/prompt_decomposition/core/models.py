@@ -102,13 +102,18 @@ def available() -> list[str]:
     return sorted(_REGISTRY)
 
 
-def _vectorizer(word_ngrams: tuple[int, int], char_ngrams: tuple[int, int] | None,
-                min_df: int, max_features: int) -> Any:
+def _vectorizer(word_ngrams, char_ngrams, min_df: int, max_features: int) -> Any:
     """Word n-grams, optionally unioned with char n-grams.
 
     Char n-grams buy robustness to code identifiers, LaTeX and non-English
     fragments, which word tokenisation shreds.
+
+    Both n-gram ranges are coerced here rather than at each call site: configs
+    arrive from YAML as lists, TfidfVectorizer wants tuples, and a falsy
+    `char_ngrams` means "word only". Every caller was repeating that.
     """
+    word_ngrams = tuple(word_ngrams)
+    char_ngrams = tuple(char_ngrams) if char_ngrams else None
     word = TfidfVectorizer(
         analyzer="word",
         ngram_range=word_ngrams,
@@ -171,8 +176,7 @@ class TfidfLogisticRegression(_SklearnClassifier):
     def _build_pipeline(self) -> Pipeline:
         p = self.params
         return make_pipeline(
-            _vectorizer(tuple(p["word_ngrams"]),
-                        tuple(p["char_ngrams"]) if p["char_ngrams"] else None,
+            _vectorizer(p["word_ngrams"], p["char_ngrams"],
                         p["min_df"], p["max_features"]),
             LogisticRegression(
                 C=p["C"],
@@ -194,8 +198,7 @@ class TfidfLinearSVM(_SklearnClassifier):
     def _build_pipeline(self) -> Pipeline:
         p = self.params
         return make_pipeline(
-            _vectorizer(tuple(p["word_ngrams"]),
-                        tuple(p["char_ngrams"]) if p["char_ngrams"] else None,
+            _vectorizer(p["word_ngrams"], p["char_ngrams"],
                         p["min_df"], p["max_features"]),
             CalibratedClassifierCV(
                 LinearSVC(C=p["C"], class_weight=p["class_weight"]),

@@ -24,85 +24,18 @@ from __future__ import annotations
 import logging
 
 import pandas as pd
-import pyarrow.parquet as pq
-from huggingface_hub import hf_hub_download, list_repo_files
+from huggingface_hub import hf_hub_download
 
 from prompt_decomposition.core.dataset import Example
-from prompt_decomposition.domain_classifier.taxonomy import domain_from_arena_flags
 
 log = logging.getLogger(__name__)
 
-ARENA_REPO = "lmarena-ai/arena-human-preference-140k"
 HANDLABELLED_PATH = "data/handlabelled/real_prompts.parquet"
 REAL_TASKS_PATH = "data/handlabelled/real_tasks.parquet"
 MINED_TASKS_PATH = "data/handlabelled/real_tasks_mined.parquet"
 AGENT_TASKS_PATH = "data/handlabelled/real_tasks_agent.parquet"
 GENERATED_TASKS_PATH = "data/synthetic/generated_tasks.parquet"
 SYNTHETIC_DIR = "data/synthetic"
-
-
-def _first_user_text(conversation) -> str:
-    for turn in conversation if conversation is not None else []:
-        if turn.get("role") != "user":
-            continue
-        parts = turn.get("content") or []
-        texts = [p.get("text") or "" for p in parts if (p.get("type") or "text") == "text"]
-        joined = "\n".join(t for t in texts if t).strip()
-        if joined:
-            return joined
-    return ""
-
-
-def load_handlabelled(path: str = HANDLABELLED_PATH) -> list[Example]:
-    """Real prompts read and labelled by hand -- the anchor of the whole set.
-
-    Small but irreplaceable: it is the only source that pairs genuine user
-    traffic with a label from every domain, including `personal_life` and
-    `meta_other`, which no benchmark contains at all.
-    """
-    frame = pd.read_parquet(path)
-    return [
-        Example(prompt=r.prompt, source="handlabelled", subset="lmarena",
-                capability=r.domain, meta={"arena_id": r.arena_id})
-        for r in frame.itertuples()
-    ]
-
-
-def load_arena_flagged(*, max_shards: int = 3, language: str = "en",
-                       max_chars: int = 4000) -> list[Example]:
-    """Real prompts whose domain LMArena's own flags can supply.
-
-    Only flagged rows are kept. An unflagged prompt could be about anything, so
-    guessing would poison the set -- those rows are exactly what the hand
-    labelling covers.
-    """
-    shards = sorted(f for f in list_repo_files(ARENA_REPO, repo_type="dataset")
-                    if f.endswith(".parquet"))[:max_shards]
-    cols = ["id", "conversation_a", "category_tag", "language", "is_code"]
-    out: list[Example] = []
-    for shard in shards:
-        path = hf_hub_download(ARENA_REPO, shard, repo_type="dataset")
-        for batch in pq.ParquetFile(path).iter_batches(batch_size=512, columns=cols):
-            for row in batch.to_pylist():
-                if row.get("language") != language:
-                    continue
-                tag = row.get("category_tag") or {}
-                domain = domain_from_arena_flags(
-                    is_code=bool(row.get("is_code")),
-                    is_math=bool((tag.get("math_v0.1") or {}).get("math")),
-                    is_creative_writing=bool(
-                        (tag.get("creative_writing_v0.1") or {}).get("creative_writing")),
-                )
-                if domain is None:
-                    continue
-                prompt = _first_user_text(row.get("conversation_a"))
-                if len(prompt) < 15:
-                    continue
-                out.append(Example(prompt=prompt[:max_chars], source="arena_flag",
-                                   subset=shard.rsplit("/", 1)[-1], capability=domain.value,
-                                   meta={"arena_id": row.get("id")}))
-    log.info("arena_flag: %d rows", len(out))
-    return out
 
 
 def load_real_tasks(path: str = REAL_TASKS_PATH) -> list[Example]:

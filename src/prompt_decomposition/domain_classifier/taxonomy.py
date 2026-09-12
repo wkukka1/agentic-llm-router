@@ -81,15 +81,6 @@ DOMAIN_DESCRIPTIONS: dict[str, str] = {
 }
 
 
-class Difficulty(StrEnum):
-    EASY = "easy"
-    MEDIUM = "medium"
-    HARD = "hard"
-
-
-DIFFICULTY_LABELS: list[str] = [d.value for d in Difficulty]
-
-
 # --------------------------------------------------------------------------
 # Source mappings. Each returns a Domain or None (None = unusable, drop it).
 # --------------------------------------------------------------------------

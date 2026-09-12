@@ -26,9 +26,6 @@ from pathlib import Path
 #: The seed every experiment shares unless one deliberately overrides it.
 DEFAULT_SEED = 20260824
 
-_TRUE = frozenset({"1", "true", "yes", "on"})
-
-
 def _load_dotenv(path: Path) -> dict[str, str]:
     """Minimal `.env` reader: ``KEY=value`` lines, ``#`` comments, no expansion.
 
@@ -94,9 +91,3 @@ def settings(env_file: str | Path = ".env") -> Settings:
         ),
         source=path if from_file else None,
     )
-
-
-def truthy(name: str, default: bool = False) -> bool:
-    """Read a boolean flag from the environment."""
-    raw = os.environ.get(name)
-    return default if raw is None else raw.strip().lower() in _TRUE
