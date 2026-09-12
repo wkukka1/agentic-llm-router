@@ -4,6 +4,7 @@
     describe-data  split statistics
     train          run one or more experiments, write the leaderboard
     analyze        per-class precision/recall, confusion, error slices
+    length         build the free length corpus, train the head, audit the fit
 """
 
 from __future__ import annotations
@@ -25,6 +26,8 @@ from prompt_decomposition.core.dataset import (
 )
 from prompt_decomposition.core.experiment import ARTIFACTS_DIR, run_all
 from prompt_decomposition.core.external_eval import EXTERNAL_DIR, render, score
+from prompt_decomposition.length_estimator.experiment import DEFAULT_ENCODER as LENGTH_ENCODER
+from prompt_decomposition.length_estimator.model import FEATURE_SETS
 
 #: Prompt-rendering variants the builder can produce. How the RouterArena
 #: fields are reassembled is a real experimental axis: option blocks and
@@ -155,6 +158,34 @@ def cmd_overfit(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_length(args: argparse.Namespace) -> int:
+    """Train and audit the expected-output-length head.
+
+    The corpus is free -- every arena row carries both models' responses and an
+    exact token count -- so `--build` is cheap to rerun and the splits are
+    assigned by hashing the prompt, which means a rebuild leaves every row
+    where it was.
+    """
+    from prompt_decomposition.length_estimator.data import (
+        build_length_dataset,
+        save_length_dataset,
+    )
+    from prompt_decomposition.length_estimator.experiment import run_length_sweep
+
+    if args.build:
+        save_length_dataset(build_length_dataset(max_rows=args.max_rows))
+
+    feature_sets = tuple(args.features) if args.features else FEATURE_SETS
+    frame, audits = run_length_sweep(encoder_model=args.encoder,
+                                     feature_sets=feature_sets,
+                                     permutations=args.permutations)
+    print(frame.round(4).to_string(index=False))
+    print()
+    for result in audits:
+        print(result.summary(), end="\n\n")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="prompt-decomposition",
         description="Prompt decomposition: train and audit the classifier heads")
@@ -224,6 +255,21 @@ def build_parser() -> argparse.ArgumentParser:
                         "regularisation sensitivity and near-duplicate leakage")
     overfit.add_argument("--encoder", default="intfloat/e5-large-v2")
     overfit.set_defaults(func=cmd_overfit)
+
+    length = sub.add_parser(
+        "length", help="expected output length: the one head whose labels are free")
+    length.add_argument("--build", action="store_true",
+                        help="rebuild the corpus from the arena dump first")
+    length.add_argument("--max-rows", type=int, default=None,
+                        help="cap the corpus; the cap is a subset of the full "
+                             "corpus, not a different split of it")
+    length.add_argument("--encoder", default=LENGTH_ENCODER)
+    length.add_argument("--features", nargs="*", choices=FEATURE_SETS,
+                        help=f"default: all of {', '.join(FEATURE_SETS)}")
+    length.add_argument("--permutations", type=int, default=30,
+                        help="shuffled-label refits; the smallest reportable "
+                             "p-value is 1/(n+1)")
+    length.set_defaults(func=cmd_length)
 
 
     return parser
