@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-from router.heads.base import CalibratedHead
+from prompt_decomposition.core.head import CalibratedHead
 
 
 @dataclass(slots=True)
@@ -104,7 +104,7 @@ class DomainHead(CalibratedHead):
     @staticmethod
     def _merge(proba: np.ndarray, labels: list[str]) -> tuple[np.ndarray, list[str]]:
         """Sum fine-grained probabilities into their merged groups."""
-        from router.taxonomy import apply_domain_merges
+        from prompt_decomposition.domain_classifier.taxonomy import apply_domain_merges
 
         groups = [apply_domain_merges(x) for x in labels]
         merged = sorted(set(groups))

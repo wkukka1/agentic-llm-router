@@ -260,7 +260,7 @@ def audit(X: np.ndarray, y: np.ndarray, name: str, *, balanced: bool = False,
 
 def audit_heads(encoder_model: str = DEFAULT_ENCODER) -> list[AuditResult]:
     """Audit the domain and task label sets over one shared encoder."""
-    from router.embeddings import EmbeddingEncoder
+    from prompt_decomposition.core.embeddings import EmbeddingEncoder
 
     enc = EmbeddingEncoder(encoder_model, pooling="mean", max_length=256, batch_size=32)
     short = encoder_model.split("/")[-1]

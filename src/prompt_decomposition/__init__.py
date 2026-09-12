@@ -1,0 +1,35 @@
+"""Prompt decomposition: turning a raw prompt into the signals a router needs.
+
+This is the first stage of the pipeline. It reads a prompt and returns what it
+is about, what it asks to be done, and a set of cheap surface features -- as
+calibrated distributions the routing stage can threshold on rather than as bare
+labels.
+
+    domain_classifier   what the prompt is about    0.923 top-1 / 0.980 top-2
+    task_classifier     what it asks to be done     0.844 top-1 / 0.967 top-2
+    signals             free regex/arithmetic features, no model, no labels
+    composite           both heads over one prompt, plus the handoff vector
+    core                shared machinery: training harness, metrics, settings
+
+Each classifier is a self-contained package holding its own label space next to
+its serving head, so adding a third -- difficulty, tool-need, decomposability --
+means adding a directory rather than editing an existing one.
+
+No LLM at inference and nothing fine-tuned: frozen encoders with linear heads,
+so the output is deterministic and costs about 130 ms.
+"""
+
+from prompt_decomposition.composite import RouterHead, RouterPrediction
+from prompt_decomposition.core.head import CalibratedHead
+from prompt_decomposition.domain_classifier import DomainHead, DomainPrediction
+from prompt_decomposition.task_classifier import TaskHead, TaskPrediction
+
+__all__ = [
+    "CalibratedHead",
+    "DomainHead",
+    "DomainPrediction",
+    "RouterHead",
+    "RouterPrediction",
+    "TaskHead",
+    "TaskPrediction",
+]

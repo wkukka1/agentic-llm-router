@@ -15,8 +15,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from router.analysis import confusion_table, top_up_metrics
-from router.metrics import expected_calibration_error, top_k_accuracy
+from prompt_decomposition.core.analysis import confusion_table, top_up_metrics
+from prompt_decomposition.core.metrics import expected_calibration_error, top_k_accuracy
 
 
 class TestConfusionMatrixKeepsPredictedClasses:
@@ -99,7 +99,7 @@ class TestLoadRunGuard:
     """`.get("test", {})` implied test could be absent, then indexed into it."""
 
     def test_a_metrics_file_without_a_test_block_loads(self, tmp_path):
-        from router.analysis import load_run
+        from prompt_decomposition.core.analysis import load_run
 
         run = tmp_path / "run"
         run.mkdir()
@@ -141,14 +141,14 @@ class TestMetricEdgeCases:
 class TestAuditGatingIsHonest:
     def test_clean_names_the_checks_it_actually_covers(self):
         """The docstring said five checks; `clean` gates on two."""
-        from router.overfit import AuditResult
+        from prompt_decomposition.core.overfit import AuditResult
 
         assert AuditResult.gating_checks == ("permutation", "near-duplicates")
 
     def test_permutation_p_is_bounded_by_the_number_of_permutations(self):
         """Five permutations could never report better than p=0.17 however
         separated the real score was, which is why the default is 100."""
-        from router.overfit import AuditResult
+        from prompt_decomposition.core.overfit import AuditResult
 
         r = AuditResult(name="x", n=10, n_classes=2, majority_rate=0.5,
                         train_acc=1.0, test_acc=0.9, fold_sd=0.0,
@@ -157,7 +157,7 @@ class TestAuditGatingIsHonest:
         assert r.permutation_p == pytest.approx(1 / 6)
 
     def test_permutation_p_counts_ties_against_the_real_score(self):
-        from router.overfit import AuditResult
+        from prompt_decomposition.core.overfit import AuditResult
 
         r = AuditResult(name="x", n=10, n_classes=2, majority_rate=0.5,
                         train_acc=1.0, test_acc=0.5, fold_sd=0.0,
@@ -168,7 +168,7 @@ class TestAuditGatingIsHonest:
     def test_default_permutation_count_is_enough_to_estimate_a_null(self):
         import inspect
 
-        from router.overfit import audit
+        from prompt_decomposition.core.overfit import audit
 
         assert inspect.signature(audit).parameters["permutations"].default >= 100
 
@@ -180,7 +180,7 @@ class TestEncoderParamMismatchIsAnError:
     def test_mismatched_encoder_settings_raise_on_load(self, tmp_path):
         import pickle
 
-        from router.models import build
+        from prompt_decomposition.core.models import build
 
         path = tmp_path / "model"
         path.mkdir()
@@ -195,7 +195,7 @@ class TestEncoderParamMismatchIsAnError:
     def test_matching_settings_load_cleanly(self, tmp_path):
         import pickle
 
-        from router.models import build
+        from prompt_decomposition.core.models import build
 
         path = tmp_path / "model"
         path.mkdir()
@@ -208,7 +208,7 @@ class TestEncoderParamMismatchIsAnError:
 
 
 class TestEmbeddingCacheIsAtomic:
-    """Needs `router.embeddings`, which imports torch. CI installs the light
+    """Needs `prompt_decomposition.core.embeddings`, which imports torch. CI installs the light
     core deliberately -- the encoders are a ~1GB extra -- so these skip there
     and run wherever `.[encoders]` is installed."""
 
@@ -216,7 +216,7 @@ class TestEmbeddingCacheIsAtomic:
         pytest.importorskip("torch")
         """np.save is not atomic; two runs encoding the same rows can interleave
         and leave a truncated array that loads without error."""
-        from router.embeddings import EmbeddingEncoder
+        from prompt_decomposition.core.embeddings import EmbeddingEncoder
 
         enc = EmbeddingEncoder.__new__(EmbeddingEncoder)
         monkeypatch.setattr(EmbeddingEncoder, "signature", "sig", raising=False)
@@ -229,7 +229,7 @@ class TestEmbeddingCacheIsAtomic:
 
     def test_a_second_call_hits_the_cache(self, tmp_path, monkeypatch):
         pytest.importorskip("torch")
-        from router.embeddings import EmbeddingEncoder
+        from prompt_decomposition.core.embeddings import EmbeddingEncoder
 
         calls = []
         enc = EmbeddingEncoder.__new__(EmbeddingEncoder)
@@ -247,14 +247,14 @@ class TestEmbeddingCacheIsAtomic:
 
 class TestSharedSettings:
     def test_seed_is_shared_rather_than_defaulted_per_call_site(self):
-        from router.config import ExperimentConfig, ModelConfig
-        from router.settings import settings
+        from prompt_decomposition.core.config import ExperimentConfig, ModelConfig
+        from prompt_decomposition.core.settings import settings
 
         cfg = ExperimentConfig(name="x", model=ModelConfig(name="tfidf_logreg"))
         assert cfg.seed == settings().seed
 
     def test_environment_overrides_the_default(self, monkeypatch):
-        from router.settings import settings
+        from prompt_decomposition.core.settings import settings
 
         monkeypatch.setenv("ROUTER_SEED", "4242")
         settings.cache_clear()
@@ -264,7 +264,7 @@ class TestSharedSettings:
             settings.cache_clear()
 
     def test_dotenv_is_read_when_the_environment_is_silent(self, tmp_path, monkeypatch):
-        from router.settings import settings
+        from prompt_decomposition.core.settings import settings
 
         env = tmp_path / ".env"
         env.write_text("ROUTER_SEED=77\n# a comment\nROUTER_DATA_DIR='some/dir'\n")
@@ -284,7 +284,7 @@ class TestSharedSettings:
             settings.cache_clear()
 
     def test_environment_beats_dotenv(self, tmp_path, monkeypatch):
-        from router.settings import settings
+        from prompt_decomposition.core.settings import settings
 
         env = tmp_path / ".env"
         env.write_text("ROUTER_SEED=77\n")

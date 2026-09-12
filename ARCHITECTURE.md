@@ -134,7 +134,7 @@ the evaluation set is real throughout:
 | majority-class baseline (`answer`) | 0.798 | — | — |
 | **shipped, 6 classes** | **0.844** | **0.967** | **0.613** |
 
-`ideate` was merged into `answer` — see `router/tasktype.py` for the measurement
+`ideate` was merged into `answer` — see `task_classifier/taxonomy.py` for the measurement
 and the reasoning. Read the baseline alongside the headline: merging moved it
 from 0.729 to 0.798, so while top-1 rose 5.1 points the head's **margin over a
 constant predictor fell from +6.4 to +4.6**. macro-F1 rose genuinely
@@ -147,7 +147,7 @@ top-1 0.910, **top-2 1.000**, against a 0.975 baseline.
 Per class on cross-validation: `answer` 0.909 · `media` 0.752 · `create` 0.664 ·
 `classify` 0.484 · `summarize` 0.471 · `extract` 0.400.
 
-**Overfitting audit** (`router overfit`), both heads clean.
+**Overfitting audit** (`prompt_decomposition.cli overfit`), both heads clean.
 
 **These are not the product numbers.** The audit deliberately runs a *single*
 encoder with a plain logistic head — no ensemble, no calibration, no merge —

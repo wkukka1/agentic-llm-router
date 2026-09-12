@@ -43,7 +43,7 @@ prompt ──┬──► DOMAIN HEAD  6 frozen encoders + tf-idf SVM → logist
 
 ## Overfitting: audited, both heads clean
 
-`router overfit` runs five checks. The load-bearing one is label permutation — shuffle the labels, refit, and the skill must vanish:
+`prompt_decomposition.cli overfit` runs five checks. The load-bearing one is label permutation — shuffle the labels, refit, and the skill must vanish:
 
 | | domain | task |
 |---|---|---|

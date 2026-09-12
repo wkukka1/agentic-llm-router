@@ -11,8 +11,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from router.signals import SURFACE_FEATURES, extract, extract_many
-from router.signals.surface import SurfaceSignals
+from prompt_decomposition.signals import SURFACE_FEATURES, extract, extract_many
+from prompt_decomposition.signals.surface import SurfaceSignals
 
 
 def flag(prompt: str, name: str) -> float:

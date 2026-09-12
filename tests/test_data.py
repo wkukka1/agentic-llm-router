@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from router.dataset import (
+from prompt_decomposition.core.dataset import (
     Example,
     assert_no_leakage,
     dedupe,
@@ -89,7 +89,7 @@ def test_handlabelled_dataset_is_present_and_consistent():
     """The hand-labelled set is the project's key asset; guard its shape."""
     from pathlib import Path
 
-    from router.taxonomy import DOMAIN_LABELS
+    from prompt_decomposition.domain_classifier.taxonomy import DOMAIN_LABELS
 
     path = Path("data/handlabelled/real_prompts.parquet")
     if not path.exists():
@@ -111,7 +111,7 @@ def test_frozen_eval_set_is_present_and_stable():
     """
     from pathlib import Path
 
-    from router.dataset import FROZEN_EVAL_PATH
+    from prompt_decomposition.core.dataset import FROZEN_EVAL_PATH
 
     if not Path(FROZEN_EVAL_PATH).exists():
         pytest.skip("frozen eval set not present")
@@ -125,7 +125,7 @@ def test_frozen_eval_prompts_are_all_hand_labelled():
     """Every eval prompt must exist in the labelled pool with a matching label."""
     from pathlib import Path
 
-    from router.dataset import FROZEN_EVAL_PATH
+    from prompt_decomposition.core.dataset import FROZEN_EVAL_PATH
 
     if not Path(FROZEN_EVAL_PATH).exists():
         pytest.skip("frozen eval set not present")

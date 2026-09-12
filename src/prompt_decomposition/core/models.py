@@ -34,7 +34,7 @@ from sklearn.svm import LinearSVC
 
 
 class DomainClassifier(ABC):
-    """Predicts a distribution over :data:`~router.taxonomy.DOMAIN_LABELS`.
+    """Predicts a distribution over :data:`~prompt_decomposition.domain_classifier.taxonomy.DOMAIN_LABELS`.
 
     Probabilities, not argmax, are the contract: the router needs calibrated
     scores to decide when a prompt is ambiguous enough to warrant a stronger
@@ -232,7 +232,7 @@ class _FrozenEncoderModel(DomainClassifier):
         the light core.
         """
         if self._encoder is None:
-            from router.embeddings import EmbeddingEncoder
+            from prompt_decomposition.core.embeddings import EmbeddingEncoder
 
             p = self.params
             self._encoder = EmbeddingEncoder(

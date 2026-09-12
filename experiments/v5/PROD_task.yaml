@@ -6,7 +6,7 @@ notes: >
   is deliberately absent -- a head trained on its 14,776 rows scores 0.700 on
   real prompts against 0.729 for always predicting `answer`, and mixing it into
   the real rows costs accuracy at every ratio tried, down to 0.460 at equal
-  weight. See router/tasktype.py.
+  weight. See task_classifier/taxonomy.py.
 
   Seven task types. `media` was split out of `create` after re-cutting all 199
   `create` rows by hand: it is the one task that does not route to a language

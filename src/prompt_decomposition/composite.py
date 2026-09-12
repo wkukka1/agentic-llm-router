@@ -17,9 +17,9 @@ from pathlib import Path
 
 import numpy as np
 
-from router.heads.base import _entropy
-from router.heads.domain import DomainHead, DomainPrediction
-from router.heads.task import TaskHead, TaskPrediction
+from prompt_decomposition.core.head import _entropy
+from prompt_decomposition.domain_classifier.head import DomainHead, DomainPrediction
+from prompt_decomposition.task_classifier.head import TaskHead, TaskPrediction
 
 
 @dataclass(slots=True)

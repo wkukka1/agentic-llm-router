@@ -312,7 +312,7 @@ class mix -- and no correction should ship without it.
 
 ## Overfitting audit
 
-`router overfit`. Five checks; both heads clean.
+`prompt_decomposition.cli overfit`. Five checks; both heads clean.
 
 **Not the product numbers** — the audit runs one encoder with a plain logistic
 head so the gap and the curve are readable. The shipped ensemble reaches

@@ -18,7 +18,7 @@ import numpy as np
 import torch
 from transformers import AutoModel, AutoTokenizer
 
-from router.settings import settings
+from prompt_decomposition.core.settings import settings
 
 log = logging.getLogger(__name__)
 

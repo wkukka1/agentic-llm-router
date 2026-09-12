@@ -1,4 +1,4 @@
-"""Command line entry point: ``python -m router.cli <command>``.
+"""Command line entry point: ``python -m prompt_decomposition.cli <command>``.
 
     build-data     download RouterArena, dedupe, split, write parquet
     describe-data  split statistics
@@ -15,16 +15,16 @@ from pathlib import Path
 
 import pandas as pd
 
-from router.analysis import report
-from router.config import load_experiments
-from router.dataset import (
+from prompt_decomposition.core.analysis import report
+from prompt_decomposition.core.config import load_experiments
+from prompt_decomposition.core.dataset import (
     PROCESSED_DIR,
     build_real_only_dataset,
     build_task_dataset,
     load_splits,
 )
-from router.experiment import ARTIFACTS_DIR, run_all
-from router.external_eval import EXTERNAL_DIR, render, score
+from prompt_decomposition.core.experiment import ARTIFACTS_DIR, run_all
+from prompt_decomposition.core.external_eval import EXTERNAL_DIR, render, score
 
 #: Prompt-rendering variants the builder can produce. How the RouterArena
 #: fields are reassembled is a real experimental axis: option blocks and
@@ -125,7 +125,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
 def cmd_external(args: argparse.Namespace) -> int:
     """Score a trained run against externally-labelled prompt sets."""
 
-    from router.inference import DomainHead
+    from prompt_decomposition import DomainHead
 
     head = DomainHead(args.run_dir, merge_domains=not args.no_merge, shortlist_size=2)
     out_dir = Path(args.out_dir)
@@ -142,7 +142,7 @@ def cmd_external(args: argparse.Namespace) -> int:
 
 def cmd_overfit(args: argparse.Namespace) -> int:
     """Audit both heads for overfitting and leakage."""
-    from router.overfit import audit_heads
+    from prompt_decomposition.core.overfit import audit_heads
 
     results = audit_heads(args.encoder)
     for r in results:
@@ -156,7 +156,8 @@ def cmd_overfit(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="router", description="Domain classifier training harness")
+    parser = argparse.ArgumentParser(prog="prompt-decomposition",
+        description="Prompt decomposition: train and audit the classifier heads")
     parser.add_argument("-v", "--verbose", action="count", default=1)
     sub = parser.add_subparsers(dest="command", required=True)
 

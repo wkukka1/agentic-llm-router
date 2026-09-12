@@ -187,7 +187,7 @@ def extract_many(prompts: list[str]) -> tuple[np.ndarray, list[str]]:
     """``(n_prompts, n_features)`` matrix plus its column names.
 
     Names travel with the matrix for the same reason they do in
-    :meth:`router.heads.RouterHead.vectorise` -- a feature matrix whose columns
+    :meth:`prompt_decomposition.RouterHead.vectorise` -- a feature matrix whose columns
     are documented somewhere else is one refactor from being wrong.
     """
     if not prompts:

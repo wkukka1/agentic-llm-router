@@ -13,7 +13,7 @@ from typing import Any
 
 import yaml
 
-from router.settings import settings
+from prompt_decomposition.core.settings import settings
 
 
 @dataclass(slots=True)

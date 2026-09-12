@@ -26,7 +26,7 @@ EXTERNAL_DIR = Path("data/external")
 
 
 def score(head, frame: pd.DataFrame) -> dict:
-    """Score a :class:`~router.inference.DomainHead` against labelled prompts."""
+    """Score a :class:`~prompt_decomposition.DomainHead` against labelled prompts."""
     preds = head.predict_batch(frame["prompt"].tolist())
     out = frame.copy()
     out["pred"] = [p.domain for p in preds]

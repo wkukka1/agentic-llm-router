@@ -64,7 +64,7 @@ LMArena prompts carrying both models' responses and a human preference.
 | **task type**, 6 classes | 0.844 top-1 / 0.967 top-2 | 3 encoder passes + tf-idf |
 | **surface features**, 23 | deterministic | free |
 
-`router.signals.surface` covers the deterministic layer: code fences, URLs,
+`prompt_decomposition.signals.surface` covers the deterministic layer: code fences, URLs,
 maths notation, enumeration, requested output format, stated length limits,
 persona framing, recency words, imperative-vs-interrogative opening. No model,
 no labels, microseconds. These are the signals most likely to survive

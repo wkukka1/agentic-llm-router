@@ -27,8 +27,8 @@ import pandas as pd
 import pyarrow.parquet as pq
 from huggingface_hub import hf_hub_download, list_repo_files
 
-from router.dataset import Example
-from router.taxonomy import domain_from_arena_flags
+from prompt_decomposition.core.dataset import Example
+from prompt_decomposition.domain_classifier.taxonomy import domain_from_arena_flags
 
 log = logging.getLogger(__name__)
 
@@ -112,7 +112,7 @@ def load_real_tasks(path: str = REAL_TASKS_PATH) -> list[Example]:
     distribution, which on measurement matters far more: a head trained on
     these 1,000 rows scores 0.828 on held-out real prompts where one trained on
     14,776 Dolly rows scores 0.700 -- below the 0.729 of always predicting
-    `answer`. See :mod:`router.tasktype` for the full comparison.
+    `answer`. See :mod:`prompt_decomposition.task_classifier.taxonomy` for the full comparison.
     """
     frame = pd.read_parquet(path)
     out = [Example(prompt=row.prompt, source="handlabelled", subset="real_tasks",
@@ -261,7 +261,7 @@ def load_mined_tasks(path: str = MINED_TASKS_PATH) -> list[Example]:
     cannot see `extract`; this traffic does not contain it.
 
     These rows are a biased sample and belong in training only -- see
-    :func:`router.dataset.build_task_dataset`.
+    :func:`prompt_decomposition.core.dataset.build_task_dataset`.
     """
     frame = pd.read_parquet(path)
     out = [Example(prompt=row.prompt, source="handlabelled", subset="mined_tasks",
@@ -280,9 +280,9 @@ def load_dolly_tasks() -> list[Example]:
 
     Retained for reproducing the comparison, not for training. Mixing these rows
     into the real ones hurts at every ratio tried, including down-weighting them
-    fifteen to one; the measurements are in :mod:`router.tasktype`.
+    fifteen to one; the measurements are in :mod:`prompt_decomposition.task_classifier.taxonomy`.
     """
-    from router.tasktype import task_from_dolly
+    from prompt_decomposition.task_classifier.taxonomy import task_from_dolly
 
     path = hf_hub_download(
         "databricks/databricks-dolly-15k", "databricks-dolly-15k.jsonl", repo_type="dataset"

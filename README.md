@@ -25,7 +25,7 @@ scored 0.91 on benchmark data and 0.47 in the wild, and that cost two rebuilds.
 ## Serving
 
 ```python
-from router.inference import RouterHead
+from prompt_decomposition import RouterHead
 
 head = RouterHead("artifacts/v7/PROD_ensemble", "artifacts/v11/PROD_task",
                   merge_domains=True, shortlist_mass=0.85, defer_below=0.35)
@@ -51,17 +51,17 @@ X, names = head.vectorise(prompts)   # (n, 24) plus its column names
 pip install -r requirements.txt
 
 # domain: build splits from the hand-labelled real prompts, then train
-python -m router.cli build-real --variant real_only
-python -m router.cli train experiments/v4/PROD_ensemble.yaml --save-model
+python -m prompt_decomposition.cli build-real --variant real_only
+python -m prompt_decomposition.cli train experiments/v4/PROD_ensemble.yaml --save-model
 
 # task: same, with the synthetic supplements folded into train only
-python -m router.cli build-task
-python -m router.cli train experiments/v5/PROD_task.yaml --save-model
+python -m prompt_decomposition.cli build-task
+python -m prompt_decomposition.cli train experiments/v5/PROD_task.yaml --save-model
 
 # checks
-python -m router.cli overfit                          # five-check audit
-python -m router.cli analyze PROD_ensemble            # confusion, per-class F1
-python -m router.cli external artifacts/v7/PROD_ensemble
+python -m prompt_decomposition.cli overfit                          # five-check audit
+python -m prompt_decomposition.cli analyze PROD_ensemble            # confusion, per-class F1
+python -m prompt_decomposition.cli external artifacts/v7/PROD_ensemble
 ```
 
 ## Layout

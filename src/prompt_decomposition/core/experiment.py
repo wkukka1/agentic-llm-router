@@ -20,10 +20,10 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from router.config import ExperimentConfig
-from router.dataset import load_splits
-from router.metrics import apply_temperature, evaluate, fit_temperature, measure_latency
-from router.models import build as build_model
+from prompt_decomposition.core.config import ExperimentConfig
+from prompt_decomposition.core.dataset import load_splits
+from prompt_decomposition.core.metrics import apply_temperature, evaluate, fit_temperature, measure_latency
+from prompt_decomposition.core.models import build as build_model
 
 log = logging.getLogger(__name__)
 
