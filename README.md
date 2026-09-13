@@ -44,27 +44,37 @@ p.task.distribution    # calibrated, all 7 tasks
 p.should_defer         # True if EITHER axis is unsure
 ```
 
-For a downstream difficulty or ability model, take the vector rather than the
-labels — the shape of the distribution carries what the argmax does not:
+### One vector, every signal
+
+The handoff to whatever routes or scores downstream. Pass the run directories
+you have; heads you have not trained are simply absent, and the column names
+say which.
 
 ```python
-X, names = head.vectorise(prompts)   # (n, 24) plus its column names
+head = RouterHead("artifacts/v7/PROD_ensemble", "artifacts/v11/PROD_task",
+                  length_run="artifacts/length/bge-small-en-v1.5__surface_embedding",
+                  attribute_run="artifacts/attributes/bge-small-en-v1.5__surface_embedding",
+                  merge_domains=True, shortlist_mass=0.85)
+
+X, names = head.vectorise(prompts)   # (n, 57) plus its column names
+
+p = head.predict("write me a python function that reverses a linked list")
+p.length.expected_tokens        # ~710
+p.attributes.gates              # {"code": 0.96, "math": 0.01, ...} calibrated
+p.attributes.criteria           # the seven judged dimensions
 ```
 
-The length head is separate, because what it returns is a size rather than a
-label:
+Blocks are appended, never interleaved: 14 distributions + 9 scalars is the
+core, then +1 length, +11 attributes, +21 surface. Loading another head extends
+the vector on the right and leaves every existing column index alone. Heads
+that share an encoder share the pass.
 
-```python
-from prompt_decomposition import LengthHead
+**Difficulty is deliberately not a column.** Four feature families failed to
+predict it from prompt text and the arena's own hardness rubric predicts the
+routing outcome at chance; it belongs downstream of this vector, computed from
+these signals together with model behaviour.
 
-length = LengthHead("artifacts/length/e5-large-v2__surface_embedding")
-p = length.predict("write a detailed comparison of postgres and mysql")
-p.expected_tokens          # 2246.2
-p.bucket                   # "very_long"
-p.probability_over(2000)   # 0.56  -- the spread is wide, and says so
-```
-
-Read it as a ranking, not as a token count: ranked by prediction, the top 25%
+Read length as a ranking, not a token count: ranked by prediction, the top 25%
 of traffic holds 37.9% of all generated tokens (random 25%, perfect 53.6%), and
 any single estimate is typically within a factor of 2.
 

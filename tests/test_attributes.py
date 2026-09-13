@@ -173,6 +173,19 @@ class _ConstantHead:
         return np.column_stack([1 - self._proba, self._proba])
 
 
+class TestStaleArtifacts:
+    def test_an_artifact_from_an_older_version_is_refused_by_name(self, tmp_path):
+        """It happened: a run saved before the calibration change unpacked into
+        a bare `unexpected keyword argument 'temperatures'`, which is true and
+        tells the reader nothing about what to do."""
+        import pickle
+
+        with (tmp_path / "attributes.pkl").open("wb") as fh:
+            pickle.dump({"names": ("code",), "heads": {}, "temperatures": {"code": 1.0}}, fh)
+        with pytest.raises(ValueError, match="incompatible version"):
+            AttributeModel.load(tmp_path)
+
+
 class TestScoring:
     def test_base_rate_travels_with_every_score(self):
         """AUC hides prevalence, and these attributes span 0.075 to 0.819."""

@@ -24,7 +24,7 @@ what runs here. Measured over the eleven heads it takes mean ECE from 0.115 to
 from __future__ import annotations
 
 import pickle
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -118,5 +118,22 @@ class AttributeModel:
 
     @classmethod
     def load(cls, path: Path) -> AttributeModel:
+        """Restore a saved run, refusing one this class cannot serve.
+
+        An artifact written before the calibration change carries
+        ``temperatures`` where this expects ``calibrators``, and unpacking it
+        blind raises a bare TypeError naming a keyword argument -- true, and
+        useless. Saved state that does not match is a stale artifact, and the
+        fix is to retrain, so the error says that.
+        """
         with (Path(path) / "attributes.pkl").open("rb") as fh:
-            return cls(**pickle.load(fh))
+            state = pickle.load(fh)
+        expected = {f.name for f in fields(cls)}
+        unknown = set(state) - expected
+        if unknown:
+            raise ValueError(
+                f"{path} was written by an incompatible version of this class "
+                f"(unexpected {sorted(unknown)}). Retrain it: "
+                f"`prompt-decomposition attributes`."
+            )
+        return cls(**state)

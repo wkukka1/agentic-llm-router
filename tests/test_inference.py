@@ -361,6 +361,40 @@ class TestFeatureVector:
         assert bare[i] == 0.0
         assert withtext[i] > 0.0
 
+    def test_the_surface_block_does_not_duplicate_the_core_columns(self, tmp_path):
+        """`log_chars` and `log_words` are in both the core scalars and the
+        surface features; shipping both would be two columns of identical
+        numbers under different names."""
+        head = self._head(tmp_path)
+        names = head.feature_names()
+        assert len(names) == len(set(names))
+        assert "surface.log_chars" not in names
+        assert "prompt.log_chars" in names
+
+    def test_optional_heads_drop_their_columns_rather_than_zero_filling(self, tmp_path):
+        """A zero-filled column for an absent head is indistinguishable from a
+        real zero to whatever consumes this."""
+        from prompt_decomposition import RouterHead
+
+        head = RouterHead(TestDomainHead._run_dir(tmp_path),
+                          TestTaskAndRouterHeads._task_run(tmp_path),
+                          surface=False)
+        names = head.feature_names()
+        assert not [n for n in names if n.startswith(("attr.", "length.", "surface."))]
+        assert len(head.predict("alpha beta doc 1").vector()) == len(names)
+
+    def test_turning_the_surface_block_on_only_appends(self, tmp_path):
+        """Blocks append, so loading a head never moves an existing column."""
+        from prompt_decomposition import RouterHead
+
+        # `_run_dir` creates its directory, so build both routers from one pair.
+        domain, task = (TestDomainHead._run_dir(tmp_path),
+                        TestTaskAndRouterHeads._task_run(tmp_path))
+        bare = RouterHead(domain, task, surface=False).feature_names()
+        full = RouterHead(domain, task, surface=True).feature_names()
+        assert full[: len(bare)] == bare
+        assert len(full) == len(bare) + 21
+
     def test_vectorise_of_nothing_keeps_its_width(self, tmp_path):
         head = self._head(tmp_path)
         X, names = head.vectorise([])

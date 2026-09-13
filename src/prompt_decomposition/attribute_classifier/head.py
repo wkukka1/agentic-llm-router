@@ -77,19 +77,23 @@ class AttributeHead:
             self._encoder = EmbeddingEncoder(self.encoder_model, max_length=256)
         return self._encoder
 
-    def _features(self, prompts: list[str]) -> np.ndarray:
+    def _features(self, prompts: list[str], embeddings: np.ndarray | None = None) -> np.ndarray:
         from prompt_decomposition.core.features import build_features
 
-        embeddings = self.encoder.encode(prompts) if "embedding" in self.feature_set else None
+        if "embedding" in self.feature_set and embeddings is None:
+            embeddings = self.encoder.encode(prompts)
         return build_features(prompts, self.feature_set, embeddings)
 
     def predict(self, prompt: str) -> AttributePrediction:
         return self.predict_batch([prompt])[0]
 
-    def predict_batch(self, prompts: list[str]) -> list[AttributePrediction]:
+    def predict_batch(self, prompts: list[str],
+                      embeddings: np.ndarray | None = None) -> list[AttributePrediction]:
+        """``embeddings`` must come from :attr:`encoder_model` -- see the note
+        on :meth:`LengthHead.predict_batch`."""
         prompts = list(prompts)
         if not prompts:
             return []
-        per_attribute = self.model.predict_proba(self._features(prompts))
+        per_attribute = self.model.predict_proba(self._features(prompts, embeddings))
         return [AttributePrediction({name: float(values[i]) for name, values in per_attribute.items()})
                 for i in range(len(prompts))]

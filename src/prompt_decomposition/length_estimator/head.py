@@ -70,20 +70,25 @@ class LengthHead:
             self._encoder = EmbeddingEncoder(self.encoder_model, max_length=256)
         return self._encoder
 
-    def _features(self, prompts: list[str]) -> np.ndarray:
-        embeddings = None
-        if "embedding" in self.feature_set:
+    def _features(self, prompts: list[str], embeddings: np.ndarray | None = None) -> np.ndarray:
+        if "embedding" in self.feature_set and embeddings is None:
             embeddings = self.encoder.encode(prompts)
         return build_features(prompts, self.feature_set, embeddings)
 
     def predict(self, prompt: str) -> LengthPrediction:
         return self.predict_batch([prompt])[0]
 
-    def predict_batch(self, prompts: list[str]) -> list[LengthPrediction]:
+    def predict_batch(self, prompts: list[str],
+                      embeddings: np.ndarray | None = None) -> list[LengthPrediction]:
+        """``embeddings`` lets a caller that has already encoded these prompts
+        hand the vectors in rather than paying for a second pass. It must come
+        from :attr:`encoder_model`; feeding another encoder's output produces
+        confident nonsense, which is why the composite groups heads by encoder
+        name rather than assuming."""
         prompts = list(prompts)
         if not prompts:
             return []
-        log_tokens = self.model.predict(self._features(prompts))
+        log_tokens = self.model.predict(self._features(prompts, embeddings))
         edges = self.model.edges
         return [
             LengthPrediction(
