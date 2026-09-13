@@ -31,18 +31,21 @@ def artifacts_dir() -> Path:
     return settings().artifacts_dir / "length"
 
 
-def encode_splits(splits: dict[str, pd.DataFrame], encoder_model: str) -> dict[str, np.ndarray]:
+def encode_splits(splits: dict[str, pd.DataFrame], encoder_model: str,
+                  *, variant: str = "single_turn") -> dict[str, np.ndarray]:
     """Embed every split, cached on disk by content -- reruns are free."""
     from router.embeddings.encoder import EmbeddingEncoder
 
     encoder = EmbeddingEncoder(encoder_model, max_length=256, batch_size=128)
     short = encoder_model.split("/")[-1]
-    return {name: encoder.encode_cached(frame["prompt"].tolist(), tag=f"length/{short}/{name}")
+    tag = "length" if variant == "single_turn" else f"length_{variant}"
+    return {name: encoder.encode_cached(frame["prompt"].tolist(), tag=f"{tag}/{short}/{name}")
             for name, frame in splits.items()}
 
 
 def run_length_sweep(*, encoder_model: str = DEFAULT_ENCODER,
                      feature_sets: tuple[str, ...] = FEATURE_SETS,
+                     variant: str = "single_turn",
                      out_dir: Path | None = None) -> pd.DataFrame:
     """Fit every feature set and save the best by validation Spearman.
 
@@ -52,12 +55,12 @@ def run_length_sweep(*, encoder_model: str = DEFAULT_ENCODER,
     sweep that scores itself is a sweep that can quietly grade on a curve.
     """
     out_dir = out_dir or artifacts_dir()
-    splits = load_arena_splits()
+    splits = load_arena_splits(variant)
     y = {name: frame["y"].to_numpy() for name, frame in splits.items()}
     long_edge = float(np.quantile(y["train"], 0.75))
 
     embeddings = ({} if all("embedding" not in f for f in feature_sets)
-                  else encode_splits(splits, encoder_model))
+                  else encode_splits(splits, encoder_model, variant=variant))
 
     rows: list[dict] = []
     best: tuple[float, LengthModel, str] | None = None
@@ -89,7 +92,7 @@ def run_length_sweep(*, encoder_model: str = DEFAULT_ENCODER,
             best = (val_score, model, kind)
 
     if best is not None:
-        _save(best[1], best[2], encoder_model, out_dir)
+        _save(best[1], best[2], encoder_model, out_dir, variant=variant)
 
     frame = pd.DataFrame(rows)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -97,7 +100,8 @@ def run_length_sweep(*, encoder_model: str = DEFAULT_ENCODER,
     return frame
 
 
-def _save(model: LengthModel, feature_set: str, encoder_model: str, out_dir: Path) -> None:
+def _save(model: LengthModel, feature_set: str, encoder_model: str, out_dir: Path,
+          *, variant: str = "single_turn") -> None:
     """Write the serving artifact: the model plus what it expects to be fed.
 
     The directory name carries the encoder, not just the feature set. Two
@@ -109,11 +113,16 @@ def _save(model: LengthModel, feature_set: str, encoder_model: str, out_dir: Pat
     name = feature_set.replace("+", "_")
     if "embedding" in feature_set:
         name = f"{encoder_model.split('/')[-1]}__{name}"
+    if variant != "single_turn":
+        # The variant decides what the target *means*; two heads with different
+        # targets must never share a directory.
+        name = f"{variant}__{name}"
     run_dir = out_dir / name
     run_dir.mkdir(parents=True, exist_ok=True)
     model.save(run_dir)
     (run_dir / "length.json").write_text(json.dumps({
         "feature_set": feature_set,
+        "variant": variant,
         "encoder_model": encoder_model if "embedding" in feature_set else None,
         "alpha": model.alpha,
         "sigma": model.sigma,

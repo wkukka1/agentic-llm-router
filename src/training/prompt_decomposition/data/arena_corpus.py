@@ -109,24 +109,41 @@ def _split_of(prompt: str) -> str:
     return "test"
 
 
-def build_arena_corpus(*, max_rows: int | None = None) -> pd.DataFrame:
+def build_arena_corpus(*, max_rows: int | None = None,
+                       variant: str = "single_turn") -> pd.DataFrame:
     """Read the arena dump and return one row per distinct prompt.
 
-    Single-turn rows only: in a multi-turn conversation the response length is
-    driven by the turn it answers, and the router sees the first prompt.
+    ``variant`` decides what the length target *means*, which is the whole
+    question for an agentic path:
+
+    * ``single_turn`` -- one prompt, one answer. The target is that answer's
+      length. This is what a one-shot chat call costs.
+    * ``multi_turn`` -- conversations that kept going. ``sum_assistant_*_tokens``
+      is already the total across every assistant turn, so the target is the
+      cost of the *whole interaction* from its opening prompt. That is the
+      closer analogue of a loop that keeps generating.
+
+    They are different targets and a head fitted on one is badly wrong on the
+    other: the single-turn head under-predicts multi-turn totals by 2.8x,
+    because it is predicting the first answer and the first answer is a
+    shrinking share of what gets generated.
     """
+    if variant not in ("single_turn", "multi_turn"):
+        raise ValueError(f"unknown variant {variant!r}; expected single_turn or multi_turn")
     frames = []
     for path in sorted(glob.glob(ARENA_GLOB.replace("~", str(__import__("pathlib").Path.home())))):
         raw = pd.read_parquet(path, columns=["id", "conversation_a", "conv_metadata", "language"])
         meta = pd.json_normalize(raw["conv_metadata"])
+        turns_ok = meta["turns"] == 1 if variant == "single_turn" else meta["turns"] > 1
         keep = (
-            (meta["turns"] == 1)
+            turns_ok
             & (meta["sum_assistant_a_tokens"] > 0)
             & (meta["sum_assistant_b_tokens"] > 0)
         ).to_numpy()
         raw, meta = raw[keep].reset_index(drop=True), meta[keep].reset_index(drop=True)
         frames.append(pd.DataFrame({
             "arena_id": raw["id"],
+            "turns": meta["turns"].astype(int),
             "prompt": [_first_user_text(c) for c in raw["conversation_a"]],
             "language": raw["language"],
             "tokens_a": meta["sum_assistant_a_tokens"].astype(int),
@@ -185,19 +202,20 @@ def build_arena_corpus(*, max_rows: int | None = None) -> pd.DataFrame:
     return frame
 
 
-def corpus_dir():
-    return settings().processed_dir / "arena"
+def corpus_dir(variant: str = "single_turn"):
+    """One directory per variant: the two targets must not overwrite each other."""
+    return settings().processed_dir / ("arena" if variant == "single_turn" else f"arena_{variant}")
 
 
-def save_arena_corpus(frame: pd.DataFrame) -> None:
-    out = corpus_dir()
+def save_arena_corpus(frame: pd.DataFrame, variant: str = "single_turn") -> None:
+    out = corpus_dir(variant)
     out.mkdir(parents=True, exist_ok=True)
     for split, part in frame.groupby("split"):
         part.reset_index(drop=True).to_parquet(out / f"{split}.parquet", index=False)
 
 
-def load_arena_splits() -> dict[str, pd.DataFrame]:
-    out = corpus_dir()
+def load_arena_splits(variant: str = "single_turn") -> dict[str, pd.DataFrame]:
+    out = corpus_dir(variant)
     if not (out / "train.parquet").exists():
         raise FileNotFoundError(f"no length corpus at {out}; run build_arena_corpus first")
     return {s: pd.read_parquet(out / f"{s}.parquet") for s in ("train", "val", "test")}
