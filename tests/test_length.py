@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 
 from prompt_decomposition.length_estimator.audit import audit
-from prompt_decomposition.length_estimator.data import _split_of
+from prompt_decomposition.length_estimator.data import _first_user_text, _split_of
 from prompt_decomposition.length_estimator.head import BUCKETS, LengthHead
 from prompt_decomposition.length_estimator.model import (
     LengthModel,
@@ -42,6 +42,52 @@ def learnable():
         prompts.append(("keep it brief. " if brief else "") + body)
         y.append(4.0 + 0.5 * n_items - 1.5 * brief + rng.normal(0, 0.2))
     return prompts, np.array(y)
+
+
+class TestPromptExtraction:
+    """The bug that corrupted an entire corpus without raising anything."""
+
+    def test_a_numpy_array_of_parts_is_not_stringified(self):
+        """pyarrow hands nested lists back as ndarray, which is not a `list`.
+        The first version fell through to `str(content)` and stored the repr of
+        the structure as the prompt -- for all 109,335 rows."""
+        conv = np.array([{"role": "user",
+                          "content": np.array([{"type": "text", "text": "write me a poem",
+                                                "image": None}])}])
+        assert _first_user_text(conv) == "write me a poem"
+
+    @pytest.mark.parametrize("content", [
+        "write me a poem",
+        [{"type": "text", "text": "write me a poem"}],
+        ({"type": "text", "text": "write me a poem"},),
+        "[{'type': 'text', 'text': 'write me a poem', 'image': None}]",
+        {"type": "text", "text": "write me a poem"},
+    ])
+    def test_every_shape_this_dump_uses_yields_the_same_text(self, content):
+        assert _first_user_text([{"role": "user", "content": content}]) == "write me a poem"
+
+    def test_multi_part_content_is_joined(self):
+        parts = [{"type": "text", "text": "first"}, {"type": "text", "text": "second"}]
+        assert _first_user_text([{"role": "user", "content": parts}]) == "first second"
+
+    def test_a_prompt_that_merely_starts_with_a_bracket_is_left_alone(self):
+        """`[INST] hello` is a real prompt, not a serialised structure."""
+        assert _first_user_text([{"role": "user", "content": "[INST] hello"}]) == "[INST] hello"
+
+    def test_the_assistant_turn_is_not_mistaken_for_the_prompt(self):
+        conv = [{"role": "assistant", "content": "hi there"},
+                {"role": "user", "content": "write me a poem"}]
+        assert _first_user_text(conv) == "write me a poem"
+
+
+class TestCorpusGuard:
+    """A shape bug hits every row; a user pasting JSON hits one."""
+
+    def test_the_threshold_sits_between_the_two_cases(self):
+        from prompt_decomposition.length_estimator.data import SERIALISED_PROMPT_LIMIT
+
+        one_user_in_a_hundred_thousand = 1 / 105_799
+        assert one_user_in_a_hundred_thousand < SERIALISED_PROMPT_LIMIT < 1.0
 
 
 class TestSplitAssignment:

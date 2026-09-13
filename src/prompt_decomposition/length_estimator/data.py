@@ -46,22 +46,46 @@ MIN_PROMPT_CHARS = 10
 
 SPLIT_FRACTIONS = {"train": 0.70, "val": 0.15, "test": 0.15}
 
+#: Above this share of serialised-looking prompts, the extractor is broken
+#: rather than the users being unusual. The real failure hit 100% of rows.
+SERIALISED_PROMPT_LIMIT = 0.01
+
 
 def _first_user_text(conversation) -> str:
-    """The opening user turn, whatever shape this dump stores it in."""
+    """The opening user turn, whatever shape this dump stores it in.
+
+    The shapes seen in the wild: a plain string; a list of content parts; a
+    *numpy array* of content parts, because pyarrow hands nested lists back
+    that way; and a string holding the repr of any of those.
+
+    The numpy case is why this is careful. `isinstance(x, list)` is False for
+    an ndarray, so an earlier version fell through to `str(content)` and stored
+    `"[{'type': 'text', 'text': 'the real prompt', ...}]"` -- every prompt in
+    the corpus wrapped in its own repr, silently, with no parse error to notice.
+    Sequence-ness is tested by iteration, not by exact type.
+    """
     for message in conversation:
         if message.get("role") != "user":
             continue
-        content = message.get("content")
-        if isinstance(content, str):
-            try:
-                content = ast.literal_eval(content)
-            except (ValueError, SyntaxError):
-                return content
-        if isinstance(content, list):
-            return " ".join(str(p.get("text") or "") for p in content if isinstance(p, dict))
-        return str(content)
+        return _content_text(message.get("content"))
     return ""
+
+
+def _content_text(content) -> str:
+    """Pull the text out of one message's content, whatever it is wrapped in."""
+    if isinstance(content, str):
+        stripped = content.strip()
+        if not stripped.startswith(("[", "{")):
+            return content
+        try:
+            content = ast.literal_eval(stripped)
+        except (ValueError, SyntaxError, MemoryError, RecursionError):
+            return content
+    if isinstance(content, dict):
+        return str(content.get("text") or "")
+    if isinstance(content, (list, tuple, np.ndarray)):
+        return " ".join(_content_text(part) for part in content).strip()
+    return str(content)
 
 
 def _split_of(prompt: str) -> str:
@@ -115,6 +139,25 @@ def build_length_dataset(*, max_rows: int | None = None) -> pd.DataFrame:
     # the split and report memorisation as generalisation.
     normalised = frame["prompt"].str.lower().str.replace(r"\s+", " ", regex=True)
     frame = frame[~normalised.duplicated()].reset_index(drop=True)
+
+    # Guard against the extractor failing quietly. A prompt that still looks
+    # like serialised content means it met a shape it did not understand, and a
+    # corpus of reprs trains and scores without ever raising.
+    #
+    # Rate-based, not absolute: a shape bug hits *every* row, while a user
+    # pasting JSON whose first key is "type" is one row in a hundred thousand
+    # and is a real prompt. The threshold is what separates those.
+    looks_serialised = frame["prompt"].str.match(r"""^\s*\[\s*\{\s*['"]type['"]\s*:""")
+    share = float(looks_serialised.mean())
+    if share > SERIALISED_PROMPT_LIMIT:
+        raise ValueError(
+            f"{looks_serialised.sum()} of {len(frame)} prompts ({share:.1%}) still look "
+            f"like serialised content, e.g. {frame['prompt'][looks_serialised].iloc[0][:120]!r}. "
+            f"The content extractor has met a shape it does not handle."
+        )
+    if looks_serialised.any():
+        log.info("%d prompts look like pasted JSON; kept as real prompts",
+                 int(looks_serialised.sum()))
 
     frame["y"] = (np.log1p(frame["tokens_a"]) + np.log1p(frame["tokens_b"])) / 2.0
     frame["split"] = [_split_of(p) for p in frame["prompt"]]
