@@ -195,7 +195,17 @@ already classified the domain has that embedding in hand, so the strongest
 length head costs one matrix multiply rather than a second encoder pass. The
 384-d model exists for the case where it does not.
 
-**What the head is for, in numbers.** Ranked by predicted length, the top 25% of
+**What it does not do: choose the model.** Length known *perfectly* scores AUC
+0.498 on whether the stronger model was actually needed -- chance, on 4,502
+held-out prompts with arena routing labels. That is an oracle bound, so no
+better estimator changes it. LMArena's own hardness rubric manages 0.4865 on the
+same labels, so the whole difficulty axis is at chance for model choice, not
+just this signal. The one length-derived quantity that beats chance is how much
+the *two models disagreed* on length (0.5808), which needs both answers and is
+therefore a diagnostic rather than a router input -- the same conclusion the
+difficulty work reached: read model behaviour, not the prompt.
+
+**What it is for, in numbers.** Ranked by predicted length, the top 25% of
 traffic holds **37.9%** of all tokens generated -- against 25% for a random
 quarter and 53.6% for a perfect ranking. It captures 45% of the achievable gain
 over chance. As a gate for "this will be a long answer", the top 5% is 0.596

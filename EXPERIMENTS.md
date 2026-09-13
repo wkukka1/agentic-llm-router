@@ -584,6 +584,51 @@ The spread is wide and honest about it. Sigma 0.889 means a typical factor-of-2
 error, and the 80% interval holds 83.3% of rows -- conservative, not
 over-confident.
 
+### Is it worth serving? The decision test
+
+Correlating with something is not the same as changing a decision. The test
+that settles it: does knowing the answer's length help choose *which model*
+writes it? 4,502 held-out prompts that also carry an arena routing label
+(`strong_needed` when the stronger model won the battle, `weak_sufficient`
+when the cheap one won or drew; base rate 0.486).
+
+| signal | AUC: strong model needed | rho: hardness rubric |
+|---|---|---|
+| **true length (oracle)** | **0.4981** | +0.487 |
+| predicted length | 0.5058 | **+0.550** |
+| prompt length | 0.4833 | +0.450 |
+| LMArena's own hardness rubric | 0.4865 | 1.000 |
+| \|length disagreement\| between the two models | **0.5808** | −0.074 |
+
+**Read the oracle row first.** True response length, known perfectly, is at
+chance on the routing decision. That bounds every possible improvement to the
+estimator: no better length head fixes 0.498. The intuition "long answer →
+send it to the big model" does not survive contact with the data.
+
+Nor is this a defect of the length signal specifically. LMArena's own
+LLM-judged hardness rubric -- a purpose-built difficulty score -- reaches
+0.4865 on the same labels. **The entire "how hard is this" axis is at chance
+for model choice here**, which is the same conclusion the parked preference
+branch reached from the other direction.
+
+The target is not pure noise: `|length disagreement|` hits 0.5808. But that
+needs both answers generated, so it is a post-hoc diagnostic and not a routing
+signal -- and it is again the finding that the usable difficulty signal lives in
+model *behaviour* rather than in the prompt.
+
+Two caveats kept in view. The label is a single human preference vote per
+battle, so it is noisy by construction; and it measures who won, not what a
+production router would optimise. Neither rescues 0.498.
+
+**Where it is worth serving:** cost. It is the only estimate of generation cost
+available *before* generating, the top 25% by prediction holds 37.9% of all
+tokens, and the predicted length tracks the hardness rubric at **+0.550** --
+better than the true length it was trained on (+0.487), because the prediction
+strips out the model-specific noise that makes one response longer than
+another. As a *prompt* difficulty proxy it is cleaner than the ground truth.
+
+`prompt_decomposition.length_estimator.routing_value` reproduces the table.
+
 ### Known weakness: non-English prompts
 
 The shipped 384-d encoder is English-trained and it shows.

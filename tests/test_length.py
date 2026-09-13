@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from prompt_decomposition.length_estimator.audit import audit
@@ -239,6 +240,48 @@ class TestCeiling:
         tokens = np.arange(1, 500)
         assert target_ceiling(tokens, tokens) == pytest.approx(1.0)
         assert target_ceiling(tokens, tokens, averaged=False) == pytest.approx(1.0)
+
+
+class TestRoutingValue:
+    """The test that decides whether the head is worth serving at all."""
+
+    def _corpus(self, n=600):
+        rng = np.random.default_rng(5)
+        hardness = rng.uniform(0, 1, n)
+        y = 4 + 2 * hardness + rng.normal(0, 0.3, n)   # length tracks hardness
+        return pd.DataFrame({
+            "arena_id": [f"id{i}" for i in range(n)],
+            "prompt": [f"prompt number {i}" for i in range(n)],
+            "y": y, "tokens_a": np.expm1(y), "tokens_b": np.expm1(y + rng.normal(0, 0.4, n)),
+        }), hardness, rng
+
+    def test_a_signal_unrelated_to_the_decision_scores_at_chance(self, monkeypatch):
+        """The shipped result: length tracks hardness strongly and the routing
+        decision not at all. A head can be accurate and still be worthless for
+        the decision it was built to serve."""
+        from prompt_decomposition.length_estimator import routing_value as rv
+
+        corpus, hardness, rng = self._corpus()
+        labels = pd.DataFrame({
+            "arena_id": corpus["arena_id"],
+            "routing_label": rng.permutation(["strong_needed", "weak_sufficient"] * 300),
+            "hardness_score": hardness,
+        })
+        monkeypatch.setattr(rv, "load_routing_labels", lambda *a, **k: labels)
+        out = rv.routing_value(corpus, corpus["y"].to_numpy())
+        assert 0.44 < out["auc"]["true_length"] < 0.56
+        assert out["hardness_rho"]["true_length"] > 0.8
+
+    def test_it_refuses_to_report_on_too_few_joined_rows(self, monkeypatch):
+        """A near-empty join silently produces confident nonsense; it was an
+        empty join that exposed the corpus bug in the first place."""
+        from prompt_decomposition.length_estimator import routing_value as rv
+
+        corpus, hardness, _ = self._corpus()
+        monkeypatch.setattr(rv, "load_routing_labels", lambda *a, **k: pd.DataFrame(
+            {"arena_id": ["nope"], "routing_label": ["strong_needed"], "hardness_score": [0.5]}))
+        with pytest.raises(ValueError, match="too few"):
+            rv.routing_value(corpus, corpus["y"].to_numpy())
 
 
 class TestArtifactNaming:
