@@ -7,11 +7,13 @@ prompts with an exact tokenizer count on each side.
 Two facts about this target shape everything downstream:
 
 **It is model-dependent.** Given the *same* prompt, the two models agree on
-length at Spearman 0.592. That is not measurement noise to be cleaned up, it is
+length at Spearman 0.590. That is not measurement noise to be cleaned up, it is
 the task: "how long is the answer" is partly a property of who answers. A
 prompt-only predictor cannot beat that agreement against a single model's
-length, which is why the target averages the two -- averaging halves the
-model-specific half of the variance and leaves the part a prompt can explain.
+length, which is why the target averages the two -- averaging removes part of
+the model-specific variance and leaves more of what a prompt can explain. The
+average is correspondingly more predictable than either side: Spearman-Brown
+puts its reliability at ~0.742, and that is the ceiling for scores against it.
 
 **It is log-scaled.** Raw token counts span 1 to 88,300. A squared-error fit on
 raw counts is a fit to the top 1%, and the routing decision ("is this a 200

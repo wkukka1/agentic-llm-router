@@ -7,7 +7,7 @@ labels.
 
     domain_classifier   what the prompt is about    0.923 top-1 / 0.980 top-2
     task_classifier     what it asks to be done     0.844 top-1 / 0.967 top-2
-    length_estimator    how much work it is         rho 0.573, ceiling 0.607
+    length_estimator    how much work it is         rho 0.573, ceiling ~0.742
     signals             free regex/arithmetic features, no model, no labels
     composite           both classifiers over one prompt, plus the handoff vector
     core                shared machinery: training harness, metrics, settings

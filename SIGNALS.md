@@ -63,7 +63,7 @@ LMArena prompts carrying both models' responses and a human preference.
 | **domain**, 8 classes | 0.923 top-1 / 0.980 top-2 | 6 encoder passes |
 | **task type**, 6 classes | 0.844 top-1 / 0.967 top-2 | 3 encoder passes + tf-idf |
 | **surface features**, 23 | deterministic | free |
-| **expected output length** | rho 0.573 with the large encoder, 0.514 with a small one, ceiling 0.607 | free if the domain head already ran the encoder |
+| **expected output length** | rho 0.573 with the large encoder, 0.514 with a small one, ceiling ≈0.742 | free if the domain head already ran the encoder |
 
 `prompt_decomposition.signals.surface` covers the deterministic layer: code fences, URLs,
 maths notation, enumeration, requested output format, stated length limits,
@@ -110,7 +110,7 @@ and a labelled version would be cheap to validate against it.
 
 **2. Expected output length.** ✅ **Built** — `prompt_decomposition.length_estimator`,
 Spearman 0.573 with the large encoder and 0.514 with a small one, against a
-ceiling of 0.607. The target was free: every arena row carries both models'
+ceiling of ≈0.742. The target was free: every arena row carries both models'
 responses with an exact token count. See the measurement section below.
 
 **3. Decomposability.** The signal your orchestrator recursion actually turns
@@ -154,11 +154,25 @@ The target is the mean of `log1p(tokens)` across both models. Raw counts span 1
 to 88,300, and the routing question is multiplicative ("200 tokens or 2,000"),
 so log space is the honest scale.
 
-**There is a ceiling, and it is not 1.0.** Given the *same* prompt, the two
-arena models agree with each other on length at Spearman **0.607**. How long the
-answer runs is partly a property of who answers. No prompt-only feature can
-beat the target's own reproducibility, so every score below is read against
-0.607 rather than against a perfect predictor.
+**Two ceilings, and using the wrong one flatters the result.** Each arena row is
+one prompt answered by two models, so the target's own reproducibility can be
+measured: the two models' lengths agree at Spearman **0.590** on the test split.
+How long an answer runs is substantially a property of who answers, and a
+prompt-only feature cannot reach that component at all.
+
+But the target here is the *average* of the two, which averages away part of
+that model-specific noise and is therefore easier to predict than either model
+alone. Spearman-Brown puts the reliability of a two-item average at **≈0.742**.
+That is the bar for the reported numbers:
+
+| predicting | ceiling | this head | share |
+|---|---|---|---|
+| one model's length | 0.590 | 0.510 / 0.525 | ~87% |
+| the two-model average (reported) | ≈0.742 | 0.573 | **~77%** |
+
+An earlier version of this file compared 0.573 against 0.590 and called it 94%
+of the ceiling. That mixed the two quantities: roughly 0.17 of Spearman is still
+available, not 0.03.
 
 76,697 train / 16,538 val / 16,100 test. Alpha on validation, test read once:
 
@@ -172,9 +186,8 @@ beat the target's own reproducibility, so every score below is read against
 | **1024-d + surface** | **0.573** | [0.562, 0.585] | 0.399 | ×1.88 | 0.764 |
 
 The encoder is where the signal is: **0.353 free, 0.514 small encoder, 0.573
-large one, against a 0.607 ceiling.** The large encoder reaches 94% of what two
-models manage against each other. Surface features add +0.014 on top of an
-encoder and are the whole story without one.
+large one, against a ≈0.742 ceiling** for this target. Surface features add
++0.014 on top of an encoder and are the whole story without one.
 
 **The large encoder is already paid for.** `intfloat/e5-large-v2` is the
 top-weighted member of the shipped domain ensemble (0.397). A router that has

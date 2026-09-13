@@ -519,8 +519,14 @@ corpus is a subset of the full one rather than a different partition of it.
 Alpha is chosen on validation, the residual spread is fitted on validation, and
 test is read once per configuration.
 
-**The ceiling is 0.607.** The two models, answering the same prompt, agree with
-each other on length at Spearman 0.607. Read every number against that.
+**The ceiling is ≈0.742, and getting that wrong flattered the result.** The two
+models, answering the same prompt, agree with *each other* at Spearman 0.590 —
+length is substantially a property of who answers. The target is the average of
+the two, which averages away part of that noise, so its reliability is higher:
+Spearman-Brown gives ≈0.742 for a two-item average. Against one model's length
+this head scores 0.510/0.525 (~87% of 0.590); against the average it scores
+0.573 (~77% of 0.742). An earlier draft compared 0.573 to 0.590 and claimed 94%,
+which mixed the two quantities and hid about 0.17 of remaining headroom.
 
 | features | Spearman | R² | typical error | AUC (long) |
 |---|---|---|---|---|

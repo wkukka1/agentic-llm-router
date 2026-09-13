@@ -13,10 +13,13 @@ Three questions, three checks, and they answer different things:
   alpha with both scores low together is under-fitting. Seeing both ends makes
   the chosen alpha a position on a curve rather than a guess.
 
-There is also a ceiling to measure. The two arena models, answering the *same*
-prompt, agree on length at Spearman 0.592. No prompt-only feature can do better
-than the target's own reproducibility, so a score is worth reading against that
-number and not against 1.0.
+There is also a ceiling to measure, and :func:`target_ceiling` measures half of
+it. The two arena models, answering the *same* prompt, agree on length at
+Spearman 0.590 -- that is the bar for predicting *one* model's output. The target
+used here averages both, which is more reproducible than either side alone
+(Spearman-Brown: ~0.742), so scores against the averaged target belong against
+0.742 and scores against a single model against 0.590. Reading one against the
+other overstates how finished the head is.
 """
 
 from __future__ import annotations
@@ -151,10 +154,15 @@ def audit(X_train, y_train, X_val, y_val, X_test, y_test, *, name: str,
     return result
 
 
-def target_ceiling(tokens_a: np.ndarray, tokens_b: np.ndarray) -> float:
-    """Spearman between the two models' lengths on the same prompts.
+def target_ceiling(tokens_a: np.ndarray, tokens_b: np.ndarray,
+                   *, averaged: bool = True) -> float:
+    """How reproducible the target is, and so how high a score can go.
 
-    The reproducibility of the target, and therefore the practical ceiling on
-    predicting it from the prompt.
+    ``averaged=False`` returns the raw agreement between the two models --
+    the ceiling for predicting *one* model's length. The default applies the
+    Spearman-Brown adjustment for a two-item average, which is the right bar
+    for the averaged target this module actually fits. The two differ by about
+    0.15, which is the difference between "94% of the ceiling" and "77%".
     """
-    return float(spearmanr(np.log1p(tokens_a), np.log1p(tokens_b)).statistic)
+    raw = float(spearmanr(np.log1p(tokens_a), np.log1p(tokens_b)).statistic)
+    return 2 * raw / (1 + raw) if averaged else raw

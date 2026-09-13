@@ -127,11 +127,13 @@ estimate into `P(tokens > T)` for whatever threshold the caller picks -- cheaper
 than a classifier per threshold, and checked by interval coverage (the 80%
 interval holds 83.3% of test rows) rather than assumed.
 
-**The ceiling is 0.607**: that is how well the two arena models agree with *each
-other* on the same prompt. Length is partly a property of who answers, and no
-prompt-only feature can beat the target's own reproducibility. The shipped head
-reaches 0.573 with the 1024-d encoder and 0.514 with a 384-d one -- 94% of the
-ceiling -- against 0.353 for the free surface features alone.
+**There is a ceiling and it is not 1.0.** The two arena models, answering the
+same prompt, agree with *each other* at Spearman 0.590: length is substantially a
+property of who answers, which no prompt-only feature can reach. The target
+averages both models, so its own reliability is higher -- Spearman-Brown gives
+≈0.742 -- and that is the bar. The shipped head reaches 0.573 with the 1024-d
+encoder (~77% of it) and 0.514 with a 384-d one, against 0.353 for the free
+surface features alone. Roughly 0.17 of Spearman remains available.
 
 `intfloat/e5-large-v2` is already the top-weighted member of the domain
 ensemble, so in production the strong version of this head is one matrix

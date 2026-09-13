@@ -170,6 +170,31 @@ class TestAudit:
         assert low <= evaluate(y[300:], pred)["spearman"] <= high
 
 
+class TestCeiling:
+    """Which ceiling you quote changes how finished the head looks."""
+
+    def test_the_averaged_target_is_more_reproducible_than_one_model(self):
+        """Averaging two noisy measurements of the same thing cancels part of
+        the noise, so the average is easier to predict than either side. Scoring
+        against the average and comparing to the single-model agreement is the
+        mistake this exists to prevent."""
+        from prompt_decomposition.length_estimator.audit import target_ceiling
+
+        rng = np.random.default_rng(0)
+        signal = rng.normal(0, 1, 4000)
+        a = np.expm1(signal + rng.normal(0, 1, 4000))
+        b = np.expm1(signal + rng.normal(0, 1, 4000))
+        raw = target_ceiling(a, b, averaged=False)
+        assert target_ceiling(a, b) > raw
+
+    def test_perfect_agreement_leaves_the_ceiling_at_one(self):
+        from prompt_decomposition.length_estimator.audit import target_ceiling
+
+        tokens = np.arange(1, 500)
+        assert target_ceiling(tokens, tokens) == pytest.approx(1.0)
+        assert target_ceiling(tokens, tokens, averaged=False) == pytest.approx(1.0)
+
+
 class TestArtifactNaming:
     """Two encoders over the same feature set are two different heads."""
 
