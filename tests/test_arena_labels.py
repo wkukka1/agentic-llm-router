@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from prompt_decomposition.core.arena_labels import FREE_LABELS, label_for
+from training.data.arena_labels import FREE_LABELS, label_for
 
 
 @pytest.fixture

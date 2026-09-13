@@ -1,8 +1,8 @@
 import pytest
 import yaml
 
-from prompt_decomposition.core.config import ExperimentConfig, load_experiments
-from prompt_decomposition.core.models import available, build
+from router.models import available, build
+from training.config import ExperimentConfig, load_experiments
 
 
 def test_all_expected_models_are_registered():

@@ -15,16 +15,16 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from prompt_decomposition.core.arena_corpus import _first_user_text, _split_of
-from prompt_decomposition.core.features import build_features
-from prompt_decomposition.length_estimator.audit import audit
-from prompt_decomposition.length_estimator.head import BUCKETS, LengthHead
-from prompt_decomposition.length_estimator.model import (
+from evaluation.length_audit import audit
+from router.features import build_features
+from router.heads.length import BUCKETS, LengthHead
+from router.heads.length_model import (
     LengthModel,
     bootstrap_ci,
     evaluate,
     interval_coverage,
 )
+from training.data.arena_corpus import _first_user_text, _split_of
 
 
 @pytest.fixture
@@ -85,7 +85,7 @@ class TestCorpusGuard:
     """A shape bug hits every row; a user pasting JSON hits one."""
 
     def test_the_threshold_sits_between_the_two_cases(self):
-        from prompt_decomposition.core.arena_corpus import SERIALISED_PROMPT_LIMIT
+        from training.data.arena_corpus import SERIALISED_PROMPT_LIMIT
 
         one_user_in_a_hundred_thousand = 1 / 105_799
         assert one_user_in_a_hundred_thousand < SERIALISED_PROMPT_LIMIT < 1.0
@@ -225,7 +225,7 @@ class TestCeiling:
         the noise, so the average is easier to predict than either side. Scoring
         against the average and comparing to the single-model agreement is the
         mistake this exists to prevent."""
-        from prompt_decomposition.length_estimator.audit import target_ceiling
+        from evaluation.length_audit import target_ceiling
 
         rng = np.random.default_rng(0)
         signal = rng.normal(0, 1, 4000)
@@ -235,7 +235,7 @@ class TestCeiling:
         assert target_ceiling(a, b) > raw
 
     def test_perfect_agreement_leaves_the_ceiling_at_one(self):
-        from prompt_decomposition.length_estimator.audit import target_ceiling
+        from evaluation.length_audit import target_ceiling
 
         tokens = np.arange(1, 500)
         assert target_ceiling(tokens, tokens) == pytest.approx(1.0)
@@ -259,7 +259,7 @@ class TestRoutingValue:
         """The shipped result: length tracks hardness strongly and the routing
         decision not at all. A head can be accurate and still be worthless for
         the decision it was built to serve."""
-        from prompt_decomposition.length_estimator import routing_value as rv
+        from evaluation import routing_value as rv
 
         corpus, hardness, rng = self._corpus()
         labels = pd.DataFrame({
@@ -275,7 +275,7 @@ class TestRoutingValue:
     def test_it_refuses_to_report_on_too_few_joined_rows(self, monkeypatch):
         """A near-empty join silently produces confident nonsense; it was an
         empty join that exposed the corpus bug in the first place."""
-        from prompt_decomposition.length_estimator import routing_value as rv
+        from evaluation import routing_value as rv
 
         corpus, hardness, _ = self._corpus()
         monkeypatch.setattr(rv, "load_routing_labels", lambda *a, **k: pd.DataFrame(
@@ -291,7 +291,7 @@ class TestArtifactNaming:
         """Regression: they were named by feature set alone, so the second
         sweep silently overwrote the first and left a head being served
         vectors from an encoder it was never fitted on."""
-        from prompt_decomposition.length_estimator.experiment import _save
+        from training.heads.length import _save
 
         prompts, y = learnable
         model = LengthModel(alpha=1.0).fit(build_features(prompts, "surface"), y)
@@ -301,7 +301,7 @@ class TestArtifactNaming:
             "bge-small-en-v1.5__surface_embedding", "e5-large-v2__surface_embedding"]
 
     def test_an_encoderless_head_is_named_by_its_features_alone(self, tmp_path, learnable):
-        from prompt_decomposition.length_estimator.experiment import _save
+        from training.heads.length import _save
 
         prompts, y = learnable
         model = LengthModel(alpha=1.0).fit(build_features(prompts, "surface"), y)
@@ -309,7 +309,7 @@ class TestArtifactNaming:
         assert [d.name for d in tmp_path.iterdir()] == ["surface"]
 
     def test_the_saved_metadata_names_the_encoder_to_feed_it(self, tmp_path, learnable):
-        from prompt_decomposition.length_estimator.experiment import _save
+        from training.heads.length import _save
 
         prompts, y = learnable
         model = LengthModel(alpha=1.0).fit(build_features(prompts, "surface"), y)

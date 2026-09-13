@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from prompt_decomposition.core.metrics import (
+from training.metrics import (
     apply_temperature,
     evaluate,
     expected_calibration_error,

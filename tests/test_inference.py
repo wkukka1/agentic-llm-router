@@ -10,7 +10,7 @@ import json
 import numpy as np
 import pytest
 
-from prompt_decomposition.core.models import build
+from router.models import build
 
 
 class TestEnsemble:
@@ -103,7 +103,7 @@ class TestDomainHead:
 
         import yaml
 
-        from prompt_decomposition.core.models import build
+        from router.models import build
 
         texts = [f"alpha beta doc {i}" for i in range(12)] + \
                 [f"gamma delta rec {i}" for i in range(12)]
@@ -121,7 +121,7 @@ class TestDomainHead:
         return d
 
     def test_predict_returns_labels_shortlist_and_distribution(self, tmp_path):
-        from prompt_decomposition import DomainHead
+        from router import DomainHead
 
         head = DomainHead(self._run_dir(tmp_path), shortlist_size=2)
         p = head.predict("alpha beta doc 3")
@@ -134,7 +134,7 @@ class TestDomainHead:
         """Members can return numpy string arrays; JSON serialisation breaks
         on those, and the next stage consumes this over a wire."""
 
-        from prompt_decomposition import DomainHead
+        from router import DomainHead
 
         head = DomainHead(self._run_dir(tmp_path))
         p = head.predict("alpha beta doc 1")
@@ -143,7 +143,7 @@ class TestDomainHead:
 
     def test_temperature_from_metrics_is_applied(self, tmp_path):
         """T=2.0 softens; without it the threshold means something different."""
-        from prompt_decomposition import DomainHead
+        from router import DomainHead
 
         d = self._run_dir(tmp_path)
         head = DomainHead(d)
@@ -154,14 +154,14 @@ class TestDomainHead:
         assert head.predict("alpha beta doc 1").confidence < raw
 
     def test_defer_flag_tracks_the_threshold(self, tmp_path):
-        from prompt_decomposition import DomainHead
+        from router import DomainHead
 
         d = self._run_dir(tmp_path)
         assert not DomainHead(d, defer_below=0.0).predict("alpha beta doc 1").should_defer
         assert DomainHead(d, defer_below=1.01).predict("alpha beta doc 1").should_defer
 
     def test_batch_matches_single(self, tmp_path):
-        from prompt_decomposition import DomainHead
+        from router import DomainHead
 
         head = DomainHead(self._run_dir(tmp_path))
         prompts = ["alpha beta doc 2", "gamma delta rec 5"]
@@ -180,7 +180,7 @@ class TestAdaptiveShortlist:
     """
 
     def test_a_decisive_prompt_gets_one_label_and_a_torn_one_gets_more(self, tmp_path):
-        from prompt_decomposition import DomainHead
+        from router import DomainHead
 
         head = DomainHead(TestDomainHead._run_dir(tmp_path), shortlist_mass=0.9)
         decisive = np.array([0.95, 0.05])
@@ -190,7 +190,7 @@ class TestAdaptiveShortlist:
 
     def test_mass_is_never_satisfied_by_an_empty_shortlist(self, tmp_path):
         """Even a flat distribution must yield at least the argmax."""
-        from prompt_decomposition import DomainHead
+        from router import DomainHead
 
         head = DomainHead(TestDomainHead._run_dir(tmp_path), shortlist_mass=1.0)
         assert head._shortlist_len(np.array([0.5, 0.5])) == 2
@@ -198,7 +198,7 @@ class TestAdaptiveShortlist:
 
     def test_the_cap_is_off_unless_asked_for(self, tmp_path):
         """A silent cap would undo the point of sizing by mass."""
-        from prompt_decomposition import DomainHead
+        from router import DomainHead
 
         # Ten equal probabilities; 0.85 of the mass takes nine of them. The
         # threshold deliberately avoids landing on a cumulative-sum boundary,
@@ -210,13 +210,13 @@ class TestAdaptiveShortlist:
                           max_shortlist=3)._shortlist_len(flat) == 3
 
     def test_fixed_size_is_unchanged_when_no_mass_is_given(self, tmp_path):
-        from prompt_decomposition import DomainHead
+        from router import DomainHead
 
         head = DomainHead(TestDomainHead._run_dir(tmp_path), shortlist_size=2)
         assert head._shortlist_len(np.array([0.99, 0.01])) == 2
 
     def test_predict_uses_the_adaptive_length(self, tmp_path):
-        from prompt_decomposition import DomainHead
+        from router import DomainHead
 
         d = TestDomainHead._run_dir(tmp_path)
         head = DomainHead(d, shortlist_mass=0.99)
@@ -226,7 +226,7 @@ class TestAdaptiveShortlist:
 
     @pytest.mark.parametrize("bad", [0.0, -0.1, 1.5])
     def test_rejects_a_mass_outside_the_unit_interval(self, tmp_path, bad):
-        from prompt_decomposition import DomainHead
+        from router import DomainHead
 
         with pytest.raises(ValueError, match="shortlist_mass"):
             DomainHead(TestDomainHead._run_dir(tmp_path), shortlist_mass=bad)
@@ -240,7 +240,7 @@ class TestTaskAndRouterHeads:
 
         import yaml
 
-        from prompt_decomposition.core.models import build
+        from router.models import build
 
         texts = [f"summarise this document {i}" for i in range(12)] + \
                 [f"give me ideas for a project {i}" for i in range(12)]
@@ -258,7 +258,7 @@ class TestTaskAndRouterHeads:
         return d
 
     def test_task_head_returns_a_calibrated_distribution(self, tmp_path):
-        from prompt_decomposition import TaskHead
+        from router import TaskHead
 
         head = TaskHead(self._task_run(tmp_path))
         p = head.predict("summarise this document 3")
@@ -268,13 +268,13 @@ class TestTaskAndRouterHeads:
         assert head.temperature == 1.5
 
     def test_task_head_defers_below_threshold(self, tmp_path):
-        from prompt_decomposition import TaskHead
+        from router import TaskHead
 
         head = TaskHead(self._task_run(tmp_path), defer_below=1.01)
         assert head.predict("summarise this document 3").should_defer
 
     def test_router_head_serves_both_axes(self, tmp_path):
-        from prompt_decomposition import RouterHead
+        from router import RouterHead
 
         head = RouterHead(TestDomainHead._run_dir(tmp_path), self._task_run(tmp_path))
         p = head.predict("summarise this document 3")
@@ -284,7 +284,7 @@ class TestTaskAndRouterHeads:
 
     def test_router_defers_when_either_axis_is_unsure(self, tmp_path):
         """A confident domain paired with an unsure task is not a confident route."""
-        from prompt_decomposition import RouterHead
+        from router import RouterHead
 
         d = TestDomainHead._run_dir(tmp_path)
         t = self._task_run(tmp_path)
@@ -293,7 +293,7 @@ class TestTaskAndRouterHeads:
         assert RouterHead(d, t, defer_below=1.01).predict("alpha beta doc 1").should_defer
 
     def test_batch_matches_single_prompt_calls(self, tmp_path):
-        from prompt_decomposition import RouterHead
+        from router import RouterHead
 
         head = RouterHead(TestDomainHead._run_dir(tmp_path), self._task_run(tmp_path))
         prompts = ["alpha beta doc 1", "give me ideas for a project 2"]
@@ -305,7 +305,7 @@ class TestFeatureVector:
     """The handoff to a downstream difficulty model."""
 
     def _head(self, tmp_path):
-        from prompt_decomposition import RouterHead
+        from router import RouterHead
 
         return RouterHead(TestDomainHead._run_dir(tmp_path),
                           TestTaskAndRouterHeads._task_run(tmp_path))
@@ -348,7 +348,7 @@ class TestFeatureVector:
     def test_a_certain_distribution_has_lower_entropy_than_a_split_one(self, tmp_path):
         """The property a difficulty model relies on: entropy tracks how torn
         the head is, which the argmax alone cannot express."""
-        from prompt_decomposition.composite import _entropy
+        from router.composite import _entropy
 
         assert _entropy(np.array([0.97, 0.03])) < _entropy(np.array([0.5, 0.5]))
 
@@ -374,7 +374,7 @@ class TestFeatureVector:
     def test_optional_heads_drop_their_columns_rather_than_zero_filling(self, tmp_path):
         """A zero-filled column for an absent head is indistinguishable from a
         real zero to whatever consumes this."""
-        from prompt_decomposition import RouterHead
+        from router import RouterHead
 
         head = RouterHead(TestDomainHead._run_dir(tmp_path),
                           TestTaskAndRouterHeads._task_run(tmp_path),
@@ -385,7 +385,7 @@ class TestFeatureVector:
 
     def test_turning_the_surface_block_on_only_appends(self, tmp_path):
         """Blocks append, so loading a head never moves an existing column."""
-        from prompt_decomposition import RouterHead
+        from router import RouterHead
 
         # `_run_dir` creates its directory, so build both routers from one pair.
         domain, task = (TestDomainHead._run_dir(tmp_path),
@@ -403,7 +403,7 @@ class TestFeatureVector:
     def test_an_empty_batch_is_not_an_error(self, tmp_path):
         """A filter upstream can legitimately remove every prompt; sklearn
         raises on a zero-row matrix, so the heads short-circuit before it."""
-        from prompt_decomposition import DomainHead, RouterHead, TaskHead
+        from router import DomainHead, RouterHead, TaskHead
 
         dom = TestDomainHead._run_dir(tmp_path)
         task = TestTaskAndRouterHeads._task_run(tmp_path)

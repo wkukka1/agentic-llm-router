@@ -15,8 +15,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from prompt_decomposition.core.analysis import confusion_table, top_up_metrics
-from prompt_decomposition.core.metrics import expected_calibration_error, top_k_accuracy
+from evaluation.analysis import confusion_table, top_up_metrics
+from training.metrics import expected_calibration_error, top_k_accuracy
 
 
 class TestConfusionMatrixKeepsPredictedClasses:
@@ -99,7 +99,7 @@ class TestLoadRunGuard:
     """`.get("test", {})` implied test could be absent, then indexed into it."""
 
     def test_a_metrics_file_without_a_test_block_loads(self, tmp_path):
-        from prompt_decomposition.core.analysis import load_run
+        from evaluation.analysis import load_run
 
         run = tmp_path / "run"
         run.mkdir()
@@ -141,14 +141,14 @@ class TestMetricEdgeCases:
 class TestAuditGatingIsHonest:
     def test_clean_names_the_checks_it_actually_covers(self):
         """The docstring said five checks; `clean` gates on two."""
-        from prompt_decomposition.core.overfit import AuditResult
+        from evaluation.overfit import AuditResult
 
         assert AuditResult.gating_checks == ("permutation", "near-duplicates")
 
     def test_permutation_p_is_bounded_by_the_number_of_permutations(self):
         """Five permutations could never report better than p=0.17 however
         separated the real score was, which is why the default is 100."""
-        from prompt_decomposition.core.overfit import AuditResult
+        from evaluation.overfit import AuditResult
 
         r = AuditResult(name="x", n=10, n_classes=2, majority_rate=0.5,
                         train_acc=1.0, test_acc=0.9, fold_sd=0.0,
@@ -157,7 +157,7 @@ class TestAuditGatingIsHonest:
         assert r.permutation_p == pytest.approx(1 / 6)
 
     def test_permutation_p_counts_ties_against_the_real_score(self):
-        from prompt_decomposition.core.overfit import AuditResult
+        from evaluation.overfit import AuditResult
 
         r = AuditResult(name="x", n=10, n_classes=2, majority_rate=0.5,
                         train_acc=1.0, test_acc=0.5, fold_sd=0.0,
@@ -168,7 +168,7 @@ class TestAuditGatingIsHonest:
     def test_default_permutation_count_is_enough_to_estimate_a_null(self):
         import inspect
 
-        from prompt_decomposition.core.overfit import audit
+        from evaluation.overfit import audit
 
         assert inspect.signature(audit).parameters["permutations"].default >= 100
 
@@ -180,7 +180,7 @@ class TestEncoderParamMismatchIsAnError:
     def test_mismatched_encoder_settings_raise_on_load(self, tmp_path):
         import pickle
 
-        from prompt_decomposition.core.models import build
+        from router.models import build
 
         path = tmp_path / "model"
         path.mkdir()
@@ -195,7 +195,7 @@ class TestEncoderParamMismatchIsAnError:
     def test_matching_settings_load_cleanly(self, tmp_path):
         import pickle
 
-        from prompt_decomposition.core.models import build
+        from router.models import build
 
         path = tmp_path / "model"
         path.mkdir()
@@ -208,7 +208,7 @@ class TestEncoderParamMismatchIsAnError:
 
 
 class TestEmbeddingCacheIsAtomic:
-    """Needs `prompt_decomposition.core.embeddings`, which imports torch. CI installs the light
+    """Needs `router.embeddings.encoder`, which imports torch. CI installs the light
     core deliberately -- the encoders are a ~1GB extra -- so these skip there
     and run wherever `.[encoders]` is installed."""
 
@@ -216,7 +216,7 @@ class TestEmbeddingCacheIsAtomic:
         pytest.importorskip("torch")
         """np.save is not atomic; two runs encoding the same rows can interleave
         and leave a truncated array that loads without error."""
-        from prompt_decomposition.core.embeddings import EmbeddingEncoder
+        from router.embeddings.encoder import EmbeddingEncoder
 
         enc = EmbeddingEncoder.__new__(EmbeddingEncoder)
         monkeypatch.setattr(EmbeddingEncoder, "signature", "sig", raising=False)
@@ -229,7 +229,7 @@ class TestEmbeddingCacheIsAtomic:
 
     def test_a_second_call_hits_the_cache(self, tmp_path, monkeypatch):
         pytest.importorskip("torch")
-        from prompt_decomposition.core.embeddings import EmbeddingEncoder
+        from router.embeddings.encoder import EmbeddingEncoder
 
         calls = []
         enc = EmbeddingEncoder.__new__(EmbeddingEncoder)
@@ -247,14 +247,14 @@ class TestEmbeddingCacheIsAtomic:
 
 class TestSharedSettings:
     def test_seed_is_shared_rather_than_defaulted_per_call_site(self):
-        from prompt_decomposition.core.config import ExperimentConfig, ModelConfig
-        from prompt_decomposition.core.settings import settings
+        from router.settings import settings
+        from training.config import ExperimentConfig, ModelConfig
 
         cfg = ExperimentConfig(name="x", model=ModelConfig(name="tfidf_logreg"))
         assert cfg.seed == settings().seed
 
     def test_environment_overrides_the_default(self, monkeypatch):
-        from prompt_decomposition.core.settings import settings
+        from router.settings import settings
 
         monkeypatch.setenv("ROUTER_SEED", "4242")
         settings.cache_clear()
@@ -264,7 +264,7 @@ class TestSharedSettings:
             settings.cache_clear()
 
     def test_dotenv_is_read_when_the_environment_is_silent(self, tmp_path, monkeypatch):
-        from prompt_decomposition.core.settings import settings
+        from router.settings import settings
 
         env = tmp_path / ".env"
         env.write_text("ROUTER_SEED=77\n# a comment\nROUTER_DATA_DIR='some/dir'\n")
@@ -284,7 +284,7 @@ class TestSharedSettings:
             settings.cache_clear()
 
     def test_environment_beats_dotenv(self, tmp_path, monkeypatch):
-        from prompt_decomposition.core.settings import settings
+        from router.settings import settings
 
         env = tmp_path / ".env"
         env.write_text("ROUTER_SEED=77\n")
@@ -304,7 +304,7 @@ class TestCalibrationProvenanceIsRecorded:
     def _run(tmp_path, metrics):
         import yaml
 
-        from prompt_decomposition.core.models import build
+        from router.models import build
 
         m = build("tfidf_logreg", char_ngrams=None, min_df=1)
         m.fit(["alpha one", "alpha two", "beta one", "beta two"], ["a", "a", "b", "b"])
@@ -318,7 +318,7 @@ class TestCalibrationProvenanceIsRecorded:
         return d
 
     def test_the_calibration_block_wins_over_the_legacy_location(self, tmp_path):
-        from prompt_decomposition import DomainHead
+        from router import DomainHead
 
         run = self._run(tmp_path, {
             "test": {"temperature": 9.0},
@@ -331,7 +331,7 @@ class TestCalibrationProvenanceIsRecorded:
     def test_an_older_run_still_loads_from_the_test_key(self, tmp_path):
         """Artifacts written before the calibration block existed were
         validation-fitted too; they just did not record it."""
-        from prompt_decomposition import DomainHead
+        from router import DomainHead
 
         head = DomainHead(self._run(tmp_path, {"test": {"temperature": 3.0}}))
         assert head.temperature == 3.0
@@ -340,7 +340,7 @@ class TestCalibrationProvenanceIsRecorded:
     def test_the_runner_records_which_split_it_fitted_on(self):
         import inspect
 
-        from prompt_decomposition.core import experiment
+        from training import experiment
 
         src = inspect.getsource(experiment)
         assert '"fitted_on": "validation"' in src
@@ -358,7 +358,7 @@ class TestAlignToCorpusDeduplicates:
         return pd.DataFrame({"prompt": prompts, "task": tasks})
 
     def test_duplicate_prompts_are_dropped(self):
-        from prompt_decomposition.core.overfit import align_to_corpus
+        from evaluation.overfit import align_to_corpus
 
         rows, labels = align_to_corpus(
             self._frame(["a", "b", "a"], ["x", "y", "x"]), ["a", "b", "c"], "task")
@@ -366,7 +366,7 @@ class TestAlignToCorpusDeduplicates:
         assert list(labels) == ["x", "y"]
 
     def test_prompts_absent_from_the_corpus_are_dropped(self):
-        from prompt_decomposition.core.overfit import align_to_corpus
+        from evaluation.overfit import align_to_corpus
 
         rows, labels = align_to_corpus(
             self._frame(["a", "zzz"], ["x", "y"]), ["a", "b"], "task")
@@ -374,7 +374,7 @@ class TestAlignToCorpusDeduplicates:
         assert list(labels) == ["x"]
 
     def test_rows_index_the_corpus_not_the_frame(self):
-        from prompt_decomposition.core.overfit import align_to_corpus
+        from evaluation.overfit import align_to_corpus
 
         rows, labels = align_to_corpus(
             self._frame(["c", "a"], ["z", "x"]), ["a", "b", "c"], "task")
@@ -394,21 +394,21 @@ class TestSimilarityMatrixIsCapped:
         return centres[[int(v) for v in y]] + rng.normal(size=(n, d)), y
 
     def test_a_cap_below_the_row_count_still_completes(self):
-        from prompt_decomposition.core.overfit import audit
+        from evaluation.overfit import audit
 
         X, y = self._separable(400)
         r = audit(X, y, "capped", permutations=3, max_similarity_rows=100)
         assert r.test_acc > 0.9
 
     def test_the_default_cap_exists_and_is_finite(self):
-        from prompt_decomposition.core.overfit import MAX_SIMILARITY_ROWS
+        from evaluation.overfit import MAX_SIMILARITY_ROWS
 
         assert 1_000 <= MAX_SIMILARITY_ROWS <= 50_000
 
     def test_capping_does_not_change_the_headline_accuracy(self):
         """The cap is about memory, not about the model -- only the
         near-duplicate rescore is computed on the sample."""
-        from prompt_decomposition.core.overfit import audit
+        from evaluation.overfit import audit
 
         X, y = self._separable(300)
         full = audit(X, y, "full", permutations=3, max_similarity_rows=10_000)

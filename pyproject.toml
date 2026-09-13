@@ -29,7 +29,7 @@ pythonpath = ["src"]
 testpaths = ["tests"]
 
 [project.scripts]
-prompt-decomposition = "prompt_decomposition.cli:main"
+prompt-decomposition = "cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]

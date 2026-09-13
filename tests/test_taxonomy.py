@@ -2,7 +2,7 @@
 
 import pytest
 
-from prompt_decomposition.domain_classifier.taxonomy import (
+from router.heads.domain_taxonomy import (
     DOMAIN_DESCRIPTIONS,
     DOMAIN_LABELS,
     Domain,
@@ -57,7 +57,7 @@ class TestDomainMerges:
     """Optional coarser grouping, applied at inference not at training."""
 
     def test_merge_map_only_touches_the_two_intended_pairs(self):
-        from prompt_decomposition.domain_classifier.taxonomy import (
+        from router.heads.domain_taxonomy import (
             DOMAIN_LABELS,
             MERGED_DOMAIN_LABELS,
             apply_domain_merges,
@@ -77,18 +77,18 @@ class TestDomainMerges:
         """Merging them scores better (0.785 vs 0.773) and is deliberately not
         done: maths and code route to different models, so collapsing them buys
         a metric by destroying a distinction the router needs."""
-        from prompt_decomposition.domain_classifier.taxonomy import apply_domain_merges
+        from router.heads.domain_taxonomy import apply_domain_merges
 
         assert apply_domain_merges("science_math") != apply_domain_merges("software_tech")
 
     def test_merge_is_idempotent(self):
-        from prompt_decomposition.domain_classifier.taxonomy import MERGED_DOMAIN_LABELS, apply_domain_merges
+        from router.heads.domain_taxonomy import MERGED_DOMAIN_LABELS, apply_domain_merges
 
         for d in MERGED_DOMAIN_LABELS:
             assert apply_domain_merges(d) == d
 
     def test_unknown_domain_passes_through(self):
-        from prompt_decomposition.domain_classifier.taxonomy import apply_domain_merges
+        from router.heads.domain_taxonomy import apply_domain_merges
 
         assert apply_domain_merges("not_a_domain") == "not_a_domain"
 
@@ -97,7 +97,7 @@ class TestDomainMerges:
         the max -- that is what makes post-hoc merging beat retraining."""
         import numpy as np
 
-        from prompt_decomposition import DomainHead
+        from router import DomainHead
 
         labels = ["business_finance", "law_politics", "software_tech"]
         proba = np.array([[0.3, 0.3, 0.4]])
@@ -114,7 +114,7 @@ def test_software_tech_owns_questions_about_ai():
     This was the single largest error source against externally-labelled sets
     (18 of 44 errors across 402 prompts) and it was a definition disagreement,
     not a model failure. Pinned so it does not drift back."""
-    from prompt_decomposition.domain_classifier.taxonomy import DOMAIN_DESCRIPTIONS
+    from router.heads.domain_taxonomy import DOMAIN_DESCRIPTIONS
 
     software = DOMAIN_DESCRIPTIONS["software_tech"].lower()
     assert "machine learning" in software or "ai" in software
@@ -130,7 +130,7 @@ class TestTaskTypes:
     """Task type: what the user wants *done*, orthogonal to domain."""
 
     def test_six_distinct_tasks(self):
-        from prompt_decomposition.task_classifier.taxonomy import TASK_DESCRIPTIONS, TASK_LABELS
+        from router.heads.task_taxonomy import TASK_DESCRIPTIONS, TASK_LABELS
 
         assert len(TASK_LABELS) == len(set(TASK_LABELS)) == 6
         assert set(TASK_DESCRIPTIONS) == set(TASK_LABELS)
@@ -140,7 +140,7 @@ class TestTaskTypes:
         model, it goes to a different kind of model entirely. Splitting it out
         of `create` costs the rest of the taxonomy nothing measurable
         (-0.013 top-1, 95% CI [-0.026, 0.000]) and reaches F1 0.725 itself."""
-        from prompt_decomposition.task_classifier.taxonomy import TASK_LABELS, TaskType
+        from router.heads.task_taxonomy import TASK_LABELS, TaskType
 
         assert TaskType.MEDIA.value in TASK_LABELS
         assert TaskType.MEDIA is not TaskType.CREATE
@@ -149,13 +149,13 @@ class TestTaskTypes:
         """open/general/closed_qa differ only by whether a passage was
         attached (100% vs 0% context), which an instruction-only classifier
         cannot recover. They are one task."""
-        from prompt_decomposition.task_classifier.taxonomy import TaskType, task_from_dolly
+        from router.heads.task_taxonomy import TaskType, task_from_dolly
 
         for c in ("open_qa", "general_qa", "closed_qa"):
             assert task_from_dolly(c) is TaskType.ANSWER
 
     def test_every_dolly_category_maps(self):
-        from prompt_decomposition.task_classifier.taxonomy import DOLLY_MAP, task_from_dolly
+        from router.heads.task_taxonomy import DOLLY_MAP, task_from_dolly
 
         for category in DOLLY_MAP:
             assert task_from_dolly(category) is not None
@@ -165,8 +165,8 @@ class TestTaskTypes:
     def test_task_axis_is_independent_of_domain(self):
         """The two label spaces must not overlap -- if they shared names, a
         consumer could not tell which axis a prediction came from."""
-        from prompt_decomposition.domain_classifier.taxonomy import DOMAIN_LABELS
-        from prompt_decomposition.task_classifier.taxonomy import TASK_LABELS
+        from router.heads.domain_taxonomy import DOMAIN_LABELS
+        from router.heads.task_taxonomy import TASK_LABELS
 
         assert not (set(TASK_LABELS) & set(DOMAIN_LABELS))
 
@@ -175,7 +175,7 @@ class TestTaskTypes:
         from 0.88 to 0.91 -- the boundary was costing real `answer` prompts. On
         held-out data `ideate` had precision 0.087. The pre-merge value is kept
         in each label file's `task_detail` column so the split is recoverable."""
-        from prompt_decomposition.task_classifier.taxonomy import TASK_LABELS, TaskType, task_from_dolly
+        from router.heads.task_taxonomy import TASK_LABELS, TaskType, task_from_dolly
 
         assert "ideate" not in TASK_LABELS
         assert task_from_dolly("brainstorming") is TaskType.ANSWER

@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from prompt_decomposition.core.overfit import AuditResult, audit
+from evaluation.overfit import AuditResult, audit
 
 
 def _separable(n=300, d=256, classes=3, seed=0):
