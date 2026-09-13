@@ -629,6 +629,63 @@ another. As a *prompt* difficulty proxy it is cleaner than the ground truth.
 
 `prompt_decomposition.length_estimator.routing_value` reproduces the table.
 
+### It does not transfer to an agentic loop, and the failure is asymmetric
+
+The head is trained on single-turn arena rows: one prompt, one answer. If the
+strong path is an agentic loop, the quantity that matters is the *total* output
+of an extended interaction, which is a different target. Tested on 17,930
+multi-turn conversations the head never saw, predicting total assistant tokens
+from the first prompt alone:
+
+| | n | rho | median actual | head predicts |
+|---|---|---|---|---|
+| single turn (reference) | 15,968 | **+0.522** | 662 | — |
+| 2 turns | 11,454 | +0.480 | 1,369 | 617 |
+| 3 turns | 3,363 | +0.402 | 2,124 | 615 |
+| 4 turns | 1,431 | +0.418 | 3,027 | 636 |
+| 5+ turns | 1,682 | +0.432 | 4,785 | 637 |
+
+**The ranking survives; the level collapses.** rho holds around 0.40-0.48
+whatever the turn count, so the head still orders prompts by how big a job they
+imply. But its prediction barely moves -- 617 to 637 tokens across the whole
+range -- while actual totals go from 1,369 to 4,785. It under-estimates by
+**2.8x overall**, and the error grows with the length of the interaction,
+because it is predicting the first answer and the first answer is a shrinking
+fraction of what gets generated.
+
+Turn count alone correlates with total output at rho +0.430 -- as much as the
+entire head does. **How many iterations a loop will take is the dominant term,
+and it is not in the prompt.** That is the same wall difficulty hit, arriving
+from a third direction.
+
+What this means for use:
+
+* **As a ranking, it transfers.** "Which of these prompts are the expensive
+  ones" survives the move to multi-turn, which is what steering traffic needs.
+* **As a token count on an agentic path, it is wrong by about 3x** and
+  increasingly so. Anyone using `expected_tokens` as a budget for a loop will
+  under-provision.
+* **The fix available today is one number.** Measure your own loop's expansion
+  factor on your own traffic and multiply. That is a per-deployment constant,
+  not something this corpus can supply.
+
+### How accurate is a single prediction, really
+
+Not very, and the bucket view is the honest one. On its own single-turn test set:
+
+| | |
+|---|---|
+| within 1.5x of the truth | 40.0% |
+| within 2x | 63.5% |
+| within 3x | 83.9% |
+| median absolute error | 285 tokens, against a median true length of 662 |
+
+Predicted quartiles separate cleanly in the median -- 313 / 582 / 794 / 1,103
+tokens -- but their middle halves overlap heavily (`short` spans 131-598,
+`medium` 344-946). **It is a population-level sorter, not a per-request
+estimate**, and the earlier framing of "feeds a cost model" should be read as
+"feeds a cost model over many requests", never as a per-prompt budget.
+
 ### Known weakness: non-English prompts
 
 The shipped 384-d encoder is English-trained and it shows.

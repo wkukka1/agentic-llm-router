@@ -294,6 +294,16 @@ the *two models disagreed* on length (0.5808), which needs both answers and is
 therefore a diagnostic rather than a router input -- the same conclusion the
 difficulty work reached: read model behaviour, not the prompt.
 
+**Two limits that bound how it can be used.** A single prediction is within 2x
+of the truth 63.5% of the time and within 1.5x only 40% -- it sorts a population,
+it does not budget a request. And it is trained on single-turn rows: against
+17,930 multi-turn conversations it never saw, the *ranking* holds (rho +0.415)
+while the *level* under-estimates total output by **2.8x**, worsening as the
+interaction extends, because it predicts the first answer and cannot see how
+many turns follow. Turn count alone predicts total output as well as the whole
+head does. On an agentic path, use it to rank and apply your own measured
+expansion factor; do not use `expected_tokens` as a budget.
+
 **What it is for, in numbers.** Ranked by predicted length, the top 25% of
 traffic holds **37.9%** of all tokens generated -- against 25% for a random
 quarter and 53.6% for a perfect ranking. It captures 45% of the achievable gain
