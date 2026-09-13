@@ -170,6 +170,44 @@ class TestAudit:
         assert low <= evaluate(y[300:], pred)["spearman"] <= high
 
 
+class TestArtifactNaming:
+    """Two encoders over the same feature set are two different heads."""
+
+    def test_each_encoder_gets_its_own_run_directory(self, tmp_path, learnable):
+        """Regression: they were named by feature set alone, so the second
+        sweep silently overwrote the first and left a head being served
+        vectors from an encoder it was never fitted on."""
+        from prompt_decomposition.length_estimator.experiment import _save
+
+        prompts, y = learnable
+        model = LengthModel(alpha=1.0).fit(build_features(prompts, "surface"), y)
+        _save(model, "surface+embedding", "BAAI/bge-small-en-v1.5", tmp_path)
+        _save(model, "surface+embedding", "intfloat/e5-large-v2", tmp_path)
+        assert sorted(d.name for d in tmp_path.iterdir()) == [
+            "bge-small-en-v1.5__surface_embedding", "e5-large-v2__surface_embedding"]
+
+    def test_an_encoderless_head_is_named_by_its_features_alone(self, tmp_path, learnable):
+        from prompt_decomposition.length_estimator.experiment import _save
+
+        prompts, y = learnable
+        model = LengthModel(alpha=1.0).fit(build_features(prompts, "surface"), y)
+        _save(model, "surface", "BAAI/bge-small-en-v1.5", tmp_path)
+        assert [d.name for d in tmp_path.iterdir()] == ["surface"]
+
+    def test_the_saved_metadata_names_the_encoder_to_feed_it(self, tmp_path, learnable):
+        from prompt_decomposition.length_estimator.experiment import _save
+
+        prompts, y = learnable
+        model = LengthModel(alpha=1.0).fit(build_features(prompts, "surface"), y)
+        _save(model, "surface+embedding", "intfloat/e5-large-v2", tmp_path)
+        meta = json.loads((tmp_path / "e5-large-v2__surface_embedding"
+                           / "length.json").read_text())
+        assert meta["encoder_model"] == "intfloat/e5-large-v2"
+        _save(model, "surface", "intfloat/e5-large-v2", tmp_path)
+        assert json.loads((tmp_path / "surface" / "length.json").read_text())[
+            "encoder_model"] is None
+
+
 class TestServingHead:
     """The surface head needs no encoder, so this runs anywhere the tests do."""
 

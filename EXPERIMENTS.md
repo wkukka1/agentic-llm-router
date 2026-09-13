@@ -528,7 +528,7 @@ each other on length at Spearman 0.607. Read every number against that.
 | prompt length | 0.252 | 0.060 | ×2.18 | 0.605 |
 | 23 surface features | 0.353 | 0.132 | ×2.12 | 0.664 |
 | 384-d encoder + surface | 0.514 | 0.309 | ×1.96 | 0.739 |
-| 1024-d encoder + surface (30k rows) | 0.564 | 0.391 | ×1.89 | 0.751 |
+| **1024-d encoder + surface** | **0.573** | 0.399 | ×1.88 | 0.764 |
 
 ### The audit, and the reading it corrected
 
@@ -537,23 +537,30 @@ sweep, and a label permutation test. All in **R²**, not Spearman -- rank
 correlation is invariant to the sign of a fit, so a one-feature model scores
 |0.26| on *shuffled* labels and a permutation test in rank space cannot fail.
 
-| | 30,001 rows | 109,335 rows |
-|---|---|---|
-| test R² (encoder + surface) | 0.303 | 0.309 |
-| train–test gap | +0.015 | **−0.001** |
-| learning curve, last doubling | **+0.008** | **+0.001** |
-| permutation p | 0.032 (floor, 30 refits) | 0.010 (floor, 100 refits) |
+| | 384-d, 30k | 384-d, 109k | 1024-d, 30k | 1024-d, 109k |
+|---|---|---|---|---|
+| test R² (encoder + surface) | 0.303 | 0.309 | 0.391 | 0.399 |
+| train–test gap | +0.015 | −0.001 | +0.020 | **−0.000** |
+| learning curve, last doubling | +0.008 | +0.001 | +0.021 | +0.008 |
+| permutation p | 0.032¹ | 0.010¹ | 0.032¹ | 0.010¹ |
 
-**The 30k run said "under-fed"; the full corpus says it was wrong.** The +0.008
-still arriving on the last doubling implied more data would pay, so the corpus
-was rebuilt at 3.6× the size. It bought +0.006 R² and the curve went flat. The
-head is **feature-limited, not data-limited**: at this encoder size the corpus
-is already past the point where rows matter, and the remaining headroom is in
-the representation. The 1024-d encoder, whose curve was steeper (+0.021 per
-doubling at 30k), is the lever that did move.
+¹ The floor, not a measurement: the smallest reportable p over n refits is
+1/(n+1) — 30 refits, then 100. No shuffled run came near a real one.
 
-Nothing here over-fits. The gap is negative at full size -- test scores fractionally
-above train -- and 100 shuffled-label refits land at −0.005 ± 0.004 against 0.309.
+**The 30k run said "under-fed"; the full corpus says it was mostly wrong.** The
++0.008 still arriving on the last doubling implied more data would pay, so the
+corpus was rebuilt at 3.6× the size. For the 384-d encoder it bought **+0.006 R²**
+and the curve went flat. For the 1024-d encoder it bought **+0.008** and left a
+residual slope of +0.008 — the bigger representation is the one that could still
+use rows, and the corpus is now exhausted (the remaining arena rows are
+multi-turn, where the response answers a different turn).
+
+The head is **feature-limited, not data-limited**. Quadrupling the corpus moved
+R² by less than a hundredth; changing the encoder moved it by nine hundredths.
+
+Nothing over-fits at either size. The gap is negative at full size — test scores
+fractionally above train — and 100 shuffled-label refits land at −0.011 ± 0.005
+against 0.399.
 
 ### What it is good for
 

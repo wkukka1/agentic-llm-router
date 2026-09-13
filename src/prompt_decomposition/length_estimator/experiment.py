@@ -105,8 +105,18 @@ def run_length_sweep(*, encoder_model: str = DEFAULT_ENCODER,
 
 
 def _save(model: LengthModel, feature_set: str, encoder_model: str, out_dir: Path) -> None:
-    """Write the serving artifact: the model plus what it expects to be fed."""
-    run_dir = out_dir / feature_set.replace("+", "_")
+    """Write the serving artifact: the model plus what it expects to be fed.
+
+    The directory name carries the encoder, not just the feature set. Two
+    encoders over the same feature set are two different heads that cannot be
+    served each other's weights, and naming them alike meant the second sweep
+    silently overwrote the first -- which is exactly the mismatch
+    `_ENCODER_PARAMS` guards against in the classifier models.
+    """
+    name = feature_set.replace("+", "_")
+    if "embedding" in feature_set:
+        name = f"{encoder_model.split('/')[-1]}__{name}"
+    run_dir = out_dir / name
     run_dir.mkdir(parents=True, exist_ok=True)
     model.save(run_dir)
     (run_dir / "length.json").write_text(json.dumps({

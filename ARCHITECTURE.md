@@ -130,7 +130,7 @@ interval holds 83.3% of test rows) rather than assumed.
 **The ceiling is 0.607**: that is how well the two arena models agree with *each
 other* on the same prompt. Length is partly a property of who answers, and no
 prompt-only feature can beat the target's own reproducibility. The shipped head
-reaches 0.514 with a 384-d encoder and 0.564 with the 1024-d one -- 93% of the
+reaches 0.573 with the 1024-d encoder and 0.514 with a 384-d one -- 94% of the
 ceiling -- against 0.353 for the free surface features alone.
 
 `intfloat/e5-large-v2` is already the top-weighted member of the domain

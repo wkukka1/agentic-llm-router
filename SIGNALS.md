@@ -63,7 +63,7 @@ LMArena prompts carrying both models' responses and a human preference.
 | **domain**, 8 classes | 0.923 top-1 / 0.980 top-2 | 6 encoder passes |
 | **task type**, 6 classes | 0.844 top-1 / 0.967 top-2 | 3 encoder passes + tf-idf |
 | **surface features**, 23 | deterministic | free |
-| **expected output length** | rho 0.514 (0.564 with the large encoder), ceiling 0.607 | 1 encoder pass, or free if the domain head already ran it |
+| **expected output length** | rho 0.573 with the large encoder, 0.514 with a small one, ceiling 0.607 | free if the domain head already ran the encoder |
 
 `prompt_decomposition.signals.surface` covers the deterministic layer: code fences, URLs,
 maths notation, enumeration, requested output format, stated length limits,
@@ -108,10 +108,10 @@ answer, not a slightly worse one. Partly reachable from surface signals already
 (`needs_recency`, `has_code_shape`), which means a weak version exists for free
 and a labelled version would be cheap to validate against it.
 
-**2. Expected output length.** The cost driver, and unlike difficulty it has an
-abundant free target: every arena row carries the responses both models actually
-produced. No annotation needed — 38,434 labelled examples already in hand. See
-the measurement section below.
+**2. Expected output length.** ✅ **Built** — `prompt_decomposition.length_estimator`,
+Spearman 0.573 with the large encoder and 0.514 with a small one, against a
+ceiling of 0.607. The target was free: every arena row carries both models'
+responses with an exact token count. See the measurement section below.
 
 **3. Decomposability.** The signal your orchestrator recursion actually turns
 on: does this prompt contain multiple separable subtasks? Surface signals get
@@ -168,11 +168,11 @@ beat the target's own reproducibility, so every score below is read against
 | prompt length alone | 0.252 | [0.236, 0.266] | 0.060 | ×2.18 | 0.605 |
 | 23 free surface features | 0.353 | [0.339, 0.367] | 0.132 | ×2.12 | 0.664 |
 | 384-d encoder | 0.500 | [0.488, 0.512] | 0.290 | ×1.97 | 0.735 |
-| **384-d + surface** | **0.514** | [0.502, 0.526] | 0.309 | ×1.96 | 0.739 |
-| 1024-d + surface *(30k rows)* | **0.564** | [0.541, 0.585] | 0.391 | ×1.89 | 0.751 |
+| **384-d + surface** | 0.514 | [0.502, 0.526] | 0.309 | ×1.96 | 0.739 |
+| **1024-d + surface** | **0.573** | [0.562, 0.585] | 0.399 | ×1.88 | 0.764 |
 
-The encoder is where the signal is: **0.353 free, 0.514 small encoder, 0.564
-large one, against a 0.607 ceiling.** The large encoder reaches 93% of what two
+The encoder is where the signal is: **0.353 free, 0.514 small encoder, 0.573
+large one, against a 0.607 ceiling.** The large encoder reaches 94% of what two
 models manage against each other. Surface features add +0.014 on top of an
 encoder and are the whole story without one.
 
@@ -273,9 +273,9 @@ those and neither reading justifies building it.
 ### What this changes
 
 1. **Build the length estimator with an encoder**, not with the surface
-   features. Done: 0.514 against 0.353 for regex, and 0.564 if the large
-   encoder is already running for the domain head. The free features remain the
-   fallback when no encoder pass is affordable.
+   features. Done: 0.573 against 0.353 for regex, and the large encoder is
+   already running for the domain head so it costs nothing extra. The free
+   features remain the fallback when no encoder pass is affordable.
 2. **Stop trying to predict difficulty from the prompt.** Three independent
    feature families have now failed at it. The difficulty head must read model
    behaviour — response length, disagreement between generations, per-model

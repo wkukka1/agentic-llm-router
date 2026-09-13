@@ -7,7 +7,7 @@ model. No LLM at inference, no network calls, no fine-tuned weights.
 |---|---|---|---|
 | **domain** | what is it about | 8 classes (merged from 10) | 0.763 top-1 / 0.919 top-2 |
 | **task** | what does it ask to be done | 6 classes | 0.844 top-1 / 0.967 top-2 |
-| **length** | how much work is it | expected tokens + P(tokens > T) | rho 0.514, against a 0.607 ceiling |
+| **length** | how much work is it | expected tokens + P(tokens > T) | rho 0.573, against a 0.607 ceiling |
 
 The first two are trained on labels written by hand. The length head is trained
 on labels nobody wrote: every arena row carries both models' responses and an
@@ -56,11 +56,11 @@ label:
 ```python
 from prompt_decomposition import LengthHead
 
-length = LengthHead("artifacts/length/surface_embedding")
+length = LengthHead("artifacts/length/e5-large-v2__surface_embedding")
 p = length.predict("write a detailed comparison of postgres and mysql")
-p.expected_tokens          # 1187.4
+p.expected_tokens          # 2246.2
 p.bucket                   # "very_long"
-p.probability_over(2000)   # 0.28  -- the spread is wide, and says so
+p.probability_over(2000)   # 0.56  -- the spread is wide, and says so
 ```
 
 Read it as a ranking, not as a token count: ranked by prediction, the top 25%
