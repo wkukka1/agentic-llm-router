@@ -16,16 +16,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from prompt_decomposition.core.arena_corpus import load_arena_splits
+from prompt_decomposition.core.features import FEATURE_SETS, build_features
 from prompt_decomposition.core.settings import settings
 from prompt_decomposition.length_estimator.audit import LengthAudit, audit, target_ceiling
-from prompt_decomposition.length_estimator.data import load_length_splits
-from prompt_decomposition.length_estimator.model import (
-    FEATURE_SETS,
-    LengthModel,
-    bootstrap_ci,
-    build_features,
-    evaluate,
-)
+from prompt_decomposition.length_estimator.model import LengthModel, bootstrap_ci, evaluate
 
 log = logging.getLogger(__name__)
 
@@ -53,7 +48,7 @@ def run_length_sweep(*, encoder_model: str = DEFAULT_ENCODER,
                      out_dir: Path | None = None) -> tuple[pd.DataFrame, list[LengthAudit]]:
     """Fit every feature set, audit each, save the best by validation Spearman."""
     out_dir = out_dir or artifacts_dir()
-    splits = load_length_splits()
+    splits = load_arena_splits()
     y = {name: frame["y"].to_numpy() for name, frame in splits.items()}
     long_edge = float(np.quantile(y["train"], 0.75))
 

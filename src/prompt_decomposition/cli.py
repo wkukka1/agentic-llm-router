@@ -5,6 +5,7 @@
     train          run one or more experiments, write the leaderboard
     analyze        per-class precision/recall, confusion, error slices
     length         build the free length corpus, train the head, audit the fit
+    attributes     train the free-label attribute heads (gates + judged criteria)
 """
 
 from __future__ import annotations
@@ -16,6 +17,9 @@ from pathlib import Path
 
 import pandas as pd
 
+from prompt_decomposition.attribute_classifier.experiment import (
+    DEFAULT_ENCODER as ATTRIBUTE_ENCODER,
+)
 from prompt_decomposition.core.analysis import report
 from prompt_decomposition.core.config import load_experiments
 from prompt_decomposition.core.dataset import (
@@ -26,8 +30,8 @@ from prompt_decomposition.core.dataset import (
 )
 from prompt_decomposition.core.experiment import ARTIFACTS_DIR, run_all
 from prompt_decomposition.core.external_eval import EXTERNAL_DIR, render, score
+from prompt_decomposition.core.features import FEATURE_SETS
 from prompt_decomposition.length_estimator.experiment import DEFAULT_ENCODER as LENGTH_ENCODER
-from prompt_decomposition.length_estimator.model import FEATURE_SETS
 
 #: Prompt-rendering variants the builder can produce. How the RouterArena
 #: fields are reassembled is a real experimental axis: option blocks and
@@ -166,14 +170,14 @@ def cmd_length(args: argparse.Namespace) -> int:
     assigned by hashing the prompt, which means a rebuild leaves every row
     where it was.
     """
-    from prompt_decomposition.length_estimator.data import (
-        build_length_dataset,
-        save_length_dataset,
+    from prompt_decomposition.core.arena_corpus import (
+        build_arena_corpus,
+        save_arena_corpus,
     )
     from prompt_decomposition.length_estimator.experiment import run_length_sweep
 
     if args.build:
-        save_length_dataset(build_length_dataset(max_rows=args.max_rows))
+        save_arena_corpus(build_arena_corpus(max_rows=args.max_rows))
 
     feature_sets = tuple(args.features) if args.features else FEATURE_SETS
     frame, audits = run_length_sweep(encoder_model=args.encoder,
@@ -183,6 +187,19 @@ def cmd_length(args: argparse.Namespace) -> int:
     print()
     for result in audits:
         print(result.summary(), end="\n\n")
+    return 0
+
+
+def cmd_attributes(args: argparse.Namespace) -> int:
+    """Train the attribute heads on labels the arena dump gives away.
+
+    Reported per attribute, never averaged: base rates span 0.075 to 0.819, so
+    a mean over the eleven is a number with no referent.
+    """
+    from prompt_decomposition.attribute_classifier.experiment import run_attribute_sweep
+
+    frame = run_attribute_sweep(encoder_model=args.encoder, feature_set=args.features)
+    print(frame.round(4).to_string(index=False))
     return 0
 
 
@@ -270,6 +287,14 @@ def build_parser() -> argparse.ArgumentParser:
                         help="shuffled-label refits; the smallest reportable "
                              "p-value is 1/(n+1)")
     length.set_defaults(func=cmd_length)
+
+    attributes = sub.add_parser(
+        "attributes",
+        help="free-label attribute heads: code, maths, creative writing, "
+             "constrained instruction, and the seven judged criteria")
+    attributes.add_argument("--encoder", default=ATTRIBUTE_ENCODER)
+    attributes.add_argument("--features", default="surface+embedding", choices=FEATURE_SETS)
+    attributes.set_defaults(func=cmd_attributes)
 
 
     return parser

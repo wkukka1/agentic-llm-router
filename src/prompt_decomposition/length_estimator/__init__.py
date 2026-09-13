@@ -6,13 +6,14 @@ dominant term in what a generation costs, which makes this the signal a
 cost-aware router reads first.
 """
 
-from prompt_decomposition.length_estimator.data import (
-    build_length_dataset,
-    load_length_splits,
-    save_length_dataset,
+from prompt_decomposition.core.arena_corpus import (
+    build_arena_corpus,
+    load_arena_splits,
+    save_arena_corpus,
 )
+from prompt_decomposition.core.features import FEATURE_SETS, build_features
 from prompt_decomposition.length_estimator.head import LengthHead, LengthPrediction
-from prompt_decomposition.length_estimator.model import FEATURE_SETS, LengthModel, build_features
+from prompt_decomposition.length_estimator.model import LengthModel
 
 __all__ = [
     "FEATURE_SETS",
@@ -20,7 +21,7 @@ __all__ = [
     "LengthModel",
     "LengthPrediction",
     "build_features",
-    "build_length_dataset",
-    "load_length_splits",
-    "save_length_dataset",
+    "build_arena_corpus",
+    "load_arena_splits",
+    "save_arena_corpus",
 ]

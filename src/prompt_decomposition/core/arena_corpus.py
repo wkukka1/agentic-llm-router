@@ -1,4 +1,9 @@
-"""The length corpus: prompts paired with how long two models actually answered.
+"""The arena corpus: real prompts, with everything the dump labels for free.
+
+Shared by every head trained on arena traffic -- the length target lives here
+because it is one derived column over the same rows, not because the corpus
+belongs to that head. :mod:`prompt_decomposition.core.arena_labels` carries the
+eleven categorical labels keyed to the same ``arena_id``.
 
 The target is free. Every LMArena row carries both models' responses and the
 token count of each, so there is nothing to annotate -- 109,335 single-turn
@@ -104,7 +109,7 @@ def _split_of(prompt: str) -> str:
     return "test"
 
 
-def build_length_dataset(*, max_rows: int | None = None) -> pd.DataFrame:
+def build_arena_corpus(*, max_rows: int | None = None) -> pd.DataFrame:
     """Read the arena dump and return one row per distinct prompt.
 
     Single-turn rows only: in a multi-turn conversation the response length is
@@ -180,19 +185,19 @@ def build_length_dataset(*, max_rows: int | None = None) -> pd.DataFrame:
     return frame
 
 
-def dataset_dir():
-    return settings().processed_dir / "length"
+def corpus_dir():
+    return settings().processed_dir / "arena"
 
 
-def save_length_dataset(frame: pd.DataFrame) -> None:
-    out = dataset_dir()
+def save_arena_corpus(frame: pd.DataFrame) -> None:
+    out = corpus_dir()
     out.mkdir(parents=True, exist_ok=True)
     for split, part in frame.groupby("split"):
         part.reset_index(drop=True).to_parquet(out / f"{split}.parquet", index=False)
 
 
-def load_length_splits() -> dict[str, pd.DataFrame]:
-    out = dataset_dir()
+def load_arena_splits() -> dict[str, pd.DataFrame]:
+    out = corpus_dir()
     if not (out / "train.parquet").exists():
-        raise FileNotFoundError(f"no length corpus at {out}; run build_length_dataset first")
+        raise FileNotFoundError(f"no length corpus at {out}; run build_arena_corpus first")
     return {s: pd.read_parquet(out / f"{s}.parquet") for s in ("train", "val", "test")}

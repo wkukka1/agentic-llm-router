@@ -15,7 +15,8 @@ from pathlib import Path
 
 import numpy as np
 
-from prompt_decomposition.length_estimator.model import LengthModel, build_features
+from prompt_decomposition.core.features import build_features
+from prompt_decomposition.length_estimator.model import LengthModel
 
 #: Bucket names for the quartile view, shortest first.
 BUCKETS = ("short", "medium", "long", "very_long")

@@ -8,6 +8,7 @@ model. No LLM at inference, no network calls, no fine-tuned weights.
 | **domain** | what is it about | 8 classes (merged from 10) | 0.763 top-1 / 0.919 top-2 |
 | **task** | what does it ask to be done | 6 classes | 0.844 top-1 / 0.967 top-2 |
 | **length** | how much work is it | expected tokens + P(tokens > T) | rho 0.573, against a ≈0.742 ceiling |
+| **attributes** | what does it need | 11 calibrated probabilities | code 0.905 precision @ 50% recall |
 
 The first two are trained on labels written by hand. The length head is trained
 on labels nobody wrote: every arena row carries both models' responses and an

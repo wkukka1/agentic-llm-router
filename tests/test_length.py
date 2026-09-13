@@ -15,13 +15,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from prompt_decomposition.core.arena_corpus import _first_user_text, _split_of
+from prompt_decomposition.core.features import build_features
 from prompt_decomposition.length_estimator.audit import audit
-from prompt_decomposition.length_estimator.data import _first_user_text, _split_of
 from prompt_decomposition.length_estimator.head import BUCKETS, LengthHead
 from prompt_decomposition.length_estimator.model import (
     LengthModel,
     bootstrap_ci,
-    build_features,
     evaluate,
     interval_coverage,
 )
@@ -85,7 +85,7 @@ class TestCorpusGuard:
     """A shape bug hits every row; a user pasting JSON hits one."""
 
     def test_the_threshold_sits_between_the_two_cases(self):
-        from prompt_decomposition.length_estimator.data import SERIALISED_PROMPT_LIMIT
+        from prompt_decomposition.core.arena_corpus import SERIALISED_PROMPT_LIMIT
 
         one_user_in_a_hundred_thousand = 1 / 105_799
         assert one_user_in_a_hundred_thousand < SERIALISED_PROMPT_LIMIT < 1.0

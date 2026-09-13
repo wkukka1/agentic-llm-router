@@ -144,15 +144,58 @@ arena-distribution, so they inherit whatever that traffic is.
 
 `prompt_decomposition.core.arena_labels` loads them, keyed by `arena_id`.
 
+### Built: eleven attribute heads over one encoder pass
+
+`prompt_decomposition.attribute_classifier`. Four **gates** (preconditions worth
+acting on) and seven **criteria** (the arena's judged dimensions, served as
+inputs to whatever combines them, never as a difficulty score). 74,061 train /
+15,968 test, calibrated on validation.
+
+| gate | base rate | AUC | P@R90 | P@R75 | P@R50 | P@R25 |
+|---|---|---|---|---|---|---|
+| **code** | 0.288 | 0.883 | 0.478 | 0.693 | **0.905** | 0.968 |
+| maths | 0.075 | 0.916 | 0.211 | 0.389 | 0.628 | 0.754 |
+| creative writing | 0.089 | 0.903 | 0.242 | 0.336 | 0.528 | 0.815 |
+| constrained instruction | 0.173 | 0.861 | 0.331 | 0.468 | 0.609 | 0.729 |
+
+| criterion | base rate | AUC | P@R50 |
+|---|---|---|---|
+| real world | 0.574 | 0.849 | 0.913 |
+| problem solving | 0.677 | 0.843 | 0.935 |
+| specificity | 0.590 | 0.839 | 0.914 |
+| domain knowledge | 0.819 | 0.820 | 0.959 |
+| creativity | 0.521 | 0.814 | 0.840 |
+| technical accuracy | 0.613 | 0.807 | 0.905 |
+| complexity | 0.484 | 0.787 | 0.798 |
+
+**Read the precision columns, not the AUC.** Maths posts the highest AUC of any
+head here (0.916) and is the *least* usable gate: at 7.5% base rate, catching
+half the maths prompts means 37% of what you flag is not maths. AUC is
+prevalence-blind and these base rates span 0.075 to 0.819.
+
+**`code` is the one that is production-ready**: 0.905 precision at half the
+recall, 0.968 at a quarter. The other three are usable only at low recall --
+creative writing reaches 0.815 precision if you accept catching a quarter of it.
+
+**Calibration was the real work.** `class_weight="balanced"` is what makes a
+7.5% attribute learnable, and it fits the head as though the classes were even,
+shifting the log-odds by the base-rate offset. Temperature scaling -- what every
+other head in this repo uses -- *cannot* correct that: it rescales a logit and
+the error is an offset. Platt scaling fits slope and intercept, and takes mean
+ECE from **0.115 to 0.013** with every ranking metric unchanged.
+
+`non_english` is deliberately not modelled despite probing at 0.990: the label
+comes from a language detector, so shipping a model to imitate one is strictly
+worse than calling one.
+
 ### Worth building next, in order
 
-**1. Tool need — search / code / maths.** Still the highest-value unbuilt
-signal, because it is a gating decision rather than a quality one: routing a
-"what happened today" prompt to a parametric model produces a confidently wrong
-answer, not a slightly worse one. **And it no longer needs annotation** — the
-arena dump labels code (0.879 from a probe) and maths (0.912) on every row. The
-gap is search/recency, which nothing in the dump labels; `needs_recency` from
-the surface features is the free proxy to validate against.
+**1. Tool need — the recency half.** Code and maths are now built (above).
+What remains is search/recency, which nothing in the dump labels, and it is the
+half with the sharpest failure mode: routing "what happened today" to a
+parametric model produces a confidently wrong answer, not a slightly worse one.
+`needs_recency` from the surface features is the free proxy; validating it is
+the cheapest next labelling job, and far smaller than a from-scratch one.
 
 **2. Expected output length.** ✅ **Built** — `prompt_decomposition.length_estimator`,
 Spearman 0.573 with the large encoder and 0.514 with a small one, against a
