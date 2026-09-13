@@ -15,15 +15,15 @@ import json
 import numpy as np
 import pytest
 
-from router.heads.attributes import AttributeHead, AttributePrediction
-from router.heads.attributes_model import AttributeModel
-from router.heads.attributes_taxonomy import (
+from router.prompt_decomposition.heads.attributes import AttributeHead, AttributePrediction
+from router.prompt_decomposition.heads.attributes_model import AttributeModel
+from router.prompt_decomposition.heads.attributes_taxonomy import (
     ATTRIBUTE_NAMES,
     CRITERIA,
     GATES,
     describe,
 )
-from training.heads.attributes import evaluate_head
+from training.prompt_decomposition.heads.attributes import evaluate_head
 
 
 @pytest.fixture
@@ -46,7 +46,7 @@ class TestTaxonomy:
         """It probes at 0.990 and that is the argument against training it: the
         label comes from a detector, so imitating it is strictly worse than
         calling one."""
-        from router.heads.attributes_taxonomy import NOT_MODELLED
+        from router.prompt_decomposition.heads.attributes_taxonomy import NOT_MODELLED
 
         assert "non_english" in NOT_MODELLED
         assert "non_english" not in ATTRIBUTE_NAMES
@@ -141,8 +141,8 @@ class TestCalibrationCorrectsAnOffset:
         """`class_weight="balanced"` shifts a rare attribute's log-odds by the
         base-rate offset. Temperature rescales the logit and cannot move it, so
         it leaves the error in place; Platt fits an intercept too."""
-        from training.metrics import apply_temperature, fit_temperature
-        from training.metrics import expected_calibration_error as ece
+        from training.prompt_decomposition.metrics import apply_temperature, fit_temperature
+        from training.prompt_decomposition.metrics import expected_calibration_error as ece
 
         rng = np.random.default_rng(7)
         truth = rng.normal(-2.5, 1.0, 4000)                  # ~8% positive
@@ -233,7 +233,7 @@ class TestServingHead:
     def test_it_serves_a_probability_per_fitted_attribute(self, tmp_path, separable):
         X, y = separable
         # the surface extractor produces 23 features, so refit on that width
-        from router.features import build_features
+        from router.prompt_decomposition.features import build_features
 
         prompts = ["write me a function foo(bar)", "what is the capital of peru"] * 60
         feats = build_features(prompts, "surface")

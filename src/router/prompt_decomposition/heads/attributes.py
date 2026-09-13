@@ -14,8 +14,8 @@ from pathlib import Path
 
 import numpy as np
 
-from router.heads.attributes_model import AttributeModel
-from router.heads.attributes_taxonomy import CRITERIA, GATES
+from router.prompt_decomposition.heads.attributes_model import AttributeModel
+from router.prompt_decomposition.heads.attributes_taxonomy import CRITERIA, GATES
 
 
 @dataclass(slots=True)
@@ -78,7 +78,7 @@ class AttributeHead:
         return self._encoder
 
     def _features(self, prompts: list[str], embeddings: np.ndarray | None = None) -> np.ndarray:
-        from router.features import build_features
+        from router.prompt_decomposition.features import build_features
 
         if "embedding" in self.feature_set and embeddings is None:
             embeddings = self.encoder.encode(prompts)

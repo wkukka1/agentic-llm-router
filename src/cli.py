@@ -17,21 +17,21 @@ from pathlib import Path
 
 import pandas as pd
 
-from evaluation.analysis import report
-from evaluation.external_eval import EXTERNAL_DIR, render, score
-from router.features import FEATURE_SETS
-from training.config import load_experiments
-from training.data.dataset import (
+from evaluation.prompt_decomposition.analysis import report
+from evaluation.prompt_decomposition.external_eval import EXTERNAL_DIR, render, score
+from router.prompt_decomposition.features import FEATURE_SETS
+from training.prompt_decomposition.config import load_experiments
+from training.prompt_decomposition.data.dataset import (
     PROCESSED_DIR,
     build_real_only_dataset,
     build_task_dataset,
     load_splits,
 )
-from training.experiment import ARTIFACTS_DIR, run_all
-from training.heads.attributes import (
+from training.prompt_decomposition.experiment import ARTIFACTS_DIR, run_all
+from training.prompt_decomposition.heads.attributes import (
     DEFAULT_ENCODER as ATTRIBUTE_ENCODER,
 )
-from training.heads.length import DEFAULT_ENCODER as LENGTH_ENCODER
+from training.prompt_decomposition.heads.length import DEFAULT_ENCODER as LENGTH_ENCODER
 
 #: Prompt-rendering variants the builder can produce. How the RouterArena
 #: fields are reassembled is a real experimental axis: option blocks and
@@ -132,7 +132,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
 def cmd_external(args: argparse.Namespace) -> int:
     """Score a trained run against externally-labelled prompt sets."""
 
-    from router import DomainHead
+    from router.prompt_decomposition import DomainHead
 
     head = DomainHead(args.run_dir, merge_domains=not args.no_merge, shortlist_size=2)
     out_dir = Path(args.out_dir)
@@ -149,7 +149,7 @@ def cmd_external(args: argparse.Namespace) -> int:
 
 def cmd_overfit(args: argparse.Namespace) -> int:
     """Audit both heads for overfitting and leakage."""
-    from evaluation.overfit import audit_heads
+    from evaluation.prompt_decomposition.overfit import audit_heads
 
     results = audit_heads(args.encoder)
     for r in results:
@@ -170,17 +170,17 @@ def cmd_length(args: argparse.Namespace) -> int:
     assigned by hashing the prompt, which means a rebuild leaves every row
     where it was.
     """
-    from training.data.arena_corpus import (
+    from training.prompt_decomposition.data.arena_corpus import (
         build_arena_corpus,
         save_arena_corpus,
     )
-    from training.heads.length import run_length_sweep
+    from training.prompt_decomposition.heads.length import run_length_sweep
 
     if args.build:
         save_arena_corpus(build_arena_corpus(max_rows=args.max_rows))
 
     feature_sets = tuple(args.features) if args.features else FEATURE_SETS
-    from evaluation.length_audit import audit_feature_sets
+    from evaluation.prompt_decomposition.length_audit import audit_feature_sets
 
     frame = run_length_sweep(encoder_model=args.encoder, feature_sets=feature_sets)
     print(frame.round(4).to_string(index=False))
@@ -197,7 +197,7 @@ def cmd_attributes(args: argparse.Namespace) -> int:
     Reported per attribute, never averaged: base rates span 0.075 to 0.819, so
     a mean over the eleven is a number with no referent.
     """
-    from training.heads.attributes import run_attribute_sweep
+    from training.prompt_decomposition.heads.attributes import run_attribute_sweep
 
     frame = run_attribute_sweep(encoder_model=args.encoder, feature_set=args.features)
     print(frame.round(4).to_string(index=False))

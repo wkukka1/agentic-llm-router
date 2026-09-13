@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from router.signals import extract_many
+from router.prompt_decomposition.signals import extract_many
 
 #: Feature sets, cheapest first. Each is a claim about where the signal is.
 FEATURE_SETS = ("length_only", "surface", "embedding", "surface+embedding")

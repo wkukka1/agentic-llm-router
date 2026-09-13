@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from training.experiment import ARTIFACTS_DIR
+from training.prompt_decomposition.experiment import ARTIFACTS_DIR
 
 #: Metrics that :func:`top_up_metrics` must not write back over a stored run.
 #: ``temperature`` and everything derived from it were fitted on the
@@ -73,7 +73,7 @@ def top_up_metrics(test: dict, predictions: pd.DataFrame) -> dict:
     Returns the keys it added, so a caller can see what was inferred rather
     than measured.
     """
-    from training.metrics import evaluate
+    from training.prompt_decomposition.metrics import evaluate
 
     labels = test.get("labels")
     columns = [f"p_{label}" for label in labels or []]

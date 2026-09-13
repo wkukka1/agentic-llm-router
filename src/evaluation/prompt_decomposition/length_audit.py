@@ -31,7 +31,7 @@ import numpy as np
 from scipy.stats import spearmanr
 from sklearn.metrics import r2_score
 
-from router.heads.length_model import LengthModel
+from router.prompt_decomposition.heads.length_model import LengthModel
 
 log = logging.getLogger(__name__)
 
@@ -176,9 +176,9 @@ def audit_feature_sets(*, encoder_model: str, feature_sets: tuple[str, ...],
     can quietly grade on a curve. `training` produces the models; this judges
     them, and the dependency rule keeps the two from being the same code path.
     """
-    from router.features import build_features
-    from training.data.arena_corpus import load_arena_splits
-    from training.heads.length import encode_splits
+    from router.prompt_decomposition.features import build_features
+    from training.prompt_decomposition.data.arena_corpus import load_arena_splits
+    from training.prompt_decomposition.heads.length import encode_splits
 
     splits = load_arena_splits()
     y = {name: frame["y"].to_numpy() for name, frame in splits.items()}

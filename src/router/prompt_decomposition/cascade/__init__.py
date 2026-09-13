@@ -5,6 +5,6 @@ what will happen from the prompt; this reads what did happen. Four independent
 measurements put the prompt-side version of this decision at chance.
 """
 
-from router.cascade.signals import RESPONSE_FEATURES, response_matrix, response_signals
+from router.prompt_decomposition.cascade.signals import RESPONSE_FEATURES, response_matrix, response_signals
 
 __all__ = ["RESPONSE_FEATURES", "response_matrix", "response_signals"]

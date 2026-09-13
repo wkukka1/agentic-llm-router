@@ -27,11 +27,11 @@ from pathlib import Path
 
 import numpy as np
 
-from router.heads.attributes import AttributeHead, AttributePrediction
-from router.heads.domain import DomainHead, DomainPrediction
-from router.heads.length import LengthHead, LengthPrediction
-from router.heads.task import TaskHead, TaskPrediction
-from router.signals import SURFACE_FEATURES, extract
+from router.prompt_decomposition.heads.attributes import AttributeHead, AttributePrediction
+from router.prompt_decomposition.heads.domain import DomainHead, DomainPrediction
+from router.prompt_decomposition.heads.length import LengthHead, LengthPrediction
+from router.prompt_decomposition.heads.task import TaskHead, TaskPrediction
+from router.prompt_decomposition.signals import SURFACE_FEATURES, extract
 
 #: Surface features already carried by the core block, so the surface block
 #: leaves them out rather than shipping two columns of identical numbers.

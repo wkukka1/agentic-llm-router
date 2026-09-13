@@ -33,7 +33,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from router.heads.attributes_taxonomy import ATTRIBUTE_NAMES
+from router.prompt_decomposition.heads.attributes_taxonomy import ATTRIBUTE_NAMES
 
 _EPSILON = 1e-9
 

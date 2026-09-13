@@ -2,7 +2,7 @@
 
 Lives in `router` rather than beside the rest of the metrics because the serving
 heads apply it on every call, and `router` may not import `training`. Fitting
-the temperature is an offline job and stays in `training.metrics`; applying it
+the temperature is an offline job and stays in `training.prompt_decomposition.metrics`; applying it
 is a serving job and is here. The split is the dependency rule made concrete:
 one function crossed the line, so one function moved.
 """

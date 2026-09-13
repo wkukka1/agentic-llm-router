@@ -16,10 +16,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from router.features import FEATURE_SETS, build_features
-from router.heads.length_model import LengthModel, bootstrap_ci, evaluate
+from router.prompt_decomposition.features import FEATURE_SETS, build_features
+from router.prompt_decomposition.heads.length_model import LengthModel, bootstrap_ci, evaluate
 from router.settings import settings
-from training.data.arena_corpus import load_arena_splits
+from training.prompt_decomposition.data.arena_corpus import load_arena_splits
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ def run_length_sweep(*, encoder_model: str = DEFAULT_ENCODER,
     """Fit every feature set and save the best by validation Spearman.
 
     Training produces models; judging them is `evaluation`'s job and lives in
-    `evaluation.length_audit`, which is why the audit is no longer run from
+    `evaluation.prompt_decomposition.length_audit`, which is why the audit is no longer run from
     here. The tier rule forced the separation and the separation is right: a
     sweep that scores itself is a sweep that can quietly grade on a curve.
     """

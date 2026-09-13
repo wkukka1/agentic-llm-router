@@ -2,7 +2,7 @@
 
 Shared by every head trained on arena traffic -- the length target lives here
 because it is one derived column over the same rows, not because the corpus
-belongs to that head. :mod:`training.data.arena_labels` carries the
+belongs to that head. :mod:`training.prompt_decomposition.data.arena_labels` carries the
 eleven categorical labels keyed to the same ``arena_id``.
 
 The target is free. Every LMArena row carries both models' responses and the

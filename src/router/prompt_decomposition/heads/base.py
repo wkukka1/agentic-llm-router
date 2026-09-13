@@ -16,8 +16,8 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from router.calibration import apply_temperature
-from router.models import build
+from router.prompt_decomposition.calibration import apply_temperature
+from router.prompt_decomposition.models import build
 
 
 class CalibratedHead:
@@ -34,7 +34,7 @@ class CalibratedHead:
         config = yaml.safe_load((self.run_dir / "config.yaml").read_text(encoding="utf-8"))
         metrics = json.loads((self.run_dir / "metrics.json").read_text(encoding="utf-8"))
         # The temperature is fitted on the VALIDATION split -- see
-        # `training.experiment`, which calls `fit_temperature(val_proba, ...)`
+        # `training.prompt_decomposition.experiment`, which calls `fit_temperature(val_proba, ...)`
         # before scoring test. It is *stored* under the "test" key only because
         # it sits alongside the test metrics it was used to produce, which
         # reads as though it were fitted there. New runs also write it to a

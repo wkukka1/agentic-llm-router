@@ -20,13 +20,13 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import average_precision_score, precision_recall_curve, roc_auc_score
 
-from router.features import build_features
-from router.heads.attributes_model import AttributeModel
-from router.heads.attributes_taxonomy import ATTRIBUTE_NAMES, describe
+from router.prompt_decomposition.features import build_features
+from router.prompt_decomposition.heads.attributes_model import AttributeModel
+from router.prompt_decomposition.heads.attributes_taxonomy import ATTRIBUTE_NAMES, describe
 from router.settings import settings
-from training.data.arena_corpus import load_arena_splits
-from training.data.arena_labels import label_for, load_arena_labels
-from training.metrics import expected_calibration_error
+from training.prompt_decomposition.data.arena_corpus import load_arena_splits
+from training.prompt_decomposition.data.arena_labels import label_for, load_arena_labels
+from training.prompt_decomposition.metrics import expected_calibration_error
 
 log = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ def run_attribute_sweep(*, encoder_model: str = DEFAULT_ENCODER,
 
     embeddings = {}
     if "embedding" in feature_set:
-        from training.heads.length import encode_splits
+        from training.prompt_decomposition.heads.length import encode_splits
 
         embeddings = encode_splits(splits, encoder_model)
     X = {name: build_features(frame["prompt"].tolist(), feature_set, embeddings.get(name))

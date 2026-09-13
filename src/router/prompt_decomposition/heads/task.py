@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from router.heads.base import CalibratedHead
+from router.prompt_decomposition.heads.base import CalibratedHead
 
 
 @dataclass(slots=True)

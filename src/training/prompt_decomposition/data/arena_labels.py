@@ -14,7 +14,7 @@ Two caveats travel with every one of them:
   difficulty criteria it is a judgement about a judgement.
 * **Learnable is not useful.** The hardness rubric composed from those seven
   criteria scores AUC 0.487 on whether the stronger model was actually needed
-  -- chance. See :mod:`evaluation.routing_value`.
+  -- chance. See :mod:`evaluation.prompt_decomposition.routing_value`.
   Predicting a label well says nothing about whether the label moves a
   decision, and this project has now been caught by that twice.
 """

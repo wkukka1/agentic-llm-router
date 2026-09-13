@@ -1,6 +1,6 @@
 """Canonical rows, splitting, and dataset assembly.
 
-Loaders live in :mod:`training.data.sources`. This module owns the row type every
+Loaders live in :mod:`training.prompt_decomposition.data.sources`. This module owns the row type every
 loader emits, and the once-only split that every experiment scores against.
 
 Two invariants are enforced here rather than trusted:
@@ -169,7 +169,7 @@ def build_task_dataset(
 
     Dolly-15k is deliberately not here. A head trained on its 14,776 rows scores
     0.700 on real prompts, below the 0.729 of always predicting `answer`, and
-    mixing it in costs accuracy at every ratio tried. See :mod:`router.heads.task_taxonomy`.
+    mixing it in costs accuracy at every ratio tried. See :mod:`router.prompt_decomposition.heads.task_taxonomy`.
 
     ``include_synthetic`` adds 780 rows to training: 377 hand-written and 403
     agent-generated prompts for the four weakest classes.
@@ -214,7 +214,7 @@ def build_task_dataset(
     by default: measured against the random sample they move macro-F1 +0.025 and
     top-1 -0.013, neither of which clears a paired bootstrap at n=1,000.
     """
-    from router import sources
+    from router.prompt_decomposition import sources
 
     # `to_frame` writes the label into `domain` (the canonical field on
     # Example); copy it to `task` so a split file carries an unambiguous name
@@ -265,13 +265,13 @@ def build_real_only_dataset(
     The evaluation rows are the frozen set, matched by prompt text, so results
     stay comparable across runs and across changes to the label pool.
     """
-    from router import sources
+    from router.prompt_decomposition import sources
 
     hand = dedupe(to_frame(sources.load_handlabelled()))
     if merge_domains:
         # Applied here rather than in the stored labels: merging is lossy and
         # one-way, so the 10-class labels stay the source of truth.
-        from router.heads.domain_taxonomy import apply_domain_merges
+        from router.prompt_decomposition.heads.domain_taxonomy import apply_domain_merges
 
         hand["domain"] = hand["domain"].map(apply_domain_merges)
         log.info("merged domains -> %d classes", hand["domain"].nunique())

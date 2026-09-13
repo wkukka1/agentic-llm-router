@@ -1,6 +1,6 @@
 """Serving head: how long will the answer be, and how sure is that.
 
-Mirrors :class:`~router.heads.domain.DomainHead` in
+Mirrors :class:`~router.prompt_decomposition.heads.domain.DomainHead` in
 shape -- construct from a run directory, call ``predict`` or ``predict_batch``
 -- but the output is a length distribution rather than a label distribution,
 because the routing decision it feeds is "how much work is this" rather than
@@ -15,8 +15,8 @@ from pathlib import Path
 
 import numpy as np
 
-from router.features import build_features
-from router.heads.length_model import LengthModel
+from router.prompt_decomposition.features import build_features
+from router.prompt_decomposition.heads.length_model import LengthModel
 
 #: Bucket names for the quartile view, shortest first.
 BUCKETS = ("short", "medium", "long", "very_long")

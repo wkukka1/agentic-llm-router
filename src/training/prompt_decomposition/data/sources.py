@@ -26,7 +26,7 @@ import logging
 import pandas as pd
 from huggingface_hub import hf_hub_download
 
-from training.data.dataset import Example
+from training.prompt_decomposition.data.dataset import Example
 
 log = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ def load_real_tasks(path: str = REAL_TASKS_PATH) -> list[Example]:
     distribution, which on measurement matters far more: a head trained on
     these 1,000 rows scores 0.828 on held-out real prompts where one trained on
     14,776 Dolly rows scores 0.700 -- below the 0.729 of always predicting
-    `answer`. See :mod:`router.heads.task_taxonomy` for the full comparison.
+    `answer`. See :mod:`router.prompt_decomposition.heads.task_taxonomy` for the full comparison.
     """
     frame = pd.read_parquet(path)
     out = [Example(prompt=row.prompt, source="handlabelled", subset="real_tasks",
@@ -194,7 +194,7 @@ def load_mined_tasks(path: str = MINED_TASKS_PATH) -> list[Example]:
     cannot see `extract`; this traffic does not contain it.
 
     These rows are a biased sample and belong in training only -- see
-    :func:`training.data.dataset.build_task_dataset`.
+    :func:`training.prompt_decomposition.data.dataset.build_task_dataset`.
     """
     frame = pd.read_parquet(path)
     out = [Example(prompt=row.prompt, source="handlabelled", subset="mined_tasks",
@@ -213,9 +213,9 @@ def load_dolly_tasks() -> list[Example]:
 
     Retained for reproducing the comparison, not for training. Mixing these rows
     into the real ones hurts at every ratio tried, including down-weighting them
-    fifteen to one; the measurements are in :mod:`router.heads.task_taxonomy`.
+    fifteen to one; the measurements are in :mod:`router.prompt_decomposition.heads.task_taxonomy`.
     """
-    from router.heads.task_taxonomy import task_from_dolly
+    from router.prompt_decomposition.heads.task_taxonomy import task_from_dolly
 
     path = hf_hub_download(
         "databricks/databricks-dolly-15k", "databricks-dolly-15k.jsonl", repo_type="dataset"

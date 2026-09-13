@@ -32,11 +32,11 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import FeatureUnion, Pipeline, make_pipeline
 from sklearn.svm import LinearSVC
 
-from router.calibration import apply_temperature
+from router.prompt_decomposition.calibration import apply_temperature
 
 
 class DomainClassifier(ABC):
-    """Predicts a distribution over :data:`~router.heads.domain_taxonomy.DOMAIN_LABELS`.
+    """Predicts a distribution over :data:`~router.prompt_decomposition.heads.domain_taxonomy.DOMAIN_LABELS`.
 
     Probabilities, not argmax, are the contract: the router needs calibrated
     scores to decide when a prompt is ambiguous enough to warrant a stronger
