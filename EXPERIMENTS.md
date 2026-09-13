@@ -504,3 +504,88 @@ In order of size, across the whole project:
 
 Which is the summary of this log. The wins were in the data and the label space,
 not in the model.
+
+## Expected output length: built, and where it stops
+
+The first head in this project whose labels nobody wrote. Every LMArena row
+carries both models' responses with an exact token count for each, so the
+corpus is 109,335 single-turn prompts at zero annotation cost.
+
+**Protocol.** Deduplicated on normalised text -- the same prompt reaches the
+arena many times, and leaving the copies in puts near-identical rows on both
+sides of the split. Splits are assigned by **hashing the prompt**, not by a
+seeded shuffle, so growing the corpus leaves every row where it was and a capped
+corpus is a subset of the full one rather than a different partition of it.
+Alpha is chosen on validation, the residual spread is fitted on validation, and
+test is read once per configuration.
+
+**The ceiling is 0.607.** The two models, answering the same prompt, agree with
+each other on length at Spearman 0.607. Read every number against that.
+
+| features | Spearman | R² | typical error | AUC (long) |
+|---|---|---|---|---|
+| constant | — | 0.000 | ×2.23 | — |
+| prompt length | 0.252 | 0.060 | ×2.18 | 0.605 |
+| 23 surface features | 0.353 | 0.132 | ×2.12 | 0.664 |
+| 384-d encoder + surface | 0.514 | 0.309 | ×1.96 | 0.739 |
+| 1024-d encoder + surface (30k rows) | 0.564 | 0.391 | ×1.89 | 0.751 |
+
+### The audit, and the reading it corrected
+
+Four checks per feature set: train–test gap, learning curve, regularisation
+sweep, and a label permutation test. All in **R²**, not Spearman -- rank
+correlation is invariant to the sign of a fit, so a one-feature model scores
+|0.26| on *shuffled* labels and a permutation test in rank space cannot fail.
+
+| | 30,001 rows | 109,335 rows |
+|---|---|---|
+| test R² (encoder + surface) | 0.303 | 0.309 |
+| train–test gap | +0.015 | **−0.001** |
+| learning curve, last doubling | **+0.008** | **+0.001** |
+| permutation p | 0.032 (floor, 30 refits) | 0.010 (floor, 100 refits) |
+
+**The 30k run said "under-fed"; the full corpus says it was wrong.** The +0.008
+still arriving on the last doubling implied more data would pay, so the corpus
+was rebuilt at 3.6× the size. It bought +0.006 R² and the curve went flat. The
+head is **feature-limited, not data-limited**: at this encoder size the corpus
+is already past the point where rows matter, and the remaining headroom is in
+the representation. The 1024-d encoder, whose curve was steeper (+0.021 per
+doubling at 30k), is the lever that did move.
+
+Nothing here over-fits. The gap is negative at full size -- test scores fractionally
+above train -- and 100 shuffled-label refits land at −0.005 ± 0.004 against 0.309.
+
+### What it is good for
+
+Ranked by predicted length, the top 25% of traffic holds **37.9%** of all
+generated tokens (random: 25%, perfect: 53.6%). As a long-answer gate the top 5%
+runs 0.596 precision against a 0.250 base rate, a 2.4× lift.
+
+Grouped by *predicted* quartile the levels hold up -- 281 predicted arrives at
+295, 1,038 predicted arrives at 1,071 -- so the estimate can feed a cost model
+and not only a ranking. Grouping the other way (by true quartile) looks like
+severe shrinkage and is the wrong diagnostic: it measures the noise in the
+target rather than the usefulness of the estimate.
+
+The spread is wide and honest about it. Sigma 0.889 means a typical factor-of-2
+error, and the 80% interval holds 83.3% of rows -- conservative, not
+over-confident.
+
+### Known weakness: non-English prompts
+
+The shipped 384-d encoder is English-trained and it shows.
+
+| language | n | Spearman |
+|---|---|---|
+| en | 8,498 | 0.525 |
+| de | 504 | 0.451 |
+| pl | 1,781 | 0.422 |
+| fr | 254 | 0.390 |
+| ja | 277 | 0.350 |
+| ko | 288 | 0.344 |
+| zh | 755 | 0.307 |
+| ru | 1,000 | 0.293 |
+
+Non-English traffic is 47% of this corpus, so this is not a corner case. The
+domain ensemble already carries `multilingual-e5-large-instruct`; pointing the
+length head at it is the obvious next measurement.

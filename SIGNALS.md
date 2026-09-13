@@ -63,6 +63,7 @@ LMArena prompts carrying both models' responses and a human preference.
 | **domain**, 8 classes | 0.923 top-1 / 0.980 top-2 | 6 encoder passes |
 | **task type**, 6 classes | 0.844 top-1 / 0.967 top-2 | 3 encoder passes + tf-idf |
 | **surface features**, 23 | deterministic | free |
+| **expected output length** | rho 0.514 (0.564 with the large encoder), ceiling 0.607 | 1 encoder pass, or free if the domain head already ran it |
 
 `prompt_decomposition.signals.surface` covers the deterministic layer: code fences, URLs,
 maths notation, enumeration, requested output format, stated length limits,
@@ -140,28 +141,59 @@ decision.
 5-fold cross-validated, scored against the cheapest possible baseline — prompt
 length alone — so "better than nothing" is visible rather than assumed.
 
-### Response length: learnable, and worth an encoder pass
+### Response length: built, and it is the strongest prompt signal there is
 
-| features | Spearman rho | AUC (top-quartile length) |
-|---|---|---|
-| prompt length alone | +0.227 | 0.618 |
-| 23 surface features (free) | +0.335 | 0.673 [0.662, 0.686] |
-| **1024-d sentence embedding** | **+0.542** | **0.744 [0.733, 0.754]** |
-| surface + embedding | +0.552 | 0.745 |
+**Superseded measurement.** The first pass at this scored *character* counts on
+38,434 rows and reported rho +0.542. The shipped head is measured against exact
+*token* counts -- `sum_assistant_a_tokens` / `sum_assistant_b_tokens`, which the
+arena dump carries per row -- over 109,335 single-turn prompts, deduplicated on
+normalised text and split by hashing the prompt. Different target, bigger
+corpus, tighter protocol; the numbers below replace the ones above.
 
-**This is the signal to build next.** It is the cost driver, it already has
-38,434 labels nobody has to annotate — every arena row carries the responses
-both models actually produced — and it is genuinely predictable.
+The target is the mean of `log1p(tokens)` across both models. Raw counts span 1
+to 88,300, and the routing question is multiplicative ("200 tokens or 2,000"),
+so log space is the honest scale.
 
-The encoder earns its keep here: rho +0.542 against +0.335 for regex. Surface
-features add essentially nothing on top (+0.552, AUC 0.745), so this is an
-encoder job, not a feature-engineering job. The free features remain a
-reasonable fallback if an encoder pass is unaffordable, but they leave a lot on
-the table.
+**There is a ceiling, and it is not 1.0.** Given the *same* prompt, the two
+arena models agree with each other on length at Spearman **0.607**. How long the
+answer runs is partly a property of who answers. No prompt-only feature can
+beat the target's own reproducibility, so every score below is read against
+0.607 rather than against a perfect predictor.
 
-Among the surface features, the interpretable one is `asks_length_limit` at
-−0.143: asking for brevity does produce shorter answers, and the regex catches
-it. `log_chars` and `log_words` dominate but are collinear and split weight.
+76,697 train / 16,538 val / 16,100 test. Alpha on validation, test read once:
+
+| features | Spearman | 95% CI | R² | typical error | AUC (top quartile) |
+|---|---|---|---|---|---|
+| constant (predict the mean) | — | — | 0.000 | ×2.23 | — |
+| prompt length alone | 0.252 | [0.236, 0.266] | 0.060 | ×2.18 | 0.605 |
+| 23 free surface features | 0.353 | [0.339, 0.367] | 0.132 | ×2.12 | 0.664 |
+| 384-d encoder | 0.500 | [0.488, 0.512] | 0.290 | ×1.97 | 0.735 |
+| **384-d + surface** | **0.514** | [0.502, 0.526] | 0.309 | ×1.96 | 0.739 |
+| 1024-d + surface *(30k rows)* | **0.564** | [0.541, 0.585] | 0.391 | ×1.89 | 0.751 |
+
+The encoder is where the signal is: **0.353 free, 0.514 small encoder, 0.564
+large one, against a 0.607 ceiling.** The large encoder reaches 93% of what two
+models manage against each other. Surface features add +0.014 on top of an
+encoder and are the whole story without one.
+
+**The large encoder is already paid for.** `intfloat/e5-large-v2` is the
+top-weighted member of the shipped domain ensemble (0.397). A router that has
+already classified the domain has that embedding in hand, so the strongest
+length head costs one matrix multiply rather than a second encoder pass. The
+384-d model exists for the case where it does not.
+
+**What the head is for, in numbers.** Ranked by predicted length, the top 25% of
+traffic holds **37.9%** of all tokens generated -- against 25% for a random
+quarter and 53.6% for a perfect ranking. It captures 45% of the achievable gain
+over chance. As a gate for "this will be a long answer", the top 5% is 0.596
+precision against a 0.250 base rate.
+
+Grouped by *predicted* quartile, the levels are honest -- predicted 281 tokens
+arrives at 295, predicted 1,038 arrives at 1,071 -- which is what lets the
+estimate feed a cost model rather than only a ranking. The spread is wide and
+stays wide: one residual sigma of 0.889 means the true length is typically
+within a factor of 2 of the estimate, and the 80% interval holds 83.3% of rows,
+so the head is slightly conservative rather than over-confident.
 
 ### Difficulty: not learnable at any price
 
@@ -241,8 +273,9 @@ those and neither reading justifies building it.
 ### What this changes
 
 1. **Build the length estimator with an encoder**, not with the surface
-   features. rho +0.542 vs +0.335 is the difference between useful and marginal,
-   and the target is free.
+   features. Done: 0.514 against 0.353 for regex, and 0.564 if the large
+   encoder is already running for the domain head. The free features remain the
+   fallback when no encoder pass is affordable.
 2. **Stop trying to predict difficulty from the prompt.** Three independent
    feature families have now failed at it. The difficulty head must read model
    behaviour — response length, disagreement between generations, per-model

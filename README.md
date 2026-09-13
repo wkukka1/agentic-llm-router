@@ -1,12 +1,17 @@
-# agentic-llm-router — prompt classifiers
+# agentic-llm-router — prompt signals
 
-Two classifiers over a raw user prompt, feeding the routing stage that picks a
+Three heads over a raw user prompt, feeding the routing stage that picks a
 model. No LLM at inference, no network calls, no fine-tuned weights.
 
-| head | question | classes | top-1 | top-2 |
-|---|---|---|---|---|
-| **domain** | what is it about | 8 (merged from 10) | 0.763 | 0.919 |
-| **task** | what does it ask to be done | 6 | 0.844 | 0.967 |
+| head | question | output | score |
+|---|---|---|---|
+| **domain** | what is it about | 8 classes (merged from 10) | 0.763 top-1 / 0.919 top-2 |
+| **task** | what does it ask to be done | 6 classes | 0.844 top-1 / 0.967 top-2 |
+| **length** | how much work is it | expected tokens + P(tokens > T) | rho 0.514, against a 0.607 ceiling |
+
+The first two are trained on labels written by hand. The length head is trained
+on labels nobody wrote: every arena row carries both models' responses and an
+exact token count, so its corpus is 109,335 prompts at zero annotation cost.
 
 Both cross-validated on hand-labelled real prompts, in the configuration that
 ships. On 402 prompts labelled by someone outside this project the domain head
@@ -45,6 +50,23 @@ labels — the shape of the distribution carries what the argmax does not:
 X, names = head.vectorise(prompts)   # (n, 24) plus its column names
 ```
 
+The length head is separate, because what it returns is a size rather than a
+label:
+
+```python
+from prompt_decomposition import LengthHead
+
+length = LengthHead("artifacts/length/surface_embedding")
+p = length.predict("write a detailed comparison of postgres and mysql")
+p.expected_tokens          # 1187.4
+p.bucket                   # "very_long"
+p.probability_over(2000)   # 0.28  -- the spread is wide, and says so
+```
+
+Read it as a ranking, not as a token count: ranked by prediction, the top 25%
+of traffic holds 37.9% of all generated tokens (random 25%, perfect 53.6%), and
+any single estimate is typically within a factor of 2.
+
 ## Reproducing
 
 ```bash
@@ -62,24 +84,39 @@ python -m prompt_decomposition.cli train experiments/v5/PROD_task.yaml --save-mo
 python -m prompt_decomposition.cli overfit                          # five-check audit
 python -m prompt_decomposition.cli analyze PROD_ensemble            # confusion, per-class F1
 python -m prompt_decomposition.cli external artifacts/v7/PROD_ensemble
+
+# length: builds its own corpus from the arena dump, then sweeps feature sets
+python -m prompt_decomposition.cli length --build
 ```
 
 ## Layout
 
 ```
-src/router/
-  taxonomy.py    domain label space, source mappings, merge rules
-  tasktype.py    task label space, and why it looks like this
-  sources.py     every loader, one per data source
-  dataset.py     canonical rows, splitting, leakage assertions
-  embeddings.py  frozen encoders with an on-disk cache
-  models.py      five model types behind one registry
-  experiment.py  the runner: fit, score, calibrate, write a run dir
-  metrics.py     accuracy, top-k, ECE, coverage curves
-  analysis.py    confusion matrices, per-class F1, error slices
-  overfit.py     the five-check audit
-  inference.py   serving: DomainHead, TaskHead, RouterHead, the vector
-  cli.py         build-task / build-real / train / analyze / external / overfit
+src/prompt_decomposition/
+  composite.py          RouterHead: both heads over one prompt, plus the vector
+  cli.py                build-task / build-real / train / analyze / external /
+                        overfit / length
+  core/                 shared machinery, no single head owns it
+    sources.py          every loader, one per data source
+    dataset.py          canonical rows, splitting, leakage assertions
+    embeddings.py       frozen encoders with an on-disk cache
+    models.py           four model types behind one registry
+    experiment.py       the runner: fit, score, calibrate, write a run dir
+    metrics.py          accuracy, top-k, ECE, coverage curves
+    analysis.py         confusion matrices, per-class F1, error slices
+    overfit.py          the five-check audit
+    head.py             CalibratedHead: load a run dir, serve calibrated scores
+    config.py           an experiment is a YAML file
+    settings.py         seed and paths, one place
+  domain_classifier/    taxonomy.py (label space, merges) + head.py
+  task_classifier/      taxonomy.py (label space, and why) + head.py
+  length_estimator/     expected output length -- the head whose labels are free
+    data.py             corpus from the arena dump, split by hashing the prompt
+    model.py            ridge on log tokens, with a calibrated residual spread
+    audit.py            gap, learning curve, alpha sweep, label permutation
+    head.py             LengthHead: expected tokens and P(tokens > T)
+    experiment.py       the feature-set sweep
+  signals/              surface.py: 23 free deterministic features
 
 data/handlabelled/   the labels. The asset. Committed deliberately.
 data/synthetic/      written and generated supplements, training only

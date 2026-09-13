@@ -111,6 +111,32 @@ names, together, so they cannot drift apart:
 Length is stable for a given head configuration. Changing `merge_domains`
 changes it, which is why the names travel alongside.
 
+## The third head: expected output length
+
+Different in kind from the other two, and worth saying why it is here.
+
+Domain and task are **matching** signals -- which model suits this. Length is a
+**sizing** signal -- how much work this is -- and it is the dominant term in what
+a generation costs. It is also the only head whose labels are free: every arena
+row carries both models' responses with an exact token count, so its corpus is
+109,335 prompts that nobody annotated.
+
+It is a ridge regression on `log1p(tokens)`, and it returns a distribution
+rather than a point. One residual sigma, fitted on validation, turns the
+estimate into `P(tokens > T)` for whatever threshold the caller picks -- cheaper
+than a classifier per threshold, and checked by interval coverage (the 80%
+interval holds 83.3% of test rows) rather than assumed.
+
+**The ceiling is 0.607**: that is how well the two arena models agree with *each
+other* on the same prompt. Length is partly a property of who answers, and no
+prompt-only feature can beat the target's own reproducibility. The shipped head
+reaches 0.514 with a 384-d encoder and 0.564 with the 1024-d one -- 93% of the
+ceiling -- against 0.353 for the free surface features alone.
+
+`intfloat/e5-large-v2` is already the top-weighted member of the domain
+ensemble, so in production the strong version of this head is one matrix
+multiply on an embedding the router has already computed.
+
 ## Results
 
 All numbers are cross-validated on hand-labelled **real** prompts. Benchmark
