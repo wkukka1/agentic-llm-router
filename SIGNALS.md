@@ -99,14 +99,60 @@ which is chance at 0.518 — but it cannot be the backbone.
 1,441 unlabelled prompts, specifically hunting for it, found one example. It is
 0.3% of traffic. A class that rare cannot be learned or measured.
 
+### The arena gives away eleven more labels
+
+Found while chasing the length target: the same dump carries **eleven labelled
+columns on 100% of rows**, which retires the "needs 200 hand labels" blocker for
+several signals parked behind it. Probed with a linear head on the same corpus
+(74,061 train / 15,968 test), free surface features against a 384-d encoder:
+
+| signal | base rate | surface (free) | encoder |
+|---|---|---|---|
+| non-English | 0.462 | 0.934 | **0.990** |
+| **maths needed** | 0.075 | 0.720 | **0.912** |
+| creative writing | 0.089 | 0.694 | **0.897** |
+| **code present** | 0.288 | 0.644 | **0.879** |
+| **constrained instruction** | 0.173 | **0.831** | 0.825 |
+| problem solving | 0.677 | 0.775 | 0.824 |
+| real world | 0.574 | 0.721 | 0.832 |
+| specificity | 0.590 | 0.724 | 0.826 |
+| domain knowledge | 0.819 | 0.667 | 0.816 |
+| technical accuracy | 0.613 | 0.641 | 0.804 |
+| creativity | 0.521 | 0.745 | 0.791 |
+| complexity | 0.484 | 0.692 | 0.773 |
+
+Three things fall out.
+
+**Tool-need is now cheap.** The highest-value unbuilt signal needed labels and
+has them: maths 0.912 and code 0.879 from a linear probe. These are *gating*
+decisions, so unlike the difficulty criteria their value does not depend on the
+preference label being predictable.
+
+**The instruction-constraint signal is free.** Surface features beat the encoder
+on it (0.831 vs 0.825) -- the regexes already see enumeration, format requests
+and length limits, which is most of what "constrained instruction" means. No
+encoder pass to justify.
+
+**The seven difficulty criteria are learnable and of unproven value.** Each
+scores 0.77-0.83, but the hardness rubric composed from them is at chance
+(0.487) for whether the stronger model was actually needed. Learnable is not
+useful, and this project has now been caught by that distinction twice.
+
+Two caveats on all eleven: they are **LLM-judged**, so a head trained here
+reproduces an automatic judge rather than human ground truth; and they are
+arena-distribution, so they inherit whatever that traffic is.
+
+`prompt_decomposition.core.arena_labels` loads them, keyed by `arena_id`.
+
 ### Worth building next, in order
 
-**1. Tool need — search / code / image.** The highest-value unbuilt signal,
-because it is a gating decision rather than a quality one: routing a
+**1. Tool need — search / code / maths.** Still the highest-value unbuilt
+signal, because it is a gating decision rather than a quality one: routing a
 "what happened today" prompt to a parametric model produces a confidently wrong
-answer, not a slightly worse one. Partly reachable from surface signals already
-(`needs_recency`, `has_code_shape`), which means a weak version exists for free
-and a labelled version would be cheap to validate against it.
+answer, not a slightly worse one. **And it no longer needs annotation** — the
+arena dump labels code (0.879 from a probe) and maths (0.912) on every row. The
+gap is search/recency, which nothing in the dump labels; `needs_recency` from
+the surface features is the free proxy to validate against.
 
 **2. Expected output length.** ✅ **Built** — `prompt_decomposition.length_estimator`,
 Spearman 0.573 with the large encoder and 0.514 with a small one, against a
