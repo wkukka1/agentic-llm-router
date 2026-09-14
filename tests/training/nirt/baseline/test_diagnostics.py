@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from router.nirt.baseline.diagnostics import (
+from training.nirt.baseline.diagnostics import (
     effective_rank,
     icc_curve,
     parameter_summary,

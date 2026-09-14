@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from router.config import load_config
-from router.data.pricing import cost_for, fill_costs, load_prices, price_snapshot
+from training.data.pricing import cost_for, fill_costs, load_prices, price_snapshot
 
 
 def test_prices_load_and_canonicalize():

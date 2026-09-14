@@ -6,32 +6,19 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
+from helpers import make_store
+from helpers.faiss_bank import make_faiss_bank
 
 pytest.importorskip("faiss")
 
-from router.embeddings.encoder import EmbeddingStore
-from router.retrieval.knn_impute import imputed_pathway_name
-from router.retrieval.query_bank import QueryBank
+from training.retrieval.knn_impute import imputed_pathway_name
 
 
 def _bank_and_store(tmp_path, n=60, dim=8, seed=0):
-    import faiss
-
-    rng = np.random.default_rng(seed)
-    X = rng.standard_normal((n, dim)).astype(np.float32)
-    Xn = X / np.linalg.norm(X, axis=1, keepdims=True)
-    index = faiss.IndexFlatIP(dim)
-    index.add(Xn)
-    ids = [f"q{i}" for i in range(n)]
-    bank = QueryBank(index, ids, {"split": "train", "pathway": "retrieval",
-                                  "index_type": "flat_ip", "normalized": True,
-                                  "dim": dim, "count": n, "default_k": 5})
-    bank.save(tmp_path)
+    bank, X, ids = make_faiss_bank(tmp_path, n=n, dim=dim, seed=seed)
     # target space: a *different* embedding per id, same id set
-    T = rng.standard_normal((n, dim + 3)).astype(np.float32)
-    store = EmbeddingStore(ids, T, {"dim": dim + 3, "id_field": "query_id",
-                                    "count": n, "complete": True}, id_field="query_id")
-    return bank, X, T, store, ids
+    T = np.random.default_rng(seed + 1).standard_normal((n, dim + 3)).astype(np.float32)
+    return bank, X, T, make_store(ids, T, "query_id"), ids
 
 
 # ---------------------------------------------------------------- weighted mean
@@ -73,9 +60,7 @@ def test_self_exclusion(tmp_path):
 
 def test_no_neighbor_returns_zero_and_found_zero(tmp_path):
     bank, X, T, store, ids = _bank_and_store(tmp_path)
-    empty = EmbeddingStore([], np.zeros((0, T.shape[1]), np.float32),
-                           {"dim": T.shape[1], "id_field": "query_id", "count": 0,
-                            "complete": True}, id_field="query_id")
+    empty = make_store([], np.zeros((0, T.shape[1]), np.float32), "query_id")
     got, found = bank.neighbor_weighted_mean(X[:3], empty, k=5, exclude_ids=ids[:3])
     assert (found == 0).all()
     assert np.count_nonzero(got) == 0
@@ -91,13 +76,11 @@ def test_pathway_names():
 # ---------------------------------------------------------------- bank exclusion
 def test_build_query_bank_excludes_ids(tmp_path, monkeypatch):
     import router.embeddings as emb
-    import router.retrieval.query_bank as qb
+    import training.retrieval.query_bank as qb
 
     ids_all = [f"q{i}" for i in range(20)]
     rng = np.random.default_rng(1)
-    store = EmbeddingStore(ids_all, rng.standard_normal((20, 6)).astype(np.float32),
-                           {"dim": 6, "id_field": "query_id", "count": 20,
-                            "complete": True}, id_field="query_id")
+    store = make_store(ids_all, rng.standard_normal((20, 6)), "query_id")
     monkeypatch.setattr(qb, "_bank_query_ids", lambda cfg, split: ids_all)
     monkeypatch.setattr(emb.EmbeddingStore, "exists", classmethod(lambda cls, d: True))
     monkeypatch.setattr(emb.EmbeddingStore, "load", classmethod(lambda cls, d: store))
@@ -125,11 +108,7 @@ def test_nirt_dataset_distinct_query_and_profile_stores():
         "target": [1.0, 0.0, 0.5], "cost": [0.1, 0.1, 0.2],
         "metric_type": ["accuracy"] * 3, "source": ["routerbench"] * 3,
     })
-    q_store = EmbeddingStore(["a", "b"], np.ones((2, 11), np.float32),
-                             {"dim": 11, "id_field": "query_id", "count": 2,
-                              "complete": True}, id_field="query_id")
-    p_store = EmbeddingStore(["m1", "m2"], np.ones((2, 5), np.float32),
-                             {"dim": 5, "id_field": "model_id", "count": 2,
-                              "complete": True}, id_field="model_id")
+    q_store = make_store(["a", "b"], np.ones((2, 11), np.float32), "query_id")
+    p_store = make_store(["m1", "m2"], np.ones((2, 5), np.float32), "model_id")
     ds = NIRTDataset(obs, q_store, p_store)
     assert ds.query_dim == 11 and ds.model_dim == 5

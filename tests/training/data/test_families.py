@@ -1,20 +1,11 @@
 from __future__ import annotations
 
 import pandas as pd
+from helpers import FamilyCfg as _Cfg
 
 from router._normalize import unit_rows
 from router.config import coerce_auto_bool, coerce_hidden
-from router.data.families import family_labels, family_of, task_family_map
-
-
-class _Cfg:
-    """Minimal stand-in for router.config.Config for the family map."""
-
-    def __init__(self, families):
-        self._f = families
-
-    def get(self, dotted, default=None):
-        return self._f if dotted == "profiles" else default
+from training.data.families import family_labels, family_of, task_family_map
 
 
 def test_task_family_map_lowercases_and_flattens():

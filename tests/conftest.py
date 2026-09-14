@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import pandas as pd
 import pytest
+from helpers import chance_cfg
 
 from router.config import load_config
-from router.data import schemas
+from training.data import schemas
 
 
 @pytest.fixture
@@ -53,3 +54,30 @@ def toy_responses() -> pd.DataFrame:
              metadata={"pair_id": "p1", "role": "b", "opponent_model_id": "gpt-4-1106-preview"}),
     ]
     return schemas.coerce_response_frame(pd.DataFrame(rows))
+
+
+@pytest.fixture
+def toy_tables(toy_responses):
+    """``build_tables`` output (``responses`` / ``queries`` / ``models``) for the
+    canonical ``toy_responses`` frame, with normalized chance-correction."""
+    from training.data.response_matrix import build_tables
+
+    return build_tables(cfg=chance_cfg(), responses=toy_responses)
+
+
+@pytest.fixture
+def toy_training_data(toy_tables):
+    """A ``TrainingData`` facade over the toy tables with a hand-built split
+    (gsm8k + mmlu + the arena battle in train, the MC ``mystery`` query in test,
+    ``llama-2-70b-chat`` held out cold)."""
+    from training.data.facade import TrainingData
+
+    splits = {
+        "train": {"query_ids": ["routerbench:gsm8k:aaaa", "routerbench:mmlu:bbbb",
+                                 "chatbot_arena:a:dddd"]},
+        "validation": {"query_ids": []},
+        "test": {"query_ids": ["routerbench:mystery:cccc"]},
+        "cold_start_models": {"model_ids": ["llama-2-70b-chat"]},
+    }
+    return TrainingData(load_config(), toy_tables["responses"], toy_tables["queries"],
+                      toy_tables["models"], splits)

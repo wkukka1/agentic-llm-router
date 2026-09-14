@@ -4,26 +4,12 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers import make_store
+from helpers.faiss_bank import make_faiss_bank as _bank
 
 pytest.importorskip("faiss")
 
-from router.retrieval.query_bank import QueryBank
-
-
-def _bank(tmp_path, n=200, dim=16, seed=0):
-    import faiss
-
-    rng = np.random.default_rng(seed)
-    X = rng.standard_normal((n, dim)).astype(np.float32)
-    Xn = X / np.linalg.norm(X, axis=1, keepdims=True)
-    index = faiss.IndexFlatIP(dim)
-    index.add(Xn)
-    ids = [f"q{i}" for i in range(n)]
-    manifest = {"split": "train", "pathway": "retrieval", "index_type": "flat_ip",
-                "normalized": True, "dim": dim, "count": n, "default_k": 5}
-    bank = QueryBank(index, ids, manifest)
-    bank.save(tmp_path)
-    return bank, X, ids
+from training.retrieval.query_bank import QueryBank
 
 
 def test_save_load_roundtrip(tmp_path):
@@ -50,10 +36,7 @@ def test_knn_excludes_self(tmp_path):
 
 def test_neighbor_mean_shape(tmp_path):
     bank, X, ids = _bank(tmp_path)
-    from router.embeddings.encoder import EmbeddingStore
-
-    store = EmbeddingStore(ids, X, {"dim": X.shape[1], "id_field": "query_id",
-                                    "count": len(ids), "complete": True}, id_field="query_id")
+    store = make_store(ids, X, "query_id")
     nm = bank.neighbor_mean(X[:4], store, k=5, exclude_ids=ids[:4])
     assert nm.shape == (4, X.shape[1])
     assert np.isfinite(nm).all()

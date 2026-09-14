@@ -1,46 +1,17 @@
 from __future__ import annotations
 
 import numpy as np
-import pandas as pd
 import pytest
+from helpers import FakeTrainingData
+from helpers import make_store as _fake_store
 
-from router.data import schemas
-from router.data.nirt import NIRT_OBS_COLUMNS, NIRTDataset, build_nirt_observations
-from router.data.phase1 import Phase1Data
-from router.data.response_matrix import build_tables
-from router.embeddings.encoder import EmbeddingStore
-
-
-class _ChanceCfg:
-    def get(self, k, d=None):
-        return {"chance_correction": {"method": "normalized", "clip": True,
-                                      "warn_on_missing_choices": False}}.get(k, d)
+from training.data import schemas
+from router.data.nirt import NIRTDataset
+from training.data.nirt import NIRT_OBS_COLUMNS, build_nirt_observations
 
 
-def _fake_store(ids, dim, id_field, seed=0):
-    rng = np.random.default_rng(seed)
-    mat = rng.standard_normal((len(ids), dim)).astype(np.float32)
-    manifest = {"dim": dim, "id_field": id_field, "count": len(ids), "complete": True}
-    return EmbeddingStore(list(ids), mat, manifest, id_field=id_field)
-
-
-@pytest.fixture
-def phase1(toy_responses):
-    tables = build_tables(cfg=_ChanceCfg(), responses=toy_responses)
-    splits = {
-        "train": {"query_ids": ["routerbench:gsm8k:aaaa", "routerbench:mmlu:bbbb"]},
-        "validation": {"query_ids": []},
-        "test": {"query_ids": ["routerbench:mystery:cccc"]},
-        "cold_start_models": {"model_ids": ["llama-2-70b-chat"]},
-    }
-    from router.config import load_config
-
-    return Phase1Data(load_config(), tables["responses"], tables["queries"],
-                      tables["models"], splits)
-
-
-def test_observation_table_schema_and_no_embeddings(phase1):
-    df = build_nirt_observations(phase1.cfg, data=phase1, models="all")
+def test_observation_table_schema_and_no_embeddings(toy_training_data):
+    df = build_nirt_observations(toy_training_data.cfg, data=toy_training_data, models="all")
     assert list(df.columns) == NIRT_OBS_COLUMNS
     # lightweight: no vector columns
     assert not any(c.endswith("embedding") for c in df.columns)
@@ -48,24 +19,24 @@ def test_observation_table_schema_and_no_embeddings(phase1):
     assert set(df["metric_type"]).issubset(schemas.MetricType.CORRECTNESS)
 
 
-def test_observations_exclude_cold_models_by_default(phase1):
-    df = build_nirt_observations(phase1.cfg, data=phase1, models="warm")
+def test_observations_exclude_cold_models_by_default(toy_training_data):
+    df = build_nirt_observations(toy_training_data.cfg, data=toy_training_data, models="warm")
     assert "llama-2-70b-chat" not in set(df["model_id"])
-    df_all = build_nirt_observations(phase1.cfg, data=phase1, models="all")
+    df_all = build_nirt_observations(toy_training_data.cfg, data=toy_training_data, models="all")
     assert "llama-2-70b-chat" in set(df_all["model_id"])
 
 
-def test_target_score_kind(phase1):
-    raw = build_nirt_observations(phase1.cfg, data=phase1, models="all", score_kind="raw")
-    eff = build_nirt_observations(phase1.cfg, data=phase1, models="all", score_kind="effective")
+def test_target_score_kind(toy_training_data):
+    raw = build_nirt_observations(toy_training_data.cfg, data=toy_training_data, models="all", score_kind="raw")
+    eff = build_nirt_observations(toy_training_data.cfg, data=toy_training_data, models="all", score_kind="effective")
     mc_raw = raw[(raw.metric_type == "mc_accuracy") & (raw.score_raw == 0.25)]
     mc_eff = eff[(eff.metric_type == "mc_accuracy") & (eff.score_raw == 0.25)]
     assert mc_raw["target"].iloc[0] == pytest.approx(0.25)
     assert mc_eff["target"].iloc[0] == pytest.approx(0.0)   # chance-corrected
 
 
-def test_dataset_joins_by_id_without_duplicating_vectors(phase1):
-    obs = build_nirt_observations(phase1.cfg, data=phase1, models="all")
+def test_dataset_joins_by_id_without_duplicating_vectors(toy_training_data):
+    obs = build_nirt_observations(toy_training_data.cfg, data=toy_training_data, models="all")
     q_store = _fake_store(sorted(obs["query_id"].unique()), 16, "query_id")
     m_store = _fake_store(sorted(obs["model_id"].unique()), 8, "model_id", seed=1)
     ds = NIRTDataset(obs, q_store, m_store, return_ids=True)
@@ -85,8 +56,8 @@ def test_dataset_joins_by_id_without_duplicating_vectors(phase1):
     assert ds._mmat is m_store.matrix
 
 
-def test_dataset_drops_observations_without_embeddings(phase1):
-    obs = build_nirt_observations(phase1.cfg, data=phase1, models="all")
+def test_dataset_drops_observations_without_embeddings(toy_training_data):
+    obs = build_nirt_observations(toy_training_data.cfg, data=toy_training_data, models="all")
     q_store = _fake_store(sorted(obs["query_id"].unique())[:1], 4, "query_id")
     m_store = _fake_store(sorted(obs["model_id"].unique()), 4, "model_id")
     ds = NIRTDataset(obs, q_store, m_store)
@@ -95,8 +66,8 @@ def test_dataset_drops_observations_without_embeddings(phase1):
     assert set(ds.obs["query_id"]) <= set(q_store._index)
 
 
-def test_gather_matches_iteration(phase1):
-    obs = build_nirt_observations(phase1.cfg, data=phase1, models="all")
+def test_gather_matches_iteration(toy_training_data):
+    obs = build_nirt_observations(toy_training_data.cfg, data=toy_training_data, models="all")
     q_store = _fake_store(sorted(obs["query_id"].unique()), 6, "query_id")
     m_store = _fake_store(sorted(obs["model_id"].unique()), 5, "model_id")
     ds = NIRTDataset(obs, q_store, m_store)
@@ -106,9 +77,86 @@ def test_gather_matches_iteration(phase1):
     np.testing.assert_array_equal(g["target"], ds.targets)
 
 
-def test_collate_produces_tensors(phase1):
+def test_feature_store_default_none_unchanged(toy_training_data):
+    """feature_store=None (the default) must not change query_dim / shapes --
+    back-compat for every existing checkpoint."""
+    obs = build_nirt_observations(toy_training_data.cfg, data=toy_training_data, models="all")
+    q_store = _fake_store(sorted(obs["query_id"].unique()), 6, "query_id")
+    m_store = _fake_store(sorted(obs["model_id"].unique()), 5, "model_id")
+    ds = NIRTDataset(obs, q_store, m_store)
+    assert ds.query_dim == 6
+    assert ds.gather()["query_embedding"].shape == (len(ds), 6)
+
+
+def test_feature_store_concatenated(toy_training_data):
+    obs = build_nirt_observations(toy_training_data.cfg, data=toy_training_data, models="all")
+    qids = sorted(obs["query_id"].unique())
+    q_store = _fake_store(qids, 6, "query_id")
+    m_store = _fake_store(sorted(obs["model_id"].unique()), 5, "model_id")
+    feat_store = _fake_store(qids, 3, "query_id", seed=7)
+    ds = NIRTDataset(obs, q_store, m_store, feature_store=feat_store, return_ids=True)
+
+    assert ds.query_dim == 9   # 6 embedding + 3 feature dims
+    item = ds[0]
+    assert item["query_embedding"].shape == (9,)
+    np.testing.assert_array_equal(item["query_embedding"][:6], q_store.get(item["query_id"]))
+    np.testing.assert_array_equal(item["query_embedding"][6:], feat_store.get(item["query_id"]))
+
+    g = ds.gather()
+    assert g["query_embedding"].shape == (len(ds), 9)
+    np.testing.assert_array_equal(g["query_embedding"][0], item["query_embedding"])
+    # a subset gather() must index the feature columns consistently with the base ones
+    sub = ds.gather(index=[2, 0])
+    np.testing.assert_array_equal(sub["query_embedding"][1], item["query_embedding"])
+
+
+def test_feature_store_missing_query_falls_back_to_zero(toy_training_data):
+    obs = build_nirt_observations(toy_training_data.cfg, data=toy_training_data, models="all")
+    qids = sorted(obs["query_id"].unique())
+    q_store = _fake_store(qids, 4, "query_id")
+    m_store = _fake_store(sorted(obs["model_id"].unique()), 4, "model_id")
+    # feature store covers none of these queries -> every row should fall back to zeros
+    feat_store = _fake_store(["some-other-query"], 2, "query_id")
+    ds = NIRTDataset(obs, q_store, m_store, feature_store=feat_store)
+    g = ds.gather()
+    np.testing.assert_array_equal(g["query_embedding"][:, 4:], np.zeros((len(ds), 2), np.float32))
+
+
+def test_from_config_query_features_wiring(toy_training_data):
+    obs = build_nirt_observations(toy_training_data.cfg, data=toy_training_data, models="all")
+    qids = sorted(obs["query_id"].unique())
+    q_store = _fake_store(qids, 6, "query_id")
+    m_store = _fake_store(sorted(obs["model_id"].unique()), 5, "model_id")
+    feat_store = _fake_store(qids, 3, "query_id", seed=9)
+    stub = FakeTrainingData(query_store=q_store, profile_store=m_store, feature_store=feat_store)
+    ds = NIRTDataset.from_config(toy_training_data.cfg, data=stub, observations=obs, query_features="default")
+    assert ds.query_dim == 9
+
+
+def test_from_config_missing_query_features_raises(toy_training_data):
+    obs = build_nirt_observations(toy_training_data.cfg, data=toy_training_data, models="all")
+    qids = sorted(obs["query_id"].unique())
+    q_store = _fake_store(qids, 6, "query_id")
+    m_store = _fake_store(sorted(obs["model_id"].unique()), 5, "model_id")
+    stub = FakeTrainingData(query_store=q_store, profile_store=m_store)
+    with pytest.raises(FileNotFoundError, match="query features"):
+        NIRTDataset.from_config(toy_training_data.cfg, data=stub, observations=obs, query_features="missing")
+
+
+def test_from_config_default_query_features_none(toy_training_data):
+    """query_features=None (the default) never touches data.query_features."""
+    obs = build_nirt_observations(toy_training_data.cfg, data=toy_training_data, models="all")
+    qids = sorted(obs["query_id"].unique())
+    q_store = _fake_store(qids, 6, "query_id")
+    m_store = _fake_store(sorted(obs["model_id"].unique()), 5, "model_id")
+    stub = FakeTrainingData(query_store=q_store, profile_store=m_store)  # raises if from_config asks for features
+    ds = NIRTDataset.from_config(toy_training_data.cfg, data=stub, observations=obs)
+    assert ds.query_dim == 6
+
+
+def test_collate_produces_tensors(toy_training_data):
     torch = pytest.importorskip("torch")
-    obs = build_nirt_observations(phase1.cfg, data=phase1, models="all")
+    obs = build_nirt_observations(toy_training_data.cfg, data=toy_training_data, models="all")
     q_store = _fake_store(sorted(obs["query_id"].unique()), 6, "query_id")
     m_store = _fake_store(sorted(obs["model_id"].unique()), 5, "model_id")
     ds = NIRTDataset(obs, q_store, m_store)

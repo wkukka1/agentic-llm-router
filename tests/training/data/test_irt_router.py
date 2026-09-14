@@ -8,11 +8,11 @@ import pandas as pd
 import pytest
 
 from router.config import Config
-from router.data import schemas
-from router.data.loaders import load_irt_router
-from router.data.normalize import make_query_id
-from router.data.response_matrix import build_tables
-from router.data.splits import check_leakage, make_presplit
+from training.data import schemas
+from training.data.loaders import load_irt_router
+from training.data.normalize import make_query_id
+from training.data.response_matrix import build_tables
+from training.data.splits import check_leakage, make_presplit
 
 _COLS = "id,question,ground_truth,completion,input_tokens,output_tokens,cost,performance,task,llm"
 

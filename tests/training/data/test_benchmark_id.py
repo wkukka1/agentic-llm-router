@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from router.data.benchmark_id import (
+from training.data.benchmark_id import (
     alignable_eval_names,
     lm_eval_sample_to_uid,
     rb_eval_to_task,

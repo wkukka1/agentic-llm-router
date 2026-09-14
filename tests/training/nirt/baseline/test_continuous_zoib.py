@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers import baseline_cfg
 
 torch = pytest.importorskip("torch")
 
-from router.nirt.baseline.train import fit
-from router.nirt.baseline.continuous_synthetic import make_synthetic_continuous, recovery_report, to_arrays
-from router.nirt.baseline.continuous_zoib import ZOIBResponseHead
+from training.nirt.baseline.train import fit
+from training.nirt.baseline.continuous_synthetic import make_synthetic_continuous, recovery_report, to_arrays
+from training.nirt.baseline.continuous_zoib import ZOIBResponseHead
 
 
 def _head(**kw):
@@ -76,13 +77,7 @@ def test_boundary_probs_and_finite_extremes():
 def test_synthetic_recovery():
     syn = make_synthetic_continuous("zoib", n_queries=1200, n_models=10, K=3, seed=3)
     tr, va = to_arrays(syn, seed=3)
-    cfg = {"seed": 3, "model": {"theta_dim": 3, "model_params": "free", "query_hidden": 64,
-                                "use_length_head": False},
-           "ablation": {"use_relevance": False, "use_interaction": False, "use_warmup": False},
-           "response": {"model": "zoib", "cfg": {}},
-           "regularization": {"theta_l2": 1e-4, "theta_center_l2": 1e-3, "difficulty_l2": 1e-4},
-           "train": {"target": "soft", "lr": 3e-3, "batch_size": 2048, "epochs": 45,
-                     "patience": 12, "device": "cpu"}}
+    cfg = baseline_cfg(response="zoib", k=3, epochs=45, patience=12, seed=3)
     rep = recovery_report(fit(cfg, arrays=(tr, va), save=False, verbose=False).model, syn, va)
     assert rep["nll_finite"]
     assert rep["mean_corr"] > 0.85

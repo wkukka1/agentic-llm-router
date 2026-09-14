@@ -9,14 +9,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from router.pool_expansion import (
+from evaluation.pool_expansion import (
     LEDGER_COLUMNS,
     ablation_pools,
     derived_headline,
     ledger_row,
     render_ledger_md,
 )
-from router.pool_expansion.battery import _frontier_saving
+from evaluation.pool_expansion.battery import _frontier_saving
 
 
 # --------------------------------------------------------------------------- #
@@ -153,7 +153,7 @@ def test_ledger_row_none_saving_when_frontier_empty():
 
 
 def test_render_ledger_md_writes_table(tmp_path, monkeypatch):
-    from router import pool_expansion as pe
+    from evaluation import pool_expansion as pe
 
     art = tmp_path / "artifacts" / "pool_expansion"
     art.mkdir(parents=True)

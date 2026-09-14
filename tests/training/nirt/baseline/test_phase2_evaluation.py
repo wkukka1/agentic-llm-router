@@ -7,7 +7,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from router.nirt.baseline.continuous_eval import _binned, _frac, continuous_metrics
+from training.nirt.baseline.continuous_eval import _binned, _frac, continuous_metrics
 
 
 def test_frac_partition_sums_to_one():
@@ -52,7 +52,7 @@ def test_binned_calibration():
 
 def test_boundary_statistics_on_real_data(tmp_path):
     from router.config import load_config
-    from router.nirt.baseline.continuous_eval import boundary_statistics
+    from training.nirt.baseline.continuous_eval import boundary_statistics
 
     cfg = load_config()
     try:

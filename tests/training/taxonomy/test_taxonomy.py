@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from router.taxonomy.clustering import ClusterConfig, cluster_embeddings
-from router.taxonomy.relevance import relevance_from_embeddings
+from training.taxonomy.clustering import ClusterConfig, cluster_embeddings
+from training.taxonomy.relevance import relevance_from_embeddings
 
 
 def _blobs(n_per=80, seed=0):

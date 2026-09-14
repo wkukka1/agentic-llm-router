@@ -1,20 +1,22 @@
-"""Oracle-routing evaluation (router.nirt.routing_eval)."""
+"""Oracle-routing evaluation (evaluation.routing.oracle, router.nirt.routing_decision)."""
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 import pytest
+from helpers import make_store
 
-from router.nirt.routing_eval import (
+from evaluation.routing.oracle import (
     compare_routing_strategies,
     oracle_classifier_matrix,
     oracle_labels,
     per_query_table,
-    routing_decision,
+    per_task_argmax_baseline,
     routing_evaluation,
     soft_oracle_targets,
 )
+from router.nirt.routing_decision import routing_decision
 
 M = ["GPT-A", "GPT-B", "GPT-C"]
 
@@ -219,6 +221,40 @@ def test_oracle_classifier_baseline_trains_on_train_only():
 
 
 # --------------------------------------------------------------------------- #
+# per-family fixed lookup (zero-parameter routing floor)                     #
+# --------------------------------------------------------------------------- #
+def test_per_task_argmax_baseline_picks_family_best_and_falls_back():
+    # fam_a's best train model is GPT-A; fam_b's best is GPT-C; overall-best is
+    # GPT-A (0.55 mean) -- distinct from fam_b's own pick, so an unseen family
+    # must fall back to the GLOBAL best, not fam_b's.
+    train_true = pd.DataFrame(
+        {"GPT-A": [0.9, 0.9, 0.2, 0.2],
+         "GPT-B": [0.5, 0.5, 0.5, 0.5],
+         "GPT-C": [0.1, 0.1, 0.95, 0.95]},
+        index=["t1", "t2", "t3", "t4"],
+    )
+    family_of = {"t1": "fam_a", "t2": "fam_a", "t3": "fam_b", "t4": "fam_b",
+                 "e_a": "fam_a", "e_b": "fam_b", "e_unseen": "fam_c"}
+    mat = per_task_argmax_baseline(train_true, ["e_a", "e_b", "e_unseen"], M, family_of)
+    assert mat.shape == (3, 3)
+    assert np.allclose(mat.sum(axis=1), 1.0)  # one-hot
+    picked = [M[i] for i in mat.argmax(axis=1)]
+    assert picked == ["GPT-A", "GPT-C", "GPT-A"]
+
+
+def test_per_task_argmax_baseline_plugs_into_routing_evaluation():
+    train_true = pd.DataFrame(
+        {"GPT-A": [0.9, 0.9], "GPT-B": [0.5, 0.5], "GPT-C": [0.1, 0.1]},
+        index=["t1", "t2"],
+    )
+    family_of = {"t1": "fam", "t2": "fam", "e1": "fam"}
+    eval_true = np.array([[0.9, 0.5, 0.1]])
+    mat = per_task_argmax_baseline(train_true, ["e1"], M, family_of)
+    r = routing_evaluation(mat, eval_true, None, M)
+    assert r["mean_regret"] == pytest.approx(0.0)
+
+
+# --------------------------------------------------------------------------- #
 # leakage: oracle info is evaluation-only                                     #
 # --------------------------------------------------------------------------- #
 def test_oracle_columns_absent_from_model_input_tensors():
@@ -232,13 +268,8 @@ def test_oracle_columns_absent_from_model_input_tensors():
         "target": [1.0, 0.0], "metric_type": ["accuracy", "accuracy"],
         "source": ["s", "s"], "cost": [0.1, 0.2],
     })
-    from router.embeddings.encoder import EmbeddingStore
-
-    def _store(ids, dim, field):
-        man = {"dim": dim, "id_field": field, "count": len(ids), "complete": True}
-        return EmbeddingStore(list(ids), np.zeros((len(ids), dim), np.float32), man, id_field=field)
-
-    ds = NIRTDataset(obs, _store(["q0"], 8, "query_id"), _store(["m0", "m1"], 8, "model_id"))
+    ds = NIRTDataset(obs, make_store(["q0"], 8, "query_id"),
+                     make_store(["m0", "m1"], 8, "model_id"))
     assert not (set(ds[0]) & forbidden)
     assert not (set(ds.gather()) & forbidden)
 
@@ -246,7 +277,7 @@ def test_oracle_columns_absent_from_model_input_tensors():
 def test_per_query_table_columns():
     true_df, cost_df = _mats()
     true, cost = true_df.to_numpy(), cost_df.to_numpy()
-    from router.nirt.routing import oracle_choice
+    from evaluation.nirt.routing import oracle_choice
 
     sel = np.array([1, 0, 2])
     o = oracle_choice(true, cost)

@@ -4,8 +4,8 @@ import pandas as pd
 import pytest
 
 from router.config import load_config
-from router.data.normalize import content_hash
-from router.data.splits import check_leakage, make_splits
+from training.data.normalize import content_hash
+from training.data.splits import check_leakage, make_splits
 
 
 @pytest.fixture
@@ -28,22 +28,19 @@ def responses_for_split():
     return pd.DataFrame(rows)
 
 
-def test_splits_are_deterministic(responses_for_split):
-    cfg = load_config()
+def test_splits_are_deterministic(responses_for_split, cfg):
     a = make_splits(responses_for_split, cfg)
     b = make_splits(responses_for_split, cfg)
     assert a["train"]["query_ids"] == b["train"]["query_ids"]
     assert a["test"]["query_ids"] == b["test"]["query_ids"]
 
 
-def test_no_query_leakage(responses_for_split):
-    cfg = load_config()
+def test_no_query_leakage(responses_for_split, cfg):
     splits = make_splits(responses_for_split, cfg)
     assert check_leakage(splits) == []
 
 
-def test_content_identical_queries_share_split(responses_for_split):
-    cfg = load_config()
+def test_content_identical_queries_share_split(responses_for_split, cfg):
     splits = make_splits(responses_for_split, cfg)
     h = content_hash("question number 0")[:16]
     rb_id = f"routerbench:t:{h}"
@@ -53,8 +50,7 @@ def test_content_identical_queries_share_split(responses_for_split):
         assert (rb_id in ids) == (lm_id in ids)
 
 
-def test_split_fractions_roughly_respected(responses_for_split):
-    cfg = load_config()
+def test_split_fractions_roughly_respected(responses_for_split, cfg):
     splits = make_splits(responses_for_split, cfg)
     n = sum(len(splits[s]["query_ids"]) for s in ("train", "validation", "test"))
     assert 0.7 < len(splits["train"]["query_ids"]) / n < 0.9

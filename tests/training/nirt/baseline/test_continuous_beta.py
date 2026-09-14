@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import pytest
+from helpers import baseline_cfg
 
 torch = pytest.importorskip("torch")
 
-from router.nirt.baseline.train import fit
-from router.nirt.baseline.continuous_beta import BetaResponseHead
-from router.nirt.baseline.continuous_synthetic import make_synthetic_continuous, recovery_report, to_arrays
+from training.nirt.baseline.train import fit
+from training.nirt.baseline.continuous_beta import BetaResponseHead
+from training.nirt.baseline.continuous_synthetic import make_synthetic_continuous, recovery_report, to_arrays
 
 
 def _head(**kw):
@@ -61,13 +62,7 @@ def test_interior_only_flag():
 def test_synthetic_recovery():
     syn = make_synthetic_continuous("beta", n_queries=1000, n_models=10, K=3, seed=2)
     tr, va = to_arrays(syn, seed=2)
-    cfg = {"seed": 2, "model": {"theta_dim": 3, "model_params": "free", "query_hidden": 64,
-                                "use_length_head": False},
-           "ablation": {"use_relevance": False, "use_interaction": False, "use_warmup": False},
-           "response": {"model": "beta", "cfg": {}},
-           "regularization": {"theta_l2": 1e-4, "theta_center_l2": 1e-3, "difficulty_l2": 1e-4},
-           "train": {"target": "soft", "lr": 3e-3, "batch_size": 2048, "epochs": 40,
-                     "patience": 12, "device": "cpu"}}
+    cfg = baseline_cfg(response="beta", k=3, epochs=40, patience=12, seed=2)
     rep = recovery_report(fit(cfg, arrays=(tr, va), save=False, verbose=False).model, syn, va)
     assert rep["nll_finite"]
     assert rep["mean_corr"] > 0.9

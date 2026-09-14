@@ -4,22 +4,14 @@ import warnings
 
 import pandas as pd
 import pytest
+from helpers import chance_cfg as _CC
 
-from router.data import schemas
-from router.data.chance_correction import (
+from training.data import schemas
+from training.data.chance_correction import (
     apply_chance_correction,
     estimate_model_bias,
     normalized_correction,
 )
-
-
-class _CC:
-    def __init__(self, method="normalized", clip=True, warn=True):
-        self._d = {"chance_correction": {"method": method, "clip": clip,
-                                         "warn_on_missing_choices": warn}}
-
-    def get(self, key, default=None):
-        return self._d.get(key, default)
 
 
 def test_normalized_formula_known_values():

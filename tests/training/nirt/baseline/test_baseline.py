@@ -7,7 +7,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from router.nirt.baseline.model import BaselineNIRT, build_baseline_model
+from training.nirt.baseline.model import BaselineNIRT, build_baseline_model
 from router.nirt.components import DiscriminationHead, InteractionLayer, WarmupBlender
 
 
@@ -97,7 +97,7 @@ def test_warmup_blender_passthrough_and_blend():
 
 
 def test_recenter_of_theta_mean_penalty_shrinks_mean():
-    from router.nirt.baseline.losses import RegConfig, regularization
+    from training.nirt.baseline.losses import RegConfig, regularization
 
     theta = torch.randn(9, 3) + 5.0
     reg = regularization(RegConfig(theta_center_l2=1.0, theta_l2=0.0),

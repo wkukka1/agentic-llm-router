@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-import pandas as pd
 import pytest
 
 from router.config import load_config
-from router.models.profiles import (
+from training.models.profiles import (
     build_model_profiles,
     empirical_stats,
     read_model_profiles,
     render_profile_text,
     write_model_profiles,
 )
-from router.data.response_matrix import build_tables
 
 
 class _CfgWrap:
@@ -34,14 +32,8 @@ class _CfgWrap:
 
 
 @pytest.fixture
-def corrected(toy_responses):
-    return build_tables(cfg=_ChanceCfg(), responses=toy_responses)["responses"]
-
-
-class _ChanceCfg:
-    def get(self, k, d=None):
-        return {"chance_correction": {"method": "normalized", "clip": True,
-                                      "warn_on_missing_choices": False}}.get(k, d)
+def corrected(toy_tables):
+    return toy_tables["responses"]
 
 
 def test_empirical_stats_shapes(corrected):

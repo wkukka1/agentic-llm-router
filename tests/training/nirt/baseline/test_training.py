@@ -4,23 +4,18 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers import baseline_cfg
 
 torch = pytest.importorskip("torch")
 
-from router.nirt.baseline.train import fit
-from router.nirt.baseline.synthetic import make_synthetic, recovery_report, to_arrays
+from training.nirt.baseline.train import fit
+from training.nirt.baseline.synthetic import make_synthetic, recovery_report, to_arrays
 
 
 def _tiny_cfg(k=3, epochs=20):
-    return {
-        "seed": 0,
-        "model": {"theta_dim": k, "model_params": "free", "query_hidden": 32,
-                  "use_length_head": False},
-        "ablation": {"use_relevance": False, "use_warmup": False, "use_interaction": False},
-        "regularization": {"theta_l2": 1e-4, "theta_center_l2": 1e-3, "difficulty_l2": 1e-4},
-        "train": {"target": "binary", "lr": 3e-3, "batch_size": 1024, "epochs": epochs,
-                  "patience": 20, "device": "cpu"},
-    }
+    # query_hidden=32 is load-bearing: test_cold_start_models_not_optimized
+    # rebuilds a BaselineNIRT with the same width to compare theta rows.
+    return baseline_cfg(k=k, epochs=epochs, query_hidden=32, patience=20)
 
 
 def test_bce_decreases_on_synthetic():
@@ -65,7 +60,7 @@ def test_cold_start_models_not_optimized():
     theta = res.model.theta.weight.detach().numpy()
     # row 7 was never in a batch -> unchanged from the seeded init
     from router.determinism import seed_everything
-    from router.nirt.baseline.model import BaselineNIRT
+    from training.nirt.baseline.model import BaselineNIRT
 
     seed_everything(0)
     ref = BaselineNIRT(query_dim=tr.query_dim, dim=3, n_models=8, model_params="free",

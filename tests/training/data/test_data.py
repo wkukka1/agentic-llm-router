@@ -3,12 +3,12 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from router.data import schemas
-from router.data.loaders import load_routerbench
-from router.data.model_registry import canonical_model_id, is_canonical
-from router.data.normalize import content_hash, make_query_id, render_prompt
-from router.data.quality import check_responses
-from router.data.response_matrix import build_tables, collapse_duplicate_observations, pivot
+from training.data import schemas
+from training.data.loaders import load_routerbench
+from training.data.model_registry import canonical_model_id, is_canonical
+from training.data.normalize import content_hash, make_query_id, render_prompt
+from training.data.quality import check_responses
+from training.data.response_matrix import collapse_duplicate_observations, pivot
 
 
 # --------------------------------------------------------------------------- #
@@ -57,7 +57,7 @@ def test_model_aliases_canonicalize():
 
 
 def test_low_confidence_aliases_are_not_merged():
-    from router.data.model_registry import alias_confidence
+    from training.data.model_registry import alias_confidence
 
     # distinct GPT-4 checkpoints must never collapse together
     assert canonical_model_id("gpt-4-0613") == "gpt-4-0613"
@@ -137,18 +137,16 @@ def test_collapse_duplicates_averages_and_records_fanin(toy_responses):
     assert row["metadata"].iloc[0]["collapsed_from"] == 2
 
 
-def test_pivot_keeps_metrics_separate(toy_responses):
-    tables = build_tables(cfg=_DummyCfg(), responses=toy_responses)
-    R = pivot(tables["responses"], schemas.MetricType.ACCURACY)
+def test_pivot_keeps_metrics_separate(toy_tables):
+    R = pivot(toy_tables["responses"], schemas.MetricType.ACCURACY)
     assert "gpt-4-1106-preview" in R.columns
     assert R.loc["routerbench:gsm8k:aaaa", "gpt-4-1106-preview"] == 1.0
     with pytest.raises(ValueError):
-        pivot(tables["responses"], "nonexistent_metric")
+        pivot(toy_tables["responses"], "nonexistent_metric")
 
 
-def test_metric_type_preserved_through_pipeline(toy_responses):
-    tables = build_tables(cfg=_DummyCfg(), responses=toy_responses)
-    metrics = set(tables["responses"]["metric_type"])
+def test_metric_type_preserved_through_pipeline(toy_tables):
+    metrics = set(toy_tables["responses"]["metric_type"])
     assert schemas.MetricType.ACCURACY in metrics
     assert schemas.MetricType.MC_ACCURACY in metrics
     assert schemas.MetricType.ARENA_PREFERENCE in metrics
@@ -179,7 +177,7 @@ def test_routerbench_5shot_item_identity(cfg):
         df = load_routerbench(cfg)
     except FileNotFoundError:
         pytest.skip("RouterBench data not present")
-    from router.data.normalize import content_hash
+    from training.data.normalize import content_hash
 
     shot = df["metadata"].map(lambda m: (m or {}).get("shots"))
     five = df[shot == "5shot"]
@@ -195,13 +193,3 @@ def test_routerbench_5shot_item_identity(cfg):
     # stripping the suffix recovers the sibling id
     zero_ids = set(zero["query_id"])
     assert {q[: -len(":5shot")] for q in five["query_id"].unique()} <= zero_ids
-
-
-class _DummyCfg:
-    """Minimal config stub for build_tables when we pass responses directly."""
-
-    def get(self, key, default=None):
-        return {
-            "chance_correction": {"method": "normalized", "clip": True,
-                                  "warn_on_missing_choices": False},
-        }.get(key, default)
