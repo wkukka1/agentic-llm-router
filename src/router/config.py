@@ -16,6 +16,9 @@ import yaml
 # Repository root = two levels up from this file (src/router/config.py).
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG_PATH = REPO_ROOT / "configs" / "phase0.yaml"
+# Shared by training.nirt.train (writes a run) and router.nirt.checkpoint
+# (loads one) -- one source of truth for where saved runs live.
+DEFAULT_NIRT_RUNS_DIR = "data/processed/nirt_runs"
 
 
 class Config:

@@ -160,13 +160,14 @@ class TextEncoder:
     def _encode_bert_batch(self, batch: list[str]) -> np.ndarray:
         import torch
 
+        model = self.model  # lazy-loads self._tokenizer too (side effect of the property)
         with torch.no_grad():
             enc = self._tokenizer(
                 batch, padding=True, truncation=True,
                 max_length=int(self.cfg.max_seq_length or 256),
                 return_tensors="pt",
             ).to(self.device)
-            hidden = self.model(**enc).last_hidden_state          # (b, t, h)
+            hidden = model(**enc).last_hidden_state          # (b, t, h)
             if self.cfg.pooling == "cls":
                 vec = hidden[:, 0]
             else:  # mean pooling over non-pad tokens

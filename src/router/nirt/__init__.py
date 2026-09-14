@@ -1,29 +1,32 @@
-"""NIRT response model (Phase 2).
+"""NIRT response model -- serving side (Phase 2).
 
-``router.data.nirt`` holds the training *representation* (observation table +
-``NIRTDataset``); this package holds the *model*. Import the submodule you need
-directly -- ``from router.nirt.train import fit``, ``from router.nirt.routing
-import routing_report``, etc. -- rather than this namespace, so touching one
-corner of the package does not eagerly load torch + every response head.
+``router.data.nirt`` holds the batch representation (observation table +
+``NIRTDataset``); this package holds the *model* plus everything needed to
+score a fitted one: :mod:`router.nirt.checkpoint` (load a saved run),
+:mod:`router.nirt.predict` (label-free inference), :mod:`router.nirt.frames`
+(the ``[query x model]`` pivot), :mod:`router.nirt.baselines_infer` (kNN / MLP
+router scoring) and :mod:`router.nirt.routing_decision` (the argmax policy).
 
-The frozen Bernoulli / continuous-response control arm lives isolated under
-``router.nirt.baseline`` (e.g. ``from router.nirt.baseline.model import
-build_baseline_model``, ``from router.nirt.baseline.response_head import
-RESPONSE_MODELS``) -- it is not re-exported here.
+Fitting (``training.nirt.train.fit``, ``training.trainers.mlp_router``) and
+label-needing evaluation (``evaluation.nirt.evaluate``,
+``evaluation.routing.oracle``) live in their own top-level packages -- this
+package must never import them. Import the submodule you need directly
+rather than this namespace, so touching one corner of the package does not
+eagerly load torch + every response head.
+
+The frozen Bernoulli / continuous-response control arm (training-only) lives
+under ``training.nirt.baseline``.
 
 A few common entry points are re-exported here for convenience:
 
 * :func:`router.nirt.model.build_model` -- build the model for a config.
-* :func:`router.nirt.train.fit` / :func:`router.nirt.train.load_run`.
-* :func:`router.nirt.evaluate.evaluate_split`.
+* :func:`router.nirt.checkpoint.load_run` -- load a saved run for inference.
 """
 
+from .checkpoint import load_run
 from .model import build_model
-from .train import RunResult, fit, load_run
 
 __all__ = [
     "build_model",
-    "fit",
     "load_run",
-    "RunResult",
 ]

@@ -154,6 +154,8 @@ class NIRTModel(nn.Module):
         model_hidden: Optional[int] = None,
         interaction: bool = False,
         interaction_hidden: int = 32,
+        center_discrimination: bool = False,
+        query_head_batchnorm: bool = False,
     ):
         super().__init__()
         require_choice(model_params, MODEL_PARAM_MODES, field="model_params")
@@ -170,10 +172,22 @@ class NIRTModel(nn.Module):
         self.model_hidden = model_hidden
         self.interaction = bool(interaction)
         self.interaction_hidden = int(interaction_hidden)
+        self.center_discrimination = bool(center_discrimination)
+        self.query_head_batchnorm = bool(query_head_batchnorm)
         b_dim = self.dim if difficulty == "vector" else 1
 
         # -- query head: e_q -> theta_q in R^K -------------------------------
         self.query_head = _query_head(self.query_dim, self.dim, query_hidden, **self.head_kwargs)
+
+        # -- optional whitening of theta_q (P7b) -----------------------------
+        # Counter-pressure against the query head collapsing onto a low-rank
+        # subspace: BatchNorm forces Cov(theta_q) ~= I_K over a batch, whose
+        # effective rank ((sum lambda)^2 / sum lambda^2) is exactly K. Only
+        # constructed when enabled, so a disabled model's state_dict is
+        # unchanged. ``affine=False`` -- no learnable scale/shift, so it can
+        # only decorrelate/rescale, never re-introduce a shared shift.
+        if self.query_head_batchnorm:
+            self.query_bn = nn.BatchNorm1d(self.dim, affine=False)
 
         # -- model side: (a_m, b_m) ----------------------------------------
         # ``model_hidden`` (P2b): a 1-hidden-layer MLP on the profile embedding
@@ -229,6 +243,8 @@ class NIRTModel(nn.Module):
             model_hidden=coerce_hidden(model_cfg.get("model_hidden")),
             interaction=bool(model_cfg.get("interaction", False)),
             interaction_hidden=int(model_cfg.get("interaction_hidden", 32) or 32),
+            center_discrimination=bool(model_cfg.get("center_discrimination", False)),
+            query_head_batchnorm=bool(model_cfg.get("query_head_batchnorm", False)),
         )
 
     # ------------------------------------------------------------------ #
@@ -236,7 +252,35 @@ class NIRTModel(nn.Module):
     # ------------------------------------------------------------------ #
     def latent_query(self, e_q: torch.Tensor) -> torch.Tensor:
         """``theta_q`` for a batch of query embeddings -> ``(B, K)``."""
-        return self.query_head(e_q)
+        theta = self.query_head(e_q)
+        if self.query_head_batchnorm:
+            theta = self.query_bn(theta)
+        return theta
+
+    def _center_discrimination(self, a: torch.Tensor) -> torch.Tensor:
+        """Subtract a reference vector ``r`` from every ``a_m`` before ranking.
+
+        Exactly lossless for within-query ranking: for any two candidates
+        ``m, n`` scored against the same ``theta_q``, ``(a_m - r).theta_q -
+        (a_n - r).theta_q == a_m.theta_q - a_n.theta_q`` for ANY fixed ``r``
+        -- the ``r.theta_q`` term cancels. ``r`` only needs to be the same
+        constant across every candidate compared for one routing decision.
+
+        ``free`` mode: ``r`` = mean over the FULL model pool
+        (``self.a.weight``, post-constraint), independent of which models
+        appear in this particular forward call -- required so two separate
+        calls scoring different candidates still use the same ``r``.
+        ``projected`` mode: no fixed pool exists on the model itself, so
+        ``r`` = mean over the CURRENT batch. Exact when the batch is one
+        query's full candidate set (``train.sampler: query``); a converged
+        approximation otherwise (see docs on the P7b centering ablation).
+        """
+        if self.model_params == "free":
+            raw = self.a.weight
+            r = (F.softplus(raw) if self.constrain_discrimination else raw).mean(0, keepdim=True)
+        else:
+            r = a.mean(0, keepdim=True)
+        return a - r
 
     def model_parameters(
         self, model_ref: Union[torch.Tensor, np.ndarray]
@@ -259,6 +303,8 @@ class NIRTModel(nn.Module):
             b = b.squeeze(-1)                       # (B,)
         if self.constrain_discrimination:
             a = F.softplus(a)
+        if self.center_discrimination:
+            a = self._center_discrimination(a)
         return a, b
 
     def forward(

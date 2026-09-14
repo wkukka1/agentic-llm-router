@@ -1,38 +1,36 @@
-"""NIRT training representation.
+"""``NIRTDataset`` -- the serving-side NIRT batch container.
 
-Two layers, kept separate so 768-d vectors are never copied into every row:
+Joins an observation table (one lightweight row per ``(query_id, model_id,
+metric)``: ``target, score_raw, metric_type, source, split, cost,
+is_multiple_choice, n_choices`` -- no embeddings) to the query and profile
+:class:`~router.embeddings.EmbeddingStore`\\ s *by id at access time*.
+``dataset[i]`` returns ``{query_embedding, model_embedding, target, ...}``;
+the embeddings are memmap views, not copies.
 
-1. **observation table** (``data/processed/nirt_observations.parquet``) -- one
-   lightweight row per ``(query_id, model_id, metric)`` training example:
-   ``query_id, model_id, target, score_raw, metric_type, source, split, cost,
-   is_multiple_choice, n_choices``. No embeddings.
-
-2. **:class:`NIRTDataset`** -- joins the observation table to the query and
-   profile :class:`~router.embeddings.EmbeddingStore`s *by id at access time*.
-   ``dataset[i]`` returns ``{query_embedding, model_embedding, target, ...}``;
-   the embeddings are memmap views, not copies.
+Building the observation table (``data/processed/nirt_observations.parquet``)
+from raw training data, and the ``Config -> TrainingData`` resolution
+:meth:`NIRTDataset.from_config` needs, are training-only concerns -- see
+:mod:`training.data.nirt` (:func:`~training.data.nirt.build_nirt_observations`,
+:func:`~training.data.nirt.nirt_dataset_from_config`). A live router
+constructs this class directly from a pre-built store and an in-memory obs
+frame; it never builds the observation table itself.
 
 Only the **absolute correctness** signal (RouterBench / lm-harness) goes here --
 that is the primary NIRT response signal. Pairwise preference (Arena / Judge)
-has its own opponent-aware path via ``Phase1Data.pairwise`` and is not folded in.
+has its own opponent-aware path via ``TrainingData.pairwise`` and is not folded in.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Iterable, Optional, Sequence
+from typing import TYPE_CHECKING, Optional, Sequence
 
 import numpy as np
 import pandas as pd
 
 from ..config import Config
-from . import schemas
-from .phase1 import Phase1Data, load_phase1
 
-NIRT_OBS_COLUMNS = [
-    "query_id", "model_id", "target", "score_raw", "metric_type",
-    "source", "split", "cost", "is_multiple_choice", "n_choices",
-]
+if TYPE_CHECKING:  # pragma: no cover - type hints only, not a runtime import
+    from training.data.facade import TrainingData
 
 try:  # optional torch base class
     from torch.utils.data import Dataset as _TorchDataset
@@ -41,73 +39,6 @@ try:  # optional torch base class
 except Exception:  # pragma: no cover
     _TorchDataset = object  # type: ignore[assignment,misc]
     _HAS_TORCH = False
-
-
-# --------------------------------------------------------------------------- #
-# observation table                                                           #
-# --------------------------------------------------------------------------- #
-def build_nirt_observations(
-    cfg: Config,
-    *,
-    data: Optional[Phase1Data] = None,
-    score_kind: str = "effective",
-    metrics: Optional[Iterable[str]] = None,
-    models: str = "warm",
-    drop_unsplit: bool = True,
-) -> pd.DataFrame:
-    """Lightweight ``(query, model, target)`` table for every correctness obs.
-
-    ``target`` follows ``score_kind`` (``effective`` = chance-corrected where
-    applicable, else raw). ``split`` is attached from ``data/splits``; rows whose
-    query is in no split (only reachable via cold-start models) are dropped when
-    ``drop_unsplit``.
-    """
-    d = data or load_phase1(cfg)
-    long = d.correctness(split=None, metrics=metrics, models=models,
-                         score_kind=score_kind)
-
-    split_of: dict[str, str] = {}
-    for name in ("train", "validation", "test", "ood"):
-        entry = d.splits.get(name)
-        if entry is None:
-            continue
-        for qid in entry["query_ids"]:
-            split_of[qid] = name
-
-    out = pd.DataFrame({
-        "query_id": long["query_id"],
-        "model_id": long["model_id"],
-        "target": pd.to_numeric(long["score"], errors="coerce"),
-        "score_raw": pd.to_numeric(long["score_raw"], errors="coerce"),
-        "metric_type": long["metric_type"],
-        "is_multiple_choice": long["is_multiple_choice"].astype(bool),
-        "n_choices": long["n_choices"].astype("Int64"),
-        "split": long["query_id"].map(split_of).astype("string"),
-    })
-
-    # cost + source live on the raw response rows, not the correctness view
-    corr_rows = d.responses[d.responses["metric_type"].isin(schemas.MetricType.CORRECTNESS)]
-    extra = (
-        corr_rows.groupby(["query_id", "model_id"], as_index=False)
-        .agg(cost=("cost", "mean"), source=("source", "first"))
-    )
-    out = out.merge(extra, on=["query_id", "model_id"], how="left")
-
-    if drop_unsplit:
-        out = out[out["split"].notna()]
-    out = out[NIRT_OBS_COLUMNS].reset_index(drop=True)
-    return out
-
-
-def write_nirt_observations(df: pd.DataFrame, cfg: Config) -> Path:
-    out = cfg.path("processed") / "nirt_observations.parquet"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(out, index=False)
-    return out
-
-
-def read_nirt_observations(cfg: Config) -> pd.DataFrame:
-    return pd.read_parquet(cfg.path("processed") / "nirt_observations.parquet")
 
 
 # --------------------------------------------------------------------------- #
@@ -128,10 +59,12 @@ class NIRTDataset(_TorchDataset):
         query_store,
         profile_store,
         *,
+        feature_store=None,
         return_ids: bool = False,
     ):
         self.query_store = query_store
         self.profile_store = profile_store
+        self.feature_store = feature_store
         self.return_ids = return_ids
 
         mask = (
@@ -150,6 +83,17 @@ class NIRTDataset(_TorchDataset):
         self._source = self.obs["source"].astype(str).to_numpy()
         self._qmat = query_store.matrix
         self._mmat = profile_store.matrix
+        # structured per-query features (router.data.query_features), concatenated
+        # to the query embedding -- a query missing from the store (shouldn't
+        # happen for a store built over the full corpus) falls back to zeros,
+        # like the relevance / warm-up joins in nirt/baseline/data.py.
+        self._feat = None
+        if feature_store is not None:
+            qids = self.obs["query_id"].tolist()
+            rows = np.array([feature_store.row_of(q) if q in feature_store else -1 for q in qids])
+            self._feat = np.zeros((len(qids), feature_store.dim), dtype=np.float32)
+            hit = rows >= 0
+            self._feat[hit] = np.asarray(feature_store.matrix)[rows[hit]]
 
     # -- shape --------------------------------------------------------
     def __len__(self) -> int:
@@ -157,7 +101,10 @@ class NIRTDataset(_TorchDataset):
 
     @property
     def query_dim(self) -> int:
-        return int(self._qmat.shape[1])
+        d = int(self._qmat.shape[1])
+        if self._feat is not None:
+            d += self._feat.shape[1]
+        return d
 
     @property
     def model_dim(self) -> int:
@@ -177,8 +124,11 @@ class NIRTDataset(_TorchDataset):
 
     # -- access ------------------------------------------------------
     def __getitem__(self, i: int) -> dict:
+        qv = np.asarray(self._qmat[self._q_rows[i]], dtype=np.float32)
+        if self._feat is not None:
+            qv = np.concatenate([qv, self._feat[i]])
         item = {
-            "query_embedding": np.asarray(self._qmat[self._q_rows[i]], dtype=np.float32),
+            "query_embedding": qv,
             "model_embedding": np.asarray(self._mmat[self._m_rows[i]], dtype=np.float32),
             "target": np.float32(self._y[i]),
             "metric": self._metric[i],
@@ -199,13 +149,19 @@ class NIRTDataset(_TorchDataset):
         """
         qr, mr = self._q_rows, self._m_rows
         y, cost, metric, source = self._y, self._cost, self._metric, self._source
+        feat = self._feat
         if index is not None:
             index = np.asarray(index)
             qr, mr, y, cost, metric, source = (
                 qr[index], mr[index], y[index], cost[index], metric[index], source[index]
             )
+            if feat is not None:
+                feat = feat[index]
+        qe = np.asarray(self._qmat[qr], dtype=np.float32)
+        if feat is not None:
+            qe = np.concatenate([qe, feat], axis=1)
         return {
-            "query_embedding": np.asarray(self._qmat[qr], dtype=np.float32),
+            "query_embedding": qe,
             "model_embedding": np.asarray(self._mmat[mr], dtype=np.float32),
             "target": y,
             "cost": cost,
@@ -247,30 +203,43 @@ class NIRTDataset(_TorchDataset):
         cls,
         cfg: Config,
         *,
+        data: "TrainingData",
         split: Optional[str] = None,
         pathway: str = "irt",
         query_pathway: Optional[str] = None,
-        data: Optional[Phase1Data] = None,
+        query_features: Optional[str] = None,
         observations: Optional[pd.DataFrame] = None,
         return_ids: bool = False,
-        **build_kw,
     ) -> "NIRTDataset":
         """``query_pathway`` (default: ``pathway``) overrides only the *query*
         embedding store -- used to feed a kNN-imputed query representation while
-        the profile store stays on ``pathway``."""
-        d = data or load_phase1(cfg)
+        the profile store stays on ``pathway``. ``query_features`` names a
+        structured-feature variant (``training.data.query_features``) concatenated
+        to the query embedding; ``None`` -> unchanged (no concat).
+
+        Serving-safe: needs ``data`` (anything exposing ``query_embeddings`` /
+        ``profile_embeddings`` / ``query_features``, e.g. ``TrainingData``) passed
+        in explicitly, and either ``observations`` or an already-built
+        ``nirt_observations.parquet`` -- it never resolves ``data`` from a bare
+        config or builds the observation table itself. For that convenience
+        (used by the training pipeline), see
+        :func:`training.data.nirt.nirt_dataset_from_config`. Live routers use
+        ``NIRTDataset(...)`` directly with a pre-built store and an in-memory
+        obs frame."""
         if observations is None:
             path = cfg.path("processed") / "nirt_observations.parquet"
-            observations = (
-                pd.read_parquet(path) if path.exists()
-                else build_nirt_observations(cfg, data=d, **build_kw)
-            )
+            if not path.exists():
+                raise FileNotFoundError(
+                    f"{path} not built; run scripts/data/build_nirt_dataset.py "
+                    f"or training.data.nirt.nirt_dataset_from_config(cfg, ...)"
+                )
+            observations = pd.read_parquet(path)
         if split is not None:
             observations = observations[observations["split"] == split]
 
         q_pathway = query_pathway or pathway
-        q_store = d.query_embeddings(q_pathway)
-        m_store = d.profile_embeddings(pathway)
+        q_store = data.query_embeddings(q_pathway)
+        m_store = data.profile_embeddings(pathway)
         if q_store is None:
             raise FileNotFoundError(
                 f"query embeddings for pathway '{q_pathway}' not built; run "
@@ -281,4 +250,12 @@ class NIRTDataset(_TorchDataset):
                 f"profile embeddings for pathway '{pathway}' not built; run "
                 f"scripts/embeddings/build_profile_embeddings.py --pathway {pathway}"
             )
-        return cls(observations, q_store, m_store, return_ids=return_ids)
+        feat_store = None
+        if query_features:
+            feat_store = data.query_features(query_features)
+            if feat_store is None:
+                raise FileNotFoundError(
+                    f"query features '{query_features}' not built; run "
+                    f"scripts/embeddings/build_query_features.py --name {query_features}"
+                )
+        return cls(observations, q_store, m_store, feature_store=feat_store, return_ids=return_ids)
