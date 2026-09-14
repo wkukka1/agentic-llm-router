@@ -23,22 +23,69 @@ dependencies = [
     "matplotlib",
     "scipy",
     # query ability taxonomy (clustering) + FAISS query bank -- used by
-    # router.taxonomy / router.retrieval / Phase 1 relevance + warm-up.
+    # training.taxonomy / training.retrieval / Phase 1 relevance + warm-up.
     "faiss-cpu",
     "umap-learn",
     "hdbscan",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["pytest", "langchain-core>=0.3", "import-linter"]
 labeling = ["openai", "anthropic"]
+# router.agentic: LLM-driven orchestrator. Core install (echo backends,
+# RecursiveOrchestrator, HeuristicTriage) needs none of this.
+agentic = ["langchain>=0.3", "langchain-core>=0.3"]
 
 [project.scripts]
-router-phase0 = "router.phase0:main"
+router-phase0 = "training.phase0:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.importlinter]
+root_packages = ["router", "training", "evaluation", "decompose"]
+# TYPE_CHECKING-only imports (e.g. router/data/nirt.py's `TrainingData` type hint)
+# are zero-runtime-cost and not the kind of layering violation this enforces.
+exclude_type_checking_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Serving never imports training or evaluation"
+type = "forbidden"
+source_modules = ["router"]
+forbidden_modules = ["training", "evaluation"]
+# NIRTRouter / KNNRouter / MLPRouter read pre-built embedding stores and a
+# train-split cost table off TrainingData, the same way NIRTRouter.from_run
+# reads a pre-built model checkpoint -- see the NOTE in router/routing/routers.py.
+# A serving-safe "artifact reader" split out of TrainingData would be new
+# abstraction; tracked here instead. (router/data/nirt.py no longer needs an
+# exception: NIRTDataset.from_config now requires `data` passed in and never
+# resolves it or builds the observation table itself -- that convenience is
+# training.data.nirt.nirt_dataset_from_config's job.)
+ignore_imports = [
+    "router.routing.routers -> training.data.facade",
+]
+
+[[tool.importlinter.contracts]]
+name = "Training never imports evaluation"
+type = "forbidden"
+source_modules = ["training"]
+forbidden_modules = ["evaluation"]
+
+[[tool.importlinter.contracts]]
+name = "Decompose stays dependency-free"
+type = "forbidden"
+source_modules = ["decompose"]
+forbidden_modules = ["router", "training", "evaluation"]
+# PromptEmbedder / SentenceEmbedder wrap the project's real, working encoder
+# (router.embeddings.encoder.TextEncoder) rather than reimplementing
+# tokenize/pool/normalize a second time -- see decompose/embedders/bert.py's
+# docstring for the tradeoff.
+ignore_imports = [
+    "decompose.embedders.bert -> router.embeddings.encoder",
+    "decompose.embedders.sentence_transformer -> router.embeddings.encoder",
+]

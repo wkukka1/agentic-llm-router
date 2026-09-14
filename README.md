@@ -12,7 +12,7 @@ query → encoder → embedding → kNN warm-up / relevance lookup
 
 **Foundation** (the data pipeline, originally "Phase 0") is complete: heterogeneous
 benchmark sources are turned into one clean, reproducible dataset consumed through a single
-facade (`router.data.phase1`). **Phase 2 — the NIRT baseline** — has started:
+facade (`training.data.facade`). **Phase 2 — the NIRT baseline** — has started:
 [`src/router/nirt/`](src/router/nirt/) holds a first, deliberately simple response model
 (`theta_q = f_theta(e_q)`, `y_hat = sigmoid(a_m · theta_q − b_m)`). See
 [docs/nirt_model.md](docs/nirt_model.md).
@@ -63,18 +63,18 @@ the kNN / FAISS bank. See
 | 10 | Encoder **pathways** — `retrieval` (MiniLM) + `irt` (BERT), NIRT-style; **streaming + resumable** builds | **implemented** |
 | 11 | **LLM profiles** (`model_profiles.parquet`) + profile embeddings for `theta_m` init | **implemented** |
 | 12 | **NIRT dataset** (`nirt_observations.parquet` + `NIRTDataset` → `query_emb, model_emb, target`) | **implemented** |
-| 13 | **Phase 1 data facade** (`router.data.phase1`) | **implemented** |
-| 14 | UMAP → HDBSCAN clustering of the NIRT queries | **implemented** (`router.taxonomy`, 39 clusters) |
+| 13 | **Phase 1 data facade** (`training.data.facade`) | **implemented** |
+| 14 | UMAP → HDBSCAN clustering of the NIRT queries | **implemented** (`training.taxonomy`, 39 clusters) |
 | 15 | Cluster → candidate ability taxonomy (family + top terms, no LLM) | **implemented** (`data/taxonomy/taxonomy.json`) |
 | 16 | Representative queries + provider-agnostic cached LLM labeling | *deferred — opt-in refinement* |
-| 17 | Relevance vectors `r_q` (`sum = 1`, `>= 0`) + FAISS query bank | **implemented** (`router.taxonomy` / `router.retrieval`) |
+| 17 | Relevance vectors `r_q` (`sum = 1`, `>= 0`) + FAISS query bank | **implemented** (`training.taxonomy` / `training.retrieval`) |
 
 Stages 14/15/17 were built for the Phase 1 baseline (they condition `a_q` and
 feed the warm-up blend); see [docs/query_and_model_representation.md](docs/query_and_model_representation.md).
 Stage 16 (LLM cluster labelling) is still deferred as an opt-in refinement.
 
 ```bash
-python -m router.phase0 --taxonomy --query-bank      # or the scripts/taxonomy + scripts/retrieval scripts
+python -m training.phase0 --taxonomy --query-bank      # or the scripts/taxonomy + scripts/retrieval scripts
 ```
 
 ## Phase 2 — NIRT baseline
@@ -155,7 +155,7 @@ A separate NIRT variant that **replaces `e_q` with the similarity-weighted mean
 of its `k` nearest training queries** (self-excluded, via the FAISS bank) before
 the query head, snapping every query onto the training manifold. New
 `data.query_pathway` key swaps only the query store;
-`router.retrieval.knn_impute` builds it. Leakage-safe OOD bank drops the held-out
+`training.retrieval.knn_impute` builds it. Leakage-safe OOD bank drops the held-out
 families. Full write-up + how to run:
 [docs/nirt_model.md](docs/nirt_model.md#knn-imputed-queries).
 
@@ -269,7 +269,7 @@ Builds are streaming + **resumable** (`_progress.json` mid-run).
 ### One shot (deterministic, non-LLM parts)
 
 ```bash
-python -m router.phase0
+python -m training.phase0
 ```
 
 ### Stage by stage
@@ -303,7 +303,7 @@ python scripts/embeddings/build_profile_embeddings.py --all-pathways
 Or run stages 1-5 (deterministic parts) at once:
 
 ```bash
-python -m router.phase0 --embeddings        # omit --embeddings to skip the slow encode
+python -m training.phase0 --embeddings        # omit --embeddings to skip the slow encode
 ```
 
 ### How the response matrix is built
@@ -319,20 +319,20 @@ Build `R[q, m]` for a single metric (or use the Phase 1 facade below):
 
 ```python
 from router.config import load_config
-from router.data.response_matrix import read_responses, pivot
+from training.data.response_matrix import read_responses, pivot
 df = read_responses(load_config())
 R = pivot(df, "mc_accuracy", score_column="corrected_score")   # rows=query_id, cols=model_id
 ```
 
 ### Phase 1 data facade
 
-Phase 1 code imports **only** `router.data.phase1`:
+Phase 1 code imports **only** `training.data.facade`:
 
 ```python
 from router.config import load_config
-from router.data.phase1 import load_phase1
+from training.data.facade import load_training_data
 
-d = load_phase1(load_config())
+d = load_training_data(load_config())
 R      = d.correctness_matrix(split="train", combine_metrics=["accuracy", "mc_accuracy"])
 long   = d.correctness(split="train", score_kind="effective")   # + score_raw / score_corrected
 pairs  = d.pairwise(source="chatbot_arena", split="train")      # (q, m_a, m_b, winner, score_a)
@@ -369,7 +369,7 @@ are MC (and their option counts) is set in `configs/phase0.yaml → multiple_cho
   (≥ `cold_start_min_observations` rows) are held out of *all* of
   train/val/test, stratified per source, chosen by hashed rank. They exist only
   in `cold_start_models.json` for later profile-based `theta_m` eval.
-* `router.data.splits.check_leakage` asserts empty train∩val∩test.
+* `training.data.splits.check_leakage` asserts empty train∩val∩test.
 
 ### Encoder pathways + LLM profiles
 
@@ -392,11 +392,11 @@ behaviour summary). Details:
 
 ### Taxonomy / clustering / relevance / FAISS
 
-Built for the Phase 1 baseline. `router.taxonomy` clusters the 36.5k NIRT queries
+Built for the Phase 1 baseline. `training.taxonomy` clusters the 36.5k NIRT queries
 (UMAP→HDBSCAN, retrieval embeddings) into **39 ability clusters**, labels each
 from its dominant benchmark family + top TF-IDF terms, and derives the relevance
 vector `r_q ∈ R³⁹` (`softmax(cos(e_q, centroid)/τ)`, `sum=1`, `≥0`).
-`router.retrieval` builds the FAISS **query bank** over the train split only
+`training.retrieval` builds the FAISS **query bank** over the train split only
 (`retrieval.k`) and the pre-computed warm-up representations. LLM cluster
 labelling stays deferred as an opt-in refinement. Full write-up:
 [docs/query_and_model_representation.md](docs/query_and_model_representation.md).
@@ -424,32 +424,32 @@ hyperparameters); the data pipeline stays in `phase0.yaml`.
 pytest -q
 ```
 
-`tests/test_data.py` (schema, id determinism, alias-merge confidence policy,
+`tests/training/data/test_data.py` (schema, id determinism, alias-merge confidence policy,
 quality checks, duplicate collapse, metric preservation, `R[q,m]` separation,
-RouterBench smoke), `tests/test_chance_correction.py` (formula, non-MC
+RouterBench smoke), `tests/training/data/test_chance_correction.py` (formula, non-MC
 untouched, missing-`n` warns, score preserved & in range),
-`tests/test_splits.py` (determinism, no leakage, content-identical queries
-co-located), `tests/test_phase1.py` (facade), `tests/test_embeddings.py` (both
+`tests/training/data/test_splits.py` (determinism, no leakage, content-identical queries
+co-located), `tests/training/data/test_facade.py` (facade), `tests/router/embeddings/test_embeddings.py` (both
 backends, determinism, **streaming build + resume-from-checkpoint**, memmap
-load), `tests/test_profiles.py` (empirical stats, curated vs template,
-`include_empirical` toggle), `tests/test_nirt_data.py` (observation schema has no
+load), `tests/training/models/test_profiles.py` (empirical stats, curated vs template,
+`include_empirical` toggle), `tests/training/data/test_nirt_data.py` (observation schema has no
 vectors, target `score_kind`, dataset joins by id without copying, drops
-missing-embedding rows, `gather`/`collate`), `tests/test_nirt_model.py` (forward
+missing-embedding rows, `gather`/`collate`), `tests/router/nirt/test_nirt_model.py` (forward
 shapes / range, softplus discrimination, known-value metrics, **synthetic
 recovery** of `theta_q`, `fit` + checkpoint round-trip, determinism).
-`tests/test_nirt_model.py` also covers the classical-IRT baseline and the routing report.
-`tests/test_taxonomy.py` (UMAP→HDBSCAN determinism, `r_q` is a distribution,
-temperature control), `tests/test_retrieval.py` (FAISS bank save/load/kNN,
-self-exclusion), `tests/test_baseline.py` (BaselineNIRT shapes, IRT equation,
-ablation switches, warm-up blend), `tests/test_training.py` (BCE decreases,
+`tests/router/nirt/test_nirt_model.py` also covers the classical-IRT baseline and the routing report.
+`tests/training/taxonomy/test_taxonomy.py` (UMAP→HDBSCAN determinism, `r_q` is a distribution,
+temperature control), `tests/training/retrieval/test_retrieval.py` (FAISS bank save/load/kNN,
+self-exclusion), `tests/training/nirt/baseline/test_baseline.py` (BaselineNIRT shapes, IRT equation,
+ablation switches, warm-up blend), `tests/training/nirt/baseline/test_training.py` (BCE decreases,
 **synthetic multidim-IRT recovery**, seed reproducibility, no cold-start-model
-leakage), `tests/test_metrics.py` (Brier / log-loss / reliability / ECE on toy
-inputs), `tests/test_diagnostics.py` (theta spectrum collapse detection,
-effective rank, ICC monotonicity). Phase 2 adds `tests/test_response_heads.py`
+leakage), `tests/training/nirt/baseline/test_metrics.py` (Brier / log-loss / reliability / ECE on toy
+inputs), `tests/training/nirt/baseline/test_diagnostics.py` (theta spectrum collapse detection,
+effective rank, ICC monotonicity). Phase 2 adds `tests/training/nirt/baseline/test_response_heads.py`
 (shared `ResponseHead` API + factory + `BaselineNIRT` wiring),
-`tests/test_continuous_{normal,beta,zoib}.py` (positivity, analytic likelihood,
-boundary handling, synthetic recovery) and `tests/test_phase2_evaluation.py`.
-**280+ tests** (`pytest -q`).
+`tests/training/nirt/baseline/test_continuous_{normal,beta,zoib}.py` (positivity, analytic likelihood,
+boundary handling, synthetic recovery) and `tests/training/nirt/baseline/test_phase2_evaluation.py`.
+**400+ tests** (`pytest -q`).
 
 ---
 
@@ -460,7 +460,7 @@ pip install -e ".[dev]"
 python scripts/data/build_response_matrix.py
 python scripts/data/build_splits.py
 pytest -q
-python -c "from router.config import load_config; from router.data.response_matrix import read_responses; print(read_responses(load_config()).groupby('metric_type').size())"
+python -c "from router.config import load_config; from training.data.response_matrix import read_responses; print(read_responses(load_config()).groupby('metric_type').size())"
 ```
 
 Current outputs from the checked-in raw data:
