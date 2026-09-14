@@ -19,8 +19,8 @@ from pathlib import Path
 import yaml
 
 from router.config import load_config
-from router.nirt.baseline.train import fit
-from router.nirt.baseline.response_head import RESPONSE_MODELS
+from training.nirt.baseline.train import fit
+from training.nirt.baseline.response_head import RESPONSE_MODELS
 
 
 def main() -> int:

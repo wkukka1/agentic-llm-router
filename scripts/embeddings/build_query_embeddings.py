@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import sys
 
-from router.cli import base_parser, get_config, info
+from training.cli import base_parser, get_config, info
 from router.embeddings import available_pathways, build_store, default_store_dir, load_encoder
 
 

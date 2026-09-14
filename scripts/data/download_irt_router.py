@@ -17,7 +17,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
-from router.cli import base_parser, get_config, info
+from training.cli import base_parser, get_config, info
 
 # Repo-relative paths to fetch (all Git LFS).
 FILES = [

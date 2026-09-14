@@ -13,10 +13,10 @@ import sys
 
 import yaml
 
-from router.cli import raw_parser, resolve, write_json
+from training.cli import raw_parser, resolve, write_json
 from router.config import load_config
-from router.nirt.evaluate import evaluate_split
-from router.nirt.train import load_run
+from router.nirt.checkpoint import load_run
+from evaluation.nirt.evaluate import evaluate_split
 
 
 def main() -> int:

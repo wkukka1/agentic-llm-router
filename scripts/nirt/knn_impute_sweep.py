@@ -24,18 +24,20 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from router.cli import float_table, raw_parser, write_json, zeroshot_only
+from training.cli import float_table, raw_parser, write_json, zeroshot_only
 from router.config import load_config
-from router.data.phase1 import load_phase1
 from router.embeddings import EmbeddingStore
-from router.nirt.evaluate import predict_matrix, predict_matrix_from_dataset, ranking_metrics
-from router.nirt.metrics import prediction_metrics
-from router.nirt.ood import ood_datasets, ood_families, ood_matrices
-from router.nirt.routing import align, eval_matrices
-from router.nirt.routing_eval import routing_evaluation
-from router.nirt.train import fit, load_run
-from router.retrieval.knn_impute import build_knn_imputed_store, imputed_pathway_name
-from router.retrieval.query_bank import QueryBank, build_query_bank, query_bank_dir
+from router.nirt.checkpoint import load_run
+from router.nirt.predict import predict_matrix, predict_matrix_from_dataset
+from training.data.facade import load_training_data
+from training.nirt.metrics import prediction_metrics
+from training.nirt.train import fit
+from evaluation.nirt.evaluate import ranking_metrics
+from evaluation.nirt.ood import ood_datasets, ood_families, ood_matrices
+from evaluation.nirt.routing import align, eval_matrices
+from evaluation.routing.oracle import routing_evaluation
+from training.retrieval.knn_impute import build_knn_imputed_store, imputed_pathway_name
+from training.retrieval.query_bank import QueryBank, build_query_bank, query_bank_dir
 
 _KEEP = ("bce", "brier", "auc", "acc@0.5", "spearman_r")
 
@@ -72,10 +74,10 @@ def _ensure_ood_bank(cfg, nirt_cfg, verbose=True) -> Path:
     d_ood = query_bank_dir(cfg).parent / "query_bank__ood"
     if (d_ood / "manifest.json").exists():
         return d_ood
-    from router.nirt.ood import family_of_query
+    from evaluation.nirt.ood import family_of_query
 
     fams = list(ood_families(nirt_cfg))
-    fam_of = family_of_query(load_phase1(cfg))
+    fam_of = family_of_query(load_training_data(cfg))
     exclude = [q for q, f in fam_of.items() if f in set(fams)]
     if verbose:
         print(f"[sweep] building OOD bank (excluding {len(exclude):,} queries, families {fams})")
@@ -111,7 +113,7 @@ def main() -> int:
 
     cfg = load_config(args.phase0_config) if args.phase0_config else load_config()
     p0 = cfg
-    d = load_phase1(cfg)
+    d = load_training_data(cfg)
 
     def _store_missing(pathway: str) -> bool:
         return not EmbeddingStore.exists(cfg.resolve(f"data/processed/embeddings/query__{pathway}"))

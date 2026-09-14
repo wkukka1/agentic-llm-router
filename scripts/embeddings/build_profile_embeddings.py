@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import sys
 
-from router.cli import base_parser, get_config, info
+from training.cli import base_parser, get_config, info
 from router.embeddings import available_pathways, build_store, default_store_dir, load_encoder
-from router.models.profiles import build_model_profiles, read_model_profiles
+from training.models.profiles import build_model_profiles, read_model_profiles
 
 
 def main() -> int:
@@ -34,7 +34,7 @@ def main() -> int:
         profiles = read_model_profiles(cfg)
     except FileNotFoundError:
         info("model_profiles.parquet missing; building it now")
-        from router.models.profiles import write_model_profiles
+        from training.models.profiles import write_model_profiles
 
         profiles = build_model_profiles(cfg)
         write_model_profiles(profiles, cfg)

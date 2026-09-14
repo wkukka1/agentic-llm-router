@@ -16,10 +16,10 @@ from __future__ import annotations
 import json
 import sys
 
-from router.cli import raw_parser, write_json
+from training.cli import raw_parser, write_json
 from router.config import load_config
-from router.nirt.baseline.train import fit
-from router.nirt.baseline.synthetic import make_synthetic, make_synthetic_continuous, recovery_report, to_arrays
+from training.nirt.baseline.train import fit
+from training.nirt.baseline.synthetic import make_synthetic, make_synthetic_continuous, recovery_report, to_arrays
 
 
 def main() -> int:

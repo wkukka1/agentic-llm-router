@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import sys
 
-from router.cli import base_parser, get_config, info
-from router.data.response_matrix import read_responses
-from router.data.splits import check_leakage, make_presplit, make_splits, write_splits
+from training.cli import base_parser, get_config, info
+from training.data.response_matrix import read_responses
+from training.data.splits import check_leakage, make_presplit, make_splits, write_splits
 
 
 def main() -> int:

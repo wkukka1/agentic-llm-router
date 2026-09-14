@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import sys
 
-from router.cli import base_parser, get_config, info
-from router.data.nirt import NIRTDataset, build_nirt_observations, write_nirt_observations
+from training.cli import base_parser, get_config, info
+from training.data.nirt import build_nirt_observations, nirt_dataset_from_config, write_nirt_observations
 
 
 def main() -> int:
@@ -42,8 +42,8 @@ def main() -> int:
 
     if not args.no_check:
         try:
-            ds = NIRTDataset.from_config(cfg, split="train", pathway=args.pathway,
-                                        observations=df)
+            ds = nirt_dataset_from_config(cfg, split="train", pathway=args.pathway,
+                                          observations=df)
             info(f"train NIRTDataset: {len(ds):,} examples "
                  f"(dropped {ds.dropped:,} with no embedding), "
                  f"q_dim={ds.query_dim} m_dim={ds.model_dim}")

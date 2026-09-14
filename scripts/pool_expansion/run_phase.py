@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import sys
 
-from router.cli import raw_parser
+from training.cli import raw_parser
 from router.config import load_config
-from router.pool_expansion import run_battery
+from evaluation.pool_expansion import run_battery
 
 
 def main() -> int:

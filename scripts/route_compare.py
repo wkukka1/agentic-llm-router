@@ -24,12 +24,12 @@ import sys
 
 import numpy as np
 
-from router.cli import float_table, raw_parser, write_json, zeroshot_only
+from training.cli import float_table, raw_parser, write_json, zeroshot_only
 from router.config import load_config
-from router.data.phase1 import load_phase1
-from router.nirt.baseline.checkpoint import load_run
-from router.nirt.baseline.data import checkpoint_matrix as _pred_matrix
-from router.nirt.routing import (
+from training.data.facade import load_training_data
+from training.nirt.baseline.checkpoint import load_run
+from training.nirt.baseline.data import checkpoint_matrix as _pred_matrix
+from evaluation.nirt.routing import (
     add_reward_columns,
     aiq,
     align,
@@ -43,14 +43,16 @@ DEFAULT_REFERENCE = "gpt-4-1106-preview"
 
 
 def _nirt_matrix(run_name, data, split):
-    from router.nirt.evaluate import predict_matrix
-    from router.nirt.train import load_run as nirt_load_run
+    from router.nirt.checkpoint import load_run as nirt_load_run
+    from router.nirt.predict import predict_matrix
 
     model, cfg, midx = nirt_load_run(run_name)
     dcfg = cfg.get("data", {}) or {}
     pathway = dcfg.get("pathway", "irt")
     query_pathway = dcfg.get("query_pathway") or None
-    return predict_matrix(model, midx, data, split, pathway=pathway, query_pathway=query_pathway)
+    query_features = dcfg.get("query_features") or None
+    return predict_matrix(model, midx, data, split, pathway=pathway, query_pathway=query_pathway,
+                          query_features=query_features)
 
 
 def _run_split(split: str, label: str, d, cfg, args, pool) -> dict:
@@ -134,7 +136,7 @@ def main() -> int:
     splits = [s.strip() for s in splits_arg.split(",") if s.strip()]
 
     cfg = load_config(args.config)
-    d = load_phase1(cfg)
+    d = load_training_data(cfg)
 
     # Pin the routing pool to what the ZOIB checkpoint was trained on -- the
     # global NIRT dataset may since have grown (pool-expansion phases), and a

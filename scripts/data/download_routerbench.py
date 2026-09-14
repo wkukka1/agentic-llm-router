@@ -20,7 +20,7 @@ from __future__ import annotations
 import subprocess
 import sys
 
-from router.cli import base_parser, get_config, info
+from training.cli import base_parser, get_config, info
 
 
 def main() -> int:

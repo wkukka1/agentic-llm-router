@@ -1,7 +1,7 @@
 """P1 capacity / ceiling decomposition for the NIRT ``query_latent`` model.
 
 The 2026-09-03 head search saturated latent width ``K`` and MLP width with zero
-overfitting (``docs/knn_imputed_queries.md``): the model *underfits*. This script
+overfitting (``docs/nirt_model.md``): the model *underfits*. This script
 partitions the gap between NIRT and "perfect" into
 
   1. **irreducible** -- how low BCE can go on this response matrix at all
@@ -14,7 +14,7 @@ partitions the gap between NIRT and "perfect" into
      ``e_q`` is the wall (-> P4).
   3. **representation** -- NIRT with ``data.query_pathway in {null, knn10w}``.
   4. **per-family** -- NIRT test BCE + routing regret grouped by benchmark family
-     (``router.nirt.ood.family_of_query``): which families are underfit.
+     (``evaluation.nirt.ood.family_of_query``): which families are underfit.
 
 Every block also reports the **routing regret** of the predictor (the workstream's
 success metric), so a prediction-BCE win that never reaches the arg-max is visible.
@@ -39,14 +39,17 @@ import pandas as pd
 import yaml
 
 from router.config import load_config
-from router.data.phase1 import load_phase1
-from router.nirt.baselines import fit_classical_irt, fit_mlp_router, mlp_router_matrix
-from router.nirt.evaluate import predict_matrix, predict_matrix_from_dataset, ranking_metrics
-from router.nirt.metrics import marginal_baselines, per_group_metrics, prediction_metrics
-from router.nirt.ood import family_of_query, ood_datasets, ood_matrices, split_observations
-from router.nirt.routing import align, eval_matrices
-from router.nirt.routing_eval import routing_evaluation
-from router.nirt.train import load_run
+from router.nirt.baselines_infer import mlp_router_matrix
+from router.nirt.checkpoint import load_run
+from router.nirt.predict import predict_matrix, predict_matrix_from_dataset
+from training.data.facade import load_training_data
+from training.nirt.metrics import marginal_baselines, per_group_metrics, prediction_metrics
+from training.trainers.mlp_router import fit_mlp_router
+from evaluation.baselines.classical_irt import fit_classical_irt
+from evaluation.nirt.evaluate import ranking_metrics
+from evaluation.nirt.ood import family_of_query, ood_datasets, ood_matrices, split_observations
+from evaluation.nirt.routing import align, eval_matrices
+from evaluation.routing.oracle import routing_evaluation
 
 _OOD_FAMILIES = ("math", "code")
 
@@ -78,14 +81,16 @@ def _nirt_matrix(run: str, d, split: str, ood_ds=None) -> pd.DataFrame:
     dcfg = cfg.get("data", {}) or {}
     pw = dcfg.get("pathway", "irt")
     qp = dcfg.get("query_pathway") or None
+    qf = dcfg.get("query_features") or None
     if ood_ds is not None:
-        if qp is not None:
-            q = d.query_embeddings(qp)
+        if qp is not None or qf is not None:
             from router.data.nirt import NIRTDataset
 
-            ood_ds = NIRTDataset(ood_ds.obs, q, ood_ds.profile_store)
+            q = d.query_embeddings(qp) if qp is not None else ood_ds.query_store
+            feat = d.query_features(qf) if qf is not None else None
+            ood_ds = NIRTDataset(ood_ds.obs, q, ood_ds.profile_store, feature_store=feat)
         return predict_matrix_from_dataset(model, midx, ood_ds)
-    return predict_matrix(model, midx, d, split, pathway=pw, query_pathway=qp)
+    return predict_matrix(model, midx, d, split, pathway=pw, query_pathway=qp, query_features=qf)
 
 
 def run_split(d, split: str, seed: int, args) -> dict:
@@ -191,7 +196,7 @@ def main() -> int:
                       else [args.nirt_run, "nirt-knn10w-2d-projected"])
 
     cfg = load_config(args.config) if args.config else load_config()
-    d = load_phase1(cfg)
+    d = load_training_data(cfg)
     seed = int(yaml.safe_load(Path(cfg.root / "configs/nirt.yaml").read_text("utf-8")).get("seed", 42))
     results = {}
     for split in [s.strip() for s in args.splits.split(",") if s.strip()]:

@@ -13,7 +13,7 @@ import json
 import sys
 
 from router.config import load_config
-from router.taxonomy.clustering import ClusterConfig, build_clusters
+from training.taxonomy.clustering import ClusterConfig, build_clusters
 
 
 def main() -> int:

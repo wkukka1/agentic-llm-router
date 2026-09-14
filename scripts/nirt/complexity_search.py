@@ -27,12 +27,14 @@ import pandas as pd
 import yaml
 
 from router.config import load_config
-from router.data.phase1 import load_phase1
-from router.nirt.evaluate import predict_dataset, predict_matrix, ranking_metrics
-from router.nirt.metrics import prediction_metrics
-from router.nirt.routing import align, eval_matrices
-from router.nirt.routing_eval import routing_evaluation
-from router.nirt.train import fit, load_run
+from router.nirt.checkpoint import load_run
+from router.nirt.predict import predict_dataset, predict_matrix
+from training.data.facade import load_training_data
+from training.nirt.metrics import prediction_metrics
+from evaluation.nirt.routing import align, eval_matrices
+from evaluation.nirt.evaluate import ranking_metrics
+from evaluation.routing.oracle import routing_evaluation
+from training.nirt.train import fit
 
 SPACE = {
     "dim": [8, 16, 32],
@@ -134,7 +136,7 @@ def main() -> int:
     base = yaml.safe_load((cfg_path if cfg_path.is_absolute() else root / cfg_path).read_text("utf-8"))
     p0 = load_config(args.phase0_config) if args.phase0_config else load_config()
     qp = None if str(args.query_pathway).lower() == "none" else args.query_pathway
-    d = load_phase1(p0)
+    d = load_training_data(p0)
     true_df, cost_df = eval_matrices(d, split="test")
     keep = [not str(q).endswith(":5shot") for q in true_df.index]
     true_df, cost_df = true_df.loc[keep], cost_df.loc[keep]

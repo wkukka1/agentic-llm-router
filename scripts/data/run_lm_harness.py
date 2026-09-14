@@ -18,7 +18,7 @@ import shlex
 import subprocess
 import sys
 
-from router.cli import base_parser, get_config, info
+from training.cli import base_parser, get_config, info
 
 DEFAULT_TASKS = ["mmlu", "hellaswag", "winogrande", "arc_challenge"]
 

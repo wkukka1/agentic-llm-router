@@ -18,7 +18,7 @@ from pathlib import Path
 import yaml
 
 from router.config import load_config
-from router.nirt.train import fit
+from training.nirt.train import fit
 
 
 def main() -> int:
@@ -36,6 +36,10 @@ def main() -> int:
     ap.add_argument("--loss", choices=["soft_bce", "hard_bce", "mse"], default=None)
     ap.add_argument("--batch-size", type=int, default=None)
     ap.add_argument("--weight-decay", type=float, default=None)
+    ap.add_argument("--query-features", default=None,
+                    help="structured feature variant to concat to e_q (see "
+                         "scripts/embeddings/build_query_features.py); "
+                         "'none' to force off")
     ap.add_argument("--ood", action="store_true",
                     help="hold out evaluation.ood_holdout_families from training")
     args = ap.parse_args()
@@ -65,16 +69,20 @@ def main() -> int:
         cfg["train"]["batch_size"] = args.batch_size
     if args.weight_decay is not None:
         cfg["train"]["weight_decay"] = args.weight_decay
+    if args.query_features is not None:
+        cfg.setdefault("data", {})["query_features"] = (
+            None if args.query_features.lower() == "none" else args.query_features
+        )
 
     p0 = load_config(args.phase0_config) if args.phase0_config else load_config()
 
     datasets = None
     if args.ood:
-        from router.data.phase1 import load_phase1
-        from router.nirt.ood import ood_datasets, ood_families
+        from training.data.facade import load_training_data
+        from evaluation.nirt.ood import ood_datasets, ood_families
 
         fams = ood_families(cfg)
-        d = load_phase1(p0)
+        d = load_training_data(p0)
         tr, va, _ = ood_datasets(d, fams, pathway=cfg.get("data", {}).get("pathway", "irt"))
         datasets = (tr, va)
         cfg.setdefault("data", {})["ood_holdout_families"] = list(fams)

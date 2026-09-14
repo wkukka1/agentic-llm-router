@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import sys
 
-from router.cli import raw_parser
+from training.cli import raw_parser
 from router.config import load_config
-from router.nirt.baseline.continuous_eval import compare_response_models
+from training.nirt.baseline.continuous_eval import compare_response_models
 
 
 def main() -> int:

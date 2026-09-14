@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import sys
 
-from router.cli import base_parser, get_config, info
-from router.models.profiles import build_model_profiles, write_model_profiles
+from training.cli import base_parser, get_config, info
+from training.models.profiles import build_model_profiles, write_model_profiles
 
 
 def main() -> int:

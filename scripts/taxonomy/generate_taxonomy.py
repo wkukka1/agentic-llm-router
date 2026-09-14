@@ -13,7 +13,7 @@ import json
 import sys
 
 from router.config import load_config
-from router.taxonomy.taxonomy import build_taxonomy
+from training.taxonomy.taxonomy import build_taxonomy
 
 
 def main() -> int:

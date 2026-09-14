@@ -28,12 +28,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from router.cli import base_parser, get_config, info
-from router.data.model_registry import canonical_model_id
-from router.data.normalize import make_query_id, render_prompt
-from router.data.schemas import Source
+from training.cli import base_parser, get_config, info
+from training.data.model_registry import canonical_model_id
+from training.data.normalize import make_query_id, render_prompt
+from training.data.schemas import Source
 from router.embeddings import EmbeddingStore, default_store_dir
-from router.taxonomy.relevance import relevance_store_dir
+from training.taxonomy.relevance import relevance_store_dir
 
 
 def _load_pkl_records(path: Path, value_key: str) -> dict[int, np.ndarray]:

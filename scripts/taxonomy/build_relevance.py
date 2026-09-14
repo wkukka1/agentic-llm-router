@@ -15,7 +15,7 @@ import sys
 import numpy as np
 
 from router.config import load_config
-from router.taxonomy.relevance import DEFAULT_TAU, build_relevance
+from training.taxonomy.relevance import DEFAULT_TAU, build_relevance
 
 
 def main() -> int:
@@ -26,7 +26,7 @@ def main() -> int:
     args = ap.parse_args()
 
     cfg = load_config(args.config)
-    from router.taxonomy.relevance import relevance_store_dir
+    from training.taxonomy.relevance import relevance_store_dir
 
     rel = build_relevance(cfg, pathway=args.pathway, tau=args.tau)
     R = np.asarray(rel.matrix)

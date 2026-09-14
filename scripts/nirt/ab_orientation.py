@@ -19,14 +19,16 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from router.cli import float_table, raw_parser, resolve, write_json
+from training.cli import float_table, raw_parser, resolve, write_json
 from router.config import load_config
-from router.data.phase1 import load_phase1
-from router.nirt.baselines import fit_classical_irt
-from router.nirt.evaluate import predict_matrix, ranking_metrics
-from router.nirt.metrics import prediction_metrics
-from router.nirt.routing import align, eval_matrices, pareto, routing_report, train_quality
-from router.nirt.train import fit, load_run
+from router.nirt.checkpoint import load_run
+from router.nirt.predict import predict_matrix
+from training.data.facade import load_training_data
+from training.nirt.metrics import prediction_metrics
+from training.nirt.train import fit
+from evaluation.baselines.classical_irt import fit_classical_irt
+from evaluation.nirt.evaluate import ranking_metrics
+from evaluation.nirt.routing import align, eval_matrices, pareto, routing_report, train_quality
 
 _ORI = {"query_latent": "nirt", "model_latent": "irt"}
 
@@ -53,7 +55,7 @@ def main() -> int:
     runs_dir = resolve(base_cfg.get("runs_dir", "data/processed/nirt_runs"))
 
     p0 = load_config(args.phase0_config) if args.phase0_config else load_config()
-    d = load_phase1(p0)
+    d = load_training_data(p0)
     pathway = base_cfg.get("data", {}).get("pathway", "irt")
     reference = base_cfg.get("routing", {}).get("reference_model", "gpt-4-1106-preview")
 

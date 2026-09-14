@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import sys
 
-from router.cli import base_parser, get_config, info
-from router.data.chance_correction import estimate_model_bias
-from router.data.quality import check_responses
-from router.data.response_matrix import build_tables, write_tables
+from training.cli import base_parser, get_config, info
+from training.data.chance_correction import estimate_model_bias
+from training.data.quality import check_responses
+from training.data.response_matrix import build_tables, write_tables
 
 
 def main() -> int:

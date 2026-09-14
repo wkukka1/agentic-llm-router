@@ -14,9 +14,9 @@ from __future__ import annotations
 
 import sys
 
-from router.cli import raw_parser
+from training.cli import raw_parser
 from router.config import load_config
-from router.nirt.baseline.checkpoint import load_run
+from training.nirt.baseline.checkpoint import load_run
 
 
 def _print_bernoulli(res: dict, split: str, checkpoint: str) -> None:
@@ -79,12 +79,12 @@ def main() -> int:
     model, _, _ = load_run(args.checkpoint)
 
     if model.response_model == "bernoulli":
-        from router.nirt.baseline.eval import evaluate_checkpoint
+        from training.nirt.baseline.eval import evaluate_checkpoint
 
         res = evaluate_checkpoint(args.checkpoint, phase0_cfg=cfg, split=args.split, n_icc=args.n_icc)
         _print_bernoulli(res, args.split, args.checkpoint)
     else:
-        from router.nirt.baseline.continuous_eval import evaluate_continuous
+        from training.nirt.baseline.continuous_eval import evaluate_continuous
 
         res = evaluate_continuous(args.checkpoint, phase0_cfg=cfg, split=args.split, level=args.level)
         _print_continuous(res, args.split)

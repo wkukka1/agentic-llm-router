@@ -23,14 +23,18 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from router.cli import float_table, raw_parser, resolve, write_json
+from training.cli import float_table, raw_parser, resolve, write_json
 from router.config import load_config
-from router.data.phase1 import load_phase1
-from router.nirt.baselines import fit_classical_irt, fit_mlp_router, knn_router_matrix, mlp_router_matrix
-from router.nirt.evaluate import predict_matrix_from_dataset, ranking_metrics
-from router.nirt.metrics import marginal_baselines, prediction_metrics
-from router.nirt.ood import ood_families, split_observations
-from router.nirt.routing import (
+from router.nirt.baselines_infer import knn_router_matrix, mlp_router_matrix
+from router.nirt.checkpoint import load_run
+from router.nirt.predict import predict_matrix_from_dataset
+from training.data.facade import load_training_data
+from training.nirt.metrics import marginal_baselines, prediction_metrics
+from training.trainers.mlp_router import fit_mlp_router
+from evaluation.baselines.classical_irt import fit_classical_irt
+from evaluation.nirt.evaluate import ranking_metrics
+from evaluation.nirt.ood import ood_families, split_observations
+from evaluation.nirt.routing import (
     add_reward_columns,
     aiq,
     align,
@@ -40,7 +44,6 @@ from router.nirt.routing import (
     routing_report,
     train_quality,
 )
-from router.nirt.train import load_run
 
 
 def _round(o, n=4):
@@ -78,7 +81,7 @@ def main() -> int:
     runs_dir = resolve(nirt_cfg.get("runs_dir", "data/processed/nirt_runs"))
 
     p0 = load_config(args.phase0_config) if args.phase0_config else load_config()
-    d = load_phase1(p0)
+    d = load_training_data(p0)
     model, run_cfg, model_index = load_run(args.run, runs_dir=runs_dir)
     pathway = run_cfg.get("data", {}).get("pathway", "irt")
     query_pathway = run_cfg.get("data", {}).get("query_pathway") or None
@@ -105,7 +108,7 @@ def main() -> int:
             raise FileNotFoundError(
                 f"run '{args.run}' was trained with data.query_pathway='{query_pathway}' "
                 f"but that query store is missing; rebuild it with "
-                f"scripts/nirt/knn_impute_sweep.py or router.retrieval.knn_impute"
+                f"scripts/nirt/knn_impute_sweep.py or training.retrieval.knn_impute"
             )
     if args.ood:
         fams = ood_families(nirt_cfg)

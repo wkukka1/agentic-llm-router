@@ -23,19 +23,19 @@ import sys
 import numpy as np
 import yaml
 
-from router.cli import float_table, raw_parser, resolve, write_json
+from training.cli import float_table, raw_parser, resolve, write_json
 from router.config import load_config
-from router.data.phase1 import load_phase1
-from router.nirt.baseline.data import checkpoint_matrix
-from router.nirt.evaluate import predict_matrix
-from router.nirt.routing import align, eval_matrices
-from router.nirt.routing_eval import (
+from router.nirt.checkpoint import load_run as nirt_load_run
+from router.nirt.predict import predict_matrix
+from training.data.facade import load_training_data
+from training.nirt.baseline.data import checkpoint_matrix
+from evaluation.nirt.routing import align, eval_matrices
+from evaluation.routing.oracle import (
     compare_routing_strategies,
     oracle_classifier_matrix,
     oracle_labels,
     routing_evaluation,
 )
-from router.nirt.train import load_run as nirt_load_run
 
 
 def _zoib_matrix(ckpt: str, cfg, split: str, field: str, true_df) -> np.ndarray:
@@ -115,7 +115,7 @@ def main() -> int:
     runs_dir = resolve(ncfg.get("runs_dir", "data/processed/nirt_runs"))
 
     p0 = load_config(args.config)
-    d = load_phase1(p0)
+    d = load_training_data(p0)
 
     model, run_cfg, midx = nirt_load_run(args.run, runs_dir=runs_dir)
     pathway = (run_cfg.get("data", {}) or {}).get("pathway", "irt")
@@ -201,7 +201,7 @@ def main() -> int:
     ev_path = write_json(out_dir / f"route_eval_{args.split}.json", payload, announce=False)
 
     if args.per_query_model:
-        from router.nirt.routing_eval import per_query_model_table
+        from evaluation.routing.oracle import per_query_model_table
 
         pqm = per_query_model_table(preds[nirt_key], true, cost, model_ids, query_ids)
         pqm.to_parquet(out_dir / f"route_eval_{args.split}_per_query_model.parquet", index=False)

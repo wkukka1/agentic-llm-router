@@ -14,7 +14,7 @@ import json
 import sys
 
 from router.config import load_config
-from router.retrieval.warmup import build_warmup_representations, warmup_store_dir
+from training.retrieval.warmup import build_warmup_representations, warmup_store_dir
 
 
 def main() -> int:

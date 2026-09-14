@@ -17,10 +17,10 @@ import numpy as np
 import pandas as pd
 
 from router.config import load_config
-from router.data.phase1 import load_phase1
-from router.nirt.evaluate import predict_dataset
-from router.nirt.metrics import marginal_baselines, prediction_metrics
-from router.nirt.train import load_run
+from router.nirt.checkpoint import load_run
+from router.nirt.predict import predict_dataset
+from training.data.facade import load_training_data
+from training.nirt.metrics import marginal_baselines, prediction_metrics
 
 DEFAULT_RUNS = [
     "nirt-2d-projected", "irt-25d-projected",
@@ -31,7 +31,7 @@ SPLITS = ["train", "validation", "test"]
 
 def main() -> int:
     runs = sys.argv[1:] or DEFAULT_RUNS
-    d = load_phase1(load_config())
+    d = load_training_data(load_config())
     rows = []
     for run in runs:
         model, cfg, midx = load_run(run)
