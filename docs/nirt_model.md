@@ -311,7 +311,7 @@ and its twin contradicts it in val — the mechanism behind the val explosion.
 encoder swap (0), or regularisation (−0.003) combined. IRT-Router has no such
 twins.
 
-**Shipped** (`router.data.query_features`,
+**Shipped** (`training.data.query_features`,
 `scripts/embeddings/build_query_features.py`, `data.query_features` in
 `configs/nirt.yaml`, `NIRTDataset(feature_store=...)`): a small (10-d for
 RouterBench) deterministic per-query feature vector — coarse family one-hot,
@@ -391,9 +391,9 @@ e_q  :=  sum_i w_i * e_{n_i}      n_1..n_k = k nearest TRAIN queries of q
 ```
 
 - **Search / averaging** reuse the Phase-0 retrieval stack
-  (`router.retrieval.query_bank.QueryBank`, train-only FAISS, self-exclusion; the
+  (`training.retrieval.query_bank.QueryBank`, train-only FAISS, self-exclusion; the
   mean is taken in the `irt` / BERT space).
-- **Builder**: `router.retrieval.knn_impute.build_knn_imputed_store(cfg, k=...)`
+- **Builder**: `training.retrieval.knn_impute.build_knn_imputed_store(cfg, k=...)`
   writes an ordinary query `EmbeddingStore` under a synthetic pathway name
   (`knn10w` = k 10 similarity-weighted; `knn10u` = uniform; `-ood` suffix for the
   leakage-safe variant, held-out families dropped from the bank).
@@ -495,7 +495,7 @@ mixed validation set.
 
 ## Auxiliary pairwise (Arena / Judge) signal (Item 2)
 
-`router.nirt.pairwise` (`build_pairwise_arrays`, `pairwise_loss`) +
+`training.nirt.pairwise` (`build_pairwise_arrays`, `pairwise_loss`) +
 `train.preference` in `configs/nirt.yaml`: an auxiliary Bradley-Terry loss over
 Chatbot Arena / GPT-4-Judge battles, reusing the model's own bilinear score
 `z(q,m) = a_m·θ_q(e_q) − b_m` for both battle participants against one shared
@@ -561,12 +561,12 @@ exploitable gaps are **data quality** and **objective**:
 
 ## Tests
 
-[`tests/test_nirt_model.py`](../tests/test_nirt_model.py): forward shapes / range,
+[`tests/router/nirt/test_nirt_model.py`](../tests/router/nirt/test_nirt_model.py): forward shapes / range,
 softplus discrimination, `from_config` auto-constraint, known-value metrics +
 marginal baselines, **synthetic recovery** for *both* orientations (Pearson >
 0.85 on held-out queries), `build_model` dispatch, `fit` + checkpoint round-trip,
 determinism, the `free`-mode guard against scoring unseen models, classical IRT
 beating the column-mean on held-out cells and reproducing the per-model rate, the
 routing report, cold-start, the P2 bit-identical guards, `test_sampler_default_unchanged`,
-and `test_preference_*`. `tests/test_pairwise.py` (10 tests) covers the BT loss;
-`tests/test_shrinkage.py` the OOD blend.
+and `test_preference_*`. `tests/training/nirt/test_pairwise.py` (10 tests) covers the BT loss;
+`tests/router/nirt/test_shrinkage.py` the OOD blend.

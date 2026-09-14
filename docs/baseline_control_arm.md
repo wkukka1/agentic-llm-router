@@ -58,7 +58,7 @@ fractional). The graded score is preserved as `y_soft`. Positive rate ~0.575.
 **Arena / GPT-4-Judge excluded** (`use_arena = false`; they're pairwise, already
 kept out of `nirt_observations.parquet` — see [data_sources.md](data_sources.md)).
 
-## 3. Model architecture (`router.nirt.baseline.model.BaselineNIRT`)
+## 3. Model architecture (`training.nirt.baseline.model.BaselineNIRT`)
 
 Composed from `router.nirt.components`:
 
@@ -91,7 +91,7 @@ relevance_gate, length_pred` for inspection.
 * `K` is `model.theta_dim` (default 8; **not** claimed optimal) — the only knob
   between the 1-D and multidimensional model.
 
-## 5. Loss & regularization (`router.nirt.baseline.losses`)
+## 5. Loss & regularization (`training.nirt.baseline.losses`)
 
 `binary_cross_entropy_with_logits` on the raw logit. `target: binary` (default) or
 `soft`. Optional `pos_weight = #neg/#pos` (`class_weighting`, default off).

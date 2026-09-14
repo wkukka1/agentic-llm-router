@@ -1,6 +1,6 @@
 # Candidate-pool expansion -- results ledger
 
-Auto-rendered from `artifacts/pool_expansion/ledger.json` by `router.pool_expansion.render_ledger_md`. One row per phase; the predictor (frozen ZOIB head + Phase 1 Bernoulli control) is never retuned.
+Auto-rendered from `artifacts/pool_expansion/ledger.json` by `evaluation.pool_expansion.render_ledger_md`. One row per phase; the predictor (frozen ZOIB head + Phase 1 Bernoulli control) is never retuned.
 
 `oracle_cost_saving_ceiling` = `1 - oracle_cost / best-single-model_cost` (oracle = cheapest model attaining each query's max true score). `zoib_saving_at_minus{1,3}pt` = largest frontier cost-saving vs the reference model whose accuracy is within {1,3} points of the best single model (`n/a` = no frontier point qualifies).
 

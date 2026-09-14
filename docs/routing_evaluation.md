@@ -16,12 +16,17 @@ Predictive quality (NLL, calibration) and routing quality are reported
 
 | concern | where |
 |---|---|
-| predictive: ZOIB NLL / calibration | `scripts/nirt/baseline/evaluate.py`, `router.nirt.baseline.continuous_eval` |
-| predictive: Bernoulli BCE / AUC | `scripts/nirt/eval_nirt.py`, `router.nirt.evaluate.evaluate_split` |
-| **routing: oracle hit / regret / cost-aware** | **`scripts/nirt/route_eval.py`, `router.nirt.routing_eval`** |
-| routing policy table + λ frontier + AIQ | `scripts/route_compare.py`, `router.nirt.routing` |
+| predictive: ZOIB NLL / calibration | `scripts/nirt/baseline/evaluate.py`, `training.nirt.baseline.continuous_eval` |
+| predictive: Bernoulli BCE / AUC | `scripts/nirt/eval_nirt.py`, `evaluation.nirt.evaluate.evaluate_split` |
+| **routing: oracle hit / regret / cost-aware** | **`scripts/nirt/route_eval.py`, `evaluation.routing.oracle` (+ `router.nirt.routing_decision`)** |
+| routing policy table + λ frontier + AIQ | `scripts/route_compare.py`, `evaluation.nirt.routing` |
+| **modular `Router` interface** (NIRT / k-NN / MLP / …, one API) | **`router.routing`, `docs/routing_interface.md`** |
 
-## Oracle labels (`routing_eval.oracle_labels`)
+Everything in this doc that needs the **observed outcome** (`true`) lives in
+`evaluation` -- `router.nirt.routing_decision.routing_decision` (the argmax
+policy, no labels) is the only piece of this pipeline serving code may import.
+
+## Oracle labels (`evaluation.routing.oracle.oracle_labels`)
 
 Given a dense `[query_id × model_id]` matrix of the **actual** observed target
 (the chance-corrected graded score `y_soft` — the same target the router is
@@ -45,7 +50,7 @@ sort order or dict iteration order.
 `true_df.columns`. E0 / E1 / E2 each get their own oracle by passing their own
 model subset (`eval_matrices(d, split, models=pool)`), *not* a global "best LLM".
 
-## Routing metrics (`routing_eval.routing_evaluation`)
+## Routing metrics (`evaluation.routing.oracle.routing_evaluation`)
 
 For each test query: predict `ŷ(q, m)` for every eligible candidate, select
 `m_hat(q) = argmax_m ŷ(q, m)`, look up the **actual** `y(q, m_hat)`, compare to
@@ -82,15 +87,15 @@ reports, side by side, the `quality_oracle` (quality + its cost) and the
 `cost_aware_oracle` (quality + its cost), plus `mean_utility_regret`. `λ` is a CLI
 argument, never baked into the model.
 
-## Strategy comparison (`routing_eval.compare_routing_strategies`, `§9`)
+## Strategy comparison (`evaluation.routing.oracle.compare_routing_strategies`, `§9`)
 
 | id | strategy | learnable? |
 |---|---|---|
 | A | NIRT predicted-quality router | yes (this is the NIRT run) |
 | B | NIRT cost-aware router (`− λ C(m)`) | yes |
 | C | hard oracle upper bound (route on `y`) | no — max achievable within the pool |
-| D | direct hard-oracle **classifier** (`routing_eval.oracle_classifier_matrix`) | separate baseline — multinomial logistic on `e_q`, labels = train-split `argmax_m y_train`; **train split only** |
-| E | soft-oracle distillation target (`routing_eval.soft_oracle_targets`, `p*(m|q) = softmax(y/τ)`) | helper provided; model not trained here |
+| D | direct hard-oracle **classifier** (`evaluation.routing.oracle.oracle_classifier_matrix`) | separate baseline — multinomial logistic on `e_q`, labels = train-split `argmax_m y_train`; **train split only** |
+| E | soft-oracle distillation target (`evaluation.routing.oracle.soft_oracle_targets`, `p*(m|q) = softmax(y/τ)`) | helper provided; model not trained here |
 
 ## Leakage rules (`§11`) — critical
 
@@ -98,7 +103,7 @@ The oracle is derived from **observed outcomes**. It must never flow backward:
 
 * `oracle_flag` / `oracle_model_id` are **never** in the query/model feature
   tensors — `NIRTDataset[i]` and `build_arrays` expose only `e_q, e_m, target,
-  cost, metric, source` (asserted in `tests/test_routing_eval.py`).
+  cost, metric, source` (asserted in `tests/evaluation/routing/test_routing_eval.py`).
 * test-set oracle outcomes are **not** used in training, embeddings,
   hyper-parameter selection, or candidate selection.
 * the oracle-classifier baseline (D) is fit on **train-split** oracle labels

@@ -141,7 +141,7 @@ python scripts/embeddings/build_profile_embeddings.py --pathway irt
 ```
 
 ```python
-d = load_phase1(load_config())
+d = load_training_data(load_config())
 d.model_profiles()                        # DataFrame
 d.profile_text("yi-34b-chat")             # str
 d.profile_embeddings("irt")               # EmbeddingStore: model_id -> vector
@@ -188,7 +188,7 @@ One row per `(query_id, model_id, metric)` **correctness** example:
 | `cost`, `is_multiple_choice`, `n_choices` | reference features |
 
 **Not included:** pairwise preference (Arena / Judge) — opponent-dependent, use
-`Phase1Data.pairwise(...)` for a BT head. Cold-start models are excluded
+`TrainingData.pairwise(...)` for a BT head. Cold-start models are excluded
 (`models="warm"`); rows whose query is in no split are dropped.
 
 ```bash
@@ -206,7 +206,7 @@ those with **both** embeddings present, precomputes integer row indices, and on
 access returns memmap **views** — no per-row vector storage.
 
 ```python
-d  = load_phase1(load_config())
+d  = load_training_data(load_config())
 ds = d.nirt_dataset(split="train", pathway="irt")     # NIRTDataset
 
 ds[0]
@@ -257,9 +257,9 @@ conditioning (`r_q`) and warm-up blend.
 | FAISS query bank | `indexes/query_bank/` | `index.faiss`, `ids.parquet`, `manifest.json` (train queries only) | `scripts/retrieval/build_query_bank.py` |
 | warm-up representations | `data/processed/embeddings/query_warmup__<pathway>/` | EmbeddingStore, `(n, model_dim)` | `scripts/retrieval/build_warmup.py` |
 
-Or in one shot: `python -m router.phase0 --taxonomy --query-bank`.
+Or in one shot: `python -m training.phase0 --taxonomy --query-bank`.
 
-### 4.1 Clustering (`router.taxonomy.clustering`)
+### 4.1 Clustering (`training.taxonomy.clustering`)
 
 `retrieval`-pathway query embeddings (MiniLM-384, the 36.5k queries that carry a
 NIRT correctness observation) → **UMAP** (`n_components=5`, `n_neighbors=15`,
@@ -273,7 +273,7 @@ config always give the same `cluster_id`. Centroids are the unit-normalised mean
 of each cluster's members in the **original** embedding space (not UMAP space),
 so `r_q` for any unseen query needs only its raw embedding and `centroids.npy`.
 
-### 4.2 Relevance vectors `r_q` (`router.taxonomy.relevance`)
+### 4.2 Relevance vectors `r_q` (`training.taxonomy.relevance`)
 
 ```
 r_q = softmax( cos(e_q, centroid_c) / tau )      c = 1..C
@@ -287,14 +287,14 @@ uniform `1/C` at join time. `r_q` conditions the Phase 1 discrimination head:
 `a_q = softplus(f_a(e_q)) * sigmoid(W_r r_q)`, a per-latent-dimension relevance
 gate (`~1` at init).
 
-### 4.3 Taxonomy labels (`router.taxonomy.taxonomy`)
+### 4.3 Taxonomy labels (`training.taxonomy.taxonomy`)
 
 Per cluster, no LLM: dominant coarse benchmark **family**
 (`profiles.task_families`), top **TF-IDF terms**, top source **datasets**, and a
 short `label`. Enough to interpret the NIRT latent dimensions; an opt-in LLM
 refinement (`labeling` config) is future work.
 
-### 4.4 FAISS query bank (`router.retrieval.query_bank`)
+### 4.4 FAISS query bank (`training.retrieval.query_bank`)
 
 `IndexFlatIP` over the **train-split** query embeddings only (29,172 vectors,
 retrieval pathway, L2-normalised). Train-only is deliberate: putting
@@ -305,7 +305,7 @@ validation/test queries in the bank would leak them into the warm-up. Built once
 `QueryBank.neighbor_weighted_mean(..., weighting="similarity"|"uniform")` is the
 averaging primitive reused by the kNN-imputed representation.
 
-### 4.5 Warm-up representations (`router.retrieval.warmup`)
+### 4.5 Warm-up representations (`training.retrieval.warmup`)
 
 For every NIRT query: the mean **irt-pathway** (BERT-768) embedding of its `k=5`
 nearest *train* queries (neighbours found with the retrieval-pathway bank, self

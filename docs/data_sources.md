@@ -40,7 +40,7 @@ corrected_score = clip( (score − c) / (1 − c),  0, 1 )
 `method: normalized` in `configs/phase0.yaml` selects this; `method: none`
 disables it. `clip: true/false` controls the final clamp.
 
-The Phase 1 facade (`router.data.phase1`) exposes `score_effective`
+The Phase 1 facade (`training.data.facade`) exposes `score_effective`
 (= `corrected_score` where a correction was applied, else the original `score`)
 as the default correctness signal, plus `score_raw` and `score_corrected` for
 ablations across the binary / ordinal / continuous formulations.
@@ -221,7 +221,7 @@ unmapped string.
 ### API
 
 ```python
-from router.data.model_registry import (
+from training.data.model_registry import (
     canonical_model_id, model_info, is_canonical, alias_confidence, all_canonical_ids
 )
 canonical_model_id("mistralai/mixtral-8x7b-chat")   # -> "mixtral-8x7b-instruct"

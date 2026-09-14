@@ -62,7 +62,7 @@ absent.
 ## Split mechanism
 
 `split.presplit: true` in `configs/irt_router.yaml` makes
-`scripts/data/build_splits.py` call `router.data.splits.make_presplit` instead of
+`scripts/data/build_splits.py` call `training.data.splits.make_presplit` instead of
 the content-hash lottery: `train.csv` → `train` + `validation` (90/10 by content
 hash), `test1.csv` → `test`, `test2.csv` → `ood`. `ood` is a first-class split
 (`data/splits/irt_router/ood.json`) understood by `phase1.split_query_ids`,

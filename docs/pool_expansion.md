@@ -27,7 +27,7 @@ achievable savings move. The predictor (frozen ZOIB head + Bernoulli control) is
    model(s) so each addition's marginal contribution is attributable.
 5. **No leakage on new data.** New models get a warm/cold split by the existing
    deterministic hash; new *sources* get their queries assigned by the existing
-   content-hash group split. Verify `router.data.splits.check_leakage` is clean
+   content-hash group split. Verify `training.data.splits.check_leakage` is clean
    and no new-source query collides with an existing test query.
 6. **Cost comparability.** RouterBench carries a precomputed per-(model, query)
    USD cost. A model added another way needs a documented price basis
@@ -70,7 +70,7 @@ split, written under `artifacts/pool_expansion/<phase>/`:
 
 Each run appends one row to `artifacts/pool_expansion/ledger.json`, re-rendering
 [pool_expansion_results.md](pool_expansion_results.md)
-(`router.pool_expansion.render_ledger_md`). The trajectory of
+(`evaluation.pool_expansion.render_ledger_md`). The trajectory of
 `oracle_cost_saving_ceiling` and `zoib_saving_at_minus3pt` across rows **is the
 deliverable**.
 
@@ -197,6 +197,6 @@ open-weight models (`Llama-3.1-8B`, `Qwen2.5-7B/14B`, `Gemma-2-9B`,
 (`src/router/data/benchmark_id.py`) on **question identity, not prompt text**
 (`benchmark:{task}:{index}`), valid only for RouterBench's standard-benchmark
 subset (MMLU / HellaSwag / WinoGrande / ARC-Challenge ≈ 27k of 36k 0-shot
-questions). Cost basis via `router.data.pricing`
+questions). Cost basis via `training.data.pricing`
 (`cost = in_tok·price_in + out_tok·price_out` from a dated snapshot; a model with
 no price is dropped from routing, kept in prediction).
