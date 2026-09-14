@@ -6,7 +6,7 @@
 #         theta_m  = per-model learnable ability vector (free), or W_theta @ e_m (projected)
 #         p        = sigmoid(logit)     L = BCEWithLogits(logit, y)
 #
-# Data reaches the trainer through router.data.phase1.load_phase1 (which reads
+# Data reaches the trainer through training.data.facade.load_training_data (which reads
 # configs/phase0.yaml). This file owns only the model + training + response
 # construction. Do NOT tune anything here to chase the reference ~0.67.
 

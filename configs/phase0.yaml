@@ -138,7 +138,7 @@ clustering:
   hdbscan:
     # Tuned on the 36.5k NIRT queries: min_cluster_size 150 / min_samples 10
     # -> ~39 ability clusters, ~17% noise (noise points still get an r_q from
-    # the centroid softmax). See docs/query_representation.md.
+    # the centroid softmax). See docs/query_and_model_representation.md.
     min_cluster_size: 150
     min_samples: 10
     metric: euclidean
@@ -155,6 +155,52 @@ labeling:
   cache_path: data/taxonomy/labeling_cache.json
   temperature: 0.0
   max_clusters: null
+
+# Anchor-topology LLM judge (docs/anchor_judge.md): manufactures gold/preference
+# labels on the SAME routerbench: query_ids that already have correctness
+# labels, to test whether Arena/Judge-style preference and RouterBench
+# correctness are genuinely incompatible utilities or whether the original
+# `train.preference` sweep result (docs/nirt_model.md, Item 2) was plain
+# domain shift (zero query overlap between the two channels as originally run).
+anchor_judge:
+  # claude-haiku-4-5 ($1.00 / $5.00 per 1M tokens): this is a narrow, high-volume
+  # (~25k calls), short-output (a -3..3 margin + <=40-word reason) grading task,
+  # not a task needing frontier reasoning -- the cheap/fast tier is the right
+  # fit (see docs/anchor_judge.md). Still gated by --confirm-budget + a real
+  # JUDGE_API_KEY before any paid call is placed.
+  provider: anthropic
+  model: claude-haiku-4-5
+  api_key_env: JUDGE_API_KEY
+  base_url_env: JUDGE_BASE_URL   # optional, for an OpenAI-compatible proxy
+  temperature: 0.0
+  max_retries: 5
+  requests_per_minute: 60
+  cache_path: data/processed/anchor_judge/judge_cache.json
+  # RouterBench's dense 11-model pool (data/splits/cold_start_models.json).
+  pool:
+    - gpt-4-1106-preview
+    - gpt-3.5-turbo-1106
+    - claude-v1
+    - claude-v2
+    - claude-instant-v1
+    - llama-2-70b-chat
+    - code-llama-34b-instruct
+    - mixtral-8x7b-instruct
+    - mistral-7b-instruct
+    - wizardlm-13b-v1.2
+    - yi-34b-chat
+  anchor_model_id: claude-v2   # median of the 11-model pool by train accuracy (scripts/data/select_anchor_model.py)
+  n_discriminative: 1750
+  n_natural: 750
+  swap_fraction: 0.10
+  swap_stratify_by_margin: true
+  void_check_min_incorrect_preferred_rate: 0.10
+  max_unparseable_rate: 0.05
+  shot: 0shot
+  output_dir: data/processed/anchor_judge
+  dry_run_n: 30
+  price_per_1k_input_tokens: 0.001    # claude-haiku-4-5: $1.00 / 1M input tokens
+  price_per_1k_output_tokens: 0.005   # claude-haiku-4-5: $5.00 / 1M output tokens
 
 retrieval:
   k: 5
@@ -174,7 +220,7 @@ split:
   # different datasets never straddle the train/test boundary.
   dedup_on: normalized_query
   # Explicit warm/cold overrides -- forced ids skip the cold lottery entirely
-  # (see router.data.splits.make_splits). Used by the candidate-pool-expansion
+  # (see training.data.splits.make_splits). Used by the candidate-pool-expansion
   # workstream (docs/pool_expansion.md).
   #   Phase E1: bring the two held-out RouterBench models warm. The remaining
   #   cold-start models are Arena-only (no RouterBench correctness), so the

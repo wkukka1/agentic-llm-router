@@ -5,7 +5,7 @@
 #
 # cost(model, query) = input_tokens * input_per_1m / 1e6
 #                    + output_tokens * output_per_1m / 1e6
-# (see router.data.pricing.fill_costs)
+# (see training.data.pricing.fill_costs)
 #
 # A model with no entry here keeps cost = NaN and is dropped from the ROUTING
 # eval (kept in the prediction eval) -- this is recorded in the phase battery.
@@ -26,28 +26,42 @@ basis: "cheapest reputable serverless host; approximate public list price, verif
 
 prices:
   # --- E3 small open-weight models (local GPU eval; priced as if served) -----
+  # `open_source: true` on every entry here -- this file only prices open-weight
+  # models (RouterBench's proprietary models carry their own precomputed cost
+  # and are never priced here; see the module docstring above).
   phi-3.5-mini-instruct:
     input_per_1m: 0.03
     output_per_1m: 0.05
     source: "deepinfra/novita 2026-09 (microsoft/Phi-3.5-mini-instruct)"
     hf_repo: "microsoft/Phi-3.5-mini-instruct"
+    open_source: true
   qwen2.5-3b-instruct:
     input_per_1m: 0.02
     output_per_1m: 0.04
     source: "novita 2026-09 (Qwen/Qwen2.5-3B-Instruct)"
     hf_repo: "Qwen/Qwen2.5-3B-Instruct"
+    open_source: true
   qwen2.5-1.5b-instruct:
     input_per_1m: 0.015
     output_per_1m: 0.03
     source: "extrapolated from smallest hosted tier 2026-09 (Qwen/Qwen2.5-1.5B-Instruct)"
     hf_repo: "Qwen/Qwen2.5-1.5B-Instruct"
+    open_source: true
   qwen2.5-0.5b-instruct:
     input_per_1m: 0.01
     output_per_1m: 0.02
     source: "extrapolated (rarely hosted) 2026-09 (Qwen/Qwen2.5-0.5B-Instruct)"
     hf_repo: "Qwen/Qwen2.5-0.5B-Instruct"
+    open_source: true
   smollm2-1.7b-instruct:
     input_per_1m: 0.015
     output_per_1m: 0.03
     source: "extrapolated from smallest hosted tier 2026-09 (HuggingFaceTB/SmolLM2-1.7B-Instruct)"
     hf_repo: "HuggingFaceTB/SmolLM2-1.7B-Instruct"
+    open_source: true
+  llama-3.1-8b-instruct:
+    input_per_1m: 0.05
+    output_per_1m: 0.08
+    source: "deepinfra/novita 2026-09 (meta-llama/Llama-3.1-8B-Instruct)"
+    hf_repo: "meta-llama/Llama-3.1-8B-Instruct"
+    open_source: true
