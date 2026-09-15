@@ -66,6 +66,14 @@ class LLMClient:
 
 #: serving provider -> ``"module:Class"``; imported lazily so importing the
 #: factory never requires every provider SDK
+#:
+#: A different, non-interacting provider vocabulary from
+#: ``router.agentic.llm_clients.guess_provider`` (LangChain names) and
+#: ``configs/model_registry.yaml`` (model-author names) -- no translation
+#: exists between any of the three (XA-10). Harmless today since
+#: ``LLMClientFactory``/this module have no production caller (see the module
+#: docstring above); would need reconciling before anything ever does feed
+#: ``guess_provider``'s output here.
 _ADAPTERS: dict[str, str] = {
     "openai": "router.llm.adapters.openai:OpenAIAdapter",
     "anthropic": "router.llm.adapters.anthropic:AnthropicAdapter",

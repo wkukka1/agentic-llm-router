@@ -15,7 +15,7 @@ import numpy as np
 
 from router.config import Config, load_config
 
-from .checkpoint import load_run
+from .checkpoint import load_baseline_run
 from .data import batched_forward, build_arrays
 from .eval import _per_group, family_labels, theta_matrix
 from .diagnostics import _write_json, parameter_summary, plot_theta_spectrum, pyplot, savefig, \
@@ -119,7 +119,7 @@ def evaluate_continuous(directory: str | Path, *, phase0_cfg: Optional[Config] =
 
     d = Path(directory)
     cfg = phase0_cfg or load_config()
-    model, blob, s = load_run(d)
+    model, blob, s = load_baseline_run(d)
     mi = blob["model_index"]
     head = model.response_head
     key = model.response_model
@@ -228,15 +228,16 @@ def _response_param_summary(model, ev, fw: Optional[dict] = None) -> tuple:
 
 
 def _binned(pred, actual, n_bins: int = 10) -> list:
-    edges = np.linspace(0, 1, n_bins + 1)
-    idx = np.clip(np.digitize(pred, edges[1:-1]), 0, n_bins - 1)
-    rows = []
-    for b in range(n_bins):
-        m = idx == b
-        if m.any():
-            rows.append({"bin": b, "n": int(m.sum()), "pred": float(pred[m].mean()),
-                         "actual": float(actual[m].mean())})
-    return rows
+    """Non-empty equal-width bins of ``pred`` vs ``actual``, via
+    :func:`training.nirt.metrics.reliability_curve` (XD-10) -- same edges /
+    digitize / clip, just this call site's field names (``pred``/``actual``/
+    ``n``) and its empty-bins-dropped shape, kept for its one caller
+    (``boundary_statistics``)."""
+    curve = reliability_curve(actual, pred, n_bins=n_bins)
+    return [
+        {"bin": row["bin"], "n": row["count"], "pred": row["confidence"], "actual": row["accuracy"]}
+        for row in curve["bins"] if row["count"]
+    ]
 
 
 # --------------------------------------------------------------------------- #
@@ -250,7 +251,7 @@ def compare_response_models(dirs: dict, *, cfg: Optional[Config] = None, split: 
         p = Path(path)
         if not (p / "model.pt").exists():
             continue
-        model, blob, _ = load_run(p)
+        model, blob, _ = load_baseline_run(p)
         if model.response_model == "bernoulli":
             from .eval import evaluate_checkpoint
 
@@ -263,7 +264,7 @@ def compare_response_models(dirs: dict, *, cfg: Optional[Config] = None, split: 
                 "mean_calibration_ece": graded["mean_calibration_ece"],
                 "bce_diag": pred["bce"], "accuracy": pred["accuracy"],
                 "cold_start": _cs(r.get("cold_start")),
-                "theta_effective_rank": r["theta_spectrum"]["effective_rank"],
+                "theta_entropy_rank": r["theta_spectrum"]["entropy_rank"],
             }
         else:
             r = evaluate_continuous(p, phase0_cfg=cfg, split=split, write=False)
@@ -276,7 +277,7 @@ def compare_response_models(dirs: dict, *, cfg: Optional[Config] = None, split: 
                 "bce_diag": m["bce_diag_bce"], "accuracy": m["bce_diag_accuracy"],
                 "boundary_calibration": r["boundary_calibration"],
                 "cold_start": _cs(r.get("cold_start")),
-                "theta_effective_rank": r["theta_spectrum"]["effective_rank"],
+                "theta_entropy_rank": r["theta_spectrum"]["entropy_rank"],
                 "response_flags": r["parameter_summary"]["response_flags"],
             }
     out = {"split": split, "models": rows,

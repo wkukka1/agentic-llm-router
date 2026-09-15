@@ -85,7 +85,10 @@ def main() -> int:
         d = load_training_data(p0)
         tr, va, _ = ood_datasets(d, fams, pathway=cfg.get("data", {}).get("pathway", "irt"))
         datasets = (tr, va)
-        cfg.setdefault("data", {})["ood_holdout_families"] = list(fams)
+        # record it under the same key ood_families() reads (evaluation.*, not
+        # data.*) -- the stored run config must name the families it actually
+        # excluded, not a key nothing reads back
+        cfg.setdefault("evaluation", {})["ood_holdout_families"] = list(fams)
         print(f"[ood] held out {list(fams)}: train {len(tr):,} / val {len(va):,} obs")
 
     res = fit(cfg, phase0_cfg=p0, datasets=datasets, name=args.name)

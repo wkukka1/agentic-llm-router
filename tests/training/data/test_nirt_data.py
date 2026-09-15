@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 import pytest
 from helpers import FakeTrainingData
 from helpers import make_store as _fake_store
 
 from training.data import schemas
 from router.data.nirt import NIRTDataset
-from training.data.nirt import NIRT_OBS_COLUMNS, build_nirt_observations
+from training.data.nirt import (
+    NIRT_OBS_COLUMNS,
+    build_nirt_observations,
+    observations,
+    write_nirt_observations,
+)
 
 
 def test_observation_table_schema_and_no_embeddings(toy_training_data):
@@ -33,6 +39,41 @@ def test_target_score_kind(toy_training_data):
     mc_eff = eff[(eff.metric_type == "mc_accuracy") & (eff.score_raw == 0.25)]
     assert mc_raw["target"].iloc[0] == pytest.approx(0.25)
     assert mc_eff["target"].iloc[0] == pytest.approx(0.0)   # chance-corrected
+
+
+# --------------------------------------------------------------------------- #
+# XD-05 / XA-11: the one training-side "read or build" accessor              #
+# --------------------------------------------------------------------------- #
+def test_observations_raises_when_missing_and_not_building(isolated_training_data):
+    with pytest.raises(FileNotFoundError, match="nirt_observations"):
+        observations(isolated_training_data.cfg, build=False)
+
+
+def test_observations_builds_in_memory_without_writing(isolated_training_data):
+    df = observations(isolated_training_data.cfg, data=isolated_training_data, build=True)
+    assert len(df) > 0
+    path = isolated_training_data.cfg.path("processed") / "nirt_observations.parquet"
+    assert not path.exists()   # build=True never writes to disk
+
+
+def test_observations_reads_existing_file_over_building(isolated_training_data):
+    built = build_nirt_observations(isolated_training_data.cfg, data=isolated_training_data,
+                                    models="all")
+    write_nirt_observations(built, isolated_training_data.cfg)
+
+    df = observations(isolated_training_data.cfg, build=False)   # no data=, so a build would crash
+    pd.testing.assert_frame_equal(df.reset_index(drop=True), built.reset_index(drop=True),
+                                  check_dtype=False)   # parquet round-trip widens object -> string
+
+
+def test_observations_build_kw_forces_rebuild_even_when_file_exists(isolated_training_data):
+    built_warm = build_nirt_observations(isolated_training_data.cfg, data=isolated_training_data,
+                                         models="warm")
+    write_nirt_observations(built_warm, isolated_training_data.cfg)
+    assert "llama-2-70b-chat" not in set(built_warm["model_id"])
+
+    df_all = observations(isolated_training_data.cfg, data=isolated_training_data, models="all")
+    assert "llama-2-70b-chat" in set(df_all["model_id"])   # cold model only surfaces via a rebuild
 
 
 def test_dataset_joins_by_id_without_duplicating_vectors(toy_training_data):

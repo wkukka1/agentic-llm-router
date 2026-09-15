@@ -19,6 +19,7 @@ import pandas as pd
 
 from router.config import load_config
 from router.nirt.predict import predict_dataset, predict_matrix
+from router.nirt.routing_decision import regret as _regret, routing_decision
 from training.data.facade import load_training_data
 from training.nirt.metrics import marginal_baselines, prediction_metrics
 
@@ -33,12 +34,12 @@ def ranking_metrics(pred: np.ndarray, true: np.ndarray, tol: float = 1e-9) -> di
     from scipy.stats import spearmanr
 
     n_q = len(true)
-    argmax_pred = pred.argmax(1)
+    argmax_pred = routing_decision(pred)   # lam=0 -- quality-only, same as pred.argmax(1)
     qi = np.arange(n_q)
     row_max = true.max(1)
 
     optimal = float((true[qi, argmax_pred] >= row_max - tol).mean())
-    regret = float((row_max - true[qi, argmax_pred]).mean())
+    regret = float(_regret(pred, true, selected=argmax_pred).mean())
 
     rhos, pair_acc = [], []
     for r_p, r_t in zip(pred, true):
@@ -164,10 +165,6 @@ def cold_start_eval(
     train_ds = data.nirt_dataset(split="train", pathway=pathway)
     global_rate = float(np.asarray(train_ds.targets, np.float64).mean())
 
-    by_dataset = (
-        data.responses[["query_id", "dataset"]].drop_duplicates().set_index("query_id")["dataset"]
-    )
-
     per_model, pooled_true, pooled_pred = {}, [], []
     base_gm, base_wm, base_nw = [], [], []
     aug_pred_cols, aug_true_cols = {}, {}
@@ -192,7 +189,7 @@ def cold_start_eval(
             "n": int(len(y)),
             "prediction": prediction_metrics(y, p),
             "nearest_warm_model": nw,
-            "by_family": _family_breakdown(qids, y, p, by_dataset),
+            "by_family": _family_breakdown(qids, y, p, data),
         }
         pooled_true.append(y); pooled_pred.append(p)
         base_gm.append((y, np.full(len(y), global_rate)))
@@ -246,15 +243,19 @@ def cold_start_eval(
     }
 
 
-def _family_breakdown(qids, y, p, by_dataset) -> dict:
-    """Predicted vs observed correctness split by coarse benchmark family keyword."""
-    fam_kw = {"math": ["gsm", "math"], "code": ["mbpp", "humaneval", "code"],
-              "knowledge": ["mmlu", "arc"], "reasoning": ["hellaswag", "winogrande"],
-              "chinese": ["chinese"], "chat": ["mtbench", "mt-bench"]}
-    ds = pd.Series(qids).map(by_dataset).fillna("").str.lower().to_numpy()
+def _family_breakdown(qids, y, p, data) -> dict:
+    """Predicted vs observed correctness split by benchmark family, via
+    :func:`training.data.families.family_labels` -- the canonical family map
+    (``configs/phase0.yaml``'s ``profiles.task_families``), not a private
+    keyword list that could diverge from it (XD-03)."""
+    from training.data.families import family_labels
+
+    labels = np.asarray(family_labels(list(qids), data.cfg, queries_df=data.queries))
     out = {}
-    for fam, kws in fam_kw.items():
-        mask = np.array([any(k in d for k in kws) for d in ds])
+    for fam in sorted(set(labels)):
+        if fam == "other":    # unmapped -- not a recognised benchmark family
+            continue
+        mask = labels == fam
         if mask.sum() >= 20:
             out[fam] = {"n": int(mask.sum()), "true": round(float(y[mask].mean()), 4),
                         "pred": round(float(p[mask].mean()), 4)}

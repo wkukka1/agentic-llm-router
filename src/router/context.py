@@ -28,9 +28,15 @@ __all__ = [
 
 
 class RoutingMode(enum.Enum):
-    """``MODEL_SELECTION`` is what a :class:`~router.tools.router_tool.RouterTool`
-    passes when an orchestrator calls the router as a tool -- it prevents the
-    router from ever recursing back into full agentic dispatch."""
+    """``MODEL_SELECTION`` is *intended* to be what a
+    :class:`~router.tools.router_tool.RouterTool` passes when an orchestrator
+    calls the router as a tool, to prevent the router from ever recursing back
+    into full agentic dispatch (XA-07) -- but nothing sets or reads this value
+    today: :meth:`RouterTool.route_for_model_selection` is unimplemented, and
+    the live tool-originated recursion path
+    (``router.agentic.orchestrator.build_router_tools``'s ``route_and_answer``)
+    does call back into full dispatch, with only a bare depth counter as its
+    guard. This mode is design scaffolding, not an enforced guard."""
 
     NORMAL = "normal"
     MODEL_SELECTION = "model_selection"

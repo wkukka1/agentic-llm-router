@@ -52,8 +52,13 @@ def _write_json(obj: dict, directory: str | Path, name: str) -> Path:
 # --------------------------------------------------------------------------- #
 # theta spectrum                                                              #
 # --------------------------------------------------------------------------- #
-def effective_rank(singular_values, eps: float = 1e-12) -> float:
-    """``exp(H(p))`` where ``p`` = normalised singular values (Roy & Vetterli)."""
+def entropy_rank(singular_values, eps: float = 1e-12) -> float:
+    """``exp(H(p))`` where ``p`` = normalised singular values (Roy & Vetterli).
+
+    Not the same quantity as ``training.nirt.metrics.participation_rank`` (the
+    participation ratio of theta's covariance eigenvalues) -- the two were
+    previously both named ``effective_rank`` and reported under the same
+    ``"theta_effective_rank"``-style key in different pipelines (XD-01)."""
     s = np.asarray(singular_values, dtype=np.float64)
     s = s[s > eps]
     if s.size == 0:
@@ -72,7 +77,7 @@ def theta_spectrum(theta: np.ndarray) -> dict:
         "shape": list(T.shape),
         "singular_values": sv.tolist(),
         "explained_variance_ratio": (var / total).tolist() if not degenerate else [0.0] * len(sv),
-        "effective_rank": effective_rank(sv),
+        "entropy_rank": entropy_rank(sv),
         "condition_number": float(sv[0] / sv[-1]) if sv[-1] > 1e-12 else float("inf"),
         "theta_mean_norm": float(np.linalg.norm(T.mean(axis=0))),
         "theta_row_norm_mean": float(np.linalg.norm(T, axis=1).mean()),
@@ -93,7 +98,7 @@ def plot_theta_spectrum(spec: dict, path) -> Optional[Path]:
     fig, (ax0, ax1) = plt.subplots(1, 2, figsize=(9, 4))
     ax0.bar(x, sv, color="#1f77b4")
     ax0.set(xlabel="component", ylabel="singular value",
-            title=f"Theta spectrum (eff. rank {spec['effective_rank']:.2f} / {len(sv)})")
+            title=f"Theta spectrum (entropy rank {spec['entropy_rank']:.2f} / {len(sv)})")
     ax1.plot(x, np.cumsum(spec["explained_variance_ratio"]), "o-", color="#ff7f0e")
     ax1.set(xlabel="component", ylabel="cumulative explained variance", ylim=(0, 1.02))
     ax1.axhline(0.9, ls="--", color="gray")

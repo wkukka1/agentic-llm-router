@@ -62,6 +62,38 @@ def test_fit_runs_and_saves(mode, tmp_path):
     assert p.shape == y.shape and np.all((p >= 0) & (p <= 1))
 
 
+def test_fit_writes_format_tag(tmp_path):
+    train_obs, val_obs, q_store, m_store = make_synthetic_irt(n_queries=40, seed=2)
+    train_ds, val_ds = nirt_datasets(train_obs, val_obs, q_store, m_store)
+    fit(nirt_cfg(model_params="free"), datasets=(train_ds, val_ds),
+        name="t-fmt", runs_dir=tmp_path, verbose=False)
+    blob = torch.load(tmp_path / "t-fmt" / "model.pt", map_location="cpu", weights_only=True)
+    assert blob["format"] == "nirt"
+
+
+def test_load_run_rejects_baseline_format(tmp_path):
+    """Pointing this loader at a Phase 1/2 baseline checkpoint (XA-05 /
+    contracts.md's checkpoint-format mismatches) must raise a clear,
+    actionable error -- not an opaque KeyError."""
+    d = tmp_path / "not-nirt"
+    d.mkdir()
+    torch.save({"format": "baseline", "state_dict": {}, "model_cfg": {},
+                "model_index": {}, "query_dim": 8, "profile_dim": 8,
+                "relevance_dim": 0}, d / "model.pt")
+    with pytest.raises(ValueError, match="load_baseline_run"):
+        load_run("not-nirt", runs_dir=tmp_path)
+
+
+def test_load_run_wraps_missing_key_as_value_error(tmp_path):
+    """A checkpoint with no format tag (pre-fix, or genuinely malformed) still
+    fails with a message naming the likely mismatch, not a bare KeyError."""
+    d = tmp_path / "bad"
+    d.mkdir()
+    torch.save({"state_dict": {}}, d / "model.pt")
+    with pytest.raises(ValueError, match="does not look like a NIRT"):
+        load_run("bad", runs_dir=tmp_path)
+
+
 def test_determinism():
     train_obs, val_obs, q_store, m_store = make_synthetic_irt(n_queries=200, seed=3)
     ds = nirt_datasets(train_obs, val_obs, q_store, m_store)

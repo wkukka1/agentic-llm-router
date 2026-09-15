@@ -313,7 +313,7 @@ class TrainingData:
     def nirt_observations(self, **build_kw) -> pd.DataFrame:
         """Lightweight ``(query_id, model_id, target, split, …)`` table -- no
         embeddings. Reads ``nirt_observations.parquet`` if present, else builds."""
-        from .nirt import build_nirt_observations, read_nirt_observations
+        from .nirt import observations, read_nirt_observations
 
         path = self.cfg.path("processed") / "nirt_observations.parquet"
         if path.exists() and not build_kw:
@@ -321,9 +321,9 @@ class TrainingData:
         if not build_kw:
             # default build: cache it so repeated calls don't rebuild from responses
             if "_nirt_obs_default" not in self.__dict__:
-                self.__dict__["_nirt_obs_default"] = build_nirt_observations(self.cfg, data=self)
+                self.__dict__["_nirt_obs_default"] = observations(self.cfg, data=self, build=True)
             return self.__dict__["_nirt_obs_default"]
-        return build_nirt_observations(self.cfg, data=self, **build_kw)
+        return observations(self.cfg, data=self, build=True, **build_kw)
 
     def nirt_dataset(self, split: Optional[str] = "train", pathway: str = "irt",
                      query_pathway: Optional[str] = None,

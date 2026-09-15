@@ -1,17 +1,18 @@
-"""``RouterTool``: exposes a :class:`~router.routing.base.Router` as a
-:class:`Tool`, so an orchestrator can call routing recursively without ever
-re-entering full agentic dispatch.
+"""``RouterTool``: intended to expose a :class:`~router.routing.base.Router`
+as a :class:`Tool` so an orchestrator can call routing recursively without
+ever re-entering full agentic dispatch -- design scaffolding, not a working
+guard today (XA-07).
 
-``MODEL_SELECTION`` mode (:class:`router.context.RoutingMode`) is what
-prevents unbounded re-entry: :meth:`route_for_model_selection` always sets it,
-and (once :class:`~router.router.RoutingPipeline` exists) the pipeline must
-refuse to hand a ``MODEL_SELECTION`` decision back out to a *new*
-orchestrator -- it can only return a plain model choice. Today's working
-equivalent is simpler and already enforces this by construction:
-:func:`router.agentic.orchestrator.build_router_tools`'s ``route_query`` tool
-calls ``agent.route_decision(prompt)`` directly, which only ever returns a
-:class:`~router.routing.base.RoutingResult`, never something that could
-itself trigger another orchestrator.
+``route_for_model_selection`` unconditionally raises ``NotImplementedError``
+below, and ``MODEL_SELECTION`` mode (:class:`router.context.RoutingMode`) is
+never read anywhere outside this file and ``router.context`` -- nothing
+enforces it. The live tool-originated recursion path,
+:func:`router.agentic.orchestrator.build_router_tools`'s ``route_and_answer``,
+calls ``agent._solve(query, depth + 1)`` directly: a full re-triage that CAN
+build a fresh ``AgentExecutor`` and recurse into another orchestrator, up to
+``AgenticRouter.max_depth``. The only guard that actually exists today is that
+bare depth check inside :meth:`router.agentic.router.AgenticRouter._solve` --
+there is no mode flag distinguishing a tool-initiated call from the root call.
 """
 
 from __future__ import annotations
@@ -39,10 +40,12 @@ class RouterTool(Tool):
     def route_for_model_selection(self, request: RoutingRequest) -> "RoutingDecision":
         """Route ``request`` for model selection only: a plain pick, never a
         hand-off. Real ranking (:meth:`Router.route`/``route_text``) works
-        today; building the richer :class:`~router.decision.RoutingDecision`
-        record from a :class:`~router.routing.base.RoutingResult` is the piece
-        this stubs -- it needs :class:`~router.policy.RoutingPolicy`, which
-        nothing implements yet.
+        today, and :class:`~router.policy.DefaultRoutingPolicy` can turn scores
+        into a :class:`~router.decision.RoutingDecision` -- but this method
+        itself, and the ``MODEL_SELECTION`` mode/recursion-guard story this
+        class's module docstring describes, remain unimplemented and unwired.
+        ``router.agentic.AgenticRouter.route_decision(prompt)`` is the live
+        equivalent, with only a bare depth counter as its guard, not this.
 
         The implementation must route a *copy*
         (``dataclasses.replace(request, mode=RoutingMode.MODEL_SELECTION)``),
@@ -50,7 +53,7 @@ class RouterTool(Tool):
         error would otherwise keep a request stuck in ``MODEL_SELECTION``.
         """
         raise NotImplementedError(
-            "RouterTool needs a RoutingPolicy to turn a RoutingResult into a "
-            "RoutingDecision; router.agentic.AgenticRouter.route_decision(prompt) "
+            "RouterTool.route_for_model_selection is unimplemented scaffolding; "
+            "router.agentic.AgenticRouter.route_decision(prompt) "
             "is the working equivalent today."
         )

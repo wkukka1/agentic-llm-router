@@ -33,7 +33,7 @@ from router.config import Config, load_config
 from router.provenance import file_digest, git_dirty, git_sha
 from training.data.facade import load_training_data
 from training.data.splits import SPLIT_FILES
-from training.nirt.baseline.checkpoint import load_run
+from training.nirt.baseline.checkpoint import load_baseline_run
 from training.nirt.baseline.continuous_eval import evaluate_continuous
 from training.nirt.baseline.data import checkpoint_matrix as _pred_matrix
 from training.nirt.baseline.eval import evaluate_checkpoint
@@ -78,9 +78,9 @@ LEDGER_COLUMNS = [
 # --------------------------------------------------------------------------- #
 def _nirt_matrix(run_name: str, data, split: str):
     from router.nirt.predict import predict_matrix
-    from router.nirt.checkpoint import load_run as nirt_load_run
+    from router.nirt.checkpoint import load_run
 
-    model, _, midx = nirt_load_run(run_name)
+    model, _, midx = load_run(run_name)
     return predict_matrix(model, midx, data, split, pathway="irt")
 
 
@@ -232,7 +232,7 @@ def prediction_quality(zoib: str, bernoulli: str, cfg: Config, split: str) -> di
             "bce_diag_bce": zm["bce_diag_bce"],
             "bce_diag_accuracy": zm["bce_diag_accuracy"],
             "boundary_calibration": z["boundary_calibration"],
-            "theta_effective_rank": z["theta_spectrum"]["effective_rank"],
+            "theta_entropy_rank": z["theta_spectrum"]["entropy_rank"],
             "theta_dim": z["theta_spectrum"]["shape"][1],
             "per_family": z["per_family"],
             "response_flags": z["parameter_summary"]["response_flags"],
@@ -244,7 +244,7 @@ def prediction_quality(zoib: str, bernoulli: str, cfg: Config, split: str) -> di
             "auc": b["prediction"]["auc"],
             "ece": b["calibration"]["ece"],
             "delta_bce_vs_model_mean": b["prediction"]["delta_bce_vs_model_mean"],
-            "theta_effective_rank": b["theta_spectrum"]["effective_rank"],
+            "theta_entropy_rank": b["theta_spectrum"]["entropy_rank"],
             "per_family": b["per_family"],
             "pathology_flags": b["parameter_summary"]["pathology_flags"],
         },
@@ -500,7 +500,7 @@ def cold_start_block(zoib_projected: str, cfg: Config, split: str) -> dict:
     return {
         "status": "ran",
         "cold_models": cs["cold_models"],
-        "projected_theta_effective_rank": r["theta_spectrum"]["effective_rank"],
+        "projected_theta_entropy_rank": r["theta_spectrum"]["entropy_rank"],
         "pooled": pooled,
         "per_model": cs["per_model"],
         "beats_global_mean_on_bce": bool(nirt_bce is not None and gm_bce is not None and nirt_bce < gm_bce),
@@ -675,7 +675,7 @@ def run_battery(
     # -- pinned from the checkpoint so the battery stays self-consistent even
     # after a later phase grows the global NIRT dataset.
     if pool_models is None:
-        _, _zblob, _ = load_run(zoib)
+        _, _zblob, _ = load_baseline_run(zoib)
         pool_models = sorted(_zblob["model_index"], key=_zblob["model_index"].get)
     pool_models = list(pool_models)
 

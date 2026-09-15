@@ -16,7 +16,7 @@ import sys
 
 from training.cli import raw_parser
 from router.config import load_config
-from training.nirt.baseline.checkpoint import load_run
+from training.nirt.baseline.checkpoint import load_baseline_run
 
 
 def _print_bernoulli(res: dict, split: str, checkpoint: str) -> None:
@@ -29,7 +29,7 @@ def _print_bernoulli(res: dict, split: str, checkpoint: str) -> None:
             print(f"  {k:24s} {v:.4f}" if isinstance(v, float) else f"  {k:24s} {v}")
     spec = res["theta_spectrum"]
     print(f"\n  theta singular values: {[round(s, 3) for s in spec['singular_values']]}")
-    print(f"  theta effective rank : {spec['effective_rank']:.3f} / {spec['shape'][1]}")
+    print(f"  theta entropy rank   : {spec['entropy_rank']:.3f} / {spec['shape'][1]}")
     print(f"  collapsed            : {spec['collapsed']}")
     cs = res.get("cold_start")
     if cs and "pooled" in cs:
@@ -62,7 +62,7 @@ def _print_continuous(res: dict, split: str) -> None:
     cs = res.get("cold_start")
     if cs and "pooled" in cs:
         print(f"  cold-start NLL {cs['pooled']['baseline_nirt'].get('bce', float('nan')):.4f}")
-    print(f"\n  theta eff. rank {res['theta_spectrum']['effective_rank']:.2f} / "
+    print(f"\n  theta entropy rank {res['theta_spectrum']['entropy_rank']:.2f} / "
           f"{res['theta_spectrum']['shape'][1]}")
 
 
@@ -76,7 +76,7 @@ def main() -> int:
     args = ap.parse_args()
 
     cfg = load_config(args.config)
-    model, _, _ = load_run(args.checkpoint)
+    model, _, _ = load_baseline_run(args.checkpoint)
 
     if model.response_model == "bernoulli":
         from training.nirt.baseline.eval import evaluate_checkpoint

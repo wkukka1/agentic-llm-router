@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 import pytest
 
-from training.taxonomy.clustering import ClusterConfig, cluster_embeddings
+from training.taxonomy.clustering import ClusterConfig, _nirt_query_ids, cluster_embeddings
 from training.taxonomy.relevance import relevance_from_embeddings
 
 
@@ -14,6 +15,27 @@ def _blobs(n_per=80, seed=0):
     centers = np.array([[3, 0, 0], [-3, 0, 0], [0, 3, 0], [0, -3, 0]], dtype=float)
     X = np.vstack([c + 0.25 * rng.standard_normal((n_per, 3)) for c in centers])
     return X.astype(np.float32), centers
+
+
+def test_nirt_query_ids_builds_instead_of_widening(monkeypatch):
+    """XD-05 / XA-11: on a missing nirt_observations.parquet, _nirt_query_ids
+    must use the built (correctness-labeled) query set via the shared
+    training.data.nirt.observations(build=True) accessor, not silently widen
+    to every query in queries.parquet."""
+    import training.data.nirt as nirt_data
+
+    obs = pd.DataFrame({"query_id": ["q0", "q1"]})
+    calls = []
+
+    def fake_observations(cfg, *, data=None, build=False, **kw):
+        calls.append(build)
+        return obs
+
+    monkeypatch.setattr(nirt_data, "observations", fake_observations)
+
+    ids = _nirt_query_ids(object())
+    assert ids == ["q0", "q1"]
+    assert calls == [True]
 
 
 def test_cluster_embeddings_recovers_blobs_and_is_deterministic():

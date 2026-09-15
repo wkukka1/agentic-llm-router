@@ -36,12 +36,18 @@ left to pandas / dict ordering.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, Sequence
+from typing import TYPE_CHECKING, Mapping, Optional, Sequence
 
 import numpy as np
 import pandas as pd
 
-from router.nirt.routing_decision import no_selectable_rows, routing_decision
+from router.nirt.routing_decision import (
+    cost_aware_utility,
+    no_selectable_rows,
+    regret as shared_regret,
+    routing_decision,
+)
+from router.routing.base import _resolve_costs
 
 from ..nirt.routing import oracle_choice
 
@@ -69,6 +75,11 @@ def evaluate_router(
     :func:`routing_evaluation` -- returns oracle hit rate, regret quantiles,
     selected vs oracle quality / cost, and (with ``cost_df``) the cost-aware
     oracle block.
+
+    Defaults ``model_costs`` to ``router.default_model_costs`` -- the same
+    per-model cost vector ``router.route(lam=lam)`` would select with -- so
+    the reported cost-aware selection matches what the served router actually
+    does. Pass ``model_costs=`` explicitly (via ``**kwargs``) to override.
     """
     model_ids = list(router.model_ids)
     # reindexing to a model the outcome matrix lacks would add an all-NaN column
@@ -87,6 +98,7 @@ def evaluate_router(
         if cost_df is not None
         else None
     )
+    kwargs.setdefault("model_costs", router.default_model_costs)
     return routing_evaluation(
         scores.to_numpy(np.float64),
         true,
@@ -212,11 +224,13 @@ def _cost_aware_oracle(true: np.ndarray, C, lam: float, eligible: Optional[np.nd
     Returns ``(util, ca_idx, valid)``: ``valid`` marks rows with at least one finite
     eligible utility -- the only rows a cost-aware oracle is defined on. Shared by
     the summary and the per-query table so the two can never disagree.
+
+    ``util`` uses the same ``pred - lam * C(m)`` formula as the served router's
+    :func:`~router.nirt.routing_decision.routing_decision`
+    (:func:`~router.nirt.routing_decision.cost_aware_utility`), so the oracle's
+    utility scale never silently drifts from what the router actually optimizes.
     """
-    util = true - float(lam) * np.asarray(C, np.float64)[None, :] if lam else true.copy()
-    util = np.where(np.isfinite(util), util, -np.inf)
-    if eligible is not None:
-        util = np.where(np.asarray(eligible, bool), util, -np.inf)
+    util = cost_aware_utility(true, lam=lam, model_costs=C, eligible=eligible)
     valid = ~no_selectable_rows(util)
     return util, util.argmax(axis=1), valid
 
@@ -273,7 +287,7 @@ def routing_evaluation(
         true, cost if cost is not None else np.zeros_like(true), model_ids=model_ids,
     )
     oracle_quality = true.max(axis=1)
-    regret = np.maximum(oracle_quality - sel_quality, 0.0)
+    regret = shared_regret(pred, true, selected=selected)
 
     hit_exact = float(np.mean(selected == o_idx))
     hit_any_best = float(np.mean(sel_quality >= oracle_quality - _TOL))
@@ -432,6 +446,7 @@ def compare_routing_strategies(
     query_ids: Optional[Sequence[str]] = None,
     include_hard_oracle: bool = True,
     include_random: bool = True,
+    model_costs: Optional[np.ndarray] = None,
 ) -> tuple[pd.DataFrame, dict]:
     """Score several routers side by side.
 
@@ -439,6 +454,11 @@ def compare_routing_strategies(
     (A) a quality router and, if ``cost`` is given, (B) a cost-aware router at
     ``lam``. (C) the hard-oracle upper bound (route on ``true``) and a random
     router are added for context. Returns ``(summary_df, per_strategy_dict)``.
+
+    ``model_costs`` (optional, length-``M``) is the per-model cost vector the
+    cost-aware selection uses; without it :func:`routing_evaluation` falls back
+    to the column mean of ``cost`` (the eval split), which need not match any
+    served router's ``default_model_costs``.
     """
     true = np.asarray(true, np.float64)
     n_m = true.shape[1]
@@ -447,7 +467,7 @@ def compare_routing_strategies(
     def _run(name, pmat, strat_lam):
         strategies[name] = routing_evaluation(
             pmat, true, cost, model_ids, lam=strat_lam, tolerance=tolerance,
-            query_ids=query_ids, strategy=name,
+            model_costs=model_costs, query_ids=query_ids, strategy=name,
         )
 
     for name, pmat in preds.items():
@@ -576,6 +596,23 @@ def oracle_classifier_matrix(
 # --------------------------------------------------------------------------- #
 # compare several routers against the oracle                                  #
 # --------------------------------------------------------------------------- #
+def _routers_model_costs(
+    routers: Sequence["Router"], model_ids: Sequence[str],
+) -> Optional[np.ndarray]:
+    """The first router's ``default_model_costs`` that covers every model in
+    ``model_ids`` -- the same vector that router's own ``route(lam=...)``
+    would select with. ``None`` if no router qualifies (falls back to
+    :func:`routing_evaluation`'s own eval-split-mean default)."""
+    for r in routers:
+        c = r.default_model_costs
+        if c is None:
+            continue
+        by_id = dict(zip(r.model_ids, np.asarray(c, np.float64)))
+        if all(m in by_id for m in model_ids):
+            return np.array([by_id[m] for m in model_ids], dtype=np.float64)
+    return None
+
+
 def compare_routers(
     routers: Sequence["Router"],
     true_df: pd.DataFrame,
@@ -585,26 +622,43 @@ def compare_routers(
     tolerance: float = 0.01,
     include_hard_oracle: bool = True,
     include_random: bool = True,
+    model_costs: Optional[Sequence[float] | Mapping[str, float] | np.ndarray] = None,
 ) -> tuple[pd.DataFrame, dict]:
     """Score several routers side by side against the oracle on one outcome matrix.
 
-    Each router's predicted-quality matrix (over ``true_df``'s queries, aligned to
-    ``true_df.columns``) is handed to :func:`compare_routing_strategies`, which
-    adds the hard-oracle upper bound and a random floor. Returns
-    ``(summary_df, detail)``. Replaces the old ``router.routing.compare_routers``
-    -- comparing against ground truth is an evaluation concern.
+    Each router's predicted-quality matrix (over ``true_df``'s queries, aligned via
+    :meth:`Router.aligned_scores` to ``true_df.columns``) is handed to
+    :func:`compare_routing_strategies`, which adds the hard-oracle upper bound and
+    a random floor. Returns ``(summary_df, detail)``. Replaces the old
+    ``router.routing.compare_routers`` -- comparing against ground truth is an
+    evaluation concern.
+
+    When ``lam`` is truthy, cost-aware selection uses ``model_costs`` if given,
+    else the first router's ``default_model_costs`` that covers the full pool
+    (:func:`_routers_model_costs`) -- so, by default, the comparison selects the
+    same way the served routers themselves would at that ``lam``, not with a cost
+    vector recomputed from the eval split.
     """
     model_ids = list(true_df.columns)
     query_ids = list(true_df.index)
     preds: dict[str, np.ndarray] = {}
     for r in routers:
-        mat = r.predict_scores(query_ids).reindex(index=query_ids, columns=model_ids)
+        if r.name in preds:
+            raise ValueError(
+                f"compare_routers: duplicate router name {r.name!r}; give each "
+                "router passed in a distinct .name"
+            )
+        mat = r.aligned_scores(query_ids).reindex(columns=model_ids)
         preds[r.name] = mat.to_numpy(float)
 
     cost = (
         cost_df.reindex(index=query_ids, columns=model_ids).to_numpy(float)
         if cost_df is not None
         else None
+    )
+    resolved_costs = (
+        _resolve_costs(model_costs, model_ids) if model_costs is not None
+        else (_routers_model_costs(routers, model_ids) if lam else None)
     )
     return compare_routing_strategies(
         preds,
@@ -616,4 +670,5 @@ def compare_routers(
         query_ids=query_ids,
         include_hard_oracle=include_hard_oracle,
         include_random=include_random,
+        model_costs=resolved_costs,
     )

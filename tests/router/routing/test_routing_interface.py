@@ -205,6 +205,58 @@ def test_compare_routers_adds_oracle_and_floor():
 
 
 # --------------------------------------------------------------------------- #
+# XA-01: cost-aware evaluation must match the served router's own cost vector #
+# --------------------------------------------------------------------------- #
+def test_evaluate_router_uses_router_default_model_costs():
+    """The cost-aware selection reported by evaluate_router must be the one
+    router.route(lam=...) would actually make (router.default_model_costs),
+    not one recomputed from the eval-split cost matrix -- which can point the
+    opposite way entirely, as it does here."""
+    scores = pd.DataFrame([[0.90, 0.88]], index=["q"], columns=["exp", "cheap"])
+    r = MatrixRouter(scores, name="r", model_costs=[1.0, 0.0])  # exp is expensive
+    true_df = pd.DataFrame([[1.0, 1.0]], index=["q"], columns=["exp", "cheap"])
+    cost_df = pd.DataFrame([[0.0, 1.0]], index=["q"], columns=["exp", "cheap"])  # eval says the opposite
+
+    assert r.route(["q"], lam=0.1).selected_model_ids == ["cheap"]
+    res = evaluate_router(r, true_df, cost_df, lam=0.1)
+    assert res["_per_query"]["selected_model_id"].iloc[0] == "cheap"
+
+
+def test_compare_routers_uses_router_default_model_costs():
+    scores = pd.DataFrame([[0.90, 0.88]], index=["q"], columns=["exp", "cheap"])
+    r = MatrixRouter(scores, name="r", model_costs=[1.0, 0.0])
+    true_df = pd.DataFrame([[1.0, 1.0]], index=["q"], columns=["exp", "cheap"])
+    cost_df = pd.DataFrame([[0.0, 1.0]], index=["q"], columns=["exp", "cheap"])
+    summary, _ = compare_routers([r], true_df, cost_df, lam=0.1,
+                                 include_hard_oracle=False, include_random=False)
+    row = summary[summary.strategy == "r (cost-aware lam=0.1)"].iloc[0]
+    # picked "cheap" (per router.route's own cost vector) -- its eval-matrix
+    # cost (1.0) shows up, not "exp"'s (0.0), which the eval-split-mean cost
+    # vector would have picked instead
+    assert row["mean_selected_cost_per_1k"] == pytest.approx(1000.0)
+
+
+def test_compare_routers_rejects_duplicate_names():
+    true_df, cost_df = _mats()
+    routers = [MatrixRouter(true_df, name="dup"), MatrixRouter(-true_df, name="dup")]
+    with pytest.raises(ValueError, match="duplicate"):
+        compare_routers(routers, true_df, cost_df)
+
+
+def test_compare_routers_handles_non_string_query_ids():
+    """XD-08: compare_routers must align via Router.aligned_scores (which
+    stringifies ids the same way predict_scores does), not a raw reindex by
+    the caller's original ids -- a non-string query id previously produced an
+    all-NaN row that silently fell back to column 0."""
+    true_df = pd.DataFrame([[0.1, 0.9]], index=[1], columns=["A", "B"])
+    scores = pd.DataFrame([[0.1, 0.9]], index=["1"], columns=["A", "B"])
+    r = MatrixRouter(scores, name="r")
+    summary, _ = compare_routers([r], true_df, include_hard_oracle=False, include_random=False)
+    row = summary[summary.strategy == "r (quality)"].iloc[0]
+    assert row["mean_regret"] == pytest.approx(0.0)
+
+
+# --------------------------------------------------------------------------- #
 # NIRTRouter smoke test (needs torch)                                         #
 # --------------------------------------------------------------------------- #
 def test_nirt_router_scores_and_routes():

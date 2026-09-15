@@ -1,7 +1,7 @@
 """Fit the IRT-free ``e_q -> R^M`` MLP router.
 
 Inference for an already-fit model (:func:`router.nirt.baselines_infer.mlp_router_matrix`)
-and the model constructor (:func:`router.nirt.baselines_infer._build_mlp_router`) live in
+and the model constructor (:func:`router.nirt.baselines_infer.build_mlp_router`) live in
 ``router`` since serving needs them too; only the training loop itself lives here.
 """
 
@@ -14,15 +14,15 @@ import pandas as pd
 
 from router.determinism import seed_everything
 from router.nirt.baselines_infer import (
-    _build_mlp_router,
-    _train_correctness_matrix,
+    build_mlp_router,
     mlp_query_matrix,
+    train_correctness_matrix,
 )
 
 
 def _masked_matrix(data, obs: pd.DataFrame, *, pathway, query_pathway, query_features):
     """``(X, y, mask, model_ids)`` for one split's observations."""
-    C, model_ids, qids = _train_correctness_matrix(
+    C, model_ids, qids = train_correctness_matrix(
         data, pathway=query_pathway or pathway, train_obs=obs
     )
     obs_mask = ~np.isnan(C)
@@ -89,7 +89,7 @@ def fit_mlp_router(
         return (F.binary_cross_entropy_with_logits(logit, yt, reduction="none") * mt).sum() \
             / mt.sum().clamp(min=1)
 
-    model = _build_mlp_router(X.shape[1], len(model_ids), hidden, dropout)
+    model = build_mlp_router(X.shape[1], len(model_ids), hidden, dropout)
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     Xt, yt, mt = torch.from_numpy(X), torch.from_numpy(y), torch.from_numpy(m)
     n, bs = len(Xt), int(batch_size)
@@ -132,8 +132,8 @@ def fit_mlp_router_as_router(data=None, *, pathway: str = "irt", name: Optional[
     Replaces the old ``MLPRouter.train(...)`` classmethod -- a serving class
     must not call a trainer, so the fit step moved here.
     """
-    from router.routing.routers import MLPRouter, _load_training_data
+    from router.routing.routers import MLPRouter, load_training_data_for_router
 
-    d = _load_training_data(data)
+    d = load_training_data_for_router(data)
     model, model_ids = fit_mlp_router(d, pathway=pathway, **fit_kw)
     return MLPRouter(model, model_ids, data=d, pathway=pathway, name=name)

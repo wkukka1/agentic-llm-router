@@ -17,7 +17,7 @@ from evaluation.routing.oracle import (
     routing_evaluation,
     soft_oracle_targets,
 )
-from router.nirt.routing_decision import routing_decision
+from router.nirt.routing_decision import cost_aware_utility, regret, routing_decision
 
 M = ["GPT-A", "GPT-B", "GPT-C"]
 
@@ -168,6 +168,39 @@ def test_increasing_lambda_can_change_selection():
     model_costs = np.array([1.0, 0.0])       # but A is far more expensive
     assert routing_decision(pred, lam=0.0, model_costs=model_costs)[0] == 0
     assert routing_decision(pred, lam=0.1, model_costs=model_costs)[0] == 1
+
+
+def test_shared_regret_matches_routing_evaluation():
+    """XD-06: evaluation.routing.oracle.routing_evaluation's mean_regret must
+    equal router.nirt.routing_decision.regret on the same inputs -- the two
+    are meant to be the same computation now, not independently retyped."""
+    true_df, cost_df = _mats()
+    true, cost = true_df.to_numpy(), cost_df.to_numpy()
+    pred = np.array([[0.6, 0.9, 0.7], [0.4, 0.5, 0.3], [0.1, 0.15, 0.2]])
+    r = routing_evaluation(pred, true, cost, M)
+    direct = regret(pred, true).mean()
+    assert r["mean_regret"] == pytest.approx(float(direct))
+
+
+def test_regret_uses_routing_decision_tie_break():
+    """Ties broken the same way routing_decision breaks them (lowest column
+    index), not a fresh tie-break rule invented for the metric."""
+    true = np.array([[1.0, 1.0, 0.0]])    # A and B tied for best
+    pred = np.array([[0.9, 0.9, 0.1]])    # router also ties A/B
+    r = regret(pred, true)
+    assert r[0] == pytest.approx(0.0)     # column 0 (A) is itself a best model -> zero regret
+
+
+def test_cost_aware_utility_matches_routing_decision_argmax():
+    """XD-07: routing_decision (the served router's selection) and the oracle's
+    cost-aware block must share one utility formula -- routing_decision's
+    argmax is exactly cost_aware_utility(...).argmax(1)."""
+    pred = np.array([[0.9, 0.85, np.nan], [0.5, 0.6, 0.55]])
+    costs = np.array([0.1, 0.0, 0.2])
+    eligible = np.array([[True, True, True], [False, True, True]])
+    util = cost_aware_utility(pred, lam=0.5, model_costs=costs, eligible=eligible)
+    sel = routing_decision(pred, lam=0.5, model_costs=costs, eligible=eligible)
+    assert (util.argmax(axis=1) == sel).all()
 
 
 def test_cost_aware_utility_block():

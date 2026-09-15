@@ -37,6 +37,7 @@ __all__ = [
     "KNNRouter",
     "MLPRouter",
     "RandomRouter",
+    "load_training_data_for_router",
 ]
 
 
@@ -94,7 +95,7 @@ def _lazy_model_costs(router) -> Optional[np.ndarray]:
 # reads a pre-built model checkpoint. Splitting a serving-safe "artifact
 # reader" out of `TrainingData` would be new abstraction the reorg explicitly
 # scoped out; the import-linter contract allowlists this one crossing.
-def _load_training_data(data=None, config_path=None):
+def load_training_data_for_router(data=None, config_path=None):
     """``data`` as given, else ``TrainingData`` for ``config_path`` (default:
     ``configs/phase0.yaml``)."""
     if data is not None:
@@ -194,7 +195,7 @@ class NIRTRouter(Router):
         super().__init__(sorted(model_index, key=model_index.get), name=name)
         self._model = model
         self._model_index = dict(model_index)
-        self._data = _load_training_data(data)
+        self._data = load_training_data_for_router(data)
         self._pathway = pathway
         self._query_pathway = query_pathway or pathway
         self._query_features = query_features
@@ -216,7 +217,7 @@ class NIRTRouter(Router):
         return cls(
             model,
             model_index,
-            data=_load_training_data(data, dcfg.get("phase0_config")),
+            data=load_training_data_for_router(data, dcfg.get("phase0_config")),
             pathway=dcfg.get("pathway", "irt"),
             query_pathway=dcfg.get("query_pathway") or None,
             query_features=dcfg.get("query_features") or None,
@@ -354,7 +355,7 @@ class KNNRouter(Router):
         model_ids: Optional[Sequence[str]] = None,
         name: Optional[str] = None,
     ):
-        d = _load_training_data(data)
+        d = load_training_data_for_router(data)
         if model_ids is None:
             obs = d.nirt_observations()
             model_ids = sorted(obs.loc[obs["split"] == "train", "model_id"].astype(str).unique())
@@ -421,7 +422,7 @@ class MLPRouter(Router):
                  pathway: str = "irt", name: Optional[str] = None):
         super().__init__(model_ids, name=name or "mlp")
         self._model = model
-        self._data = _load_training_data(data)
+        self._data = load_training_data_for_router(data)
         self._pathway = pathway
         self._cost_cache = _UNSET
 

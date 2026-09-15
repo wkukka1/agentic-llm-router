@@ -16,7 +16,7 @@ import numpy as np
 
 from training.cli import raw_parser
 from router.config import load_config
-from training.nirt.baseline.checkpoint import load_run
+from training.nirt.baseline.checkpoint import load_baseline_run
 from training.nirt.baseline.data import batched_forward, build_arrays
 from training.nirt.baseline.diagnostics import parameter_summary
 from training.nirt.baseline.eval import theta_matrix
@@ -33,7 +33,7 @@ def main() -> int:
     args = ap.parse_args()
 
     cfg = load_config(args.config)
-    model, blob, s = load_run(args.checkpoint)
+    model, blob, s = load_baseline_run(args.checkpoint)
     mi = blob["model_index"]
     order = sorted(mi, key=mi.get)
 

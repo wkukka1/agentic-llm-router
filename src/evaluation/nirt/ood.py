@@ -11,7 +11,7 @@ else, and evaluate only on the held-out families.
     train_ds, val_ds, ood_ds = ood_datasets(data, holdout=("math", "code"))
 
 Family membership reuses the coarse map in ``configs/phase0.yaml ->
-profiles.task_families`` (via ``router.models.profiles``).
+profiles.task_families`` (via ``training.data.families``).
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from typing import Iterable, Optional
 
 import pandas as pd
 
-from training.models.profiles import _family_of, _task_family_map
+from training.data.families import family_of, task_family_map
 
 DEFAULT_HOLDOUT = ("math", "code")
 
@@ -32,11 +32,11 @@ def ood_families(nirt_cfg: Optional[dict]) -> tuple[str, ...]:
 
 def family_of_query(data) -> dict[str, str]:
     """``query_id -> coarse family`` (only queries whose dataset maps to one)."""
-    fam_map = _task_family_map(data.cfg)
+    fam_map = task_family_map(data.cfg)
     ds = data.responses[["query_id", "dataset"]].drop_duplicates()
     out: dict[str, str] = {}
     for qid, dname in zip(ds["query_id"], ds["dataset"]):
-        fam = _family_of(dname, fam_map)
+        fam = family_of(dname, fam_map)
         if fam is not None:
             out[str(qid)] = fam
     return out

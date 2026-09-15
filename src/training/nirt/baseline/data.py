@@ -281,16 +281,16 @@ def checkpoint_matrix(ckpt, cfg: Config, split: str, field: str = "proba", *,
 
     ``field`` -> ``proba`` (Bernoulli P(correct)), ``mean`` (E[Y]), ``lower`` /
     ``upper`` (predictive interval at ``level``), or any response-head param.
-    The one place the ``load_run`` -> ``build_arrays`` -> ``batched_forward`` ->
+    The one place the ``load_baseline_run`` -> ``build_arrays`` -> ``batched_forward`` ->
     pivot chain lives -- was copy-pasted into ``route_compare``, ``route_eval`` and
     ``pool_expansion.battery``.
     """
     import pandas as pd
 
     from router.nirt.frames import pivot_qm
-    from .checkpoint import load_run
+    from .checkpoint import load_baseline_run
 
-    model, blob, s = load_run(ckpt)
+    model, blob, s = load_baseline_run(ckpt)
     ev = build_arrays(
         cfg, split=split, pathway=s["pathway"], binary_threshold=s["binary_threshold"],
         score_kind=s["score_kind"], use_relevance=model.use_relevance,

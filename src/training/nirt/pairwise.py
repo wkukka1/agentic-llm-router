@@ -102,29 +102,31 @@ def build_pairwise_arrays(
 
 def pairwise_logit_diff(model, e_q, e_a, e_b):
     """``z(q, model_a) - z(q, model_b)`` using the model's own query head +
-    model-side heads -- the exact score ``NIRTModel.forward`` uses (bilinear
-    base plus the interaction residual when ``model.interaction`` is set), just
-    evaluated for two models against one shared ``theta_q``. Requires
-    ``model.model_params == "projected"``."""
+    model-side heads, scored via :meth:`NIRTModel.score` -- the same formula
+    ``forward`` uses, just evaluated for two models against one shared
+    ``theta_q``. Requires ``model.model_params == "projected"``.
+
+    ``a_a``/``a_b`` come from two *separate* forward calls, so a
+    ``center_discrimination`` model must not let each one centre on its own
+    batch -- that would subtract different reference points from ``a_a`` and
+    ``a_b`` and bias ``z_a - z_b`` by ``-(r_a - r_b) . theta``. Both calls
+    share one reference (the mean discrimination over this pair-batch's own
+    ``e_a``/``e_b`` pool) via :func:`router.nirt.predict.pool_centering` --
+    a no-op when centring is disabled."""
     if model.model_params != "projected":
         raise ValueError(
             "pairwise training needs model_params='projected' -- a 'free' model "
             "has no row for battle participants absent from the correctness pool"
         )
+    from router.nirt.predict import pool_centering
+
     theta = model.latent_query(e_q)
-    a_a, b_a = model.model_parameters(e_a)
-    a_b, b_b = model.model_parameters(e_b)
-    if model.difficulty == "vector":
-        z_a = (a_a * (theta - b_a)).sum(-1)
-        z_b = (a_b * (theta - b_b)).sum(-1)
-    else:
-        z_a = (a_a * theta).sum(-1) - b_a
-        z_b = (a_b * theta).sum(-1) - b_b
-    if model.interaction:
-        feats_a = torch.cat([theta, a_a, theta * a_a], dim=-1)
-        feats_b = torch.cat([theta, a_b, theta * a_b], dim=-1)
-        z_a = z_a + model.interaction_gamma * model.interaction_net(feats_a).squeeze(-1)
-        z_b = z_b + model.interaction_gamma * model.interaction_net(feats_b).squeeze(-1)
+    pool_ref = torch.cat([e_a, e_b], dim=0).detach().cpu().numpy()
+    with pool_centering(model, pool_ref):
+        a_a, b_a = model.model_parameters(e_a)
+        a_b, b_b = model.model_parameters(e_b)
+    z_a = model.score(theta, a_a, b_a)
+    z_b = model.score(theta, a_b, b_b)
     return z_a - z_b
 
 
