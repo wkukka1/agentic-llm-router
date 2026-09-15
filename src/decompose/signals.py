@@ -24,6 +24,8 @@ class PromptSignals:
     embeddings: dict[str, list[float]] = field(default_factory=dict)
 
     def add(self, signal: Signal) -> None:
+        if signal.name in self.signals:
+            raise ValueError(f"Signal {signal.name} already exists")
         self.signals[signal.name] = signal
 
     def add_embedding(self, name: str, vector) -> None:
