@@ -60,13 +60,21 @@ def main() -> int:
           f"{result['prediction']['zoib']['mae']:.4f}")
     print(f"  oracle cost-save ceiling {der['oracle_cost_saving_ceiling']*100:+.1f}%  "
           f"(oracle routes {der['oracle_offbest_fraction']*100:.0f}% off {der['best_single_model']})")
+    if der.get("lambda_selection") != "validation":
+        print(f"  lambda selection         {der.get('lambda_selection')} "
+              f"({der.get('lambda_selection_reason', '')})")
     for tag, key in (("-1pt", "router_saving_at_minus1pt"), ("-3pt", "router_saving_at_minus3pt")):
-        s = der.get(key)
+        s, c = der.get(key), der.get(f"{key}_test_ceiling")
+        ceiling = (f"  [test-chosen ceiling {c['cost_saving_vs_ref']*100:+.1f}%, lam {c['lam']}]"
+                   if c else "  [test-chosen ceiling none]")
         if s:
             print(f"  ZOIB saving @ {tag:>4}       {s['cost_saving_vs_ref']*100:+.1f}%  "
-                  f"(acc {s['accuracy']:.4f}, d {s['d_accuracy_vs_best_single']*100:+.2f}pt, lam {s['lam']})")
+                  f"(acc {s['accuracy']:.4f}, d {s['d_accuracy_vs_best_single']*100:+.2f}pt, "
+                  f"val-chosen lam {s['lam']}){ceiling}")
         else:
-            print(f"  ZOIB saving @ {tag:>4}       none")
+            print(f"  ZOIB saving @ {tag:>4}       none{ceiling}")
+    if result["routing"].get("nirt_error"):
+        print(f"  NIRT run {result['routing']['nirt_run']!r} FAILED: {result['routing']['nirt_error']}")
     print(f"  ZOIB AIQ improvement     {result['routing']['zoib_aiq'].get('aiq_improvement'):+.4f}")
     cs = result["cold_start"]
     if cs.get("status") == "ran":
@@ -94,7 +102,10 @@ def main() -> int:
         for r in sb["per_model"]:
             print(f"    - {r['model_id']:<26} 0shot {r['acc_base']:.3f} -> 5shot {r['acc_suffix']:.3f} "
                   f"({r['d_acc']*100:+.1f}pt)")
-    print(f"\nwrote artifacts/pool_expansion/{args.phase}/  +  ledger.json  +  docs/pool_expansion_results.md")
+    if args.no_write:
+        print("\n--no-write: nothing written")
+    else:
+        print(f"\nwrote artifacts/pool_expansion/{args.phase}/  +  ledger.json  +  docs/pool_expansion_results.md")
     return 0
 
 

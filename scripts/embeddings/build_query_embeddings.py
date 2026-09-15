@@ -10,15 +10,19 @@ re-running picks up from the last flushed batch.
 
 Output: <embedding.cache_dir>/query__<pathway>/{vectors.npy, ids.parquet,
 manifest.json}. Deterministic for a fixed config + device.
+
+The actual build logic is :func:`training.data.embeddings.build_query_embedding_store`,
+reachable from Python via ``TrainingData.query_embeddings(pathway, build=True, ...)``
+-- this script is a thin CLI wrapper over it.
 """
 
 from __future__ import annotations
 
-import json
 import sys
 
 from training.cli import base_parser, get_config, info
-from router.embeddings import available_pathways, build_store, default_store_dir, load_encoder
+from router.embeddings import available_pathways
+from training.data.facade import load_training_data
 
 
 def main() -> int:
@@ -35,26 +39,7 @@ def main() -> int:
     parser.add_argument("--flush-every", type=int, default=25, help="batches per checkpoint")
     args = parser.parse_args()
     cfg = get_config(args)
-
-    import pandas as pd
-
-    queries = pd.read_parquet(cfg.path("processed") / "queries.parquet")
-    if args.split:
-        sp = cfg.path("splits") / f"{args.split}.json"
-        ids = set(json.loads(sp.read_text(encoding="utf-8"))["query_ids"])
-        queries = queries[queries["query_id"].isin(ids)]
-        info(f"restricted to split '{args.split}': {len(queries)} queries")
-    if args.from_nirt:
-        nirt = cfg.path("processed") / "nirt_observations.parquet"
-        if not nirt.exists():
-            parser.error("--from-nirt needs nirt_observations.parquet "
-                         "(run scripts/data/build_nirt_dataset.py first)")
-        keep = set(pd.read_parquet(nirt, columns=["query_id"])["query_id"])
-        queries = queries[queries["query_id"].isin(keep)]
-        info(f"restricted to NIRT queries: {len(queries)}")
-    if args.limit:
-        queries = queries.head(args.limit)
-    queries = queries.sort_values("query_id").reset_index(drop=True)
+    data = load_training_data(cfg)
 
     if args.all_pathways:
         pathways = available_pathways(cfg)
@@ -64,19 +49,15 @@ def main() -> int:
         pathways = [cfg.get("embedding.default_pathway") or available_pathways(cfg)[0]]
 
     for pw in pathways:
-        encoder = load_encoder(cfg, pathway=pw)
-        suffix = f"__{args.split}" if args.split else ("__smoke" if args.limit else "")
-        out_dir = default_store_dir(cfg, "query", pw + suffix)
-        info(f"[{pw}] {encoder.cfg.backend}:{encoder.cfg.model_name} on "
-             f"{encoder.device} -> {len(queries)} queries -> {out_dir.name}")
-        store = build_store(
-            out_dir, queries["query_id"].tolist(), queries["query"].tolist(),
-            encoder, id_field="query_id", resume=not args.restart,
-            force=args.restart, flush_every=args.flush_every,
-            manifest_extra={"query_set": "nirt" if args.from_nirt
-                            else (args.split or "all")},
+        info(f"[{pw}] building query embeddings"
+             + (f" (split={args.split})" if args.split else "")
+             + (" (from_nirt)" if args.from_nirt else "")
+             + (f" (limit={args.limit})" if args.limit else ""))
+        store = data.query_embeddings(
+            pw, build=True, split=args.split, from_nirt=args.from_nirt,
+            limit=args.limit, restart=args.restart, flush_every=args.flush_every,
         )
-        info(f"[{pw}] done: {len(store)} embeddings (dim={store.dim}) -> {out_dir}")
+        info(f"[{pw}] done: {len(store)} embeddings (dim={store.dim})")
     return 0
 
 

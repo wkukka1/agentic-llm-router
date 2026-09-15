@@ -31,6 +31,7 @@ def main() -> int:
     acfg = cfg.get("anchor_judge")
 
     from training.data.facade import load_training_data
+    from evaluation.data.judge_responses import duplicated_routerbench_query_ids
     from evaluation.data.stratify import sample_stratified_queries
 
     d = load_training_data(cfg)
@@ -39,6 +40,10 @@ def main() -> int:
     )
     R = R.reindex(columns=ROUTERBENCH_11).dropna(axis=0, how="any")
     R = zeroshot_only(R)
+    # duplicate prompts have an averaged gold score and no matching response text
+    dup_ids = duplicated_routerbench_query_ids(cfg) & set(R.index)
+    R = R.drop(index=list(dup_ids))
+    info(f"excluded {len(dup_ids)} duplicate-prompt queries")
 
     n_discriminative = int(acfg.get("n_discriminative", 1750)) if acfg else 1750
     n_natural = int(acfg.get("n_natural", 750)) if acfg else 750

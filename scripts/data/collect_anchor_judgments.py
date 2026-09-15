@@ -255,8 +255,10 @@ def main() -> int:
 
     parse_failure_rate = float((~judgments["parsed_ok"]).mean()) if len(judgments) else 0.0
     disc_ids = set(sampled.index[sampled["stratum"] == "discriminative"])
+    # Unparsed verdicts carry gain 0 and would pull the mean toward a tie.
+    parsed = judgments[judgments["parsed_ok"]] if len(judgments) else judgments
     anchor_mean_gain_disc = float(
-        judgments.loc[judgments["query_id"].isin(disc_ids), "gain"].mean()
+        parsed.loc[parsed["query_id"].isin(disc_ids), "gain"].mean()
     ) if disc_ids else float("nan")
     info(f"Phase A done: {len(judgments)} judgments, "
          f"parse_failure_rate={parse_failure_rate:.3f}, "

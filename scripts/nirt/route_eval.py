@@ -140,12 +140,14 @@ def main() -> int:
         preds["Bernoulli"] = _zoib_matrix(args.bernoulli, p0, args.split, "proba", true_df)
     if args.oracle_classifier:
         q_store = d.query_embeddings(pathway)
-        tr_true, _ = eval_matrices(d, split="train", models=pool)
-        tr_emb = q_store.gather([q for q in tr_true.index if q in q_store])
-        tr_true = tr_true.loc[[q for q in tr_true.index if q in q_store]]
+        tr_true, tr_cost = eval_matrices(d, split="train", models=pool)
+        tr_keep = [q for q in tr_true.index if q in q_store]
+        tr_emb = q_store.gather(tr_keep)
+        tr_true, tr_cost = tr_true.loc[tr_keep], tr_cost.loc[tr_keep]
         ev_emb = q_store.gather(query_ids)
+        # labels break score ties by cost then model_id -- same rule as the oracle
         preds["oracle-classifier (baseline D)"] = oracle_classifier_matrix(
-            tr_emb, tr_true, ev_emb, model_ids
+            tr_emb, tr_true, ev_emb, model_ids, train_cost_df=tr_cost
         )
 
     # -- headline: the NIRT run, quality + cost-aware ----------------------

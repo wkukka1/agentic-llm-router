@@ -148,13 +148,16 @@ def main() -> int:
     knn_pred = align(knn_router_matrix(d, list(true_df.index), k=int(knn.get("k", 5)),
                                        pathway=knn.get("pathway", "retrieval"),
                                        train_obs=bl_train_obs), true_df)
+    # the MLP ablation sees the SAME query inputs as the NIRT run (kNN-imputed
+    # store + structured features), so the comparison isolates the IRT structure.
+    mlp_inputs = dict(pathway=mlp.get("pathway", pathway), query_pathway=query_pathway,
+                      query_features=run_cfg.get("data", {}).get("query_features") or None)
     mlp_model, mlp_ids = fit_mlp_router(d, hidden=int(mlp.get("hidden", 128)),
                                         epochs=int(mlp.get("epochs", 40)),
                                         lr=float(mlp.get("lr", 1e-3)),
-                                        pathway=mlp.get("pathway", "irt"),
-                                        seed=seed, train_obs=bl_train_obs)
+                                        seed=seed, train_obs=bl_train_obs, **mlp_inputs)
     mlp_pred = align(mlp_router_matrix(mlp_model, mlp_ids, d, list(true_df.index),
-                                       pathway=mlp.get("pathway", "irt")), true_df)
+                                       **mlp_inputs), true_df)
 
     learned = {
         "NIRT": nirt_pred,

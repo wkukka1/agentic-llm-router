@@ -7,6 +7,9 @@ embeds each model's profile, giving a `model_id -> vector` map that Phase 1 uses
 to initialise theta_m (and to place cold-start models from description alone).
 
 Output: <embedding.cache_dir>/model_profile__<pathway>/.
+
+The actual build logic is :func:`training.models.profiles.build_profile_embeddings`
+-- this script is a thin CLI wrapper over it.
 """
 
 from __future__ import annotations
@@ -14,8 +17,8 @@ from __future__ import annotations
 import sys
 
 from training.cli import base_parser, get_config, info
-from router.embeddings import available_pathways, build_store, default_store_dir, load_encoder
-from training.models.profiles import build_model_profiles, read_model_profiles
+from router.embeddings import available_pathways
+from training.models.profiles import build_profile_embeddings
 
 
 def main() -> int:
@@ -30,17 +33,6 @@ def main() -> int:
     args = parser.parse_args()
     cfg = get_config(args)
 
-    try:
-        profiles = read_model_profiles(cfg)
-    except FileNotFoundError:
-        info("model_profiles.parquet missing; building it now")
-        from training.models.profiles import write_model_profiles
-
-        profiles = build_model_profiles(cfg)
-        write_model_profiles(profiles, cfg)
-
-    profiles = profiles.sort_values("model_id").reset_index(drop=True)
-
     if args.all_pathways:
         pathways = available_pathways(cfg)
     else:
@@ -48,17 +40,10 @@ def main() -> int:
                     or available_pathways(cfg)[0]]
 
     for pw in pathways:
-        encoder = load_encoder(cfg, pathway=pw)
-        out_dir = default_store_dir(cfg, "model_profile", pw)
-        info(f"[{pw}] {encoder.cfg.backend}:{encoder.cfg.model_name} -> "
-             f"{len(profiles)} profiles ({args.text_column})")
-        store = build_store(
-            out_dir, profiles["model_id"].tolist(),
-            profiles[args.text_column].tolist(), encoder,
-            id_field="model_id", resume=not args.restart, force=args.restart,
-            manifest_extra={"text_column": args.text_column},
+        store = build_profile_embeddings(
+            cfg, pw, restart=args.restart, text_column=args.text_column,
         )
-        info(f"[{pw}] wrote {len(store)} profile embeddings (dim={store.dim}) -> {out_dir}")
+        info(f"[{pw}] wrote {len(store)} profile embeddings (dim={store.dim}) ({args.text_column})")
     return 0
 
 
