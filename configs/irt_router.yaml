@@ -1,0 +1,147 @@
+# IRT-Router benchmark configuration (arXiv 2506.01048, ACL'25).
+#
+# A fully ISOLATED parallel pipeline: the paper's own suite of 20 LLMs x 12
+# datasets, split into in-distribution (8 datasets, 70/30 train/test) and
+# out-of-distribution (4 held-out datasets). Nothing here shares state with the
+# RouterBench pipeline in configs/phase0.yaml -- separate processed dir, splits
+# dir, embedding cache, and artifacts.
+#
+# Data provenance: github.com/Mercidaiha/IRT-Router @ e8f258c (Git LFS).
+#   data/{train,test1,test2}.csv  -- per-(query, model) rows, precomputed
+#                                    `performance` (graded 0..1) and `cost`.
+#   utils/map/{query,llm}.csv     -- id -> text maps.
+#   utils/bert_embeddings/*.pkl   -- bert-base mean-pool, L2-normalized, 768-d.
+#   utils/relevance/*.pkl         -- 25-d relevance vectors.
+#
+# Pipeline:
+#   scripts/data/download_irt_router.py            --config configs/irt_router.yaml
+#   scripts/data/build_response_matrix.py          --config configs/irt_router.yaml
+#   scripts/data/build_splits.py                   --config configs/irt_router.yaml
+#   scripts/data/import_irt_router_embeddings.py   --config configs/irt_router.yaml
+#   scripts/data/build_nirt_dataset.py             --config configs/irt_router.yaml
+#   (train -- see docs/irt_router.md)
+#   scripts/route_compare.py --config configs/irt_router.yaml --reference gpt_4o --splits test,ood
+
+seed: 42
+
+# scripts/data/build_response_matrix.py runs only these loaders when --sources is
+# omitted (the RouterBench/Arena loaders would fail against this config).
+source_order: [irt_router]
+
+paths:
+  raw: data/raw
+  processed: data/processed/irt_router
+  taxonomy: data/taxonomy/irt_router
+  splits: data/splits/irt_router
+  indexes: indexes/irt_router
+
+sources:
+  irt_router:
+    # Local snapshot of the IRT-Router GitHub repo's Git-LFS payload.
+    # See scripts/data/download_irt_router.py.
+    local_dir: data/raw/irt_router
+    repo: Mercidaiha/IRT-Router
+    commit: e8f258ced4ec3c40d795403603acd8c1cdfb994d
+    # The 20-model routing pool (test_router.py `llms`). CSV rows for any other
+    # `llm` value are dropped at load time.
+    pool:
+      - glm_4_air
+      - glm_4_flash
+      - glm_4_plus
+      - gpt_4o
+      - gpt_4o_mini
+      - gpt_4o_mini_cot
+      - deepseek_coder
+      - deepseek_chat
+      - qwen25_32b_int4
+      - qwen25_7b_instruct
+      - qwen25_72b_instruct
+      - qwq_32b_preview
+      - qwen25_math_7b_instruct
+      - llama31_8b_instruct
+      - llama31_70b_instruct
+      - llama31_405b_instruct
+      - mixtral_8x7b_instruct
+      - mistral_7b_instruct_v02
+      - ministral_8b_instruct_2410
+      - gemini15_flash
+    # task -> in/out-of-distribution. ID = 70% train + 30% test1; OOD = test2.
+    id_datasets:  [mmlu, cmmlu, aclue, arc_c, hotpot_qa, squad, math, mbpp]
+    ood_datasets: [ceval, commonsense_qa, gsm8k, humaneval]
+
+# Multiple-choice tasks in this suite (data-level chance correction).
+multiple_choice:
+  by_task:
+    mmlu: 4
+    cmmlu: 4
+    aclue: 4
+    arc_c: 4
+    ceval: 4
+    commonsense_qa: 5
+  by_prefix: {}
+
+chance_correction:
+  method: normalized
+  clip: true
+  warn_on_missing_choices: false
+
+embedding:
+  batch_size: 64
+  device: auto
+  cache_dir: data/processed/irt_router/embeddings
+  pathways:
+    irt:
+      backend: bert
+      model_name: bert-base-uncased
+      pooling: mean
+      # The imported IRT-Router vectors are L2-normalized (utils/embedding.py).
+      normalize: true
+      max_seq_length: 256
+    # P4a: modern sentence encoder (bge-small-en-v1.5, 384-d), shared query+profile role.
+    #   python scripts/data/encode_irt_router_pathway.py --config configs/irt_router.yaml --pathway bge
+    bge:
+      backend: sentence_transformer
+      model_name: BAAI/bge-small-en-v1.5
+      normalize: true
+      max_seq_length: 384
+  default_pathway: irt
+
+profiles:
+  # Profile TEXT is not rebuilt for v1 -- the profile embeddings are imported
+  # directly from utils/bert_embeddings/llm_embeddings.pkl. include_empirical is
+  # irrelevant while model_profiles.parquet is absent.
+  config_path: configs/model_profiles.yaml
+  include_empirical: false
+  version: 1
+  task_families:
+    math: [math, gsm8k]
+    code: [mbpp, humaneval]
+    knowledge: [mmlu, arc_c, commonsense_qa]
+    reasoning: [hotpot_qa]
+    language_zh: [cmmlu, aclue, ceval]
+
+clustering:
+  # Relevance vectors are imported (not clustered); this only tells
+  # taxonomy.load_relevance which pathway suffix to look under.
+  pathway: irt
+
+taxonomy:
+  target_dimensions: 25
+  version: 1
+
+retrieval:
+  k: 5
+
+split:
+  # Honour the repo's pre-partitioned train.csv / test1.csv / test2.csv instead
+  # of running the content-hash lottery. train.csv -> train + validation
+  # (90/10 by content hash); test1.csv -> test; test2.csv -> ood.
+  presplit: true
+  train_fraction: 0.9
+  validation_fraction: 0.1
+  test_fraction: 0.0
+  cold_start_model_fraction: 0.0
+  cold_start_min_observations: 0
+  dedup_on: normalized_query
+  force_warm: []
+  force_cold: []

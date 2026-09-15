@@ -1,2 +1,34 @@
+# Runtime deps. Canonical source is pyproject.toml; this mirror is kept for
+# `pip install -r requirements.txt` users. Install the package with
+# `pip install -e .` to also get the `router` import and CLI entry points.
+numpy
+pandas
+pyarrow
+pyyaml
+python-dotenv
+tqdm
 datasets
-dotenv
+scikit-learn
+scipy
+sentence-transformers
+transformers
+torch
+matplotlib
+
+# query ability taxonomy (UMAP+HDBSCAN clustering) + FAISS query bank
+faiss-cpu
+umap-learn
+hdbscan
+
+# dev
+pytest
+
+# optional: router.agentic LLM orchestrator (extras: `pip install -e .[agentic]`)
+# langchain>=0.3
+# langchain-core>=0.3
+
+# optional: LLM-assisted labeling (future stage)
+# openai
+anthropic   # anchor-judge pipeline (docs/anchor_judge.md), provider=anthropic
+# optional: running lm-evaluation-harness yourself
+# lm-eval
