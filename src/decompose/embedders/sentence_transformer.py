@@ -11,7 +11,7 @@ from __future__ import annotations
 from router.embeddings.encoder import EncoderConfig, TextEncoder
 
 from .base import Embedder
-
+import numpy as np
 
 class SentenceEmbedder(Embedder):
     name = "sentence_embedder"
@@ -28,5 +28,8 @@ class SentenceEmbedder(Embedder):
     def dimension(self) -> int:
         return self._encoder.dim
 
-    def embed(self, text: str) -> list[float]:
-        return self._encoder.encode([text])[0].tolist()
+    def embed(self, text: str) -> np.ndarray:
+        return self._encoder.encode([text])[0]
+    
+    def embed_batch(self, texts: list[str]) -> list[np.ndarray]:
+        return self._encoder.encode(texts)
