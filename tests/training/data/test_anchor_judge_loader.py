@@ -22,17 +22,17 @@ def cfg(tmp_path):
     }).to_parquet(processed / "queries.parquet")
 
     judgments = pd.DataFrame({
-        "query_id": ["routerbench:gsm8k:aaaa", "routerbench:gsm8k:aaaa"],
-        "anchor_model_id": ["mixtral-8x7b-instruct", "mixtral-8x7b-instruct"],
-        "candidate_model_id": ["gpt-4-1106-preview", "gpt-4-1106-preview"],
-        "gain": [2, 2],
-        "anchor_is_a": [True, True],
-        "reason": ["clearer", "SWAPPED-should-be-dropped"],
-        "raw": ["{}", "{}"],
-        "parsed_ok": [True, True],
-        "judge_provider": ["dummy", "dummy"],
-        "judge_model": ["dummy", "dummy"],
-        "swapped": [False, True],
+        "query_id": ["routerbench:gsm8k:aaaa"] * 3,
+        "anchor_model_id": ["mixtral-8x7b-instruct"] * 3,
+        "candidate_model_id": ["gpt-4-1106-preview", "gpt-4-1106-preview", "claude-v2"],
+        "gain": [2, 2, 0],
+        "anchor_is_a": [True, True, True],
+        "reason": ["clearer", "SWAPPED-should-be-dropped", "UNPARSED-should-be-dropped"],
+        "raw": ["{}", "{}", "garbage"],
+        "parsed_ok": [True, True, False],
+        "judge_provider": ["dummy"] * 3,
+        "judge_model": ["dummy"] * 3,
+        "swapped": [False, True, False],
     })
     judgments.to_parquet(out_dir / "judgments.parquet")
 
@@ -44,8 +44,10 @@ def cfg(tmp_path):
 
 
 def test_load_anchor_judge_shape_and_drops_swapped_rows(cfg):
-    df = load_anchor_judge(cfg)
-    assert len(df) == 2  # one battle -> two participant rows; swapped row excluded
+    with pytest.warns(UserWarning, match="dropped 1 judgments"):
+        df = load_anchor_judge(cfg)
+    # one battle -> two participant rows; swapped and unparsed rows excluded
+    assert len(df) == 2
     assert set(df["source"]) == {schemas.Source.ANCHOR_JUDGE}
     assert set(df["metric_type"]) == {schemas.MetricType.JUDGE_PREFERENCE}
     assert set(df["model_id"]) == {"mixtral-8x7b-instruct", "gpt-4-1106-preview"}

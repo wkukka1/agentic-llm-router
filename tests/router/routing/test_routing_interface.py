@@ -130,6 +130,15 @@ def test_evaluate_aligns_pool_subset():
     assert set(out["selected_model_mix"]) <= {"GPT-A", "GPT-C"}
 
 
+def test_evaluate_raises_when_outcomes_lack_a_pool_model():
+    true_df, cost_df = _mats()
+    router = MatrixRouter(true_df)                      # pool = A, B, C
+    with pytest.raises(ValueError, match="GPT-B"):
+        evaluate_router(router, true_df[["GPT-A", "GPT-C"]], cost_df)
+    with pytest.raises(ValueError, match="cost_df.*GPT-C"):
+        evaluate_router(router, true_df, cost_df[["GPT-A", "GPT-B"]])
+
+
 # --------------------------------------------------------------------------- #
 # registry                                                                    #
 # --------------------------------------------------------------------------- #
@@ -260,6 +269,22 @@ def test_nirt_router_scores_and_routes():
     assert text_scores.shape == (4, 3)
     assert list(text_scores.columns) == m_ids
     assert ((text_scores.to_numpy() >= 0) & (text_scores.to_numpy() <= 1)).all()
-    # a run trained with structured query features -> short embeddings are zero-padded
-    padded = r._score_embeddings(rng.standard_normal((2, 6)))
+    # a short embedding with no feature variant to explain it is a wrong encoder
+    with pytest.raises(ValueError, match="does not match model query_dim"):
+        r._score_embeddings(rng.standard_normal((2, 6)))
+
+    # a run trained with structured query features -> exactly the feature block is zero-padded
+    class _Feat:
+        dim = 2
+
+    class _FeatData(_Data):
+        def query_features(self, name):
+            return _Feat()
+
+    rf = NIRTRouter(model, {"m0": 0, "m1": 1, "m2": 2}, data=_FeatData(),
+                    query_features="default", name="nirt-feat")
+    with pytest.warns(UserWarning, match="zero-fills"):
+        padded = rf._score_embeddings(rng.standard_normal((2, 6)))
     assert padded.shape == (2, 3)
+    with pytest.raises(ValueError):
+        rf._score_embeddings(rng.standard_normal((2, 5)))

@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 from helpers import make_store
 
+from evaluation.nirt.routing import oracle_choice
 from evaluation.routing.oracle import (
     compare_routing_strategies,
     oracle_classifier_matrix,
@@ -287,3 +288,198 @@ def test_per_query_table_columns():
               "oracle_hit", "oracle_regret"):
         assert c in t.columns
     assert len(t) == 3
+
+
+# --------------------------------------------------------------------------- #
+# one oracle tie-break rule (XD-02)                                          #
+# --------------------------------------------------------------------------- #
+def test_oracle_choice_tie_break_levels():
+    ids = ["Z", "A"]
+    # (a) the max score wins despite a higher cost
+    assert oracle_choice(np.array([[0.9, 0.8]]), np.array([[5.0, 0.1]]), model_ids=ids)[0] == 0
+    # (b) equal score -> the cheaper model, even when model_id order disagrees
+    assert oracle_choice(np.array([[0.9, 0.9]]), np.array([[0.1, 5.0]]), model_ids=ids)[0] == 0
+    # (c) equal score and equal cost -> smallest model_id ("A", column 1)
+    assert oracle_choice(np.array([[0.9, 0.9]]), np.array([[0.1, 0.1]]), model_ids=ids)[0] == 1
+
+
+def test_oracle_choice_legacy_mode_keeps_column_order():
+    assert oracle_choice(np.array([[0.9, 0.9]]), np.array([[0.1, 0.1]]))[0] == 0
+
+
+def test_oracle_choice_is_column_permutation_invariant():
+    rng = np.random.default_rng(3)
+    ids = ["m3", "m0", "m2", "m1", "m4"]
+    true = rng.integers(0, 3, size=(200, 5)) / 2.0     # heavy score ties
+    cost = rng.integers(0, 2, size=(200, 5)) * 0.01    # heavy cost ties
+    base = [ids[k] for k in oracle_choice(true, cost, model_ids=ids)]
+    for _ in range(5):
+        perm = rng.permutation(5)
+        p_ids = [ids[k] for k in perm]
+        got = [p_ids[k] for k in oracle_choice(true[:, perm], cost[:, perm], model_ids=p_ids)]
+        assert got == base
+
+
+def test_oracle_labels_and_routing_evaluation_agree_on_oracle_model():
+    rng = np.random.default_rng(4)
+    ids = ["Z", "B", "A"]
+    q = [f"q{i}" for i in range(50)]
+    true = rng.integers(0, 2, size=(50, 3)).astype(float)
+    cost = np.full((50, 3), 0.01)  # every cost tied -> model_id decides
+    r = routing_evaluation(rng.random((50, 3)), true, cost, ids, query_ids=q)
+    lab = oracle_labels(pd.DataFrame(true, index=q, columns=ids),
+                        pd.DataFrame(cost, index=q, columns=ids))
+    per_q = lab.groupby("query_id", sort=False)["oracle_model_id"].first().to_dict()
+    assert r["_per_query"].set_index("query_id")["oracle_model_id"].to_dict() == per_q
+
+
+# --------------------------------------------------------------------------- #
+# ER-01: baseline D labels                                                    #
+# --------------------------------------------------------------------------- #
+def test_oracle_classifier_labels_ignore_pool_order():
+    rng = np.random.default_rng(0)
+    n = 200
+    emb = rng.standard_normal((n, 4))
+    cluster = emb[:, 0] > 0
+    ids = ["m_exp", "m_bad", "m_cheap"]
+    # cluster A: m_exp and m_cheap tie at 1.0 (m_cheap is cheaper, later column);
+    # cluster B: m_bad is uniquely best (gives the classifier a second class)
+    true = np.where(cluster[:, None], [1.0, 0.0, 1.0], [0.0, 1.0, 0.0])
+    cost = np.tile([0.5, 0.1, 0.01], (n, 1))
+    idx = [f"q{i}" for i in range(n)]
+    ev = emb[emb[:, 0] > 1.0]
+
+    def routed(order):
+        o_ids = [ids[k] for k in order]
+        tr = pd.DataFrame(true[:, order], index=idx, columns=o_ids)
+        tc = pd.DataFrame(cost[:, order], index=idx, columns=o_ids)
+        mat = oracle_classifier_matrix(emb, tr, ev, o_ids, train_cost_df=tc)
+        return [o_ids[k] for k in mat.argmax(axis=1)]
+
+    assert set(routed([0, 1, 2])) == {"m_cheap"}
+    assert routed([0, 1, 2]) == routed([2, 1, 0])
+
+
+# --------------------------------------------------------------------------- #
+# ER-02 / ER-03: eligibility in the cost-aware oracle                         #
+# --------------------------------------------------------------------------- #
+def test_per_query_cost_aware_oracle_respects_eligibility():
+    true = np.array([[1.0, 0.9, 0.2], [0.5, 0.4, 0.3]])
+    cost = np.full((2, 3), 0.01)
+    eligible = np.array([[False, True, True], [True, True, True]])
+    r = routing_evaluation(true.copy(), true, cost, ["A", "B", "C"], lam=0.5,
+                           eligible=eligible, query_ids=["q0", "q1"])
+    pq = r["_per_query"]
+    assert pq.loc[0, "cost_aware_oracle_model_id"] == "B"   # A is ineligible on q0
+    assert r["cost_aware"]["cost_aware_oracle_model_mix"] == {"A": 1, "B": 1}
+    assert pq["cost_aware_oracle_model_id"].value_counts().to_dict() == \
+        r["cost_aware"]["cost_aware_oracle_model_mix"]
+
+
+def test_all_ineligible_row_is_excluded_and_counted():
+    true = np.array([[1.0, 0.5], [0.3, 0.9]])
+    cost = np.array([[0.1, 0.2], [0.1, 0.2]])
+    eligible = np.array([[False, False], [True, True]])
+    r = routing_evaluation(true.copy(), true, cost, ["A", "B"], lam=1.0,
+                           eligible=eligible, query_ids=["q0", "q1"])
+    ca = r["cost_aware"]
+    assert np.isfinite(ca["mean_utility_regret"])
+    assert ca["n_queries_no_eligible"] == 1 and r["n_queries_no_eligible"] == 1
+    assert ca["n_queries"] == ca["n_queries_no_eligible"] + ca["n_queries_evaluated_cost_aware"]
+    # q1 only: U = [0.3 - 0.1, 0.9 - 0.2] -> oracle and router both pick B
+    assert ca["mean_selected_utility"] == pytest.approx(0.7)
+    assert ca["mean_utility_regret"] == pytest.approx(0.0)
+    pq = r["_per_query"].set_index("query_id")
+    assert pq.loc["q0", "has_eligible_candidate"] == 0
+    assert pd.isna(pq.loc["q0", "cost_aware_oracle_model_id"])
+
+    none_ok = routing_evaluation(true.copy(), true, cost, ["A", "B"], lam=1.0,
+                                 eligible=np.zeros((2, 2), bool))["cost_aware"]
+    assert none_ok["n_queries_evaluated_cost_aware"] == 0
+    assert none_ok["mean_utility_regret"] is None
+    assert none_ok["mean_selected_utility"] is None
+
+
+# --------------------------------------------------------------------------- #
+# ER-05: non-finite outcomes fail loudly and consistently                     #
+# --------------------------------------------------------------------------- #
+def test_nan_outcome_raises_value_error_everywhere():
+    true_df, cost_df = _mats()
+    true_df.iloc[1, 2] = np.nan
+    with pytest.raises(ValueError, match="non-finite"):
+        oracle_labels(true_df, cost_df)
+    with pytest.raises(ValueError, match="non-finite"):
+        routing_evaluation(np.zeros((3, 3)), true_df.to_numpy(), cost_df.to_numpy(), M)
+
+
+# --------------------------------------------------------------------------- #
+# ER-06: vectorised oracle_labels == the old per-row implementation           #
+# --------------------------------------------------------------------------- #
+def _reference_oracle_labels(true_df, cost_df=None, tol=1e-9):
+    """The pre-vectorisation per-row implementation, kept verbatim as a reference."""
+    def _dense_rank_desc(scores):
+        order = np.argsort(-scores, kind="mergesort")
+        ranks = np.empty(len(scores), dtype=np.int64)
+        cur, prev = 0, None
+        for idx in order:
+            if prev is None or (prev - scores[idx]) > tol:
+                cur += 1
+                prev = scores[idx]
+            ranks[idx] = cur
+        return ranks
+
+    models = list(true_df.columns)
+    true = true_df.to_numpy(np.float64)
+    cost = (cost_df.reindex(index=true_df.index, columns=models).to_numpy(np.float64)
+            if cost_df is not None else None)
+    oracle_score = true.max(axis=1)
+    flag = true >= oracle_score[:, None] - tol
+    n_ties = flag.sum(axis=1)
+    order_cost = cost if cost is not None else np.zeros_like(true)
+    tiebreak = np.where(flag, order_cost, np.inf)
+    oracle_model = []
+    for i in range(len(true)):
+        cands = np.flatnonzero(flag[i])
+        oracle_model.append(models[cands[np.lexsort(([models[c] for c in cands],
+                                                      tiebreak[i, cands]))[0]]])
+    rows = []
+    for i, qid in enumerate(true_df.index):
+        ranks = _dense_rank_desc(true[i])
+        for j, m in enumerate(models):
+            rec = {"query_id": qid, "model_id": m, "actual_score": float(true[i, j]),
+                   "oracle_score": float(oracle_score[i]), "oracle_flag": int(flag[i, j]),
+                   "oracle_rank": int(ranks[j]), "oracle_model_id": oracle_model[i],
+                   "n_oracle_ties": int(n_ties[i])}
+            if cost is not None:
+                rec["cost"] = float(cost[i, j])
+            rows.append(rec)
+    return pd.DataFrame(rows)
+
+
+@pytest.mark.parametrize("seed", [0, 1])
+def test_vectorised_oracle_labels_match_reference(seed):
+    rng = np.random.default_rng(seed)
+    ids = ["m2", "m0", "m1", "m3"]
+    q = [f"q{i}" for i in range(60)]
+    true = pd.DataFrame(rng.integers(0, 4, size=(60, 4)) / 3.0, index=q, columns=ids)
+    cost = pd.DataFrame(rng.integers(1, 3, size=(60, 4)) * 0.01, index=q, columns=ids)
+    for c in (cost, None):
+        pd.testing.assert_frame_equal(oracle_labels(true, c), _reference_oracle_labels(true, c),
+                                      check_dtype=False)
+
+
+def test_vectorised_oracle_labels_match_reference_on_mats():
+    true_df, cost_df = _mats()
+    pd.testing.assert_frame_equal(oracle_labels(true_df, cost_df),
+                                  _reference_oracle_labels(true_df, cost_df), check_dtype=False)
+
+
+@pytest.mark.parametrize("row, expected", [
+    ([1.0, 1.0 - 0.6e-9, 1.0 - 1.2e-9], [1, 1, 2]),
+    ([1.0, 1.0 - 0.9e-9, 1.0 - 1.8e-9, 1.0 - 2.7e-9], [1, 1, 2, 2]),
+])
+def test_oracle_rank_uses_group_anchor_ties(row, expected):
+    cols = [f"m{j}" for j in range(len(row))]
+    true_df = pd.DataFrame([row], index=["q"], columns=cols)
+    assert oracle_labels(true_df, tol=1e-9)["oracle_rank"].tolist() == expected
+    assert _reference_oracle_labels(true_df, tol=1e-9)["oracle_rank"].tolist() == expected

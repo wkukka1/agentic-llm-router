@@ -66,6 +66,41 @@ def test_summary_keys(toy_training_data):
         assert k in s
 
 
+def test_query_embeddings_read_only_by_default_returns_none(isolated_training_data):
+    """No store has been built under this isolated cache dir -- a plain read
+    (no build=True) must return None, not attempt to build one. Regression
+    guard: query_embeddings() is called on every routing request, so a cache
+    miss must never silently trigger a full-corpus encode. (Isolated so a real
+    store in the repo's data/processed/embeddings/ can't make this pass-by-hit.)"""
+    assert isolated_training_data.query_embeddings("irt") is None
+
+
+def test_profile_embeddings_read_only_by_default_returns_none(isolated_training_data):
+    assert isolated_training_data.profile_embeddings("irt") is None
+
+
+def test_query_embeddings_build_true_builds_a_loadable_store(isolated_training_data):
+    try:
+        store = isolated_training_data.query_embeddings("irt", build=True, limit=1)
+    except Exception as exc:  # model not cached / offline
+        pytest.skip(f"encoder unavailable: {exc}")
+    assert len(store) == 1
+
+
+def test_profile_embeddings_build_true_builds_a_loadable_store(isolated_training_data):
+    from training.models.profiles import build_model_profiles, write_model_profiles
+
+    # pre-seed model_profiles.parquet -- the auto-build-from-responses fallback
+    # is training.models.profiles' own concern (tests/training/models/test_profiles.py)
+    df = build_model_profiles(isolated_training_data.cfg, responses=isolated_training_data.responses)
+    write_model_profiles(df, isolated_training_data.cfg)
+    try:
+        store = isolated_training_data.profile_embeddings("irt", build=True)
+    except Exception as exc:  # model not cached / offline
+        pytest.skip(f"encoder unavailable: {exc}")
+    assert set(store._index) == set(isolated_training_data.responses["model_id"].unique())
+
+
 # --- real data (skips if not built) --------------------------------------- #
 def test_load_training_data_real():
     cfg = load_config()

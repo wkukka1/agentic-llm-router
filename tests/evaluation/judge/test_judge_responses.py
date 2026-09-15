@@ -5,7 +5,12 @@ import pytest
 
 from router.config import Config
 from training.data import schemas
-from evaluation.data.judge_responses import load_routerbench_response_text, response_text_lookup
+from evaluation.data.judge_responses import (
+    _render_response,
+    duplicated_routerbench_query_ids,
+    load_routerbench_response_text,
+    response_text_lookup,
+)
 from training.data.model_registry import canonical_model_id
 from training.data.normalize import make_query_id, render_prompt
 
@@ -59,3 +64,41 @@ def test_response_text_lookup_filters_by_query_ids(cfg):
 def test_non_zero_shot_not_supported(cfg):
     with pytest.raises(NotImplementedError):
         load_routerbench_response_text(cfg, shot="5shot")
+
+
+def test_duplicate_prompts_are_dropped(tmp_path):
+    local_dir = tmp_path / "routerbench"
+    local_dir.mkdir()
+    wide = pd.DataFrame({
+        "sample_id": ["s0", "s1", "s2"],
+        "prompt": ["what is 2+2?", "name a color", "what is 2+2?"],
+        "eval_name": ["gsm8k", "gsm8k", "gsm8k"],
+        "gpt-4-1106-preview": [1.0, 0.0, 0.0],
+        "gpt-4-1106-preview|total_cost": [0.01, 0.01, 0.01],
+        "gpt-4-1106-preview|model_response": ["['four']", "['blue']", "['five']"],
+    })
+    wide.to_pickle(local_dir / "routerbench_0shot.pkl")
+    cfg = Config({"sources": {"routerbench": {"local_dir": "routerbench"}}}, root=tmp_path)
+    dup_qid = make_query_id(schemas.Source.ROUTERBENCH, "gsm8k", "what is 2+2?")
+
+    with pytest.warns(UserWarning, match="dropped 1"):
+        df = load_routerbench_response_text(cfg)
+    assert dup_qid not in set(df["query_id"])
+    assert len(df) == 1
+    assert duplicated_routerbench_query_ids(cfg) == {dup_qid}
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ("['four']", "four"),
+    ("['[1, 2, 3]']", "[1, 2, 3]"),        # list-literal answer inside the wrapper
+    ("[1, 2, 3]", "[1, 2, 3]"),            # bare list literal is not rewritten
+    ("['a', 'b']", "a\n\nb"),
+    ("plain text", "plain text"),
+])
+def test_render_response(raw, expected):
+    assert _render_response(raw) == expected
+
+
+def test_render_response_survives_deep_nesting():
+    raw = "[" * 10_000 + "]" * 10_000
+    assert _render_response(raw) == raw

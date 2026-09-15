@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 from helpers import chance_cfg
 
-from router.config import load_config
+from router.config import Config, load_config
 from training.data import schemas
 
 
@@ -81,3 +81,16 @@ def toy_training_data(toy_tables):
     }
     return TrainingData(load_config(), toy_tables["responses"], toy_tables["queries"],
                       toy_tables["models"], splits)
+
+
+@pytest.fixture
+def isolated_training_data(toy_training_data, tmp_path):
+    """``toy_training_data`` with its cache/output paths redirected under
+    ``tmp_path`` -- for any test that actually builds+writes an artifact
+    (embeddings, profiles), so it never touches the repo's own
+    ``data/processed/``."""
+    from training.data.facade import TrainingData
+
+    cfg = Config(toy_training_data.cfg.to_dict(), root=tmp_path)
+    return TrainingData(cfg, toy_training_data.responses, toy_training_data.queries,
+                        toy_training_data.models, toy_training_data.splits)

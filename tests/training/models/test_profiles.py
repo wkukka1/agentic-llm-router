@@ -5,6 +5,7 @@ import pytest
 from router.config import load_config
 from training.models.profiles import (
     build_model_profiles,
+    build_profile_embeddings,
     empirical_stats,
     read_model_profiles,
     render_profile_text,
@@ -94,3 +95,32 @@ def test_profiles_parquet_roundtrip(tmp_path, corrected, monkeypatch):
     assert len(back) == len(df)
     assert isinstance(back.iloc[0]["structured"], dict)
     assert isinstance(back.iloc[0]["empirical"], dict)
+
+
+def test_build_profile_embeddings_covers_all_models(isolated_training_data):
+    """Profile text already built + written: build_profile_embeddings should
+    just embed it, keyed by model_id."""
+    df = build_model_profiles(isolated_training_data.cfg, responses=isolated_training_data.responses)
+    write_model_profiles(df, isolated_training_data.cfg)
+    try:
+        store = build_profile_embeddings(isolated_training_data.cfg, "irt")
+    except Exception as exc:  # model not cached / offline
+        pytest.skip(f"encoder unavailable: {exc}")
+    assert set(store._index) == set(isolated_training_data.responses["model_id"].unique())
+
+
+def test_build_profile_embeddings_auto_builds_missing_profiles(isolated_training_data, monkeypatch):
+    """No model_profiles.parquet on disk yet -- build_profile_embeddings must
+    fall back to building (and persisting) it from responses, same as the
+    former CLI script did."""
+    monkeypatch.setattr(
+        "training.models.profiles.read_responses",
+        lambda cfg: isolated_training_data.responses,
+    )
+    try:
+        store = build_profile_embeddings(isolated_training_data.cfg, "irt")
+    except Exception as exc:  # model not cached / offline
+        pytest.skip(f"encoder unavailable: {exc}")
+    assert set(store._index) == set(isolated_training_data.responses["model_id"].unique())
+    # the fallback must have persisted model_profiles.parquet, not just embedded in-memory
+    assert (isolated_training_data.cfg.path("processed") / "model_profiles.parquet").exists()

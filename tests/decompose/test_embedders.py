@@ -8,21 +8,21 @@ from __future__ import annotations
 import pytest
 
 from decompose.embedders.base import Embedder
-from decompose.embedders.bert import PromptEmbedder
+from decompose.embedders.bert import BertEmbedder
 from decompose.embedders.sentence_transformer import SentenceEmbedder
 
 
-def test_prompt_embedder_is_an_embedder():
-    assert issubclass(PromptEmbedder, Embedder)
+def test_bert_embedder_is_an_embedder():
+    assert issubclass(BertEmbedder, Embedder)
 
 
 def test_sentence_embedder_is_an_embedder():
     assert issubclass(SentenceEmbedder, Embedder)
 
 
-def test_prompt_embedder_embeds_to_its_own_dimension():
+def test_bert_embedder_embeds_to_its_own_dimension():
     pytest.importorskip("transformers")
-    e = PromptEmbedder()
+    e = BertEmbedder()
     vec = e.embed("hello world")
     assert isinstance(vec, list)
     assert len(vec) == e.dimension == 768

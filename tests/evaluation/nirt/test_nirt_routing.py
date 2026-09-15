@@ -47,6 +47,29 @@ def test_classical_irt_main_effects_matches_model_rate():
     assert abs(col[0] - fitrate.iloc[0]) < 0.1
 
 
+def test_classical_irt_main_effects_does_not_fit_scored_split():
+    from evaluation.baselines.classical_irt import fit_classical_irt
+
+    d = FakeTrainingData(make_split_obs(n_queries=200, seed=8))
+    obs = d.nirt_observations()
+    r = fit_classical_irt(d, split="validation", protocol="main_effects", epochs=20, seed=8)
+    val_ids = set(obs.loc[obs.split == "validation", "query_id"])
+    assert len(r.query_ids) == len(set(r.query_ids))          # no query appears twice
+    fitted = {q for q, row in zip(r.query_ids, r.heldout_mask) if not row.any()}
+    assert not fitted & val_ids                                 # scored split never trained on
+    assert {q for q, row in zip(r.query_ids, r.heldout_mask) if row.any()} == val_ids
+
+
+def test_classical_irt_main_effects_rejects_bad_args():
+    from evaluation.baselines.classical_irt import fit_classical_irt
+
+    d = FakeTrainingData(make_split_obs(n_queries=50, seed=8))
+    with pytest.raises(ValueError, match="split"):
+        fit_classical_irt(d, split="bogus", protocol="main_effects", epochs=1)
+    with pytest.raises(ValueError, match="query_ids"):
+        fit_classical_irt(d, protocol="main_effects", query_ids=["q0"], epochs=1)
+
+
 # --------------------------------------------------------------------------- #
 # routing report + lambda trade-off                                            #
 # --------------------------------------------------------------------------- #
