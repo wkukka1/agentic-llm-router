@@ -26,6 +26,7 @@ from training.cli import raw_parser, resolve, write_json
 from router.config import load_config
 from router.nirt.checkpoint import load_run
 from training.data.facade import load_training_data
+from training.nirt.metrics import participation_rank
 
 
 def main() -> int:
@@ -65,7 +66,7 @@ def main() -> int:
 
     tc = theta_q - theta_q.mean(0)
     ev = torch.linalg.eigvalsh((tc.T @ tc) / len(tc)).numpy()
-    eff_rank = float((ev.sum() ** 2) / (ev ** 2).sum())   # 1 = a line, K = isotropic
+    eff_rank = participation_rank(theta_q.numpy())   # 1 = a line, K = isotropic
 
     print(f"\n=== theta collapse check -- {args.run} / {args.split} ({len(query_ids):,} queries) ===")
     print(f"theta_q covariance eigenvalues: {np.round(ev, 4)}  "

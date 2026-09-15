@@ -16,7 +16,7 @@ import pandas as pd
 from .frames import pivot_qm
 
 
-def _train_correctness_matrix(data, *, pathway: str, train_obs: Optional[pd.DataFrame] = None):
+def train_correctness_matrix(data, *, pathway: str, train_obs: Optional[pd.DataFrame] = None):
     """``(C [Qtr x M] with NaN for missing, model_ids, query_ids)`` for the train split
     (or ``train_obs`` if given), restricted to queries present in the pathway store."""
     if train_obs is None:
@@ -39,7 +39,7 @@ def _fit_knn(data, *, k: int, pathway: str, train_obs: Optional[pd.DataFrame] = 
     e.g. a live encoded prompt)."""
     from sklearn.neighbors import NearestNeighbors
 
-    C, model_ids, tr_qids = _train_correctness_matrix(data, pathway=pathway, train_obs=train_obs)
+    C, model_ids, tr_qids = train_correctness_matrix(data, pathway=pathway, train_obs=train_obs)
     C_imp = np.where(np.isnan(C), np.nanmean(C, axis=0), C)
     q_store = data.query_embeddings(pathway)
     E_tr = np.asarray(q_store.gather(list(tr_qids)), dtype=np.float64)
@@ -98,7 +98,7 @@ def knn_router_matrix_from_embeddings(
     return df.reindex(columns=model_ids) if model_ids is not None else df
 
 
-def _build_mlp_router(in_dim: int, n_models: int, hidden: int, dropout: float):
+def build_mlp_router(in_dim: int, n_models: int, hidden: int, dropout: float):
     from torch import nn
 
     return nn.Sequential(

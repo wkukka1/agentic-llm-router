@@ -4,8 +4,9 @@ decision (:class:`RoutingDecision`) -- the production-shaped counterparts to
 by ``Router.route()`` today. ``RoutingResult`` carries a whole batch's scores
 as one dense matrix (efficient for offline evaluation over many queries);
 these carry one request's decision as a richer, per-field record (a
-``reason``, ``confidence``, ``destination`` -- meant for
-:class:`~router.policy.RoutingPolicy`, not yet produced by anything)."""
+``reason``, ``confidence``, ``destination``). ``RoutingDecision`` is live: it
+is produced by :class:`~router.policy.DefaultRoutingPolicy` and returned from
+:class:`~router.router.RoutingPipeline`'s ``route`` method."""
 
 from __future__ import annotations
 

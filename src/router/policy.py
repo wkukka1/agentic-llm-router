@@ -4,9 +4,10 @@ into a :class:`~router.decision.RoutingDecision` and a destination.
 Sits one layer above :class:`router.routing.base.Router`: a ``Router``
 answers "how good is model m for query q"; a ``RoutingPolicy`` answers "given
 those scores, what do we actually do" -- pick a model and return to the user,
-hand back to the parent orchestrator, or spin up a new one. Nothing
-constructs a concrete ``RoutingPolicy`` yet; :meth:`decide` and
-:meth:`select_destination` are the two hooks a real implementation fills in.
+hand back to the parent orchestrator, or spin up a new one. :class:`DefaultRoutingPolicy`
+below is a concrete implementation, constructed by default in
+:class:`~router.router.RoutingPipeline` and live on its ``route`` path --
+:meth:`decide` and :meth:`select_destination` are the two hooks it fills in.
 """
 
 from __future__ import annotations

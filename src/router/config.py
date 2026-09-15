@@ -21,6 +21,16 @@ DEFAULT_CONFIG_PATH = REPO_ROOT / "configs" / "phase0.yaml"
 DEFAULT_NIRT_RUNS_DIR = "data/processed/nirt_runs"
 
 
+def resolve_path(path: str | os.PathLike, root: str | os.PathLike | None = None) -> Path:
+    """``path`` unchanged if absolute, else joined to ``root`` (default
+    :data:`REPO_ROOT`). The one place "absolute, else join to root" is defined
+    -- :meth:`Config.resolve`, :func:`training.cli.resolve` and
+    :func:`training.nirt.train._resolve_runs_dir` all delegate to this (XD-11).
+    """
+    p = Path(path)
+    return p if p.is_absolute() else Path(root or REPO_ROOT) / p
+
+
 class Config:
     """Read-only, attribute-accessible view over a nested dict."""
 
@@ -79,8 +89,7 @@ class Config:
         return p if p.is_absolute() else self._root / p
 
     def resolve(self, rel: str | os.PathLike) -> Path:
-        p = Path(rel)
-        return p if p.is_absolute() else self._root / p
+        return resolve_path(rel, root=self._root)
 
 
 def section(cfg: Any, dotted: str, default: dict | None = None) -> dict:

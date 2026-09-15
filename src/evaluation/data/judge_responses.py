@@ -6,10 +6,10 @@ filters those out (only the score and ``|total_cost`` columns are kept) when
 building ``responses.parquet`` -- no other code path needs response text
 today. Rather than widen the core response schema for one eval-only
 pipeline, this module reads the raw pickle directly and reconstructs
-``query_id`` with the EXACT SAME two calls ``_melt_routerbench`` uses
-(``make_query_id(Source.ROUTERBENCH, eval_name, query)`` +
-``canonical_model_id(native_model)``), so ids are byte-identical to
-``responses.parquet`` / ``nirt_observations.parquet`` and join 1:1.
+``query_id`` with :func:`training.data.loaders.routerbench_query_ids` --
+the EXACT SAME function ``_melt_routerbench`` uses -- so ids are
+byte-identical to ``responses.parquet`` / ``nirt_observations.parquet`` and
+join 1:1.
 
 RouterBench repeats a few prompts verbatim. The response matrix averages their
 scores (``collapse_duplicate_observations``), so no single response text
@@ -23,11 +23,10 @@ import warnings
 
 import pandas as pd
 
-from training.data import schemas
+from training.data.loaders import routerbench_model_columns, routerbench_query_ids
 from training.data.model_registry import canonical_model_id
-from training.data.normalize import make_query_id, render_prompt, sanitize_text
+from training.data.normalize import sanitize_text
 
-_META_COLS = {"sample_id", "prompt", "eval_name", "oracle_model_to_route_to"}
 _KEY = ["query_id", "model_id"]
 
 
@@ -66,19 +65,8 @@ def _load_all_rows(cfg, shot: str) -> pd.DataFrame:
         )
     wide = pd.read_pickle(pkl)
 
-    model_cols = [
-        c for c in wide.columns
-        if c not in _META_COLS
-        and "|" not in c
-        and f"{c}|total_cost" in wide.columns
-    ]
-
-    query = wide["prompt"].map(render_prompt)
-    eval_name = wide["eval_name"].astype(str)
-    query_id = pd.Series(
-        [make_query_id(schemas.Source.ROUTERBENCH, e, q) for e, q in zip(eval_name, query)],
-        index=wide.index,
-    )
+    model_cols = routerbench_model_columns(wide)
+    query_id = routerbench_query_ids(wide)   # shot="0shot" -- the guard above enforces it
 
     frames: list[pd.DataFrame] = []
     for m in model_cols:

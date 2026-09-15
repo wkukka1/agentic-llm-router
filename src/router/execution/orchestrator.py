@@ -10,6 +10,11 @@ not :meth:`spawn`/:meth:`can_spawn` checked against a shared
 :class:`~router.execution.budget.BudgetLedger`. Nothing constructs this
 ``Orchestrator`` yet.
 
+:meth:`can_spawn`'s ``max_depth`` convention (deepest node allowed to exist,
+not deepest child allowed to be spawned) is deliberately kept aligned with
+``AgenticRouter._solve``'s (XA-08) -- so if this ever does get wired up, the
+same ``max_depth`` value means the same effective depth in both places.
+
 An ``Orchestrator`` instance runs one task at a time (``self.task``); spawn a
 child orchestrator per child task.
 """
@@ -133,9 +138,15 @@ class Orchestrator(abc.ABC):
         """Side-effect-free admission check for ``child`` under ``self.task``:
         depth cap, fan-out cap, same root/ledger, depth == parent depth + 1,
         and enough remaining budget for ``child.allocated_budget`` (a positive
-        remainder when no allocation is requested)."""
+        remainder when no allocation is requested).
+
+        ``max_depth`` is the depth of the deepest node allowed to *exist* --
+        the same convention ``router.agentic.router.AgenticRouter._solve``
+        uses (nodes exist through ``depth == max_depth``; recursion just stops
+        there) -- so a child AT ``max_depth`` is still spawnable, only one
+        deeper than that is rejected (XA-08)."""
         parent = self.task
-        if child.depth >= self.limits.max_depth:
+        if child.depth > self.limits.max_depth:
             return False
         if child.root_task_id != self.ledger.root_task_id:
             return False

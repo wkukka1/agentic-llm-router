@@ -23,37 +23,20 @@ def query_bank_dir(cfg: Config) -> Path:
     return cfg.path("indexes") / "query_bank"
 
 
-def _bank_query_source(cfg: Config) -> str:
-    """Which query set :func:`_bank_query_ids` draws from (recorded in the manifest)."""
-    try:
-        p = cfg.path("processed") / "nirt_observations.parquet"
-    except AttributeError:  # config stub without paths (ids supplied another way)
-        return "unknown"
-    return "nirt_observations" if p.exists() else "all_split_queries"
-
-
 def _bank_query_ids(cfg: Config, split: str) -> list:
-    """Training queries that carry a NIRT correctness observation."""
-    import warnings
-
-    import pandas as pd
-
+    """Training queries that carry a NIRT correctness observation -- the
+    observation table is built on demand (in memory) if it doesn't exist yet,
+    rather than silently widening to every '{split}' query including
+    pairwise-only prompts with no correctness label (XD-05 / XA-11)."""
+    from ..data.nirt import observations
     from ..data.splits import load_splits
 
     splits = load_splits(cfg)
     if splits.get(split) is None:
         raise FileNotFoundError(f"split '{split}' not built; run scripts/data/build_splits.py")
     ids = set(splits[split]["query_ids"])
-    p = cfg.path("processed") / "nirt_observations.parquet"
-    if p.exists():
-        obs = pd.read_parquet(p, columns=["query_id", "split"])
-        ids &= set(obs.loc[obs["split"] == split, "query_id"])
-    else:
-        warnings.warn(
-            f"{p} not built: the query bank indexes EVERY '{split}' query, including "
-            f"pairwise-only prompts with no correctness label. Build the NIRT "
-            f"observation table first (scripts/data/build_nirt_dataset.py)."
-        )
+    obs = observations(cfg, build=True)
+    ids &= set(obs.loc[obs["split"] == split, "query_id"])
     return sorted(ids)
 
 
@@ -117,7 +100,7 @@ def build_query_bank(cfg: Config, *, split: str = "train", pathway: Optional[str
         "query_embeddings_fingerprint": store.manifest.get("ids_fingerprint"),
         "seed": int(cfg.get("seed", 42)),
         "excluded_count": len(drop),
-        "query_set": _bank_query_source(cfg),
+        "query_set": "nirt_observations",
         "holdout_families": list(holdout_families) if holdout_families else None,
     })
     if save:

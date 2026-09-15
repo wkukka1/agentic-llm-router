@@ -97,6 +97,32 @@ def test_build_query_bank_excludes_ids(tmp_path, monkeypatch):
     assert len(bank) == 17
     assert bank.manifest["excluded_count"] == 3
     assert bank.manifest["holdout_families"] == ["math"]
+    assert bank.manifest["query_set"] == "nirt_observations"
+
+
+def test_bank_query_ids_builds_instead_of_widening(monkeypatch):
+    """XD-05 / XA-11: on a missing nirt_observations.parquet, _bank_query_ids
+    must use the built (correctness-labeled) query set via the shared
+    training.data.nirt.observations(build=True) accessor, not silently widen
+    to every query in the split."""
+    import training.data.nirt as nirt_data
+    import training.data.splits as splits_mod
+    import training.retrieval.query_bank as qb
+
+    monkeypatch.setattr(splits_mod, "load_splits",
+                        lambda cfg: {"train": {"query_ids": ["q0", "q1", "q2", "q3"]}})
+    obs = pd.DataFrame({"query_id": ["q0", "q1"], "split": ["train", "train"]})
+    calls = []
+
+    def fake_observations(cfg, *, data=None, build=False, **kw):
+        calls.append(build)
+        return obs
+
+    monkeypatch.setattr(nirt_data, "observations", fake_observations)
+
+    ids = qb._bank_query_ids(object(), "train")
+    assert ids == ["q0", "q1"]   # not q2/q3, which have no correctness observation
+    assert calls == [True]
 
 
 # ---------------------------------------------------------------- query_pathway swap

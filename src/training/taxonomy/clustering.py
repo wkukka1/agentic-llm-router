@@ -122,26 +122,16 @@ def cluster_embeddings(embeddings, config: ClusterConfig, *, ids=None) -> Cluste
 # --------------------------------------------------------------------------- #
 # build / persist                                                             #
 # --------------------------------------------------------------------------- #
-def _nirt_query_source(cfg: Config) -> str:
-    p = cfg.path("processed") / "nirt_observations.parquet"
-    return "nirt_observations.parquet" if p.exists() else "queries.parquet"
-
-
 def _nirt_query_ids(cfg: Config) -> list:
-    """Query ids carrying a NIRT correctness observation; falls back to all queries
-    (with a warning -- the taxonomy then depends on build order)."""
-    import warnings
+    """Query ids carrying a NIRT correctness observation -- the observation
+    table is built on demand (in memory) if it doesn't exist yet, rather than
+    silently widening to every query in ``queries.parquet`` (including
+    pairwise-only prompts with no correctness label) and making the taxonomy
+    depend on build order (XD-05 / XA-11)."""
+    from ..data.nirt import observations
 
-    import pandas as pd
-
-    col = _nirt_query_source(cfg)
-    if col == "queries.parquet":
-        warnings.warn(
-            "nirt_observations.parquet not built: clustering EVERY query, including "
-            "pairwise-only prompts with no correctness label. Build the NIRT "
-            "observation table first (scripts/data/build_nirt_dataset.py)."
-        )
-    return sorted(pd.read_parquet(cfg.path("processed") / col, columns=["query_id"])["query_id"].unique())
+    obs = observations(cfg, build=True)
+    return sorted(obs["query_id"].unique())
 
 
 def centroids_fingerprint(centroids: np.ndarray) -> str:
@@ -161,7 +151,7 @@ def build_clusters(cfg: Config, *, pathway=None, query_ids=None, config: Optiona
         raise FileNotFoundError(
             f"query embeddings for pathway '{config.pathway}' not built ({store_dir})")
     store = EmbeddingStore.load(store_dir)
-    source = "explicit" if query_ids else _nirt_query_source(cfg)
+    source = "explicit" if query_ids else "nirt_observations"
     ids = [q for q in (query_ids or _nirt_query_ids(cfg)) if q in store]
     if not ids:
         raise ValueError("no query ids present in the embedding store")

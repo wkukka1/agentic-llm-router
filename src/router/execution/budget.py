@@ -20,7 +20,11 @@ from dataclasses import dataclass
 class ExecutionLimits:
     """Caps for one orchestration tree. ``max_cost`` is the authority on spend:
     an :class:`~router.execution.orchestrator.Orchestrator` refuses a ledger
-    whose ``total`` exceeds it."""
+    whose ``total`` exceeds it. ``max_depth`` is the depth of the deepest node
+    allowed to exist -- the same convention
+    :class:`router.agentic.router.AgenticRouter` uses for its own (unrelated,
+    unwired-together) ``max_depth`` (XA-08); see
+    :meth:`~router.execution.orchestrator.Orchestrator.can_spawn`."""
 
     max_cost: float = float("inf")
     max_latency: float = float("inf")
