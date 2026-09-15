@@ -19,8 +19,8 @@ from router.embeddings.encoder import EncoderConfig, TextEncoder
 from .base import Embedder
 
 
-class PromptEmbedder(Embedder):
-    name = "prompt_embedder"
+class BertEmbedder(Embedder):
+    name = "bert_embedder"
     version = "0"
 
     def __init__(self, *, model_name: str = "bert-base-uncased", pooling: str = "mean",
