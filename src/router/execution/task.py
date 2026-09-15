@@ -27,6 +27,10 @@ class TaskStatus(enum.Enum):
     TERMINATED = "terminated"
 
 
+_IN_PROGRESS = (TaskStatus.PENDING, TaskStatus.PLANNING, TaskStatus.RUNNING)
+_FAILED = (TaskStatus.FAILED, TaskStatus.TERMINATED)
+
+
 @dataclass
 class AgentTask:
     task_id: str
@@ -41,15 +45,37 @@ class AgentTask:
     children: list["AgentTask"] = field(default_factory=list)
 
     def aggregate_children(self) -> ExecutionResult:
-        """Roll every child's result into one. No cost/latency weighting by
-        model or step type -- a straight sum/concat, good enough until a real
-        aggregation policy is needed."""
-        outputs = [c.result.output for c in self.children if c.result is not None]
+        """Roll every child's result into one.
+
+        * Raises if a child is still in progress (no result yet, not failed) --
+          aggregating a partial tree would under-report cost and success.
+        * A child that failed, was terminated, or finished without a result
+          makes the aggregate unsuccessful; the first child ``error_code`` is
+          propagated (``"child_failed"`` if none was set).
+        * No children -> unsuccessful with ``error_code="no_children"``.
+        * Cost and tokens are summed; latency is the **max**, since siblings
+          run as a fan-out, not in sequence.
+        """
+        pending = [c.task_id for c in self.children
+                   if c.result is None and c.status in _IN_PROGRESS]
+        if pending:
+            raise RuntimeError(f"cannot aggregate {self.task_id!r}: children still running {pending}")
+        if not self.children:
+            return ExecutionResult(success=False, error_code="no_children")
+
+        results = [c.result for c in self.children if c.result is not None]
+        failed = [c for c in self.children
+                  if c.result is None or c.status in _FAILED or not c.result.success]
+        error_code = None
+        if failed:
+            error_code = next((c.result.error_code for c in failed
+                               if c.result is not None and c.result.error_code), "child_failed")
         return ExecutionResult(
-            output="\n".join(outputs),
-            actual_cost=sum(c.result.actual_cost for c in self.children if c.result),
-            actual_latency=sum(c.result.actual_latency for c in self.children if c.result),
-            input_tokens=sum(c.result.input_tokens for c in self.children if c.result),
-            output_tokens=sum(c.result.output_tokens for c in self.children if c.result),
-            success=all(c.result.success for c in self.children if c.result),
+            output="\n".join(r.output for r in results),
+            actual_cost=sum(r.actual_cost for r in results),
+            actual_latency=max((r.actual_latency for r in results), default=0.0),
+            input_tokens=sum(r.input_tokens for r in results),
+            output_tokens=sum(r.output_tokens for r in results),
+            success=not failed,
+            error_code=error_code,
         )

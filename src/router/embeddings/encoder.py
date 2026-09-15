@@ -22,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional, Sequence
@@ -32,6 +33,10 @@ from ..config import Config, require_choice, section
 from ..determinism import seed_everything as _seed_everything
 
 _BACKENDS = ("sentence_transformer", "bert")
+_DEFAULT_MODEL = {
+    "sentence_transformer": "sentence-transformers/all-MiniLM-L6-v2",
+    "bert": "bert-base-uncased",
+}
 
 
 def _resolve_device(pref: str) -> str:
@@ -61,10 +66,25 @@ class EncoderConfig:
         require_choice(self.backend, _BACKENDS, field="embedding backend")
 
     def fingerprint(self) -> str:
+        """Every field but ``name`` -- provenance only (includes ``device`` /
+        ``batch_size``, which don't change the vectors)."""
         payload = json.dumps(
             {k: v for k, v in self.__dict__.items() if k != "name"}, sort_keys=True
         ).encode()
         return hashlib.sha1(payload).hexdigest()[:12]
+
+    def vector_fingerprint(self) -> str:
+        """Only the fields that change the vectors. Decides whether a finished
+        store is still current and whether a partial build can be resumed, so a
+        device or batch-size change doesn't force a re-encode."""
+        fields = {
+            "backend": self.backend,
+            "model_name": self.model_name,
+            "normalize": bool(self.normalize),
+            "max_seq_length": int(self.max_seq_length or 0),
+            "pooling": self.pooling if self.backend == "bert" else None,
+        }
+        return hashlib.sha1(json.dumps(fields, sort_keys=True).encode()).hexdigest()[:12]
 
 
 class TextEncoder:
@@ -96,7 +116,9 @@ class TextEncoder:
     @property
     def model(self):
         if self._model is None:
-            _seed_everything(self.cfg.seed)
+            # no deterministic-algorithms switch: that is process-wide and this
+            # also runs on the serving path next to training / GPU jobs
+            _seed_everything(self.cfg.seed, deterministic_algorithms=False)
             self._model = (
                 self._load_bert() if self.cfg.backend == "bert"
                 else self._load_sentence_transformer()
@@ -125,7 +147,7 @@ class TextEncoder:
         is the absolute row index (``_start_offset`` + local offset), so callers
         can resume a partial build.
         """
-        _seed_everything(self.cfg.seed)
+        _seed_everything(self.cfg.seed, deterministic_algorithms=False)
         bs = int(batch_size or self.cfg.batch_size)
         texts = [("" if t is None else str(t)) for t in texts]
         rng = range(0, len(texts), bs)
@@ -152,7 +174,7 @@ class TextEncoder:
             yield _start_offset + i, np.ascontiguousarray(vec, dtype=np.float32)
 
     def encode(self, texts: Sequence[str], show_progress: bool = False) -> np.ndarray:
-        if not texts:
+        if len(texts) == 0:      # not `not texts`: ambiguous for Series / ndarray
             return np.zeros((0, self.dim), dtype=np.float32)
         parts = [v for _, v in self.iter_encode(texts, show_progress=show_progress)]
         return np.vstack(parts) if parts else np.zeros((0, self.dim), dtype=np.float32)
@@ -195,36 +217,32 @@ def available_pathways(cfg: Config) -> list[str]:
 def load_encoder(cfg: Config, pathway: Optional[str] = None) -> TextEncoder:
     e = _pathway_dict(cfg)
     seed = int(cfg.get("seed", 42))
-    shared = {
-        "batch_size": int(e.get("batch_size", 64)),
-        "device": e.get("device", "auto"),
-        "seed": seed,
-    }
     pathways = e.get("pathways")
     if isinstance(pathways, dict):
         name = pathway or next(iter(pathways))
         if name not in pathways:
             raise KeyError(f"embedding pathway {name!r} not in config: {list(pathways)}")
-        p = pathways[name]
-        return TextEncoder(EncoderConfig(
-            name=name,
-            backend=p.get("backend", "sentence_transformer"),
-            model_name=p.get("model_name", EncoderConfig.model_name),
-            normalize=bool(p.get("normalize", True)),
-            max_seq_length=int(p.get("max_seq_length", 256)),
-            pooling=p.get("pooling", "mean"),
-            **shared,
-        ))
+        return TextEncoder(_encoder_config(name, pathways[name], e, seed))
     # flat / legacy form
-    return TextEncoder(EncoderConfig(
-        name="default",
-        backend=e.get("backend", "sentence_transformer"),
-        model_name=e.get("model_name", EncoderConfig.model_name),
-        normalize=bool(e.get("normalize", True)),
-        max_seq_length=int(e.get("max_seq_length", 256)),
-        pooling=e.get("pooling", "mean"),
-        **shared,
-    ))
+    return TextEncoder(_encoder_config("default", e, e, seed))
+
+
+def _encoder_config(name: str, p: dict, shared: dict, seed: int) -> EncoderConfig:
+    """``p`` is the pathway block; ``batch_size`` / ``device`` fall back to the
+    top-level ``embedding:`` block (``shared``) when the pathway doesn't set
+    them, and ``model_name`` defaults per backend."""
+    backend = p.get("backend", "sentence_transformer")
+    return EncoderConfig(
+        name=name,
+        backend=backend,
+        model_name=p.get("model_name") or _DEFAULT_MODEL.get(backend, EncoderConfig.model_name),
+        normalize=bool(p.get("normalize", True)),
+        max_seq_length=int(p.get("max_seq_length", 256)),
+        pooling=p.get("pooling", "mean"),
+        batch_size=int(p.get("batch_size", shared.get("batch_size", 64))),
+        device=p.get("device", shared.get("device", "auto")),
+        seed=seed,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -236,6 +254,17 @@ def _ids_fingerprint(ids: Sequence[str]) -> str:
     for i in ids:
         h.update(b"\x00")
         h.update(str(i).encode("utf-8"))
+    return h.hexdigest()[:16]
+
+
+def _texts_fingerprint(texts: Sequence[str]) -> str:
+    """Detects re-rendered profile texts / re-normalised query text under
+    unchanged ids (``None`` is encoded as ``""``, as :meth:`TextEncoder.iter_encode` does)."""
+    h = hashlib.sha1()
+    h.update(str(len(texts)).encode())
+    for t in texts:
+        h.update(b"\x00")
+        h.update(("" if t is None else str(t)).encode("utf-8"))
     return h.hexdigest()[:16]
 
 
@@ -260,7 +289,9 @@ class EmbeddingStore:
     def __init__(self, ids: Sequence[str], matrix: np.ndarray, manifest: dict,
                  id_field: str = "query_id"):
         assert len(ids) == matrix.shape[0], "id / row count mismatch"
-        self.ids = list(ids)
+        # ids are always str (as build_store / parquet round-trips produce), so
+        # lookups behave the same whichever constructor built the store
+        self.ids = [str(i) for i in ids]
         self.matrix = matrix if matrix.dtype == np.float32 else matrix.astype(np.float32)
         self.manifest = manifest
         self.id_field = manifest.get("id_field", id_field)
@@ -269,7 +300,7 @@ class EmbeddingStore:
     # -- construction --------------------------------------------------
     @classmethod
     def _manifest(cls, encoder: TextEncoder, ids: Sequence[str], id_field: str,
-                  dim: int) -> dict:
+                  dim: int, texts: Optional[Sequence[str]] = None) -> dict:
         return {
             "pathway": encoder.cfg.name,
             "backend": encoder.cfg.backend,
@@ -280,8 +311,11 @@ class EmbeddingStore:
             "count": len(ids),
             "id_field": id_field,
             "config_fingerprint": encoder.cfg.fingerprint(),
+            "vector_fingerprint": encoder.cfg.vector_fingerprint(),
             "ids_fingerprint": _ids_fingerprint(ids),
+            "texts_fingerprint": _texts_fingerprint(texts) if texts is not None else None,
             "device": encoder.device,
+            "batch_size": encoder.cfg.batch_size,
             "complete": True,
         }
 
@@ -295,7 +329,7 @@ class EmbeddingStore:
         """
         matrix = encoder.encode(texts, show_progress=show_progress)
         dim = int(matrix.shape[1]) if matrix.size else encoder.dim
-        return cls(ids, matrix, cls._manifest(encoder, ids, id_field, dim), id_field)
+        return cls(ids, matrix, cls._manifest(encoder, ids, id_field, dim, texts), id_field)
 
     # -- io ----------------------------------------------------------
     @classmethod
@@ -413,6 +447,7 @@ def build_store(
     force: bool = False,
     show_progress: bool = True,
     manifest_extra: Optional[dict] = None,
+    require_fingerprints: bool = False,
 ) -> EmbeddingStore:
     """Encode ``texts`` into ``directory`` incrementally and resumably.
 
@@ -421,6 +456,11 @@ def build_store(
     (``rows_done`` + fingerprints). A killed run (OOM, power loss) leaves a
     valid partial ``vectors.npy``; calling this again with the same ids/config
     picks up from ``rows_done``.
+
+    A finished store is reused only when its ids, texts and vector-affecting
+    encoder settings all match. Stores written before those fingerprints existed
+    are reused on an id match alone, unless ``require_fingerprints`` (cheap,
+    small stores such as model profiles pass it so edited texts re-encode).
     """
     import pandas as pd
 
@@ -429,7 +469,10 @@ def build_store(
     n = len(ids)
     dim = encoder.dim
     ids = [str(i) for i in ids]
+    texts = [("" if t is None else str(t)) for t in texts]
     id_fp = _ids_fingerprint(ids)
+    txt_fp = _texts_fingerprint(texts)
+    vec_fp = encoder.cfg.vector_fingerprint()
     cfg_fp = encoder.cfg.fingerprint()
 
     mpath = d / EmbeddingStore.MANIFEST
@@ -439,14 +482,23 @@ def build_store(
     # already finished?
     if not force and EmbeddingStore.exists(d):
         man = json.loads(EmbeddingStore._resolve(d, EmbeddingStore.MANIFEST).read_text("utf-8"))
-        if man.get("ids_fingerprint") in (id_fp, None) and man.get("count") == n:
+
+        def _ok(key, expect):
+            got = man.get(key)
+            return got == expect if got is not None else not require_fingerprints
+
+        if (man.get("count") == n and _ok("ids_fingerprint", id_fp)
+                and _ok("vector_fingerprint", vec_fp) and _ok("texts_fingerprint", txt_fp)):
             return EmbeddingStore.load(d)
+        if show_progress:
+            print(f"[build_store] {d.name}: existing store is stale (ids/texts/encoder changed), rebuilding")
 
     rows_done = 0
     if resume and not force and ppath.exists() and vpath.exists():
         prog = json.loads(ppath.read_text("utf-8"))
         if (prog.get("ids_fingerprint") == id_fp
                 and prog.get("config_fingerprint") == cfg_fp
+                and prog.get("texts_fingerprint", txt_fp) == txt_fp
                 and prog.get("dim") == dim):
             rows_done = int(prog.get("rows_done", 0))
             if show_progress:
@@ -455,6 +507,11 @@ def build_store(
             print(f"[build_store] {d.name}: fingerprint mismatch, restarting")
 
     mode = "r+" if (rows_done > 0 and vpath.exists()) else "w+"
+    if mode == "w+" and mpath.exists():
+        # about to overwrite vectors/ids: the old manifest must stop claiming a
+        # complete store, or an interrupted rebuild would load as valid
+        old = json.loads(mpath.read_text("utf-8"))
+        mpath.write_text(json.dumps({**old, "complete": False}, indent=2), encoding="utf-8")
     mm = np.lib.format.open_memmap(vpath, mode=mode, dtype=np.float32, shape=(n, dim))
 
     # ids index is stable regardless of progress
@@ -466,6 +523,7 @@ def build_store(
             "rows_done": int(done), "count": n, "dim": dim,
             "batch_size": encoder.cfg.batch_size,
             "ids_fingerprint": id_fp, "config_fingerprint": cfg_fp,
+            "texts_fingerprint": txt_fp,
         }), encoding="utf-8")
 
     since_flush = 0
@@ -486,7 +544,7 @@ def build_store(
 
     mm.flush()
     del mm
-    manifest = EmbeddingStore._manifest(encoder, ids, id_field, dim)
+    manifest = EmbeddingStore._manifest(encoder, ids, id_field, dim, texts)
     if manifest_extra:
         manifest.update(manifest_extra)
     mpath.write_text(json.dumps(manifest, indent=2), encoding="utf-8")

@@ -7,7 +7,8 @@
 ``sigma`` is input-dependent (heteroskedastic), not one global constant.
 ``epsilon`` (config) keeps it strictly positive. The Normal has support outside
 [0, 1]; the likelihood uses the true Normal (no clipping). For metrics that need
-a probability we report ``P(Y >= 0.5) = Phi((mu - 0.5) / sigma)`` and, as the
+a probability we report ``P(Y >= t) = Phi((mu - t) / sigma)`` with ``t`` the
+run's ``binary_threshold`` (default 0.5) and, as the
 expected score, ``clamp(mu, 0, 1)`` -- both documented, neither feeds the loss.
 """
 
@@ -34,6 +35,8 @@ class NormalResponseHead(ResponseHead):
         super().__init__()
         cfg = cfg or {}
         self.eps = float(cfg.get("epsilon", 1e-6))
+        # the run's response.binary_threshold -- the event as_probability reports
+        self.threshold = float(cfg.get("binary_threshold", 0.5))
         self.f_sigma = mlp(feature_dim, 1, hidden)
         self.log_sigma0 = nn.Parameter(torch.zeros(()))
 
@@ -55,8 +58,9 @@ class NormalResponseHead(ResponseHead):
         return out["sigma"] ** 2
 
     def as_probability(self, out):
-        # P(Y >= 0.5) under the predictive Normal
-        return 0.5 * torch.erfc((0.5 - out["mu"]) / (out["sigma"] * _SQRT2))
+        # P(Y >= binary_threshold) under the predictive Normal -- the same event
+        # the binary labels encode
+        return 0.5 * torch.erfc((self.threshold - out["mu"]) / (out["sigma"] * _SQRT2))
 
     def expected_score(self, out):
         return out["mu"].clamp(0.0, 1.0)

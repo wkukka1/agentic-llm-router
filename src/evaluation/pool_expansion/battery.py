@@ -19,7 +19,9 @@ The predictor is frozen -- this module only ever *reads* checkpoints.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Sequence
@@ -30,6 +32,7 @@ import pandas as pd
 from router.config import Config, load_config
 from router.provenance import file_digest, git_dirty, git_sha
 from training.data.facade import load_training_data
+from training.data.splits import SPLIT_FILES
 from training.nirt.baseline.checkpoint import load_run
 from training.nirt.baseline.continuous_eval import evaluate_continuous
 from training.nirt.baseline.data import checkpoint_matrix as _pred_matrix
@@ -60,6 +63,8 @@ LEDGER_COLUMNS = [
     "oracle_cost_saving_ceiling",
     "zoib_saving_at_minus1pt",
     "zoib_saving_at_minus3pt",
+    "zoib_saving_at_minus1pt_test_ceiling",
+    "zoib_saving_at_minus3pt_test_ceiling",
     "zoib_aiq_improvement",
     "oracle_offbest_fraction",
     "coldstart_beats_global_mean",
@@ -79,13 +84,67 @@ def _nirt_matrix(run_name: str, data, split: str):
     return predict_matrix(model, midx, data, split, pathway="irt")
 
 
+def prediction_matrices(
+    d, cfg: Config, split: str, *, zoib: str, bernoulli: str, nirt_run: Optional[str],
+    lcb_level: float = 0.8,
+) -> tuple[dict[str, pd.DataFrame], Optional[str]]:
+    """Unaligned ``[query x model]`` prediction frames for every routed policy, plus
+    the NIRT run's error (``None`` if it scored or wasn't requested).
+
+    Computed once per battery: the frames don't depend on the pool, so
+    ``routing_block`` and every ablation just ``align`` them to their matrices.
+    """
+    preds = {
+        "baseline NIRT (Bernoulli)": _pred_matrix(bernoulli, cfg, split, "proba"),
+        "ZOIB  E[Y]": _pred_matrix(zoib, cfg, split, "mean"),
+        f"ZOIB  LCB(level={lcb_level})": _pred_matrix(zoib, cfg, split, "lower", level=lcb_level),
+    }
+    nirt_error = None
+    if nirt_run:
+        try:
+            preds[f"NIRT ({nirt_run})"] = _nirt_matrix(nirt_run, d, split)
+        except Exception as exc:  # noqa: BLE001 - NIRT run is optional context; recorded, not swallowed
+            nirt_error = f"{type(exc).__name__}: {exc}"
+            warnings.warn(
+                f"NIRT run {nirt_run!r} failed on {split!r} and is omitted from the "
+                f"policy table: {nirt_error}",
+                stacklevel=2,
+            )
+    return preds, nirt_error
+
+
+def _pool_matrices(d, split: str, pool_models: Optional[Sequence[str]] = None, keep_query_pred=None):
+    """``eval_matrices`` for the pool, failing fast when the pool can't be evaluated
+    on ``split`` (a pinned model with no observations would otherwise empty the
+    dense matrices and turn every downstream number into NaN)."""
+    models = list(pool_models) if pool_models else None
+    obs = d.nirt_observations()
+    obs_split = obs[obs["split"] == split]
+    if models:
+        present = set(obs_split["model_id"])
+        missing = [m for m in models if m not in present]
+        if missing:
+            raise ValueError(f"pool models with no {split!r} observations: {missing}")
+    true_df, cost_df = eval_matrices(d, split=split, models=models)
+    if keep_query_pred is not None:
+        mask = [bool(keep_query_pred(q)) for q in true_df.index]
+        true_df, cost_df = true_df.loc[mask], cost_df.loc[mask]
+    if true_df.empty:
+        sub = obs_split[obs_split["model_id"].isin(models)] if models else obs_split
+        sparsest = sub.groupby("model_id")["query_id"].nunique().nsmallest(3).to_dict()
+        raise ValueError(
+            f"no {split!r} query has a target and cost for every pool model "
+            f"(sparsest models, by #queries: {sparsest})"
+        )
+    return true_df, cost_df
+
+
 # --------------------------------------------------------------------------- #
 # 1a -- pool description                                                      #
 # --------------------------------------------------------------------------- #
 def pool_description(d, split: str, *, pool_models: Optional[Sequence[str]] = None) -> dict:
     obs = d.nirt_observations()
-    obs_split = obs[obs["split"] == split]
-    true_df, cost_df = eval_matrices(d, split=split, models=list(pool_models) if pool_models else None)
+    true_df, cost_df = _pool_matrices(d, split, pool_models)
     models = list(true_df.columns)
 
     n_obs_all = obs.groupby("model_id").size().to_dict()
@@ -127,7 +186,7 @@ def pool_description(d, split: str, *, pool_models: Optional[Sequence[str]] = No
 def shot_breakdown(d, split: str, *, pool_models: Sequence[str], suffix: str = ":5shot") -> Optional[dict]:
     """Per-model test accuracy on the base subset vs the ``suffix`` subset
     (E2: 0-shot vs 5-shot). ``None`` if the split has no ``suffix`` queries."""
-    true_df, cost_df = eval_matrices(d, split=split, models=list(pool_models))
+    true_df, cost_df = _pool_matrices(d, split, pool_models)
     is_suf = np.array([str(q).endswith(suffix) for q in true_df.index])
     if not is_suf.any():
         return None
@@ -218,12 +277,51 @@ def _frontier_saving(frontier: pd.DataFrame, ref_cost_1k: float, best_acc: float
     }
 
 
+def _val_selected_saving(
+    val_frontier: pd.DataFrame, test_frontier: pd.DataFrame, ref_cost_1k: float,
+    *, val_best_acc: float, test_best_acc: float, margin: float,
+):
+    """Operating point chosen on validation, measured on test.
+
+    Picks the cheapest *validation* frontier point whose accuracy is within
+    ``margin`` of the best single model's validation accuracy, then reports the
+    *test* frontier row at that lambda -- a choice a deployed router could have made
+    in advance. :func:`_frontier_saving` on the test frontier is the ceiling.
+    """
+    q = val_frontier[val_frontier["accuracy"] >= val_best_acc - margin]
+    if q.empty:
+        return None
+    v = q.loc[q["cost_per_1k_queries"].idxmin()]
+    lam = float(v["lam"])
+    t = test_frontier[np.isclose(test_frontier["lam"].to_numpy(np.float64), lam)]
+    if t.empty:
+        raise ValueError(f"lam={lam} chosen on validation is not on the test frontier grid")
+    t = t.iloc[0]
+    return {
+        "lam": lam,
+        "val_accuracy": float(v["accuracy"]),
+        "accuracy": float(t["accuracy"]),
+        "d_accuracy_vs_best_single": float(t["accuracy"] - test_best_acc),
+        "cost_per_1k_queries": float(t["cost_per_1k_queries"]),
+        "cost_saving_vs_ref": float(1.0 - t["cost_per_1k_queries"] / ref_cost_1k),
+    }
+
+
+def _closest_lam(frontier: pd.DataFrame, target_acc: float) -> float:
+    return float(frontier.loc[(frontier["accuracy"] - target_acc).abs().idxmin(), "lam"])
+
+
 def derived_headline(
     true: np.ndarray, cost: np.ndarray, zoib_pred: np.ndarray,
     *, model_ids: list[str], tq_acc: dict[str, float], frontier: pd.DataFrame,
+    val_frontier: Optional[pd.DataFrame] = None, val_best_acc: Optional[float] = None,
     reference: str = REFERENCE,
 ) -> dict:
     """§1d: oracle ceiling, matched-accuracy savings, oracle mix, escalation.
+
+    Matched-accuracy savings (``router_saving_at_minus*pt``) and the -3 pt lambda
+    are chosen on ``val_frontier`` and measured on test; ``None`` when no validation
+    frontier is given. The test-chosen values are kept as ``*_test_ceiling``.
 
     The oracle is the *cheapest* model that attains each query's max true score
     (:func:`router.nirt.routing.oracle_choice`) -- same quality as
@@ -266,10 +364,22 @@ def derived_headline(
     }
 
     lam0_choice = route(zoib_pred, cost, 0.0)
-    # lambda that lands closest to the -3pt operating point
-    target = best_acc - 0.03
-    lam3 = float(frontier.loc[(frontier["accuracy"] - target).abs().idxmin(), "lam"])
-    lam3_choice = route(zoib_pred, cost, lam3)
+    have_val = val_frontier is not None and val_best_acc is not None and not val_frontier.empty
+    # lambda that lands closest to the -3pt operating point: validation-chosen
+    # (deployable) and test-chosen (ceiling)
+    lam3 = _closest_lam(val_frontier, val_best_acc - 0.03) if have_val else None
+    lam3_ceiling = _closest_lam(frontier, best_acc - 0.03)
+
+    def _saving(margin):
+        if not have_val:
+            return None
+        return _val_selected_saving(
+            val_frontier, frontier, ref_cost_1k,
+            val_best_acc=val_best_acc, test_best_acc=best_acc, margin=margin,
+        )
+
+    def _escalation(lam):
+        return None if lam is None else float((route(zoib_pred, cost, lam) != jb).mean())
 
     return {
         "best_single_model": best_single,
@@ -285,65 +395,89 @@ def derived_headline(
                        "(ties broken by cost, matching RouterBench). naive_argmax_oracle "
                        "is the old column-order tie-break for comparison.",
         "naive_argmax_oracle": naive_argmax_oracle,
-        "router_saving_at_minus1pt": _frontier_saving(frontier, ref_cost_1k, best_acc, 0.01),
-        "router_saving_at_minus3pt": _frontier_saving(frontier, ref_cost_1k, best_acc, 0.03),
+        "lambda_selection": "validation" if have_val else "unavailable",
+        "router_saving_at_minus1pt": _saving(0.01),
+        "router_saving_at_minus3pt": _saving(0.03),
         # historical Phase 2 report operating point (ZOIB -57% @ -3.7pt, lam 0.5)
-        "router_saving_at_minus3_7pt": _frontier_saving(frontier, ref_cost_1k, best_acc, 0.037),
+        "router_saving_at_minus3_7pt": _saving(0.037),
+        "router_saving_at_minus1pt_test_ceiling": _frontier_saving(frontier, ref_cost_1k, best_acc, 0.01),
+        "router_saving_at_minus3pt_test_ceiling": _frontier_saving(frontier, ref_cost_1k, best_acc, 0.03),
+        "router_saving_at_minus3_7pt_test_ceiling": _frontier_saving(frontier, ref_cost_1k, best_acc, 0.037),
         "zoib_escalation_rate_lam0": float((lam0_choice != jb).mean()),
-        "zoib_escalation_rate_at_minus3pt": float((lam3_choice != jb).mean()),
+        "zoib_escalation_rate_at_minus3pt": _escalation(lam3),
+        "zoib_escalation_rate_at_minus3pt_test_ceiling": _escalation(lam3_ceiling),
         "minus3pt_lambda": lam3,
+        "minus3pt_lambda_test_ceiling": lam3_ceiling,
     }
 
 
+_VALIDATION = "validation"
+
+
+def _validation_frontier(d, val_zoib_ey, model_ids: list[str], tq_acc: dict[str, float], keep_query_pred):
+    """``(frontier, best_acc, reason)`` on the validation split for the same pool.
+
+    ``best_acc`` is the validation accuracy of the train-selected best single model.
+    These pick lambda without test labels; ``(None, None, reason)`` when the pool
+    can't be evaluated on validation.
+    """
+    if val_zoib_ey is None:
+        return None, None, "no validation ZOIB predictions supplied"
+    try:
+        vt_df, vc_df = _pool_matrices(d, _VALIDATION, model_ids, keep_query_pred)
+    except ValueError as exc:
+        return None, None, str(exc)
+    vt_df, vc_df = vt_df[model_ids], vc_df[model_ids]
+    vt, vc = vt_df.to_numpy(np.float64), vc_df.to_numpy(np.float64)
+    fr = pareto(align(val_zoib_ey, vt_df), vt, vc, lams=_FRONTIER_LAMS)
+    jb = model_ids.index(max(tq_acc, key=tq_acc.get))
+    return fr, float((vt[:, jb] >= 0.5).mean()), None
+
+
 def routing_block(
-    d, cfg: Config, split: str, *, zoib: str, bernoulli: str, nirt_run: Optional[str],
+    d, split: str, *, preds: dict[str, pd.DataFrame], val_zoib_ey: Optional[pd.DataFrame] = None,
+    nirt_run: Optional[str] = None, nirt_error: Optional[str] = None,
     pool_models: Optional[Sequence[str]] = None, reference: str = REFERENCE,
-    lcb_level: float = 0.8, keep_query_pred=None,
+    keep_query_pred=None,
 ) -> dict:
-    true_df, cost_df = eval_matrices(d, split=split, models=list(pool_models) if pool_models else None)
-    if keep_query_pred is not None:
-        mask = [bool(keep_query_pred(q)) for q in true_df.index]
-        true_df, cost_df = true_df.loc[mask], cost_df.loc[mask]
+    """1c + 1d for one pool. ``preds`` are :func:`prediction_matrices` frames on
+    ``split`` (must include ``"ZOIB  E[Y]"``); ``val_zoib_ey`` is ZOIB E[Y] on the
+    validation split, used only to choose the headline lambda."""
+    true_df, cost_df = _pool_matrices(d, split, pool_models, keep_query_pred)
     model_ids = list(true_df.columns)
     true, cost = true_df.to_numpy(np.float64), cost_df.to_numpy(np.float64)
     tq_acc = train_quality(d, model_ids, metric="accuracy")
 
-    preds = {
-        "baseline NIRT (Bernoulli)": align(_pred_matrix(bernoulli, cfg, split, "proba"), true_df),
-        "ZOIB  E[Y]": align(_pred_matrix(zoib, cfg, split, "mean"), true_df),
-        f"ZOIB  LCB(level={lcb_level})": align(
-            _pred_matrix(zoib, cfg, split, "lower", level=lcb_level), true_df
-        ),
-    }
-    if nirt_run:
-        try:
-            preds[f"NIRT ({nirt_run})"] = align(_nirt_matrix(nirt_run, d, split), true_df)
-        except Exception as exc:  # noqa: BLE001 - NIRT run is optional context
-            preds[f"NIRT ({nirt_run})"] = None
-            _nirt_err = str(exc)
-
+    aligned = {name: align(m, true_df) for name, m in preds.items()}
     rep = routing_report(
-        {k: v for k, v in preds.items() if v is not None},
-        true, cost, model_ids=model_ids, train_quality=tq_acc, reference=reference, lam=0.0,
+        aligned, true, cost, model_ids=model_ids, train_quality=tq_acc, reference=reference, lam=0.0,
     )
     rep = add_reward_columns(rep, pool_mean_costs=cost.mean(axis=0))
 
-    zoib_ey = preds["ZOIB  E[Y]"]
+    zoib_ey = aligned["ZOIB  E[Y]"]
     fr = pareto(zoib_ey, true, cost, lams=_FRONTIER_LAMS)
     frontier_aiq = aiq(
         fr, pool_mean_costs=cost.mean(axis=0),
         pool_quality=[true_df[m].mean() for m in model_ids],
     )
+    val_fr, val_best_acc, val_reason = _validation_frontier(
+        d, val_zoib_ey, model_ids, tq_acc, keep_query_pred
+    )
     derived = derived_headline(
         true, cost, zoib_ey, model_ids=model_ids, tq_acc=tq_acc,
-        frontier=fr, reference=reference,
+        frontier=fr, val_frontier=val_fr, val_best_acc=val_best_acc, reference=reference,
     )
+    if val_reason:
+        derived["lambda_selection_reason"] = val_reason
     return {
         "split": split,
         "n_queries": int(true.shape[0]),
         "model_ids": model_ids,
+        "nirt_run": nirt_run,
+        "nirt_error": nirt_error,
         "policies": rep.to_dict(orient="records"),
         "zoib_frontier": fr.to_dict(orient="records"),
+        "zoib_frontier_validation": val_fr.to_dict(orient="records") if val_fr is not None else None,
         "zoib_aiq": frontier_aiq,
         "derived": derived,
     }
@@ -384,13 +518,9 @@ def ablation_pools(added_models: Sequence[str], full_pool: Sequence[str]) -> tup
     return added, reduced
 
 
-def _ablation_case(d, cfg, split, *, remove, full_pool, full_derived, zoib, bernoulli,
-                   nirt_run, reference, lcb_level) -> dict:
+def _ablation_case(d, split, *, remove, full_pool, full_derived, routing_kw) -> dict:
     _, reduced = ablation_pools(remove, full_pool)
-    rd = routing_block(
-        d, cfg, split, zoib=zoib, bernoulli=bernoulli, nirt_run=nirt_run,
-        pool_models=reduced, reference=reference, lcb_level=lcb_level,
-    )["derived"]
+    rd = routing_block(d, split, pool_models=reduced, **routing_kw)["derived"]
     return {
         "removed_models": list(remove),
         "reduced_pool": reduced,
@@ -406,19 +536,21 @@ def _ablation_case(d, cfg, split, *, remove, full_pool, full_derived, zoib, bern
 
 
 def ablation_block(
-    d, cfg: Config, split: str, *, added_models: Sequence[str], full_pool: Sequence[str],
-    full_derived: dict, zoib: str, bernoulli: str, nirt_run: Optional[str],
-    reference: str = REFERENCE, lcb_level: float = 0.8,
+    d, split: str, *, added_models: Sequence[str], full_pool: Sequence[str],
+    full_derived: dict, preds: dict[str, pd.DataFrame],
+    val_zoib_ey: Optional[pd.DataFrame] = None, reference: str = REFERENCE,
     drop_query_suffix: Optional[str] = None,
 ) -> dict:
+    # The prediction frames are pool-independent, so every re-run reuses them.
+    routing_kw = dict(preds=preds, val_zoib_ey=val_zoib_ey, reference=reference)
     # Query-subset ablation (E2): re-run routing with a query subset removed
     # (e.g. all ":5shot" items) -- the "added" thing that phase is observations,
     # not models.
     if drop_query_suffix:
         rd = routing_block(
-            d, cfg, split, zoib=zoib, bernoulli=bernoulli, nirt_run=nirt_run,
-            pool_models=full_pool, reference=reference, lcb_level=lcb_level,
+            d, split, pool_models=full_pool,
             keep_query_pred=lambda q, s=drop_query_suffix: not str(q).endswith(s),
+            **routing_kw,
         )["derived"]
         return {
             "status": "ran",
@@ -437,18 +569,17 @@ def ablation_block(
     if not added:
         return {"status": "n/a", "reason": "no models added this phase"}
 
-    kw = dict(full_pool=full_pool, full_derived=full_derived, zoib=zoib, bernoulli=bernoulli,
-              nirt_run=nirt_run, reference=reference, lcb_level=lcb_level)
+    kw = dict(full_pool=full_pool, full_derived=full_derived, routing_kw=routing_kw)
     out = {
         "status": "ran",
         "added_models": added,
         # all newly added models removed at once
-        "all_removed": _ablation_case(d, cfg, split, remove=added, **kw),
+        "all_removed": _ablation_case(d, split, remove=added, **kw),
     }
     # per-model leave-one-out attribution (only meaningful with >1 added model)
     if len(added) > 1:
         out["leave_one_out"] = {
-            m: _ablation_case(d, cfg, split, remove=[m], **kw) for m in added
+            m: _ablation_case(d, split, remove=[m], **kw) for m in added
         }
     # convenience mirrors of the headline deltas (all-removed case)
     out["delta_oracle_cost_saving_ceiling"] = out["all_removed"]["delta_oracle_cost_saving_ceiling"]
@@ -475,20 +606,30 @@ def provenance(cfg: Config, *, phase: str, pool_models: list[str], checkpoints: 
     root = cfg.root
     sha, dirty = git_sha(root), git_dirty(root)
 
-    artefacts = {
-        f"config/{p}": _sha256(root / "configs" / p)
-        for p in ("phase0.yaml", "phase1.yaml", "phase2.yaml")
-    }
-    for name in ("train.json", "validation.json", "test.json", "cold_start_models.json"):
-        artefacts[f"splits/{name}"] = _sha256(root / "data" / "splits" / name)
+    artefacts: dict[str, Optional[str]] = {}
+    # the config the battery actually ran under (file + resolved content) ...
+    if cfg.source_path is not None:
+        artefacts[f"config/{cfg.source_path.name}"] = _sha256(cfg.source_path)
+    artefacts["config_resolved"] = hashlib.sha256(
+        json.dumps(cfg.to_dict(), sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()[:16]
+    # ... plus the phase configs the frozen checkpoints were trained from
+    for p in ("phase1.yaml", "phase2.yaml"):
+        artefacts[f"config/{p}"] = _sha256(root / "configs" / p)
+
+    splits_dir = cfg.path("splits")
+    for key, fname in SPLIT_FILES.items():
+        digest = _sha256(splits_dir / fname)
+        if digest is not None or key != "ood":  # ood is optional; others record None if absent
+            artefacts[f"splits/{fname}"] = digest
     for label, ck in checkpoints.items():
-        artefacts[f"checkpoint/{label}"] = _sha256(root / ck / "model.pt")
+        artefacts[f"checkpoint/{label}"] = _sha256(cfg.resolve(ck) / "model.pt")
 
     def _seed(name):
         try:
             import yaml
 
-            return yaml.safe_load((root / "configs" / name).read_text()).get("seed")
+            return yaml.safe_load((root / "configs" / name).read_text(encoding="utf-8")).get("seed")
         except Exception:  # noqa: BLE001
             return None
 
@@ -497,6 +638,8 @@ def provenance(cfg: Config, *, phase: str, pool_models: list[str], checkpoints: 
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "git_sha": sha,
         "git_dirty": dirty,
+        "config_path": str(cfg.source_path) if cfg.source_path is not None else None,
+        "splits_dir": str(splits_dir),
         "seed": {"phase1": _seed("phase1.yaml"), "phase2": _seed("phase2.yaml")},
         "pool_models": pool_models,
         "n_pool_models": len(pool_models),
@@ -539,15 +682,22 @@ def run_battery(
     pool = pool_description(d, split, pool_models=pool_models)
 
     pred = prediction_quality(zoib, bernoulli, cfg, split)
+    # every checkpoint is scored once here; routing + all ablations reuse the frames
+    preds, nirt_error = prediction_matrices(
+        d, cfg, split, zoib=zoib, bernoulli=bernoulli, nirt_run=nirt_run, lcb_level=lcb_level,
+    )
+    val_zoib_ey = (
+        preds["ZOIB  E[Y]"] if split == _VALIDATION else _pred_matrix(zoib, cfg, _VALIDATION, "mean")
+    )
     routing = routing_block(
-        d, cfg, split, zoib=zoib, bernoulli=bernoulli, nirt_run=nirt_run,
-        pool_models=pool_models, reference=reference, lcb_level=lcb_level,
+        d, split, preds=preds, val_zoib_ey=val_zoib_ey, nirt_run=nirt_run, nirt_error=nirt_error,
+        pool_models=pool_models, reference=reference,
     )
     cold = cold_start_block(zoib_projected, cfg, split)
     abl = ablation_block(
-        d, cfg, split, added_models=added_models, full_pool=pool_models,
-        full_derived=routing["derived"], zoib=zoib, bernoulli=bernoulli, nirt_run=nirt_run,
-        reference=reference, lcb_level=lcb_level, drop_query_suffix=ablation_drop_query_suffix,
+        d, split, added_models=added_models, full_pool=pool_models,
+        full_derived=routing["derived"], preds=preds, val_zoib_ey=val_zoib_ey,
+        reference=reference, drop_query_suffix=ablation_drop_query_suffix,
     )
     shots = shot_breakdown(d, split, pool_models=pool_models)
     prov = provenance(
@@ -589,8 +739,14 @@ def run_battery(
 def ledger_row(result: dict) -> dict:
     pool, routing, pred = result["pool"], result["routing"], result["prediction"]
     der = routing["derived"]
-    s1 = der.get("router_saving_at_minus1pt")
-    s3 = der.get("router_saving_at_minus3pt")
+    def _saving(key):
+        s = der.get(key)
+        return s["cost_saving_vs_ref"] if s else None
+
+    notes = result.get("notes", "")
+    if routing.get("nirt_error"):
+        failed = f"NIRT run {routing.get('nirt_run')!r} failed: {routing['nirt_error']}"
+        notes = f"{notes}; {failed}" if notes else failed
     return {
         "phase": result["phase"],
         "n_warm_models": pool["n_warm_models"],
@@ -600,15 +756,17 @@ def ledger_row(result: dict) -> dict:
         "zoib_test_mae": pred["zoib"]["mae"],
         "zoib_mean_cal_ece": pred["zoib"]["mean_calibration_ece"],
         "oracle_cost_saving_ceiling": der["oracle_cost_saving_ceiling"],
-        "zoib_saving_at_minus1pt": (s1["cost_saving_vs_ref"] if s1 else None),
-        "zoib_saving_at_minus3pt": (s3["cost_saving_vs_ref"] if s3 else None),
+        "zoib_saving_at_minus1pt": _saving("router_saving_at_minus1pt"),
+        "zoib_saving_at_minus3pt": _saving("router_saving_at_minus3pt"),
+        "zoib_saving_at_minus1pt_test_ceiling": _saving("router_saving_at_minus1pt_test_ceiling"),
+        "zoib_saving_at_minus3pt_test_ceiling": _saving("router_saving_at_minus3pt_test_ceiling"),
         "zoib_aiq_improvement": routing["zoib_aiq"].get("aiq_improvement"),
         "oracle_offbest_fraction": der["oracle_offbest_fraction"],
         "coldstart_beats_global_mean": (
             result["cold_start"].get("beats_global_mean_on_bce")
             if result["cold_start"].get("status") == "ran" else None
         ),
-        "notes": result.get("notes", ""),
+        "notes": notes,
     }
 
 
@@ -645,14 +803,17 @@ def render_ledger_md(*, cfg: Optional[Config] = None) -> Path:
         "# Candidate-pool expansion -- results ledger",
         "",
         "Auto-rendered from `artifacts/pool_expansion/ledger.json` by "
-        "`router.pool_expansion.render_ledger_md`. One row per phase; the predictor "
+        "`evaluation.pool_expansion.render_ledger_md`. One row per phase; the predictor "
         "(frozen ZOIB head + Phase 1 Bernoulli control) is never retuned.",
         "",
         "`oracle_cost_saving_ceiling` = `1 - oracle_cost / best-single-model_cost` "
         "(oracle = cheapest model attaining each query's max true score). "
-        "`zoib_saving_at_minus{1,3}pt` = largest frontier cost-saving vs the reference "
-        "model whose accuracy is within {1,3} points of the best single model "
-        "(`n/a` = no frontier point qualifies).",
+        "`zoib_saving_at_minus{1,3}pt` = test cost-saving vs the reference model at the "
+        "lambda chosen on the **validation** split (cheapest validation frontier point "
+        "within {1,3} points of the best single model's validation accuracy). "
+        "`zoib_saving_at_minus{1,3}pt_test_ceiling` = the same rule applied to the test "
+        "frontier directly -- an optimistic ceiling, not a deployable number "
+        "(`n/a` = no frontier point qualifies, or no validation split).",
         "",
     ]
     header = "| " + " | ".join(LEDGER_COLUMNS) + " |"

@@ -26,7 +26,9 @@ def load_run(name: str, runs_dir: Optional[os.PathLike] = None):
         from router.config import DEFAULT_NIRT_RUNS_DIR, REPO_ROOT
 
         base = REPO_ROOT / DEFAULT_NIRT_RUNS_DIR
-    blob = torch.load(base / name / "model.pt", map_location="cpu", weights_only=False)
+    # weights_only: the blob is tensors + plain dicts/ints, and a run directory
+    # may be shared/downloaded -- never unpickle arbitrary objects on the serving path
+    blob = torch.load(base / name / "model.pt", map_location="cpu", weights_only=True)
     model = build_model(
         blob["config"].get("model", {}),
         n_models=blob["n_models"],

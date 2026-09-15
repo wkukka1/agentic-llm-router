@@ -21,7 +21,7 @@ only cost signal RouterBench carries -- no token counts).
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -91,8 +91,23 @@ def route(pred: np.ndarray, cost: np.ndarray, lam: float = 0.0) -> np.ndarray:
     return np.argmax(pred - lam * cost_norm, axis=1)
 
 
-def oracle_choice(true: np.ndarray, cost: np.ndarray, *, tol: float = 1e-9) -> np.ndarray:
-    """Per-query index of the **cheapest** model that attains the max true score.
+def oracle_choice(
+    true: np.ndarray, cost: np.ndarray, *, tol: float = 1e-9,
+    model_ids: Optional[Sequence[str]] = None,
+) -> np.ndarray:
+    """Per-query index of the oracle model: the max observed score, ties broken by cost.
+
+    Cost is **only a tie-breaker** among the models attaining the max score -- it is
+    never traded off against score (that is the cost-aware utility, reported
+    separately). Ties left after cost (equal score *and* equal cost) are broken by
+    one of two modes:
+
+    * ``model_ids`` given -- the **canonical** rule: max score -> min cost ->
+      lexicographically smallest ``model_id``. Independent of column order; new
+      code should always pass ``model_ids``.
+    * ``model_ids=None`` -- **legacy compatibility**: max score -> min cost -> first
+      column. Kept so ``routing_report`` and the pool-expansion battery reproduce
+      their historical numbers.
 
     A plain ``true.argmax(1)`` is also "best per query", but it breaks ties by
     column order, so on the many queries where several models are equally good it
@@ -100,8 +115,17 @@ def oracle_choice(true: np.ndarray, cost: np.ndarray, *, tol: float = 1e-9) -> n
     ceiling). Breaking the tie by cost matches RouterBench's own oracle
     (cheapest correct model) and does not change the oracle's quality.
     """
+    true = np.asarray(true, np.float64)
     at_max = true >= true.max(axis=1, keepdims=True) - tol
-    return np.where(at_max, cost, np.inf).argmin(axis=1)
+    masked_cost = np.where(at_max, np.asarray(cost, np.float64), np.inf)
+    if model_ids is None:
+        return masked_cost.argmin(axis=1)
+    ids = np.asarray([str(m) for m in model_ids])
+    if len(ids) != true.shape[1]:
+        raise ValueError(f"model_ids has {len(ids)} entries for {true.shape[1]} columns")
+    id_rank = np.argsort(np.argsort(ids, kind="stable"), kind="stable")
+    id_key = np.broadcast_to(id_rank, true.shape)
+    return np.lexsort((id_key, masked_cost), axis=-1)[:, 0]
 
 
 def routing_report(

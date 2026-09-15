@@ -71,6 +71,7 @@ def build_tables(
 ) -> dict[str, pd.DataFrame]:
     raw = responses if responses is not None else load_all(cfg, sources)
     raw = schemas.coerce_response_frame(raw)
+    raw = _fill_anchor_judge_text(raw)
     raw, n_collapsed = collapse_duplicate_observations(raw)
     if n_collapsed:
         import warnings
@@ -93,8 +94,29 @@ def build_tables(
     return {"responses": raw, "queries": queries, "models": models}
 
 
+def _fill_anchor_judge_text(df: pd.DataFrame) -> pd.DataFrame:
+    """Give anchor-judge rows the query text of the *current* build.
+
+    ``load_anchor_judge`` judges EXISTING query ids and cannot know their text
+    on a fresh build (it used to read last build's ``queries.parquet``, so the
+    result depended on how many times the pipeline had run).
+    """
+    anchor = df["source"].astype(str) == schemas.Source.ANCHOR_JUDGE
+    if not anchor.any():
+        return df
+    text = df.loc[~anchor].drop_duplicates("query_id").set_index("query_id")["query"]
+    out = df.copy()
+    filled = out.loc[anchor, "query_id"].map(text)
+    out.loc[anchor, "query"] = filled.where(filled.notna(), out.loc[anchor, "query"])
+    return out
+
+
 def _build_queries(df: pd.DataFrame) -> pd.DataFrame:
-    first = df.sort_values("source").groupby("query_id", as_index=False).agg(
+    # metadata comes from the row that minted the id: correctness rows win over
+    # pairwise / anchor-judge rows that merely reference an existing query.
+    rank = (~df["metric_type"].astype("string").isin(schemas.MetricType.CORRECTNESS)).astype(int)
+    first = df.assign(_rank=rank).sort_values(["_rank", "source"], kind="stable") \
+        .groupby("query_id", as_index=False).agg(
         query=("query", "first"),
         dataset=("dataset", "first"),
         source=("source", "first"),

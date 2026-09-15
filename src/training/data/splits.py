@@ -68,9 +68,16 @@ def make_splits(responses: pd.DataFrame, cfg: Config) -> dict[str, Any]:
     # The lottery runs over the *unmodified* eligible set -- forced ids are then
     # masked in/out afterwards, so an override never shifts any other model's
     # assignment (it only frees or fills its own slot).
+    # Each model enters exactly ONE source's lottery -- the source it has the most
+    # observations in -- so a model present in several sources gets one draw,
+    # not one per source (which pushed the cold fraction above f_cold).
+    per_src = responses.dropna(subset=["model_id"]).groupby(["model_id", "source"]).size()
+    home = (per_src.reset_index(name="n")
+            .sort_values(["model_id", "n", "source"], ascending=[True, False, True])
+            .drop_duplicates("model_id").set_index("model_id")["source"])
     cold_set: set[str] = set()
-    for src, g in responses.groupby("source"):
-        src_models = sorted(g["model_id"].dropna().unique().tolist())
+    for src in sorted(home.unique()):
+        src_models = sorted(home.index[home == src].tolist())
         eligible = [m for m in src_models if counts.get(m, 0) >= min_obs]
         k = int(round(f_cold * len(eligible)))
         ranked = sorted(eligible, key=lambda m: _bucket(f"model::{m}", seed))
@@ -166,7 +173,21 @@ def make_presplit(responses: pd.DataFrame, cfg: Config) -> dict[str, Any]:
         from .normalize import content_hash
 
         chash = responses.groupby("query_id")["query"].first().map(content_hash)
-    origin_of = origin.groupby(responses["query_id"]).first()
+    # A question present in several CSVs collapses to one query_id. Its split is
+    # the most held-out origin it appears in (test2 > test1 > train), so the
+    # paper's test sets never lose items to training.
+    priority = {"test2": 2, "test1": 1, "train": 0}
+    prio = origin.map(lambda o: priority.get(o, -1))
+    by_q = pd.DataFrame({"query_id": responses["query_id"], "origin": origin, "prio": prio})
+    n_origins = by_q.groupby("query_id")["origin"].nunique()
+    if (n_origins > 1).any():
+        import warnings
+
+        warnings.warn(
+            f"make_presplit: {int((n_origins > 1).sum())} query_ids appear in more than one "
+            f"of train/test1/test2; assigned to the most held-out origin."
+        )
+    origin_of = by_q.sort_values("prio", kind="stable").groupby("query_id")["origin"].last()
 
     buckets: dict[str, list[str]] = {"train": [], "validation": [], "test": [], "ood": []}
     for qid, org in origin_of.items():
@@ -201,7 +222,7 @@ def make_presplit(responses: pd.DataFrame, cfg: Config) -> dict[str, Any]:
     }
 
 
-_SPLIT_FILES = {
+SPLIT_FILES = {
     "train": "train.json",
     "validation": "validation.json",
     "test": "test.json",
@@ -213,7 +234,7 @@ _SPLIT_FILES = {
 def write_splits(splits: dict[str, Any], cfg: Config) -> dict[str, Path]:
     out_dir = cfg.path("splits")
     out_dir.mkdir(parents=True, exist_ok=True)
-    name_map = {k: v for k, v in _SPLIT_FILES.items() if k in splits}
+    name_map = {k: v for k, v in SPLIT_FILES.items() if k in splits}
     paths = {}
     for key, fname in name_map.items():
         p = out_dir / fname
@@ -225,7 +246,7 @@ def write_splits(splits: dict[str, Any], cfg: Config) -> dict[str, Path]:
 def load_splits(cfg: Config) -> dict[str, Any]:
     out_dir = cfg.path("splits")
     result: dict[str, Any] = {}
-    for key, fname in _SPLIT_FILES.items():
+    for key, fname in SPLIT_FILES.items():
         p = out_dir / fname
         if key == "ood" and not p.exists():
             continue  # ood is optional (only pre-partitioned sources have it)

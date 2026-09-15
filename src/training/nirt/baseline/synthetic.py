@@ -103,9 +103,11 @@ def make_synthetic_continuous(head: str, *, n_queries=1500, n_models=12, K=4, q_
     else:
         raise ValueError(head)
 
+    # the Normal world is left uncensored -- the Normal head has real-line support,
+    # and clipping would make the "well-specified" gate a misspecification test
     return Synthetic(
         e_q=e_q, theta_true=theta, z=z, b_true=b, disp_true=disp,
-        y=np.clip(y, 0.0, 1.0).astype(np.float32), pi_true=pi_true,
+        y=(y if head == "normal" else np.clip(y, 0.0, 1.0)).astype(np.float32), pi_true=pi_true,
         query_ids=[f"sq{i}" for i in range(n_queries)],
         model_ids=[f"sm{j}" for j in range(n_models)], K=K, head=head)
 
@@ -125,7 +127,9 @@ def to_arrays(syn: Synthetic, split_frac=0.8, seed=0):
         qi, mi = np.repeat(qidx, M), np.tile(np.arange(M), len(qidx))
         ys = syn.y[qi, mi].astype(np.float32)
         y = ys if bernoulli else (ys >= 0.5).astype(np.float32)
-        y_soft = syn.p[qi, mi].astype(np.float32) if bernoulli else ys
+        # Bernoulli: the observed {0,1} draw, NOT the generating p (a `target: soft`
+        # run would otherwise train on the oracle); p stays on `syn` for bayes_bce
+        y_soft = ys
         return BaselineArrays(
             e_q=syn.e_q[qi], midx=mi.astype(np.int64), y=y, y_soft=y_soft,
             query_ids=np.array([syn.query_ids[i] for i in qi]),
@@ -142,6 +146,12 @@ def to_arrays(syn: Synthetic, split_frac=0.8, seed=0):
 # recovery report                                                             #
 # --------------------------------------------------------------------------- #
 def recovery_report(model, syn: Synthetic, val_arrays) -> dict:
+    if getattr(model, "model_params", "free") != "free":
+        raise ValueError(
+            "synthetic recovery requires model_params='free' -- it compares the fitted "
+            "theta table with the true abilities, and the synthetic worlds carry no "
+            "profile embeddings for a projected model"
+        )
     return (_recovery_bernoulli if syn.head == "bernoulli" else _recovery_continuous)(
         model, syn, val_arrays
     )

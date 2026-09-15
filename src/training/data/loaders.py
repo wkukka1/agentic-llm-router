@@ -24,6 +24,7 @@ lm-eval-harness  a directory of harness result files. The per-sample logs
 from __future__ import annotations
 
 import json
+import re
 import warnings
 from pathlib import Path
 from typing import Iterable, Optional
@@ -140,11 +141,13 @@ def _melt_routerbench(wide: pd.DataFrame, shot: str, cfg: Config,
     ]
     base["split"] = base["native_sample_id"].map(_parse_routerbench_split)
 
+    choices_of = {e: _mc_choices(e, cfg) for e in base["eval_name"].unique()}
+    n_choices_by_task = base["eval_name"].map(choices_of)
+    is_mc = n_choices_by_task.notna()
+
     frames: list[pd.DataFrame] = []
     dropped_na = 0
     for m in model_cols:
-        n_choices_by_task = base["eval_name"].map(lambda e: _mc_choices(e, cfg))
-        is_mc = n_choices_by_task.notna()
         score = pd.to_numeric(wide[m], errors="coerce")
         cost = pd.to_numeric(wide[f"{m}|total_cost"], errors="coerce")
         keep = score.notna()
@@ -326,6 +329,37 @@ def load_lm_harness(cfg: Config) -> pd.DataFrame:
     return schemas.coerce_response_frame(pd.DataFrame.from_records(records))
 
 
+_LM_EVAL_TS = re.compile(r"_\d{4}-\d{2}-\d{2}T[\d\-:.]+$")
+
+
+def _lm_harness_task_and_model(path: Path) -> tuple[str, str]:
+    """``(task, native model name)`` from a per-sample log path.
+
+    * lm-eval >= 0.4: ``<output_path>/<model_dir>/samples_<task>_<timestamp>.jsonl``
+      -> task from the filename, model from the parent directory.
+    * legacy: ``<model>__<task>_samples_<ts>.jsonl``.
+    """
+    stem = path.stem
+    if stem.startswith("samples_"):
+        task = _LM_EVAL_TS.sub("", stem[len("samples_"):])
+        return task, path.parent.name or "unknown"
+    task = stem.split("_samples")[0].split("__")[-1]
+    return task, (stem.split("__")[0] if "__" in stem else "unknown")
+
+
+def _lm_harness_prompt(arguments) -> Optional[str]:
+    """First request argument (the prompt), for both the legacy list form
+    ``[[prompt, ...], ...]`` and the >= 0.4 dict form ``{"gen_args_0": {"arg_0": prompt}}``."""
+    if not arguments:
+        return None
+    first = next(iter(arguments.values())) if isinstance(arguments, dict) else arguments[0]
+    if isinstance(first, dict):
+        first = first.get("arg_0", next(iter(first.values()), None))
+    elif isinstance(first, (list, tuple)):
+        first = first[0] if first else None
+    return None if first is None else str(first)
+
+
 def _parse_lm_harness_samples(path: Path, cfg: Config) -> list[dict]:
     text = path.read_text(encoding="utf-8").strip()
     if not text:
@@ -337,21 +371,16 @@ def _parse_lm_harness_samples(path: Path, cfg: Config) -> list[dict]:
         if isinstance(rows, dict):
             rows = rows.get("samples", [])
 
-    # task + model inferred from filename: <model>__<task>_samples_<ts>.jsonl
-    stem = path.stem
-    task = stem.split("_samples")[0].split("__")[-1]
-    model_native = stem.split("__")[0] if "__" in stem else "unknown"
+    task, model_native = _lm_harness_task_and_model(path)
     model_id = canonical_model_id(model_native)
     n_choices = _mc_choices(task, cfg)
 
     out: list[dict] = []
     for row in rows:
-        doc = row.get("doc", {})
-        doc_text = (
-            row.get("arguments", [[None]])[0][0]
-            if row.get("arguments")
-            else doc.get("question") or doc.get("query") or json.dumps(doc)
-        )
+        doc = row.get("doc", {}) or {}
+        doc_text = _lm_harness_prompt(row.get("arguments"))
+        if doc_text is None:
+            doc_text = doc.get("question") or doc.get("query") or json.dumps(doc)
         doc_text = render_prompt(doc_text)
         qid = make_query_id(schemas.Source.LM_HARNESS, task, doc_text)
         for metric_key, metric_type in (
@@ -417,8 +446,6 @@ def load_irt_router(cfg: Config) -> pd.DataFrame:
     src = section(cfg, "sources").get("irt_router", {})
     data_dir = cfg.resolve(src.get("local_dir", "data/raw/irt_router")) / "data"
     pool = {str(m) for m in (src.get("pool") or [])}
-    mc_by_task = {str(k): int(v) for k, v in
-                  (section(cfg, "multiple_choice").get("by_task", {}) or {}).items()}
 
     frames: list[pd.DataFrame] = []
     for origin, fname in _IRT_ROUTER_FILES.items():
@@ -429,6 +456,9 @@ def load_irt_router(cfg: Config) -> pd.DataFrame:
                 f"Run: python scripts/data/download_irt_router.py --config <this config>"
             )
         df = pd.read_csv(path)
+        # honour both multiple_choice.by_task and by_prefix, like every other loader
+        mc_by_task = {t: n for t in df["task"].astype(str).unique()
+                      if (n := _mc_choices(t, cfg)) is not None}
         frames.append(_melt_irt_router(df, origin, pool, mc_by_task))
     out = pd.concat(frames, ignore_index=True)
     return schemas.coerce_response_frame(out)
@@ -528,10 +558,25 @@ def load_anchor_judge(cfg: Config) -> pd.DataFrame:
         )
     judgments = pd.read_parquet(path)
     judgments = judgments[~judgments["swapped"]]  # swaps are a noise-floor diagnostic only
+    if "parsed_ok" in judgments.columns:
+        # An unparsed verdict carries margin 0; kept, it would train as a tie.
+        unparsed = ~judgments["parsed_ok"].astype(bool)
+        if unparsed.any():
+            warnings.warn(
+                f"anchor_judge: dropped {int(unparsed.sum())} judgments the judge "
+                f"client could not parse (parsed_ok=False)."
+            )
+            judgments = judgments[~unparsed]
 
+    # ``response_matrix.build_tables`` overwrites the text with the CURRENT
+    # build's in-memory query text; a previous build's queries.parquet is only a
+    # best-effort fallback for standalone use, and its absence is not an error
+    # (a fresh build used to skip this source entirely).
     queries_path = cfg.path("processed") / "queries.parquet"
-    query_text = pd.read_parquet(queries_path, columns=["query_id", "query"]) \
-        .set_index("query_id")["query"]
+    query_text = (
+        pd.read_parquet(queries_path, columns=["query_id", "query"]).set_index("query_id")["query"]
+        if queries_path.exists() else pd.Series(dtype=object)
+    )
 
     records: list[dict] = []
     for row in judgments.itertuples(index=False):

@@ -21,7 +21,10 @@ only produces a :class:`~router.decision.RoutingDecision`.
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, Optional
+
+import numpy as np
 
 from decompose.classifiers.base import ClassificationInput
 from decompose.decomposer import PromptDecomposer
@@ -79,30 +82,75 @@ class RoutingPipeline:
         ``request.constraints.objective``, not also inside ``Router``'s own
         ``lam``-weighted selection (which this deliberately leaves at 0 to
         avoid scoring cost twice).
+
+        ``expected_cost`` is the router's own per-model cost vector
+        (:attr:`~router.routing.base.Router.default_model_costs`, train-mean
+        USD/query) when it has one -- the same scale ``Router.route(lam=...)``
+        trades against -- and falls back to the profile's
+        ``output_cost_per_token`` only when the router carries no cost signal.
+
+        Non-finite scores are dropped (a model with no prediction must never
+        win). Candidates kept by ``UnsupportedCandidatePolicy.SCORE_WITH_PRIOR``
+        are scored with the pool-mean prediction, ``confidence=0`` and
+        ``supported=False``. The hard limits in ``request.constraints``
+        (``min_quality`` / ``max_cost`` / ``max_latency``) are applied to the
+        scored candidates before the policy ranks them.
         """
+        from .routing.base import UnsupportedCandidatePolicy
+
         context = self.build_context(request)
-        candidates = context.candidates or [
-            _StubProfile(m) for m in self.router_model.model_ids
-        ]
-        filtered = self.router_model.filter_candidates(candidates, request.constraints)
-        filtered_ids = {c.model_id for c in filtered}
+        if self.llm_registry is None:
+            # no registry at all -> the router's bare ids are the candidates. An
+            # *empty* registry is a real "no candidates" and must not fall back.
+            context.candidates = [_StubProfile(m) for m in self.router_model.model_ids]
+        filtered = self.router_model.filter_candidates(context.candidates, request.constraints)
 
         result = self.router_model.route_text([request.prompt])
         row = result.score_frame().iloc[0]
-        by_id = {c.model_id: c for c in filtered}
-        scores = [
-            ModelScore(
-                model=by_id[model_id],
-                score=float(value),
-                expected_quality=float(value),
-                expected_cost=getattr(by_id[model_id], "output_cost_per_token", 0.0),
-                confidence=1.0,
-                supported=True,
-            )
-            for model_id, value in row.items()
-            if model_id in filtered_ids
-        ]
+        finite = row[np.isfinite(row.to_numpy(np.float64))]
+        prior = float(finite.mean()) if len(finite) else float("nan")
+        pool_costs = self.router_model.default_model_costs
+        cost_of = (dict(zip(self.router_model.model_ids, map(float, pool_costs)))
+                   if pool_costs is not None else {})
+        with_prior = (self.router_model.unsupported_policy
+                      is UnsupportedCandidatePolicy.SCORE_WITH_PRIOR)
+
+        scores = []
+        for cand in filtered:
+            model_id = cand.model_id
+            if model_id in row.index:
+                value, confidence, supported = float(row[model_id]), 1.0, True
+            elif with_prior:
+                value, confidence, supported = prior, 0.0, False
+            else:
+                continue
+            if not math.isfinite(value):
+                continue
+            scores.append(ModelScore(
+                model=cand,
+                score=value,
+                expected_quality=value,
+                expected_cost=cost_of.get(model_id, getattr(cand, "output_cost_per_token", 0.0)),
+                confidence=confidence,
+                supported=supported,
+            ))
+        scores = _apply_hard_limits(scores, request.constraints)
         return self.routing_policy.decide(context, scores)
+
+
+def _apply_hard_limits(scores: list[ModelScore], constraints) -> list[ModelScore]:
+    """Drop scored candidates that violate ``min_quality`` / ``max_cost`` /
+    ``max_latency``. Applied after scoring because ``min_quality`` needs the
+    prediction; an unset (``None``) limit filters nothing."""
+    min_q = getattr(constraints, "min_quality", None)
+    max_c = getattr(constraints, "max_cost", None)
+    max_l = getattr(constraints, "max_latency", None)
+    return [
+        s for s in scores
+        if (min_q is None or s.expected_quality >= min_q)
+        and (max_c is None or s.expected_cost <= max_c)
+        and (max_l is None or s.expected_latency <= max_l)
+    ]
 
 
 class _StubProfile:

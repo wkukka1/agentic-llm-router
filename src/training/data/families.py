@@ -7,6 +7,7 @@ family key exactly first, then as a substring of the dataset name.
 
 from __future__ import annotations
 
+import re
 from typing import Optional, Sequence
 
 from router.config import Config, section
@@ -18,12 +19,45 @@ def task_family_map(cfg: Config) -> dict[str, str]:
     return {str(name).lower(): family for family, names in fams.items() for name in names}
 
 
+_TOKEN = re.compile(r"[a-z0-9]+")
+
+
+def _find_tokens(needle: list[str], hay: list[str]) -> int:
+    """Start index of ``needle`` as a contiguous run in ``hay``, else -1."""
+    k = len(needle)
+    for i in range(len(hay) - k + 1):
+        if hay[i:i + k] == needle:
+            return i
+    return -1
+
+
 def family_of(dataset: str, fam_map: dict[str, str]) -> Optional[str]:
-    """Family for ``dataset`` -- exact key match first, then substring, else ``None``."""
+    """Family for ``dataset``, independent of the YAML key order.
+
+    1. exact key match;
+    2. a key matching whole tokens of the name (``mmlu`` in
+       ``mmlu-high-school-mathematics``, but ``math`` does NOT match inside
+       ``mathematics``) -- earliest match wins, then the longer key, so a
+       benchmark prefix beats a subject word;
+    3. plain substring fallback, with the same earliest-then-longest rule.
+    """
     d = str(dataset or "").lower()
     if d in fam_map:
         return fam_map[d]
-    return next((fam for key, fam in fam_map.items() if key in d), None)
+    toks = _TOKEN.findall(d)
+    best = None
+    for key, fam in fam_map.items():
+        pos = _find_tokens(_TOKEN.findall(key), toks) if _TOKEN.findall(key) else -1
+        if pos >= 0:
+            cand = (pos, -len(key), fam)
+            best = cand if best is None or cand[:2] < best[:2] else best
+    if best is None:
+        for key, fam in fam_map.items():
+            pos = d.find(key)
+            if pos >= 0:
+                cand = (pos, -len(key), fam)
+                best = cand if best is None or cand[:2] < best[:2] else best
+    return best[2] if best else None
 
 
 def family_labels(

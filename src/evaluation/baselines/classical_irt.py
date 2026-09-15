@@ -15,8 +15,9 @@ comparison honest (see docs/nirt_model.md):
   the held-out cells. This is the matrix-factorisation ceiling: "how much signal
   is in the response matrix if you had an oracle query representation". For
   routing it still needs a subset of the query's responses at inference time.
-* ``protocol="main_effects"`` -- fit ``a_m``, ``b_m`` on the train+val matrix,
-  then predict unseen (test) queries with ``theta_q = 0`` -> ``sigmoid(-b_m)``.
+* ``protocol="main_effects"`` -- fit ``a_m``, ``b_m`` on the train/validation
+  splits other than ``split`` (train+val for the default ``split="test"``),
+  then predict the unseen ``split`` queries with ``theta_q = 0`` -> ``sigmoid(-b_m)``.
   A genuine lower bound: no query information at all.
 
 NIRT's inductive, text-only numbers should sit between the two.
@@ -37,6 +38,8 @@ import pandas as pd
 from router.determinism import seed_everything
 from router.nirt.frames import pivot_qm
 from training.nirt.metrics import prediction_metrics
+
+_SPLITS = ("train", "validation", "test")
 
 
 @dataclass
@@ -94,12 +97,21 @@ def fit_classical_irt(
         held = obs_mask & (rng.random(true.shape) < holdout_frac)
         train_mask = obs_mask & ~held
     elif protocol == "main_effects":
-        fit_sp = obs[obs["split"].isin(["train", "validation"])]
+        if query_ids is not None:
+            raise ValueError("query_ids is only supported with protocol='cell'")
+        if split not in _SPLITS:
+            raise ValueError(f"split must be one of {_SPLITS}, got {split!r}")
+        # fit on the train/validation splits that are NOT being scored -- otherwise
+        # b_m is fit on the very outcomes it's evaluated against
+        fit_splits = [s for s in ("train", "validation") if s != split]
+        fit_sp = obs[obs["split"].isin(fit_splits)]
         eval_sp = obs[obs["split"] == split]
+        if fit_sp.empty:
+            raise ValueError(f"no observations in fit splits {fit_splits} for split={split!r}")
         m_ids = sorted(set(fit_sp["model_id"]) | set(eval_sp["model_id"]))
-        # fit matrix: train+val queries
         fit_df = pivot_qm(fit_sp, "target").reindex(columns=m_ids)
         eval_df = pivot_qm(eval_sp, "target").reindex(columns=m_ids)
+        assert not set(fit_df.index) & set(eval_df.index), "fit and eval queries overlap"
         q_ids = list(fit_df.index) + list(eval_df.index)
         true = np.vstack([fit_df.to_numpy(np.float32), eval_df.to_numpy(np.float32)])
         obs_mask = ~np.isnan(true)

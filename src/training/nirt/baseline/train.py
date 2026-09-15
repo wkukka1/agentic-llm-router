@@ -18,7 +18,7 @@ from typing import Optional
 
 from router.config import Config, load_config
 from router.determinism import seed_everything
-from training.nirt.metrics import prediction_metrics
+from training.nirt.metrics import log_loss, prediction_metrics
 from router.provenance import file_digest
 
 from .checkpoint import load_checkpoint, save_checkpoint
@@ -109,13 +109,22 @@ def fit(
     dims = {"query_dim": tr_arr.query_dim, "profile_dim": tr_arr.profile_dim,
             "relevance_dim": tr_arr.relevance_dim if use_relevance else 0,
             "n_models": len(model_index)}
+    # like relevance (off when relevance_dim == 0): warm-up requested but no
+    # warm-up store at training time -> bake it OFF, or a later eval would blend
+    # neighbour means the model was never trained with
+    if use_warmup and tr_arr.nbr is None:
+        if verbose:
+            print("[phase1] use_warmup requested but no warm-up store -- training without it")
+        use_warmup = False
 
     # bake the resolved ablation + response model into the model cfg so a
     # checkpoint rebuilds the exact same architecture.
+    binary_threshold = float(resp.get("binary_threshold", tr_arr.meta.get("binary_threshold", 0.5)))
     mcfg = {**mcfg, "ablation": {"use_relevance": use_relevance, "use_interaction": use_interaction,
                                  "use_warmup": use_warmup},
             "response_model": resp.get("model", mcfg.get("response_model", "bernoulli")),
-            "response_cfg": resp.get("cfg", mcfg.get("response_cfg", {}))}
+            "response_cfg": {**(resp.get("cfg", mcfg.get("response_cfg", {})) or {}),
+                             "binary_threshold": binary_threshold}}
     cfg["model"] = mcfg
     model = build_baseline_model(
         mcfg, n_models=dims["n_models"], query_dim=dims["query_dim"],
@@ -146,13 +155,19 @@ def fit(
     opt = torch.optim.Adam(model.parameters(), lr=tcfg.lr, weight_decay=tcfg.weight_decay)
     # identifiability regularisers touch only the ability rows we actually fit
     # (a model absent from training gets no gradient -> no cold-start leakage).
+    # free: one theta row per training model. projected: one PRE-sigmoid
+    # W_theta e_m row per distinct training profile -- per model (not weighted
+    # by observation count), and unbounded, so the zero-mean convention is reachable.
     train_rows = torch.unique(tr["ref"]) if model_params == "free" else None
+    train_profiles = (torch.unique(tr["ref"], dim=0).float().to(tcfg.device)
+                      if model_params == "projected" else None)
 
     history: list = []
     best_val, best_epoch, best_state, since = float("inf"), -1, None, 0
     t0 = time.time()
 
-    soft_target = (not bernoulli) or tcfg.target == "soft"
+    # the head declares its target column; train.target: soft is a Bernoulli-only override
+    soft_target = head.target == "soft" or (bernoulli and tcfg.target == "soft")
     for epoch in range(tcfg.epochs):
         model.train()
         running = seen = 0.0
@@ -163,7 +178,8 @@ def fit(
                         nbr.to(tcfg.device) if has_n else None)
             loss = (bce_loss(out.logit, target, pos_weight=pos_weight) if bernoulli
                     else head.loss(target, out.response))
-            theta_all = model.theta.weight[train_rows] if model_params == "free" else out.theta_m
+            theta_all = (model.theta.weight[train_rows] if model_params == "free"
+                         else model.theta_proj(train_profiles))
             reg = regularization(rcfg, theta_all=theta_all, a_q=out.a_q, b_q=out.b_q).to(tcfg.device)
             opt.zero_grad()
             (loss + reg).backward()
@@ -176,8 +192,14 @@ def fit(
 
         val_prob = batched_forward(model, va, device=tcfg.device)["proba"]
         vm = prediction_metrics(va_arr.y, val_prob)
-        val_nll = _mean_nll(model, va, va_arr, device=tcfg.device) if not bernoulli else vm["bce"]
-        stop = vm["bce"] if bernoulli else val_nll
+        if not bernoulli:
+            val_nll = _mean_nll(model, va, va_arr, device=tcfg.device)
+        elif soft_target:
+            # select on the objective actually optimised: soft BCE against y_soft
+            val_nll = log_loss(va_arr.y_soft, val_prob)
+        else:
+            val_nll = vm["bce"]
+        stop = val_nll
         history.append({"epoch": epoch, "train_loss": train_loss, "val_nll": val_nll,
                         **{f"val_{k}": v for k, v in vm.items() if isinstance(v, (int, float))}})
         if verbose:

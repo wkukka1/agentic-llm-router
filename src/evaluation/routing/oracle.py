@@ -41,7 +41,7 @@ from typing import TYPE_CHECKING, Optional, Sequence
 import numpy as np
 import pandas as pd
 
-from router.nirt.routing_decision import routing_decision
+from router.nirt.routing_decision import no_selectable_rows, routing_decision
 
 from ..nirt.routing import oracle_choice
 
@@ -70,8 +70,17 @@ def evaluate_router(
     selected vs oracle quality / cost, and (with ``cost_df``) the cost-aware
     oracle block.
     """
+    model_ids = list(router.model_ids)
+    # reindexing to a model the outcome matrix lacks would add an all-NaN column
+    # and silently turn every regret / hit rate into NaN
+    for name, frame in (("true_df", true_df), ("cost_df", cost_df)):
+        missing = sorted(set(model_ids) - set(frame.columns)) if frame is not None else []
+        if missing:
+            raise ValueError(
+                f"{name} has no column for router pool models {missing}; "
+                "restrict the router's pool or supply their outcomes"
+            )
     scores = router.aligned_scores(list(true_df.index))
-    model_ids = router.model_ids
     true = true_df.reindex(columns=model_ids).to_numpy(np.float64)
     cost = (
         cost_df.reindex(index=true_df.index, columns=model_ids).to_numpy(np.float64)
@@ -94,17 +103,45 @@ def evaluate_router(
 # --------------------------------------------------------------------------- #
 # oracle labels (evaluation-only)                                             #
 # --------------------------------------------------------------------------- #
-def _dense_rank_desc(scores: np.ndarray, tol: float = _TOL) -> np.ndarray:
-    """1-indexed dense rank of ``scores`` (1 = best); tied scores share a rank."""
-    order = np.argsort(-scores, kind="mergesort")
-    ranks = np.empty(len(scores), dtype=np.int64)
-    cur = 0
-    prev = None
-    for pos, idx in enumerate(order):
-        if prev is None or (prev - scores[idx]) > tol:
-            cur += 1
-            prev = scores[idx]
-        ranks[idx] = cur
+def _require_finite(true: np.ndarray, what: str, *, query_ids=None, model_ids=None) -> None:
+    """Raise ``ValueError`` if the outcome matrix has non-finite cells -- the oracle
+    (row max, regret, ranks) is only defined on a dense matrix."""
+    bad = ~np.isfinite(true)
+    if not bad.any():
+        return
+    rows, cols = np.nonzero(bad)
+    sample = [
+        (query_ids[r] if query_ids is not None else int(r),
+         model_ids[c] if model_ids is not None else int(c))
+        for r, c in zip(rows[:5], cols[:5])
+    ]
+    raise ValueError(
+        f"{what}: {int(bad.sum())} non-finite outcome cells, e.g. (query, model) {sample}; "
+        "the oracle needs a dense matrix -- restrict to fully observed queries/models first"
+    )
+
+
+def _dense_ranks_desc(true: np.ndarray, tol: float = _TOL) -> np.ndarray:
+    """``[Q, M]`` 1-indexed dense rank of each row (1 = best).
+
+    Group-anchor ties: a new rank starts when a score is more than ``tol`` below the
+    *first* score of the current rank group (not below the previous sorted score).
+    Vectorised over queries; loops only over the ``M`` columns.
+    """
+    n_q, n_m = true.shape
+    order = np.argsort(-true, axis=1, kind="mergesort")
+    s = np.take_along_axis(true, order, axis=1)
+    rank_sorted = np.ones((n_q, n_m), dtype=np.int64)
+    if n_m:
+        anchor = s[:, 0].copy()
+        rank = np.ones(n_q, dtype=np.int64)
+        for p in range(1, n_m):
+            new = (anchor - s[:, p]) > tol
+            rank += new
+            anchor = np.where(new, s[:, p], anchor)
+            rank_sorted[:, p] = rank
+    ranks = np.empty_like(rank_sorted)
+    np.put_along_axis(ranks, order, rank_sorted, axis=1)
     return ranks
 
 
@@ -126,43 +163,37 @@ def oracle_labels(
     oracle_flag, oracle_rank, oracle_model_id, n_oracle_ties``.
     """
     models = list(true_df.columns)
+    query_ids = list(true_df.index)
     true = true_df.to_numpy(np.float64)
+    _require_finite(true, "oracle_labels", query_ids=query_ids, model_ids=models)
     cost = (
         cost_df.reindex(index=true_df.index, columns=models).to_numpy(np.float64)
         if cost_df is not None else None
     )
+    n_q, n_m = true.shape
     oracle_score = true.max(axis=1)
     flag = (true >= oracle_score[:, None] - tol)
     n_ties = flag.sum(axis=1)
 
-    # deterministic single oracle model: cheapest flagged, then smallest id
-    order_cost = cost if cost is not None else np.zeros_like(true)
-    tiebreak = np.where(flag, order_cost, np.inf)
-    oracle_col = np.empty(len(true), dtype=np.int64)
-    for i in range(len(true)):
-        cands = np.flatnonzero(flag[i])
-        best = cands[np.lexsort(([models[c] for c in cands], tiebreak[i, cands]))[0]]
-        oracle_col[i] = best
-    oracle_model = [models[c] for c in oracle_col]
+    # deterministic single oracle model: max score -> cheapest -> smallest id
+    oracle_col = oracle_choice(
+        true, cost if cost is not None else np.zeros_like(true), tol=tol, model_ids=models,
+    )
+    models_arr = np.asarray(models, dtype=object)
 
-    rows = []
-    for i, qid in enumerate(true_df.index):
-        ranks = _dense_rank_desc(true[i], tol)
-        for j, m in enumerate(models):
-            rec = {
-                "query_id": qid,
-                "model_id": m,
-                "actual_score": float(true[i, j]),
-                "oracle_score": float(oracle_score[i]),
-                "oracle_flag": int(flag[i, j]),
-                "oracle_rank": int(ranks[j]),
-                "oracle_model_id": oracle_model[i],
-                "n_oracle_ties": int(n_ties[i]),
-            }
-            if cost is not None:
-                rec["cost"] = float(cost[i, j])
-            rows.append(rec)
-    return pd.DataFrame(rows)
+    cols = {
+        "query_id": np.repeat(np.asarray(query_ids, dtype=object), n_m),
+        "model_id": np.tile(models_arr, n_q),
+        "actual_score": true.ravel(),
+        "oracle_score": np.repeat(oracle_score, n_m),
+        "oracle_flag": flag.ravel().astype(np.int64),
+        "oracle_rank": _dense_ranks_desc(true, tol).ravel(),
+        "oracle_model_id": np.repeat(models_arr[oracle_col], n_m),
+        "n_oracle_ties": np.repeat(n_ties, n_m).astype(np.int64),
+    }
+    if cost is not None:
+        cols["cost"] = cost.ravel()
+    return pd.DataFrame(cols)
 
 
 def soft_oracle_targets(true_df: pd.DataFrame, tau: float = 0.1) -> pd.DataFrame:
@@ -173,6 +204,21 @@ def soft_oracle_targets(true_df: pd.DataFrame, tau: float = 0.1) -> pd.DataFrame
     w = np.exp(z - z.max(axis=1, keepdims=True))
     return pd.DataFrame(w / w.sum(axis=1, keepdims=True),
                         index=true_df.index, columns=true_df.columns)
+
+
+def _cost_aware_oracle(true: np.ndarray, C, lam: float, eligible: Optional[np.ndarray]):
+    """``U(q, m) = y(q, m) - lam * C(m)`` over the eligible cells (others ``-inf``).
+
+    Returns ``(util, ca_idx, valid)``: ``valid`` marks rows with at least one finite
+    eligible utility -- the only rows a cost-aware oracle is defined on. Shared by
+    the summary and the per-query table so the two can never disagree.
+    """
+    util = true - float(lam) * np.asarray(C, np.float64)[None, :] if lam else true.copy()
+    util = np.where(np.isfinite(util), util, -np.inf)
+    if eligible is not None:
+        util = np.where(np.asarray(eligible, bool), util, -np.inf)
+    valid = ~no_selectable_rows(util)
+    return util, util.argmax(axis=1), valid
 
 
 def _candidate_counts(eligible: Optional[np.ndarray], n_q: int, n_m: int) -> dict:
@@ -213,6 +259,9 @@ def routing_evaluation(
     true = np.asarray(true, np.float64)
     n_q, n_m = true.shape
     model_ids = list(model_ids)
+    _require_finite(true, "routing_evaluation",
+                    query_ids=list(query_ids) if query_ids is not None else None,
+                    model_ids=model_ids)
     qi = np.arange(n_q)
     C = (np.asarray(model_costs, np.float64) if model_costs is not None
          else (cost.mean(axis=0) if cost is not None else None))
@@ -220,7 +269,9 @@ def routing_evaluation(
     selected = routing_decision(pred, lam=lam, model_costs=C, eligible=eligible)
     sel_quality = true[qi, selected]
 
-    o_idx = oracle_choice(true, cost if cost is not None else np.zeros_like(true))
+    o_idx = oracle_choice(
+        true, cost if cost is not None else np.zeros_like(true), model_ids=model_ids,
+    )
     oracle_quality = true.max(axis=1)
     regret = np.maximum(oracle_quality - sel_quality, 0.0)
 
@@ -233,6 +284,9 @@ def routing_evaluation(
         "tolerance": float(tolerance),
         "n_queries": int(n_q),
         "n_candidates": _candidate_counts(eligible, n_q, n_m),
+        "n_queries_no_eligible": (
+            int((~np.asarray(eligible, bool)).all(axis=1).sum()) if eligible is not None else 0
+        ),
         "oracle_hit_rate": hit_exact,
         "oracle_hit_rate_any_best": hit_any_best,
         "mean_regret": float(regret.mean()),
@@ -255,31 +309,43 @@ def routing_evaluation(
         out["mean_selected_cost"] = float(sel_cost.mean())
         out["mean_selected_cost_per_1k"] = float(sel_cost.mean() * 1000)
         # --- cost-aware oracle: U(q, m) = y(q, m) - lam * C(m) ----------------
-        util = true - float(lam) * C[None, :]
-        if eligible is not None:
-            util = np.where(np.asarray(eligible, bool), util, -np.inf)
-        ca_idx = util.argmax(axis=1)
+        # rows with no eligible candidate have no cost-aware oracle: excluded from
+        # every mean (they would be -inf / NaN) and counted instead
+        util, ca_idx, valid = _cost_aware_oracle(true, C, lam, eligible)
+        n_valid = int(valid.sum())
+
+        def _mean(x):
+            return float(np.mean(x[valid])) if n_valid else None
+
         ca_oracle_util = util[qi, ca_idx]
         sel_util = util[qi, selected]
+        with np.errstate(invalid="ignore"):  # -inf - -inf on excluded rows only
+            util_regret = np.maximum(ca_oracle_util - sel_util, 0.0)
+        ca_valid = ca_idx[valid]
         out["cost_aware"] = {
             "lam": float(lam),
+            "n_queries": int(n_q),
+            "n_queries_no_eligible": int(n_q - n_valid),
+            "n_queries_evaluated_cost_aware": n_valid,
             "cost_aware_oracle_model_mix": {
-                model_ids[k]: int((ca_idx == k).sum())
-                for k in range(n_m) if (ca_idx == k).any()
+                model_ids[k]: int((ca_valid == k).sum())
+                for k in range(n_m) if (ca_valid == k).any()
             },
-            "mean_cost_aware_oracle_utility": float(ca_oracle_util.mean()),
-            "mean_selected_utility": float(sel_util.mean()),
-            "mean_utility_regret": float(np.maximum(ca_oracle_util - sel_util, 0.0).mean()),
+            "mean_cost_aware_oracle_utility": _mean(ca_oracle_util),
+            "mean_selected_utility": _mean(sel_util),
+            "mean_utility_regret": _mean(util_regret),
             "quality_oracle_mean_quality": float(oracle_quality.mean()),
             "quality_oracle_mean_cost_per_1k": float(cost[qi, o_idx].mean() * 1000),
-            "cost_aware_oracle_mean_quality": float(true[qi, ca_idx].mean()),
-            "cost_aware_oracle_mean_cost_per_1k": float(cost[qi, ca_idx].mean() * 1000),
+            "cost_aware_oracle_mean_quality": _mean(true[qi, ca_idx]),
+            "cost_aware_oracle_mean_cost_per_1k": (
+                float(cost[qi, ca_idx][valid].mean() * 1000) if n_valid else None
+            ),
         }
 
     if query_ids is not None:
         out["_per_query"] = per_query_table(
             pred, true, cost, model_ids, list(query_ids), selected, o_idx,
-            lam=lam, model_costs=C,
+            lam=lam, model_costs=C, eligible=eligible,
         )
     return out
 
@@ -295,8 +361,13 @@ def per_query_table(
     *,
     lam: float = 0.0,
     model_costs: Optional[np.ndarray] = None,
+    eligible: Optional[np.ndarray] = None,
 ) -> pd.DataFrame:
-    """One row per query: what the router picked, what the oracle picked, the gap."""
+    """One row per query: what the router picked, what the oracle picked, the gap.
+
+    The cost-aware oracle columns apply the same ``eligible`` mask as
+    :func:`routing_evaluation`'s summary; rows with no eligible candidate get
+    ``has_eligible_candidate = 0`` and no cost-aware oracle (``None`` / NaN)."""
     model_ids = list(model_ids)
     qi = np.arange(len(query_ids))
     true = np.asarray(true, np.float64)
@@ -317,12 +388,13 @@ def per_query_table(
         cost = np.asarray(cost, np.float64)
         rows["selected_cost"] = cost[qi, selected]
         if model_costs is not None:
-            C = np.asarray(model_costs, np.float64)
-            util = true - float(lam) * C[None, :]
-            ca_idx = util.argmax(axis=1)
-            rows["cost_aware_oracle_model_id"] = [model_ids[k] for k in ca_idx]
-            rows["selected_utility"] = util[qi, selected]
-            rows["cost_aware_oracle_utility"] = util[qi, ca_idx]
+            util, ca_idx, valid = _cost_aware_oracle(true, model_costs, lam, eligible)
+            rows["has_eligible_candidate"] = valid.astype(int)
+            rows["cost_aware_oracle_model_id"] = [
+                model_ids[k] if ok else None for k, ok in zip(ca_idx, valid)
+            ]
+            rows["selected_utility"] = np.where(valid, util[qi, selected], np.nan)
+            rows["cost_aware_oracle_utility"] = np.where(valid, util[qi, ca_idx], np.nan)
     return pd.DataFrame(rows)
 
 
@@ -465,18 +537,33 @@ def oracle_classifier_matrix(
     eval_q_emb: np.ndarray,
     model_ids: Sequence[str],
     *,
+    train_cost_df: Optional[pd.DataFrame] = None,
     seed: int = 42,
 ) -> np.ndarray:
     """A separate baseline: multinomial logistic regression that predicts the
-    oracle model id from the query embedding, trained **only on the train split**
-    (labels = ``argmax_m y_train(q, m)``). Returns an ``[Q_eval, M]``
-    class-probability matrix that slots straight into ``routing_evaluation`` /
-    ``compare_routing_strategies``. This is NOT the NIRT response model.
+    oracle model id from the query embedding, trained **only on the train split**.
+    Returns an ``[Q_eval, M]`` class-probability matrix that slots straight into
+    ``routing_evaluation`` / ``compare_routing_strategies``. This is NOT the NIRT
+    response model.
+
+    Label = the model with the max **observed** train score. Among tied models
+    only, the cheapest (``train_cost_df``) wins, then the smallest ``model_id`` --
+    the same rule the evaluated oracle uses (:func:`oracle_choice` with
+    ``model_ids``). Cost never trades off against score here: no ``lam``, not a
+    cost-sensitive utility oracle. Labels therefore don't depend on pool order.
     """
     from sklearn.linear_model import LogisticRegression
 
     model_ids = list(model_ids)
-    y_train = train_true_df.reindex(columns=model_ids).to_numpy(np.float64).argmax(axis=1)
+    tr_true_df = train_true_df.reindex(columns=model_ids)
+    tr_true = tr_true_df.to_numpy(np.float64)
+    _require_finite(tr_true, "oracle_classifier_matrix (train)",
+                    query_ids=list(tr_true_df.index), model_ids=model_ids)
+    tr_cost = (
+        train_cost_df.reindex(index=tr_true_df.index, columns=model_ids).to_numpy(np.float64)
+        if train_cost_df is not None else np.zeros_like(tr_true)
+    )
+    y_train = oracle_choice(tr_true, tr_cost, model_ids=model_ids)
     clf = LogisticRegression(max_iter=1000, random_state=seed)
     clf.fit(np.asarray(train_q_emb, np.float64), y_train)
 

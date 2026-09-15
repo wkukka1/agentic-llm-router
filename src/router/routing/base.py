@@ -36,13 +36,14 @@ from __future__ import annotations
 
 import abc
 import enum
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Mapping, Optional, Sequence
 
 import numpy as np
 import pandas as pd
 
-from ..nirt.routing_decision import routing_decision
+from ..nirt.routing_decision import no_selectable_rows, routing_decision
 
 if TYPE_CHECKING:  # pragma: no cover - type hints only, not a runtime import
     from ..constraints import RoutingConstraints
@@ -70,6 +71,12 @@ class RoutingResult:
     ``scores`` is the dense ``[Q x M]`` predicted-quality matrix the decision was
     made from (rows = ``query_ids``, cols = ``model_ids``); ``selected`` is the
     per-query column index that was picked.
+
+    ``fallback`` flags rows where nothing was selectable (no finite score, or
+    an all-False ``eligible`` row). Their ``selected`` is column 0 by
+    convention; it is *not* a real choice and may even be an ineligible model,
+    so callers must check this before dispatching. ``lam`` is the cost weight
+    actually applied (``0`` when no cost vector resolved).
     """
 
     query_ids: list[str]
@@ -78,6 +85,11 @@ class RoutingResult:
     selected: np.ndarray
     lam: float = 0.0
     model_costs: Optional[np.ndarray] = None
+    fallback: Optional[np.ndarray] = None
+
+    @property
+    def any_fallback(self) -> bool:
+        return self.fallback is not None and bool(np.asarray(self.fallback).any())
 
     @property
     def selected_model_ids(self) -> list[str]:
@@ -115,20 +127,27 @@ def _resolve_costs(
     costs: Optional[Sequence[float] | Mapping[str, float] | np.ndarray],
     model_ids: Sequence[str],
 ) -> Optional[np.ndarray]:
-    """Coerce a per-model cost spec to a length-``M`` vector in ``model_ids`` order."""
+    """Coerce a per-model cost spec to a length-``M`` vector in ``model_ids`` order.
+
+    Non-finite entries are rejected: a NaN cost makes that model's utility NaN,
+    which ``argmax`` would pick whenever ``lam > 0``."""
     if costs is None:
         return None
     if isinstance(costs, Mapping):
         missing = [m for m in model_ids if m not in costs]
         if missing:
             raise KeyError(f"model_costs is missing entries for {missing}")
-        return np.array([float(costs[m]) for m in model_ids], dtype=np.float64)
-    arr = np.asarray(costs, dtype=np.float64).ravel()
-    if arr.shape != (len(model_ids),):
-        raise ValueError(
-            f"model_costs has length {arr.shape[0]}, expected {len(model_ids)} "
-            f"(one per model, in model_ids order)"
-        )
+        arr = np.array([float(costs[m]) for m in model_ids], dtype=np.float64)
+    else:
+        arr = np.asarray(costs, dtype=np.float64).ravel()
+        if arr.shape != (len(model_ids),):
+            raise ValueError(
+                f"model_costs has length {arr.shape[0]}, expected {len(model_ids)} "
+                f"(one per model, in model_ids order)"
+            )
+    bad = [m for m, c in zip(model_ids, arr) if not np.isfinite(c)]
+    if bad:
+        raise ValueError(f"model_costs must be finite; non-finite for {bad}")
     return arr
 
 
@@ -153,9 +172,10 @@ class Router(abc.ABC):
 
     def __init__(self, model_ids: Sequence[str], *, name: Optional[str] = None,
                  unsupported_policy: UnsupportedCandidatePolicy = UnsupportedCandidatePolicy.DROP):
-        if not len(list(model_ids)):
+        ids = [str(m) for m in model_ids]   # materialise once: may be an iterator
+        if not ids:
             raise ValueError("a router needs a non-empty candidate pool")
-        self._model_ids = [str(m) for m in model_ids]
+        self._model_ids = ids
         self.name = name or self.kind
         self.unsupported_policy = unsupported_policy
 
@@ -187,8 +207,8 @@ class Router(abc.ABC):
                     raise ValueError(f"{model_id!r} is not a supported candidate for {self.name!r}")
                 if self.unsupported_policy is UnsupportedCandidatePolicy.DROP:
                     continue
-                # SCORE_WITH_PRIOR: kept, scored later with whatever prior predict_scores gives an
-                # unseen column (typically NaN -> excluded by routing_decision's -inf fallback).
+                # SCORE_WITH_PRIOR: kept. Router.route can't score a column outside the pool;
+                # RoutingPipeline.route gives it the pool-mean prediction with confidence 0.
             if required and not required.issubset(set(getattr(c, "capabilities", []) or [])):
                 continue
             out.append(c)
@@ -263,12 +283,25 @@ class Router(abc.ABC):
             if model_costs is not None
             else self.default_model_costs
         )
+        if lam and costs is None:
+            warnings.warn(
+                f"{self.name}: lam={lam} requested but no model cost vector resolved; "
+                "routing on quality only (RoutingResult.lam records 0.0)",
+                stacklevel=3,
+            )
+            lam = 0.0
         elig = eligible
         if isinstance(eligible, pd.DataFrame):
-            elig = eligible.reindex(index=scores.index, columns=self._model_ids).to_numpy(bool)
+            # missing cells fail closed (reindex would insert NaN -> bool True)
+            arr = eligible.reindex(index=scores.index, columns=self._model_ids,
+                                   fill_value=False).to_numpy()
+            elig = np.where(pd.isna(arr), False, arr).astype(bool)
 
         mat = scores.to_numpy(np.float64)
         selected = routing_decision(mat, lam=lam, model_costs=costs, eligible=elig)
+        util = np.where(np.isfinite(mat), 0.0, -np.inf)
+        if elig is not None:
+            util = np.where(np.asarray(elig, bool), util, -np.inf)
         return RoutingResult(
             query_ids=[str(q) for q in scores.index],
             model_ids=self.model_ids,
@@ -276,6 +309,7 @@ class Router(abc.ABC):
             selected=selected,
             lam=float(lam),
             model_costs=costs,
+            fallback=no_selectable_rows(util),
         )
 
     def route(

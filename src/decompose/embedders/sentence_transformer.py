@@ -28,8 +28,8 @@ class SentenceEmbedder(Embedder):
     def dimension(self) -> int:
         return self._encoder.dim
 
-    def embed(self, text: str) -> np.ndarray:
-        return self._encoder.encode([text])[0]
+    def embed(self, text: str) -> list[float]:
+        return self._encoder.encode([text])[0].tolist()
     
     def embed_batch(self, texts: list[str]) -> list[np.ndarray]:
         return self._encoder.encode(texts)

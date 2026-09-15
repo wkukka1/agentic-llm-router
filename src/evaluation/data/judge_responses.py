@@ -10,27 +10,48 @@ pipeline, this module reads the raw pickle directly and reconstructs
 (``make_query_id(Source.ROUTERBENCH, eval_name, query)`` +
 ``canonical_model_id(native_model)``), so ids are byte-identical to
 ``responses.parquet`` / ``nirt_observations.parquet`` and join 1:1.
+
+RouterBench repeats a few prompts verbatim. The response matrix averages their
+scores (``collapse_duplicate_observations``), so no single response text
+matches the gold label -- those (query_id, model_id) pairs are dropped here.
 """
 
 from __future__ import annotations
+
+import ast
+import warnings
 
 import pandas as pd
 
 from training.data import schemas
 from training.data.model_registry import canonical_model_id
-from training.data.normalize import make_query_id, render_prompt
+from training.data.normalize import make_query_id, render_prompt, sanitize_text
 
 _META_COLS = {"sample_id", "prompt", "eval_name", "oracle_model_to_route_to"}
+_KEY = ["query_id", "model_id"]
 
 
-def load_routerbench_response_text(cfg, *, shot: str = "0shot") -> pd.DataFrame:
-    """One row per (query_id, model_id): the model's raw generated answer text.
+def _render_response(raw: object) -> str:
+    """Unwrap RouterBench's ``str(list[str])`` response storage.
 
-    Only the 0-shot pathway is supported (the anchor-judge pipeline samples
-    from 0-shot-only queries, per ``router.cli.zeroshot_only``) -- ``shot``
-    is accepted for forward compatibility but non-"0shot" values raise until
-    there's an actual caller.
+    Unlike ``render_prompt``, only a list whose elements are all ``str`` is
+    unwrapped, so an answer that is itself a list literal (``"[1, 2, 3]"``) is
+    kept verbatim; any parse failure (including deep nesting) falls back to the
+    raw text.
     """
+    s = str(raw)
+    if len(s) >= 2 and s[0] == "[" and s[-1] == "]":
+        try:
+            parsed = ast.literal_eval(s)
+        except Exception:
+            parsed = None
+        if isinstance(parsed, (list, tuple)) and all(isinstance(t, str) for t in parsed):
+            return sanitize_text("\n\n".join(parsed))
+    return sanitize_text(s)
+
+
+def _load_all_rows(cfg, shot: str) -> pd.DataFrame:
+    """Every raw (query_id, model_id, response_text) row, duplicates included."""
     if shot != "0shot":
         raise NotImplementedError(
             f"load_routerbench_response_text only supports shot='0shot' today, got {shot!r}"
@@ -64,15 +85,45 @@ def load_routerbench_response_text(cfg, *, shot: str = "0shot") -> pd.DataFrame:
         resp_col = f"{m}|model_response"
         if resp_col not in wide.columns:
             continue
-        text = wide[resp_col].map(render_prompt)
         frames.append(pd.DataFrame({
             "query_id": query_id,
             "model_id": canonical_model_id(m),
-            "response_text": text,
+            "response_text": wide[resp_col].map(_render_response),
         }))
     if not frames:
         return pd.DataFrame(columns=["query_id", "model_id", "response_text"])
     return pd.concat(frames, ignore_index=True)
+
+
+def load_routerbench_response_text(cfg, *, shot: str = "0shot") -> pd.DataFrame:
+    """One row per (query_id, model_id): the model's raw generated answer text.
+
+    Pairs that occur more than once (duplicate prompts) are dropped entirely;
+    see :func:`duplicated_routerbench_query_ids`.
+
+    Only the 0-shot pathway is supported (the anchor-judge pipeline samples
+    from 0-shot-only queries, per ``router.cli.zeroshot_only``) -- ``shot``
+    is accepted for forward compatibility but non-"0shot" values raise until
+    there's an actual caller.
+    """
+    df = _load_all_rows(cfg, shot)
+    dup = df.duplicated(_KEY, keep=False)
+    if dup.any():
+        n_pairs = df.loc[dup, _KEY].drop_duplicates().shape[0]
+        warnings.warn(
+            f"dropped {n_pairs} (query_id, model_id) pairs with duplicate RouterBench prompts "
+            f"({df.loc[dup, 'query_id'].nunique()} queries): their gold score is an average "
+            f"that matches no single response text",
+            stacklevel=2,
+        )
+        df = df[~dup].reset_index(drop=True)
+    return df
+
+
+def duplicated_routerbench_query_ids(cfg, *, shot: str = "0shot") -> set[str]:
+    """Query ids whose response text :func:`load_routerbench_response_text` drops."""
+    df = _load_all_rows(cfg, shot)
+    return set(df.loc[df.duplicated(_KEY, keep=False), "query_id"])
 
 
 def response_text_lookup(

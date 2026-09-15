@@ -35,8 +35,10 @@ class WarmupBlender(nn.Module):
         super().__init__()
         self.enabled = bool(enabled)
         self.learnable = bool(learnable)
-        a = min(max(float(alpha), 1e-3), 1 - 1e-3)
+        if not 0.0 <= float(alpha) <= 1.0:
+            raise ValueError(f"warm-up alpha must be in [0, 1], got {alpha}")
         if learnable:
+            a = min(max(float(alpha), 1e-3), 1 - 1e-3)   # logit needs the open interval
             self._alpha_logit = nn.Parameter(torch.logit(torch.tensor(a)))
         else:
             self.register_buffer("_alpha", torch.tensor(float(alpha)))

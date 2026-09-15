@@ -31,6 +31,7 @@ tensor of model indices (``model_params="free"``); plus ``predict_proba``,
 
 from __future__ import annotations
 
+import warnings
 from typing import Optional, Union
 
 import numpy as np
@@ -47,6 +48,16 @@ HEAD_NORMS = ("none", "layernorm")
 HEAD_ACTIVATIONS = ("relu", "gelu")
 
 _ACT = {"relu": nn.ReLU, "gelu": nn.GELU}
+
+# NIRTModel keys IRTRouterModel does not read -> "value means the default".
+_NIRT_ONLY_KNOBS = {
+    "difficulty": lambda v: v in (None, "", "scalar"),
+    "model_hidden": lambda v: coerce_hidden(v) is None,
+    "interaction": lambda v: not v,
+    "interaction_hidden": lambda v: True,        # only meaningful with interaction
+    "center_discrimination": lambda v: not v,
+    "query_head_batchnorm": lambda v: not v,
+}
 
 
 class _MLPHead(nn.Module):
@@ -174,6 +185,10 @@ class NIRTModel(nn.Module):
         self.interaction_hidden = int(interaction_hidden)
         self.center_discrimination = bool(center_discrimination)
         self.query_head_batchnorm = bool(query_head_batchnorm)
+        # projected-mode centring reference set at inference
+        # (set_discrimination_reference); a plain attribute, not a buffer, so
+        # state_dicts are unchanged
+        self._a_ref: Optional[torch.Tensor] = None
         b_dim = self.dim if difficulty == "vector" else 1
 
         # -- query head: e_q -> theta_q in R^K -------------------------------
@@ -254,8 +269,38 @@ class NIRTModel(nn.Module):
         """``theta_q`` for a batch of query embeddings -> ``(B, K)``."""
         theta = self.query_head(e_q)
         if self.query_head_batchnorm:
-            theta = self.query_bn(theta)
+            if self.training and theta.shape[0] == 1:
+                # batch statistics are undefined for one row (BatchNorm1d raises);
+                # normalise with the running statistics instead
+                bn = self.query_bn
+                theta = F.batch_norm(theta, bn.running_mean, bn.running_var,
+                                     training=False, eps=bn.eps)
+            else:
+                theta = self.query_bn(theta)
         return theta
+
+    @torch.no_grad()
+    def set_discrimination_reference(
+        self, profile_embeddings: Optional[Union[torch.Tensor, np.ndarray]]
+    ) -> None:
+        """Fix the projected-mode centring reference ``r`` to the mean
+        discrimination over a *candidate pool* (``(M, profile_dim)`` profile
+        embeddings), or clear it with ``None``.
+
+        Without it, projected mode centres on the mean of whatever rows share
+        the forward call, so inference depends on batch boundaries (and a
+        one-model batch centres every ``a_m`` to zero). Only
+        ``center_discrimination`` + ``projected`` models use it; training
+        leaves it unset (per-query batches are exact there)."""
+        if profile_embeddings is None or self.model_params != "projected":
+            self._a_ref = None
+            return
+        w = next(self.a_head.parameters())
+        ref = torch.as_tensor(np.asarray(profile_embeddings), dtype=w.dtype, device=w.device)
+        a = self.a_head(ref)
+        if self.constrain_discrimination:
+            a = F.softplus(a)
+        self._a_ref = a.mean(0, keepdim=True)
 
     def _center_discrimination(self, a: torch.Tensor) -> torch.Tensor:
         """Subtract a reference vector ``r`` from every ``a_m`` before ranking.
@@ -270,14 +315,17 @@ class NIRTModel(nn.Module):
         (``self.a.weight``, post-constraint), independent of which models
         appear in this particular forward call -- required so two separate
         calls scoring different candidates still use the same ``r``.
-        ``projected`` mode: no fixed pool exists on the model itself, so
-        ``r`` = mean over the CURRENT batch. Exact when the batch is one
-        query's full candidate set (``train.sampler: query``); a converged
+        ``projected`` mode: the pool reference from
+        :meth:`set_discrimination_reference` when one is set (inference);
+        otherwise ``r`` = mean over the CURRENT batch. Exact when the batch is
+        one query's full candidate set (``train.sampler: query``); a converged
         approximation otherwise (see docs on the P7b centering ablation).
         """
         if self.model_params == "free":
             raw = self.a.weight
             r = (F.softplus(raw) if self.constrain_discrimination else raw).mean(0, keepdim=True)
+        elif self._a_ref is not None:
+            r = self._a_ref
         else:
             r = a.mean(0, keepdim=True)
         return a - r
@@ -311,9 +359,16 @@ class NIRTModel(nn.Module):
         self,
         e_q: torch.Tensor,
         model_ref: Union[torch.Tensor, np.ndarray],
+        *,
+        theta: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        """Logit of ``P(correct)`` -> ``(B,)``. Apply ``sigmoid`` for a probability."""
-        theta = self.latent_query(e_q)              # (B, K)
+        """Logit of ``P(correct)`` -> ``(B,)``. Apply ``sigmoid`` for a probability.
+
+        ``theta`` (an already-computed ``latent_query(e_q)``) lets a trainer that
+        also needs ``theta_q`` run the query head once -- one BatchNorm update and
+        one dropout mask per step."""
+        if theta is None:
+            theta = self.latent_query(e_q)          # (B, K)
         a, b = self.model_parameters(model_ref)     # (B, K), (B,) or (B, K)
         if self.difficulty == "vector":
             base = (a * (theta - b)).sum(-1)
@@ -381,6 +436,20 @@ class IRTRouterModel(nn.Module):
     def from_config(cls, model_cfg: dict, *, n_models: int,
                     query_dim: int = 768, profile_dim: int = 768) -> "IRTRouterModel":
         dim = int(model_cfg.get("dim", 1))
+        ignored = [k for k, is_default in _NIRT_ONLY_KNOBS.items()
+                   if k in model_cfg and not is_default(model_cfg[k])]
+        if ignored:
+            warnings.warn(
+                f"orientation=model_latent ignores NIRT-only model keys {ignored}; "
+                "this run trains the plain IRT-Router model",
+                stacklevel=2,
+            )
+        if model_cfg.get("model_params", "projected") == "free" and "bound_ability" in model_cfg:
+            warnings.warn(
+                "bound_ability has no effect with model_params=free (free-mode "
+                "ability is an unbounded embedding, as in the paper's M-IRT)",
+                stacklevel=2,
+            )
         return cls(
             query_dim=query_dim,
             dim=dim,
@@ -396,7 +465,11 @@ class IRTRouterModel(nn.Module):
         )
 
     def latent_ability(self, model_ref: Union[torch.Tensor, np.ndarray]) -> torch.Tensor:
-        """``theta_m`` for a batch -> ``(B, K)``."""
+        """``theta_m`` for a batch -> ``(B, K)``.
+
+        ``bound_ability`` (sigmoid) applies to ``projected`` mode only; ``free``
+        mode keeps the unbounded embedding (paper M-IRT) whatever the flag says,
+        so saved free-mode runs score unchanged."""
         if self.model_params == "projected":
             theta = self.theta_head(model_ref)
             return torch.sigmoid(theta) if self.bound_ability else theta

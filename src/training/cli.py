@@ -44,16 +44,44 @@ def resolve(path: str | Path, root: str | Path | None = None) -> Path:
     return p if p.is_absolute() else Path(root or REPO_ROOT) / p
 
 
+def json_default(obj: Any) -> Any:
+    """``json.dumps(default=...)`` hook that keeps numpy ints/bools as ints/bools.
+
+    ``default=float`` turned ``np.int64`` counts into ``12.0`` and raised on
+    arrays / paths; this maps each type to its natural JSON counterpart.
+    """
+    import numpy as np
+
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, Path):
+        return str(obj)
+    if hasattr(obj, "isoformat"):  # datetime / pd.Timestamp
+        return obj.isoformat()
+    try:
+        return float(obj)
+    except (TypeError, ValueError):
+        return str(obj)
+
+
 def write_json(path: str | Path, payload: Any, *, root: str | Path | None = None,
                announce: bool = True) -> Path:
-    """Write ``payload`` as pretty JSON (``default=float``), making parent dirs.
+    """Write ``payload`` as pretty JSON (numpy-aware, see :func:`json_default`),
+    making parent dirs.
 
-    The ``mkdir`` + ``json.dumps(..., indent=2, default=float)`` + ``print("wrote
-    ...")`` dance that ~11 scripts + the pool-expansion battery each carried.
+    The ``mkdir`` + ``json.dumps(..., indent=2)`` + ``print("wrote ...")`` dance
+    that ~11 scripts + the pool-expansion battery each carried.
     """
     out = resolve(path, root)
+    text = json.dumps(payload, indent=2, default=json_default)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(payload, indent=2, default=float), encoding="utf-8")
+    out.write_text(text, encoding="utf-8")
     if announce:
         print(f"wrote {out}")
     return out

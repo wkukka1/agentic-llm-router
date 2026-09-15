@@ -13,8 +13,15 @@ The corrected score rescales the range ``[c, 1]`` onto ``[0, 1]``::
 
 optionally clipped to ``[0, 1]`` (``chance_correction.clip``). This is the
 standard "corrected for guessing" / "adjusted accuracy" rescaling: a model at
-pure chance maps to 0, a perfect model maps to 1, and a graded score in between
-is shifted down by the expected contribution of random guessing.
+pure chance maps to 0 *on average*, a perfect model maps to 1, and a graded
+score in between is shifted down by the expected contribution of random guessing.
+
+Caveat (``clip: true``): the transform is applied per observation, so on a
+*binary* 0/1 score it is the identity -- ``0 -> -c/(1-c) -> clipped 0`` and
+``1 -> 1``. For binary MC items ``score_effective == score`` and the adjustment
+only has an effect on graded scores. Use ``clip: false`` to keep the negative
+corrected targets (the per-observation mean is then chance-corrected, but the
+target leaves ``[0, 1]`` and is no longer a valid Bernoulli / Beta label).
 
 Interpretation: ``corrected`` estimates the probability that the model *knew*
 the answer, under the crude assumption that non-knowledge yields a uniform

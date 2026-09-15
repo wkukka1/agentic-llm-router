@@ -12,6 +12,7 @@ constructs a concrete ``RoutingPolicy`` yet; :meth:`decide` and
 from __future__ import annotations
 
 import abc
+import math
 from typing import TYPE_CHECKING
 
 from .decision import DecisionDestination, RoutingDecision
@@ -57,7 +58,12 @@ class DefaultRoutingPolicy(RoutingPolicy):
 
     def decide(self, context: "RoutingContext", scores: list["ModelScore"]) -> RoutingDecision:
         objective = context.request.constraints.objective
-        ranked = sorted(scores, key=objective.utility, reverse=True)
+
+        def key(score: "ModelScore") -> float:
+            u = float(objective.utility(score))
+            return u if math.isfinite(u) else -math.inf
+
+        ranked = sorted(scores, key=key, reverse=True)
         top = ranked[0] if ranked else None
         return RoutingDecision(
             request_id=context.request.request_id,

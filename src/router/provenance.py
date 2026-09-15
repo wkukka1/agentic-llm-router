@@ -13,14 +13,19 @@ import subprocess
 from pathlib import Path
 from typing import Iterable, Mapping, Optional
 
+from .config import REPO_ROOT
+
 
 def git_sha(cwd: Optional[str | Path] = None) -> Optional[str]:
-    """``HEAD`` commit sha, or ``None`` outside a git checkout."""
+    """``HEAD`` commit sha, or ``None`` outside a git checkout.
+
+    ``cwd`` defaults to this repo's root, not the process working directory,
+    so a run launched from elsewhere still records the right commit."""
     try:
         out = subprocess.check_output(
             ["git", "rev-parse", "HEAD"],
             stderr=subprocess.DEVNULL,
-            cwd=str(cwd) if cwd is not None else None,
+            cwd=str(cwd if cwd is not None else REPO_ROOT),
         )
         return out.decode().strip()
     except Exception:  # pragma: no cover - defensive
@@ -28,12 +33,13 @@ def git_sha(cwd: Optional[str | Path] = None) -> Optional[str]:
 
 
 def git_dirty(cwd: Optional[str | Path] = None) -> Optional[bool]:
-    """``True`` if the working tree has uncommitted changes, ``None`` if unknown."""
+    """``True`` if the working tree has uncommitted changes, ``None`` if unknown.
+    ``cwd`` defaults to the repo root (see :func:`git_sha`)."""
     try:
         out = subprocess.check_output(
             ["git", "status", "--porcelain"],
             stderr=subprocess.DEVNULL,
-            cwd=str(cwd) if cwd is not None else None,
+            cwd=str(cwd if cwd is not None else REPO_ROOT),
         )
         return bool(out.decode().strip())
     except Exception:  # pragma: no cover - defensive
@@ -46,7 +52,9 @@ def file_digest(path: str | Path, *, algo: str = "sha256", n: int = 16) -> Optio
     if not p.exists():
         return None
     h = hashlib.new(algo)
-    h.update(p.read_bytes())
+    with open(p, "rb") as fh:           # streamed: artifacts can be GBs
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
     return h.hexdigest()[:n]
 
 

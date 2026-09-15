@@ -17,16 +17,29 @@ eagerly load torch + every response head.
 The frozen Bernoulli / continuous-response control arm (training-only) lives
 under ``training.nirt.baseline``.
 
-A few common entry points are re-exported here for convenience:
+A few common entry points are re-exported here for convenience, resolved
+lazily (PEP 562) so ``import router.nirt.routing_decision`` -- which
+``router.routing`` needs -- does not import torch:
 
 * :func:`router.nirt.model.build_model` -- build the model for a config.
 * :func:`router.nirt.checkpoint.load_run` -- load a saved run for inference.
 """
 
-from .checkpoint import load_run
-from .model import build_model
+from __future__ import annotations
 
 __all__ = [
     "build_model",
     "load_run",
 ]
+
+
+def __getattr__(name: str):
+    if name == "build_model":
+        from .model import build_model
+
+        return build_model
+    if name == "load_run":
+        from .checkpoint import load_run
+
+        return load_run
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

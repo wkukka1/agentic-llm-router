@@ -122,13 +122,33 @@ def cluster_embeddings(embeddings, config: ClusterConfig, *, ids=None) -> Cluste
 # --------------------------------------------------------------------------- #
 # build / persist                                                             #
 # --------------------------------------------------------------------------- #
+def _nirt_query_source(cfg: Config) -> str:
+    p = cfg.path("processed") / "nirt_observations.parquet"
+    return "nirt_observations.parquet" if p.exists() else "queries.parquet"
+
+
 def _nirt_query_ids(cfg: Config) -> list:
-    """Query ids carrying a NIRT correctness observation; falls back to all queries."""
+    """Query ids carrying a NIRT correctness observation; falls back to all queries
+    (with a warning -- the taxonomy then depends on build order)."""
+    import warnings
+
     import pandas as pd
 
-    p = cfg.path("processed") / "nirt_observations.parquet"
-    col = "nirt_observations.parquet" if p.exists() else "queries.parquet"
+    col = _nirt_query_source(cfg)
+    if col == "queries.parquet":
+        warnings.warn(
+            "nirt_observations.parquet not built: clustering EVERY query, including "
+            "pairwise-only prompts with no correctness label. Build the NIRT "
+            "observation table first (scripts/data/build_nirt_dataset.py)."
+        )
     return sorted(pd.read_parquet(cfg.path("processed") / col, columns=["query_id"])["query_id"].unique())
+
+
+def centroids_fingerprint(centroids: np.ndarray) -> str:
+    import hashlib
+
+    c = np.ascontiguousarray(np.asarray(centroids, dtype=np.float32))
+    return hashlib.sha1(str(c.shape).encode() + c.tobytes()).hexdigest()[:16]
 
 
 def build_clusters(cfg: Config, *, pathway=None, query_ids=None, config: Optional[ClusterConfig] = None,
@@ -141,17 +161,20 @@ def build_clusters(cfg: Config, *, pathway=None, query_ids=None, config: Optiona
         raise FileNotFoundError(
             f"query embeddings for pathway '{config.pathway}' not built ({store_dir})")
     store = EmbeddingStore.load(store_dir)
+    source = "explicit" if query_ids else _nirt_query_source(cfg)
     ids = [q for q in (query_ids or _nirt_query_ids(cfg)) if q in store]
     if not ids:
         raise ValueError("no query ids present in the embedding store")
 
     result = cluster_embeddings(store.gather(ids), config, ids=ids)
     if save:
-        write_clusters(result, cfg, store_fingerprint=store.manifest.get("ids_fingerprint"))
+        write_clusters(result, cfg, store_fingerprint=store.manifest.get("ids_fingerprint"),
+                       query_source=source)
     return result
 
 
-def write_clusters(result: ClusterResult, cfg: Config, *, store_fingerprint=None) -> Path:
+def write_clusters(result: ClusterResult, cfg: Config, *, store_fingerprint=None,
+                   query_source: Optional[str] = None) -> Path:
     import pandas as pd
 
     out = cfg.path("taxonomy")
@@ -164,6 +187,8 @@ def write_clusters(result: ClusterResult, cfg: Config, *, store_fingerprint=None
     (out / META_FILE).write_text(json.dumps({
         "method": "umap_hdbscan", "pathway": result.config.pathway,
         "config": result.config.to_dict(), "query_embeddings_fingerprint": store_fingerprint,
+        "query_source": query_source,
+        "centroids_fingerprint": centroids_fingerprint(result.centroids),
         "taxonomy_version": int(cfg.get("taxonomy.version", 1)),
         **result.summary(), **result.extra,
     }, indent=2), encoding="utf-8")

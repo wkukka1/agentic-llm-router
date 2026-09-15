@@ -8,23 +8,18 @@ is not implemented.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Iterator
 
 from ..client import LLMResponse
-from .base import ProviderAdapter
+from .base import Prompt, ProviderAdapter
 
 
 class OpenAIAdapter(ProviderAdapter):
-    def __init__(self, model: str, *, api_key: Optional[str] = None, **client_kwargs):
-        self.model = model
-        self.api_key = api_key
-        self.client_kwargs = client_kwargs
-
-    def complete(self, prompt: str) -> LLMResponse:
+    def complete(self, prompt: Prompt, **generation_kwargs) -> LLMResponse:
         raise NotImplementedError(
             "OpenAIAdapter is a structural stub -- wire up the `openai` SDK here. "
             "For a working call today, use router.agentic.llm_clients.LangChainClient."
         )
 
-    def stream(self, prompt: str) -> LLMResponse:
+    def stream(self, prompt: Prompt, **generation_kwargs) -> Iterator[str]:
         raise NotImplementedError("OpenAIAdapter.stream is a structural stub.")

@@ -97,14 +97,19 @@ def fill_costs(df: pd.DataFrame, cfg: Optional[Config] = None, *,
     if not need.any():
         return out
 
-    it = pd.to_numeric(out.get("input_tokens"), errors="coerce")
-    ot = pd.to_numeric(out.get("output_tokens"), errors="coerce")
-    filled = []
-    for idx in out.index[need]:
-        filled.append((idx, cost_for(str(out.at[idx, "model_id"]),
-                                     it.get(idx), ot.get(idx), prices)))
-    for idx, c in filled:
-        out.at[idx, "cost"] = c
+    sub = out.loc[need]
+    it = pd.to_numeric(sub.get("input_tokens"), errors="coerce").fillna(0.0).astype(float)
+    ot = pd.to_numeric(sub.get("output_tokens"), errors="coerce").fillna(0.0).astype(float)
+    # one price lookup per distinct model, then a vectorised cost (== cost_for per row)
+    rates = {}
+    for mid in sub["model_id"].astype(str).unique():
+        p = prices.get(mid) or prices.get(canonical_model_id(mid))
+        rates[mid] = ((float(p["input_per_1m"]), float(p["output_per_1m"])) if p
+                      else (np.nan, np.nan))
+    mids = sub["model_id"].astype(str)
+    in_rate = mids.map(lambda m: rates[m][0]).astype(float)
+    out_rate = mids.map(lambda m: rates[m][1]).astype(float)
+    out.loc[need, "cost"] = it * in_rate / 1e6 + ot * out_rate / 1e6
     return out
 
 

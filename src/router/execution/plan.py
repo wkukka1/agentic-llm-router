@@ -37,6 +37,11 @@ class PlanStep:
 
 @dataclass
 class Plan:
+    """``estimated_*`` / ``utility`` / ``status`` are written by
+    :meth:`~router.execution.forecast.PlanForecaster.score_plan`. Holds should
+    use :meth:`budget_estimate`, which never under-reserves relative to the
+    steps."""
+
     plan_id: str
     task_id: str
     steps: list[PlanStep] = field(default_factory=list)
@@ -46,3 +51,36 @@ class Plan:
     utility: float = 0.0
     status: PlanStatus = PlanStatus.DRAFT
     revision: int = 0
+
+    @property
+    def steps_estimated_cost(self) -> float:
+        return sum(s.estimated_cost for s in self.steps)
+
+    def budget_estimate(self) -> float:
+        """The larger of the plan-level estimate and the sum of its steps."""
+        return max(float(self.estimated_cost), self.steps_estimated_cost)
+
+    def validate(self) -> None:
+        """Raise ``ValueError`` on duplicate step ids, dependencies on unknown
+        steps, or a dependency cycle."""
+        ids = [s.step_id for s in self.steps]
+        if len(set(ids)) != len(ids):
+            raise ValueError(f"plan {self.plan_id!r} has duplicate step ids")
+        deps = {s.step_id: list(s.dependencies) for s in self.steps}
+        unknown = sorted({d for ds in deps.values() for d in ds} - set(ids))
+        if unknown:
+            raise ValueError(f"plan {self.plan_id!r} depends on unknown steps {unknown}")
+        state: dict[str, int] = {}          # 1 = visiting, 2 = done
+
+        def visit(sid: str) -> None:
+            if state.get(sid) == 2:
+                return
+            if state.get(sid) == 1:
+                raise ValueError(f"plan {self.plan_id!r} has a dependency cycle through {sid!r}")
+            state[sid] = 1
+            for d in deps[sid]:
+                visit(d)
+            state[sid] = 2
+
+        for sid in ids:
+            visit(sid)

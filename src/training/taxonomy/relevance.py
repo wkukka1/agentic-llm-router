@@ -17,7 +17,7 @@ from typing import Optional, Sequence
 import numpy as np
 
 from router.config import Config
-from .clustering import _unit, load_centroids, load_clusters, load_meta
+from .clustering import _unit, centroids_fingerprint, load_centroids, load_clusters, load_meta
 
 DEFAULT_TAU = 0.1
 
@@ -55,6 +55,7 @@ def build_relevance(cfg: Config, *, pathway: Optional[str] = None, tau: float = 
     manifest = {"kind": "query_relevance", "pathway": pw, "dim": int(centroids.shape[0]),
                 "id_field": "query_id", "count": len(ids), "tau": float(tau), "normalized": True,
                 "complete": True, "source": "softmax(cos(e_q, centroid)/tau)",
+                "centroids_fingerprint": centroids_fingerprint(centroids),
                 "taxonomy_version": int(cfg.get("taxonomy.version", 1))}
     rel = EmbeddingStore(ids, R, manifest, id_field="query_id")
     if save:
@@ -63,8 +64,29 @@ def build_relevance(cfg: Config, *, pathway: Optional[str] = None, tau: float = 
 
 
 def load_relevance(cfg: Config, pathway: Optional[str] = None):
-    """The ``r_q`` :class:`EmbeddingStore`, or ``None`` if not built."""
+    """The ``r_q`` :class:`EmbeddingStore`, or ``None`` if not built.
+
+    Raises if the store was built from different centroids than the current
+    ``clustering`` artifacts (re-clustering without rebuilding relevance would
+    otherwise silently re-label every column)."""
     from router.embeddings import EmbeddingStore
 
     d = relevance_store_dir(cfg, _pathway(cfg, pathway))
-    return EmbeddingStore.load(d) if EmbeddingStore.exists(d) else None
+    if not EmbeddingStore.exists(d):
+        return None
+    rel = EmbeddingStore.load(d)
+    try:
+        centroids = load_centroids(cfg)
+    except FileNotFoundError:
+        return rel
+    stale = centroids.shape[0] != rel.dim
+    fp = rel.manifest.get("centroids_fingerprint")
+    if fp is not None and fp != centroids_fingerprint(centroids):
+        stale = True
+    if stale:
+        raise ValueError(
+            f"{d} was built from different cluster centroids than the current taxonomy "
+            f"(dim {rel.dim} vs {centroids.shape[0]} clusters); rebuild it with "
+            f"training.taxonomy.relevance.build_relevance / scripts/taxonomy/build_relevance.py"
+        )
+    return rel

@@ -40,6 +40,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--sources", default=None)
     parser.add_argument("--embeddings", action="store_true",
                         help="also encode all queries (slow on CPU)")
+    parser.add_argument("--bert-pairwise", action="store_true",
+                        help="bert pathways also encode Arena/judge battle queries "
+                             "(needed by train.preference; slow on CPU)")
     parser.add_argument("--taxonomy", action="store_true",
                         help="cluster queries -> centroids + r_q relevance vectors + taxonomy")
     parser.add_argument("--query-bank", action="store_true",
@@ -70,9 +73,13 @@ def main(argv: list[str] | None = None) -> int:
     info(f"  {len(profiles)} profiles ({int(profiles['has_curated'].sum())} curated)")
 
     info("stage 6: NIRT observation table")
+    from .data.facade import TrainingData
     from .data.nirt import build_nirt_observations, write_nirt_observations
 
-    nirt_obs = build_nirt_observations(cfg)
+    # stages 1-5 already hold every table in memory -- don't re-read the parquets
+    in_memory = TrainingData(cfg, tables["responses"], tables["queries"], tables["models"],
+                             splits, profiles)
+    nirt_obs = build_nirt_observations(cfg, data=in_memory)
     write_nirt_observations(nirt_obs, cfg)
     info(f"  {len(nirt_obs):,} observations, splits "
          f"{nirt_obs['split'].value_counts().to_dict()}")
@@ -83,16 +90,25 @@ def main(argv: list[str] | None = None) -> int:
 
         q = tables["queries"].sort_values("query_id").reset_index(drop=True)
         p = profiles.sort_values("model_id").reset_index(drop=True)
-        nirt_qids = set(nirt_obs["query_id"])
+        bert_qids = set(nirt_obs["query_id"])
+        bert_set = "nirt"
+        if args.bert_pairwise:
+            # train.preference joins Arena / judge battles against this store;
+            # without their queries every battle is dropped (see TN-07)
+            from .data import schemas
+
+            r = tables["responses"]
+            bert_qids |= set(r.loc[r["metric_type"].isin(schemas.MetricType.PAIRWISE), "query_id"])
+            bert_set = "nirt+pairwise"
         for pw in available_pathways(cfg):
             enc = load_encoder(cfg, pathway=pw)
             # bert pathways only need the NIRT queries (huge CPU saving)
-            qsub = q[q["query_id"].isin(nirt_qids)] if enc.cfg.backend == "bert" else q
+            qsub = q[q["query_id"].isin(bert_qids)] if enc.cfg.backend == "bert" else q
             qs = build_store(default_store_dir(cfg, "query", pw),
                              qsub["query_id"].tolist(), qsub["query"].tolist(),
                              enc, id_field="query_id",
                              manifest_extra={"query_set":
-                                             "nirt" if enc.cfg.backend == "bert" else "all"})
+                                             bert_set if enc.cfg.backend == "bert" else "all"})
             ps = build_store(default_store_dir(cfg, "model_profile", pw),
                              p["model_id"].tolist(), p["profile_text"].tolist(),
                              enc, id_field="model_id",

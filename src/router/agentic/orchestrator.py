@@ -22,6 +22,9 @@ if TYPE_CHECKING:
 
 __all__ = ["RecursiveOrchestrator", "LangChainToolOrchestrator", "build_router_tools"]
 
+# AgentExecutor's output when max_iterations / max_execution_time is exhausted
+_STOPPED_PREFIX = "Agent stopped due to"
+
 
 # --------------------------------------------------------------------------- #
 # plain recursive orchestrator                                                #
@@ -32,6 +35,7 @@ class RecursiveOrchestrator:
     def run(self, prompt: str, agent: "AgenticRouter", depth: int) -> tuple[str, list[SubCall]]:
         subs = agent.decomposer(prompt)
         if len(subs) <= 1:
+            # reuses the route triage already computed for this prompt
             sc = agent._answer_directly(prompt, depth)
             return sc.answer, [sc]
         children = [agent._solve(s, depth + 1) for s in subs]
@@ -45,7 +49,8 @@ class RecursiveOrchestrator:
 def build_router_tools(agent: "AgenticRouter", depth: int, steps: list[SubCall]):
     """LangChain ``StructuredTool``s bound to ``agent``; every model call is
     appended to ``steps``. Returns ``[route_query, answer_with_model,
-    route_and_answer]``."""
+    route_and_answer]``. Tool exceptions are returned to the agent as
+    observations (``handle_tool_error``) instead of aborting the executor."""
     from langchain_core.tools import StructuredTool
 
     def route_query(query: str) -> str:
@@ -58,12 +63,15 @@ def build_router_tools(agent: "AgenticRouter", depth: int, steps: list[SubCall])
                 f"predicted_quality={float(rr.selected_scores[0]):.2f} | top: {top}")
 
     def answer_with_model(query: str, model_id: str) -> str:
-        """Send QUERY to a specific MODEL_ID and return its answer."""
-        resp = agent.clients.invoke(model_id, query)
-        steps.append(SubCall(prompt=query, model_id=model_id, predicted_quality=float("nan"),
-                             answer=resp.text, mode="single", depth=depth + 1,
-                             cost=resp.cost))
-        return resp.text
+        """Send QUERY to a specific MODEL_ID (one of the router's candidate
+        models) and return its answer."""
+        pool = agent.router.model_ids
+        if model_id not in pool:
+            return (f"ERROR: {model_id!r} is not a candidate model. "
+                    f"Choose one of: {', '.join(pool)}")
+        sc = agent._call_model(query, model_id, depth + 1)
+        steps.append(sc)
+        return sc.answer
 
     def route_and_answer(query: str) -> str:
         """Route QUERY to the best model (recursively decomposing if the router
@@ -73,10 +81,27 @@ def build_router_tools(agent: "AgenticRouter", depth: int, steps: list[SubCall])
         return sc.answer
 
     return [
-        StructuredTool.from_function(route_query),
-        StructuredTool.from_function(answer_with_model),
-        StructuredTool.from_function(route_and_answer),
+        StructuredTool.from_function(route_query, handle_tool_error=True),
+        StructuredTool.from_function(answer_with_model, handle_tool_error=True),
+        StructuredTool.from_function(route_and_answer, handle_tool_error=True),
     ]
+
+
+def _agent_executor_api():
+    """``(AgentExecutor, create_tool_calling_agent)``: ``langchain.agents`` in
+    0.3, ``langchain_classic.agents`` once langchain 1.x moved the legacy
+    executor out."""
+    try:
+        from langchain.agents import AgentExecutor, create_tool_calling_agent
+    except ImportError:
+        try:
+            from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
+        except ImportError as exc:  # pragma: no cover - depends on the install
+            raise ImportError(
+                "LangChainToolOrchestrator needs AgentExecutor: install `langchain>=0.3,<1` "
+                "or, with langchain 1.x, `langchain-classic`"
+            ) from exc
+    return AgentExecutor, create_tool_calling_agent
 
 
 class LangChainToolOrchestrator:
@@ -96,9 +121,9 @@ class LangChainToolOrchestrator:
         )
 
     def run(self, prompt: str, agent: "AgenticRouter", depth: int) -> tuple[str, list[SubCall]]:
-        from langchain.agents import AgentExecutor, create_tool_calling_agent
         from langchain_core.prompts import ChatPromptTemplate
 
+        AgentExecutor, create_tool_calling_agent = _agent_executor_api()
         steps: list[SubCall] = []
         tools = build_router_tools(agent, depth, steps)
         chat_prompt = ChatPromptTemplate.from_messages([
@@ -116,4 +141,8 @@ class LangChainToolOrchestrator:
         if not steps:  # agent answered without a tool call -> fall back to direct routing
             sc = agent._answer_directly(prompt, depth)
             return sc.answer, [sc]
+        if str(answer).startswith(_STOPPED_PREFIX):
+            # iteration / time limit hit: the stop notice is not an answer, but
+            # the sub-answers gathered so far are
+            answer = agent.synthesizer(prompt, [(s.prompt, s.answer) for s in steps])
         return answer, steps

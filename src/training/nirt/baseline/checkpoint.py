@@ -79,4 +79,7 @@ def load_run(directory: str | Path):
         "binary_threshold": float(resp.get("binary_threshold", 0.5)),
         "score_kind": resp.get("score_kind", "effective"),
     }
+    head = model.response_head
+    if hasattr(head, "threshold"):       # checkpoints saved before the head stored it
+        head.threshold = settings["binary_threshold"]
     return model, blob, settings

@@ -26,7 +26,15 @@ import numpy as np
 
 from .prompts import build_prompt
 
-_MARGIN_RE = re.compile(r'"?margin"?\s*[:=]\s*(-?\d)')
+# Whole signed number with a trailing boundary, so "margin: 10" reads as 10
+# (out of range -> failure) rather than 1.
+_MARGIN_RE = re.compile(r'"?margin"?\s*[:=]\s*([+-]?\d+)(?![\d.])')
+# The rubric lists "+1".."+3"; models echo the sign, which isn't valid JSON.
+_PLUS_SIGN_RE = re.compile(r'("margin"\s*:\s*)\+(?=\d)')
+_JSON_SPAN_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+# Statuses the provider SDKs themselves treat as retryable.
+_TRANSIENT_STATUS = (408, 409, 429)
 
 
 @dataclass
@@ -37,21 +45,43 @@ class JudgeVerdict:
     parsed_ok: bool
 
 
-def _parse_verdict(raw: str) -> tuple[int, str, bool]:
+def _json_verdict(text: str) -> Optional[tuple[int, str]]:
     try:
-        obj = json.loads(raw)
+        obj = json.loads(text)
         margin = int(obj["margin"])
         reason = str(obj.get("reason", ""))[:400]
-        if -3 <= margin <= 3:
-            return margin, reason, True
     except Exception:
-        pass
-    m = _MARGIN_RE.search(raw)
-    if m:
-        margin = int(m.group(1))
+        return None
+    return (margin, reason) if -3 <= margin <= 3 else None
+
+
+def _parse_verdict(raw: Optional[str]) -> tuple[int, str, bool]:
+    text = raw or ""   # refusals / tool-call replies carry no content
+    normalized = _PLUS_SIGN_RE.sub(r"\1", text)
+    candidates = [normalized]
+    span = _JSON_SPAN_RE.search(normalized)   # preamble / code fence around the object
+    if span and span.group(0) != normalized:
+        candidates.append(span.group(0))
+    for candidate in candidates:
+        parsed = _json_verdict(candidate)
+        if parsed is not None:
+            return parsed[0], parsed[1], True
+    # Regex fallback: every margin-like mention must agree, otherwise the
+    # verdict is ambiguous and counted as a parse failure.
+    values = {int(v) for v in _MARGIN_RE.findall(text)}
+    if len(values) == 1:
+        (margin,) = values
         if -3 <= margin <= 3:
-            return margin, raw[:400], True
-    return 0, raw[:400], False
+            return margin, text[:400], True
+    return 0, text[:400], False
+
+
+def _is_transient(exc: Exception, connection_errors: tuple[type, ...]) -> bool:
+    """Rate limits, timeouts, 5xx and dropped connections; not auth/4xx errors."""
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int):
+        return status in _TRANSIENT_STATUS or status >= 500
+    return isinstance(exc, connection_errors)
 
 
 class JudgeClient:
@@ -79,14 +109,19 @@ class JudgeClient:
         self.n_calls = 0
         self.n_parse_failures = 0
 
+        # SDK clients are built with max_retries=0: _call_with_retry is the
+        # only retry layer, so attempts don't multiply.
         if provider == "openai":
             import openai
-            self._client = openai.OpenAI(api_key=api_key, base_url=base_url)
+            self._client = openai.OpenAI(api_key=api_key, base_url=base_url, max_retries=0)
+            self._connection_errors: tuple[type, ...] = (openai.APIConnectionError,)
         elif provider == "anthropic":
             import anthropic
-            self._client = anthropic.Anthropic(api_key=api_key, base_url=base_url)
+            self._client = anthropic.Anthropic(api_key=api_key, base_url=base_url, max_retries=0)
+            self._connection_errors = (anthropic.APIConnectionError,)
         elif provider == "dummy":
             self._client = None
+            self._connection_errors = ()
         else:
             raise ValueError(f"unknown judge provider: {provider!r}")
 
@@ -152,9 +187,12 @@ class JudgeClient:
             self._throttle()
             try:
                 return self._call_once(messages)
-            except Exception as exc:  # rate limit / 5xx / transient -- retry
+            except Exception as exc:
+                if not _is_transient(exc, self._connection_errors):
+                    raise   # auth / bad request / unknown model: retrying can't help
                 last_exc = exc
-                time.sleep(min(2 ** attempt, 30))
+                if attempt < self.max_retries - 1:
+                    time.sleep(min(2 ** attempt, 30))
         raise RuntimeError(f"judge call failed after {self.max_retries} retries") from last_exc
 
     def _throttle(self) -> None:
@@ -168,7 +206,7 @@ class JudgeClient:
             resp = self._client.chat.completions.create(
                 model=self.model, messages=messages, temperature=self.temperature,
             )
-            return resp.choices[0].message.content
+            return resp.choices[0].message.content or ""
         if self.provider == "anthropic":
             system = messages[0]["content"] if messages[0]["role"] == "system" else None
             user_msgs = [m for m in messages if m["role"] != "system"]
@@ -176,5 +214,6 @@ class JudgeClient:
                 model=self.model, system=system, messages=user_msgs,
                 temperature=self.temperature, max_tokens=200,
             )
-            return resp.content[0].text
+            return "".join(getattr(block, "text", "") for block in resp.content
+                           if getattr(block, "type", None) == "text")
         raise AssertionError(f"unreachable: provider={self.provider!r}")  # pragma: no cover

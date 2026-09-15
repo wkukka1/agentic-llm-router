@@ -41,12 +41,22 @@ def fit_probe(
 
     ``prior_a`` (``[K]``) / ``prior_b`` (scalar) are the zero-shot
     profile-projection estimate -- the fit is regularized toward them via a
-    Gaussian-prior penalty ``ridge * (||a - prior_a||^2 + (b - prior_b)^2)``:
+    fixed-strength Gaussian prior: the objective is the SUMMED probe NLL plus
+    ``ridge * (||a - prior_a||^2 + (b - prior_b)^2)``:
 
     * ``k=0`` probe observations -> returns the prior unchanged (no update
       possible; falls straight back to the documented zero-shot behaviour).
-    * As ``k`` grows and/or ``ridge`` shrinks, the estimate converges toward
-      the pure-probe MLE, independent of the (possibly poor) prior.
+    * As ``k`` grows (the data term grows with ``k``, the prior does not)
+      and/or ``ridge`` shrinks, the estimate converges toward the pure-probe
+      MLE, independent of the (possibly poor) prior.
+
+    Score function: the plain scalar-difficulty bilinear form
+    ``logit = theta_q . a - b``. ``prior_a`` must therefore be the *effective*
+    discrimination the model uses -- ``model.model_parameters(...)`` output,
+    i.e. post-softplus / post-centring, not raw ``a_head`` activations -- and
+    the fitted ``(a*, b*)`` are meant to be scored with that same plain form
+    (as :func:`evaluation.nirt.coldstart_eval.lomo_eval` does). Models with
+    ``difficulty: vector`` or an interaction residual are not supported.
 
     Logistic BCE has no closed-form MAP estimate, so this runs a small Adam
     fit -- cheap: ``K`` is a handful of dimensions and ``epochs`` a few hundred.
@@ -54,8 +64,15 @@ def fit_probe(
     import torch
 
     prior_a = np.asarray(prior_a, dtype=np.float64)
+    if prior_a.ndim != 1:
+        raise ValueError(f"prior_a must be a [K] vector (scalar difficulty only), got {prior_a.shape}")
+    if np.ndim(prior_b) != 0:
+        raise ValueError("prior_b must be a scalar -- fit_probe supports difficulty='scalar' only")
     if len(y) == 0:
         return prior_a.copy(), float(prior_b)
+    if np.asarray(theta_q).shape[1] != prior_a.shape[0]:
+        raise ValueError(f"theta_q has K={np.asarray(theta_q).shape[1]} but prior_a has "
+                         f"K={prior_a.shape[0]}")
 
     theta_t = torch.as_tensor(np.asarray(theta_q, dtype=np.float64))
     y_t = torch.as_tensor(np.asarray(y, dtype=np.float64))
@@ -68,7 +85,8 @@ def fit_probe(
     for _ in range(epochs):
         opt.zero_grad()
         logit = theta_t @ a - b
-        nll = torch.nn.functional.binary_cross_entropy_with_logits(logit, y_t)
+        # summed (not mean) NLL: the prior keeps a fixed strength as k grows
+        nll = torch.nn.functional.binary_cross_entropy_with_logits(logit, y_t, reduction="sum")
         reg = ridge * ((a - pa).pow(2).sum() + (b - pb).pow(2))
         (nll + reg).backward()
         opt.step()

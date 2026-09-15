@@ -24,12 +24,18 @@ DEFAULT_NIRT_RUNS_DIR = "data/processed/nirt_runs"
 class Config:
     """Read-only, attribute-accessible view over a nested dict."""
 
-    def __init__(self, data: dict[str, Any], root: Path = REPO_ROOT):
+    def __init__(self, data: dict[str, Any], root: Path = REPO_ROOT,
+                 source_path: Path | None = None):
         self._data = data
         self._root = root
+        self._source_path = source_path
 
     # -- access --------------------------------------------------------------
     def __getattr__(self, name: str) -> Any:
+        # copy / deepcopy / pickle probe dunders on an instance built without
+        # __init__; reading self._data there would recurse forever.
+        if name.startswith("_"):
+            raise AttributeError(name)
         try:
             value = self._data[name]
         except KeyError as exc:  # pragma: no cover - defensive
@@ -60,6 +66,11 @@ class Config:
     @property
     def root(self) -> Path:
         return self._root
+
+    @property
+    def source_path(self) -> Path | None:
+        """The YAML file this config was loaded from (``None`` if built in memory)."""
+        return self._source_path
 
     def path(self, key: str) -> Path:
         """Resolve a ``paths.<key>`` entry against the repo root."""
@@ -95,16 +106,37 @@ def coerce_hidden(value: Any) -> int | None:
     ``int``. Shared by every model ``from_config``. A *missing* key still means
     "default width": callers pass ``coerce_hidden(cfg.get("query_hidden", 64))``,
     so a missing key resolves to ``64`` while an explicit ``null`` stays a linear
-    head.
+    head. String overrides (``"0"``, ``"null"``) are normalised the same way.
     """
-    if value in ("none", "None", 0, None):
+    if isinstance(value, str):
+        value = value.strip()
+        if value.lower() in ("none", "null", "", "0"):
+            return None
+    if value is None or value is False or value == 0:
         return None
     return int(value)
 
 
+_TRUE_STRINGS = ("true", "1", "yes", "on")
+_FALSE_STRINGS = ("false", "0", "no", "off")
+
+
 def coerce_auto_bool(value: Any, auto: bool) -> bool:
-    """Tri-state config flag: ``"auto"`` / ``None`` -> ``auto``, else ``bool(value)``."""
-    return bool(auto) if value in ("auto", None) else bool(value)
+    """Tri-state config flag: ``"auto"`` / ``None`` -> ``auto``, else a bool.
+
+    Strings arriving from env / CLI / JSON overrides are parsed
+    (``"false"`` -> ``False``); an unrecognised string raises instead of being
+    truthy."""
+    if isinstance(value, str):
+        low = value.strip().lower()
+        if low in ("auto", "none", "null"):
+            return bool(auto)
+        if low in _TRUE_STRINGS:
+            return True
+        if low in _FALSE_STRINGS:
+            return False
+        raise ValueError(f"cannot interpret {value!r} as a boolean flag")
+    return bool(auto) if value is None else bool(value)
 
 
 def require_choice(value: Any, allowed, *, field: str) -> Any:
@@ -121,4 +153,4 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
         cfg_path = REPO_ROOT / cfg_path
     with open(cfg_path, "r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh)
-    return Config(data)
+    return Config(data, source_path=cfg_path)

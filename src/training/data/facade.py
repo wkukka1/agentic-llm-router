@@ -261,16 +261,36 @@ class TrainingData:
             return None
         return EmbeddingStore.load(d)
 
-    def query_embeddings(self, pathway: Optional[str] = None):
-        """`query_id -> vector` :class:`EmbeddingStore` for a pathway, or None."""
+    def query_embeddings(self, pathway: Optional[str] = None, *, build: bool = False, **build_kw):
+        """`query_id -> vector` :class:`EmbeddingStore` for a pathway, or None.
+
+        Read-only by default -- this is called on every routing request
+        (:class:`~router.routing.routers.NIRTRouter` /
+        ``KNNRouter``), so a cache miss must not silently trigger a
+        full-corpus encode. Pass ``build=True`` (plus any of
+        :func:`training.data.embeddings.build_query_embedding_store`'s
+        keyword args) to build/rebuild it instead.
+        """
+        if build:
+            from .embeddings import build_query_embedding_store
+
+            return build_query_embedding_store(self, pathway, **build_kw)
         return self._load_store("query", pathway)
 
-    def profile_embeddings(self, pathway: Optional[str] = None):
+    def profile_embeddings(self, pathway: Optional[str] = None, *, build: bool = False, **build_kw):
         """`model_id -> vector` :class:`EmbeddingStore` for a pathway, or None.
 
         This is the vector used to initialise ``theta_m`` (and to place
-        cold-start models from their description alone).
+        cold-start models from their description alone). Read-only by
+        default, same reasoning as :meth:`query_embeddings`; pass
+        ``build=True`` (plus any of
+        :func:`training.models.profiles.build_profile_embeddings`'s keyword
+        args) to build/rebuild it.
         """
+        if build:
+            from ..models.profiles import build_profile_embeddings
+
+            return build_profile_embeddings(self.cfg, pathway, **build_kw)
         return self._load_store("model_profile", pathway)
 
     def profile_embedding(self, model_id: str, pathway: Optional[str] = None):
@@ -298,6 +318,11 @@ class TrainingData:
         path = self.cfg.path("processed") / "nirt_observations.parquet"
         if path.exists() and not build_kw:
             return read_nirt_observations(self.cfg)
+        if not build_kw:
+            # default build: cache it so repeated calls don't rebuild from responses
+            if "_nirt_obs_default" not in self.__dict__:
+                self.__dict__["_nirt_obs_default"] = build_nirt_observations(self.cfg, data=self)
+            return self.__dict__["_nirt_obs_default"]
         return build_nirt_observations(self.cfg, data=self, **build_kw)
 
     def nirt_dataset(self, split: Optional[str] = "train", pathway: str = "irt",

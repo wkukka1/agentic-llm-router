@@ -40,9 +40,13 @@ class OptimizationObjective:
 class RoutingConstraints:
     """Hard and soft limits a candidate must clear before it's scored.
 
-    ``max_cost`` / ``max_latency`` / ``min_quality`` are hard filters (see
-    ``Router.filter_candidates``); ``objective`` is the soft utility tradeoff
-    applied to whatever candidates survive filtering."""
+    ``required_capabilities`` is checked before scoring
+    (``Router.filter_candidates``). ``max_cost`` / ``max_latency`` /
+    ``min_quality`` are hard filters applied to the *scored* candidates by
+    ``RoutingPipeline.route`` (``min_quality`` needs the prediction), compared
+    against ``ModelScore.expected_cost`` / ``expected_latency`` /
+    ``expected_quality``. ``objective`` is the soft utility tradeoff applied to
+    whatever candidates survive."""
 
     max_cost: float | None = None
     max_latency: float | None = None

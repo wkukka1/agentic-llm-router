@@ -106,12 +106,47 @@ def _build_mlp_router(in_dim: int, n_models: int, hidden: int, dropout: float):
     )
 
 
-def mlp_router_matrix(model, model_ids, data, eval_query_ids, *, pathway: str = "irt") -> pd.DataFrame:
+def mlp_query_matrix(data, query_ids, *, pathway: str = "irt",
+                     query_pathway: Optional[str] = None,
+                     query_features: Optional[str] = None) -> tuple[np.ndarray, list]:
+    """``(X [N x D], ids)`` -- the MLP router's input rows, built the same way
+    :class:`~router.data.nirt.NIRTDataset` builds NIRT's: the ``query_pathway``
+    store (default ``pathway``) optionally concatenated with the
+    ``query_features`` variant (zero-filled for queries missing from it). Ids
+    absent from the query store are dropped."""
+    q_pw = query_pathway or pathway
+    q_store = data.query_embeddings(q_pw)
+    if q_store is None:
+        raise FileNotFoundError(f"query embeddings for pathway '{q_pw}' not built")
+    ids = [q for q in map(str, query_ids) if q in q_store._index]
+    X = np.asarray(q_store.gather(ids), dtype=np.float32)
+    if query_features:
+        feat_store = data.query_features(query_features)
+        if feat_store is None:
+            raise FileNotFoundError(f"query features '{query_features}' not built")
+        F = np.zeros((len(ids), feat_store.dim), dtype=np.float32)
+        rows = np.array([feat_store.row_of(q) if q in feat_store else -1 for q in ids], dtype=np.int64)
+        hit = rows >= 0
+        F[hit] = np.asarray(feat_store.matrix)[rows[hit]]
+        X = np.concatenate([X, F], axis=1)
+    return X, ids
+
+
+def mlp_router_matrix(model, model_ids, data, eval_query_ids, *, pathway: str = "irt",
+                      query_pathway: Optional[str] = None,
+                      query_features: Optional[str] = None) -> pd.DataFrame:
     import torch
 
-    q_store = data.query_embeddings(pathway)
-    ids = [q for q in map(str, eval_query_ids) if q in q_store._index]
-    X = torch.from_numpy(np.asarray(q_store.gather(ids), dtype=np.float32))
+    X_np, ids = mlp_query_matrix(data, eval_query_ids, pathway=pathway,
+                                 query_pathway=query_pathway, query_features=query_features)
+    first = next((m for m in model.modules() if isinstance(m, torch.nn.Linear)), None)
+    if first is not None and X_np.shape[1] != first.in_features:
+        raise ValueError(
+            f"MLP router expects {first.in_features}-d inputs but pathway={pathway!r} "
+            f"(query_pathway={query_pathway!r}, query_features={query_features!r}) gives "
+            f"{X_np.shape[1]}-d -- was it fit on a different pathway?"
+        )
+    X = torch.from_numpy(X_np)
     with torch.no_grad():
         p = torch.sigmoid(model(X)).numpy()
     return pd.DataFrame(p, index=ids, columns=model_ids)

@@ -121,11 +121,9 @@ def nirt_dataset_from_config(
 
     d = data or load_training_data(cfg)
     if observations is None:
-        path = cfg.path("processed") / "nirt_observations.parquet"
-        observations = (
-            pd.read_parquet(path) if path.exists()
-            else build_nirt_observations(cfg, data=d, **build_kw)
-        )
+        # same rule as TrainingData.nirt_observations: explicit build kwargs
+        # (score_kind=, models=, ...) always rebuild instead of being ignored
+        observations = d.nirt_observations(**build_kw)
     return NIRTDataset.from_config(
         cfg, data=d, split=split, pathway=pathway, query_pathway=query_pathway,
         query_features=query_features, observations=observations,

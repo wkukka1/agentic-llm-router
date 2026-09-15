@@ -7,8 +7,10 @@ Mean / concentration parameterisation:
     alpha    = mu * kappa ,   beta = (1 - mu) * kappa
 
 ``mu`` is clamped to ``[mu_min, 1-mu_min]`` and ``kappa`` to
-``[min_concentration, max_concentration]`` (all config) so ``alpha, beta`` stay
-strictly positive -- no NaN/inf can enter training.
+``[min_concentration, max_concentration]`` (all config); ``kappa`` is then raised
+to at least ``min_concentration / min(mu, 1-mu)`` so ``alpha, beta >=
+min_concentration`` exactly -- no NaN/inf can enter training, and the density's
+mean is still ``mu``.
 
 The Beta density has no mass at exact 0 or 1, so the Beta model is trained and
 evaluated on **interior** observations only (``0 < y < 1``); the boundary
@@ -47,7 +49,10 @@ class BetaResponseHead(ResponseHead):
         mu = torch.sigmoid(z).clamp(self.mu_min, 1 - self.mu_min)
         raw = self.log_kappa0 if features is None else self.f_kappa(features).squeeze(-1) + self.log_kappa0
         kappa = (torch.nn.functional.softplus(raw) + self.eps).clamp(self.min_conc, self.max_conc)
-        return mu, kappa.expand_as(mu)
+        kappa = kappa.expand_as(mu)
+        # floor alpha = mu*kappa and beta = (1-mu)*kappa at min_concentration through
+        # kappa itself, so the density's mean stays mu and gradients keep flowing
+        return mu, torch.maximum(kappa, self.min_conc / torch.minimum(mu, 1 - mu))
 
     def forward(self, z, features=None):
         mu, kappa = self._params(z, features)
@@ -55,8 +60,8 @@ class BetaResponseHead(ResponseHead):
                                            "alpha": mu * kappa, "beta": (1 - mu) * kappa})
 
     def _dist(self, out):
-        return torch.distributions.Beta(out["alpha"].clamp_min(self.min_conc),
-                                        out["beta"].clamp_min(self.min_conc))
+        # alpha, beta >= min_concentration by construction (see _params)
+        return torch.distributions.Beta(out["alpha"], out["beta"])
 
     def nll(self, y, out):
         y = y.to(out["mu"].dtype).clamp(1e-6, 1 - 1e-6)

@@ -35,10 +35,13 @@ def render_prompt(raw: object) -> str:
     if len(s) >= 2 and s[0] == "[" and s[-1] == "]":
         try:
             parsed = ast.literal_eval(s)
-            if isinstance(parsed, (list, tuple)):
-                return sanitize_text("\n\n".join(str(t) for t in parsed))
-        except (ValueError, SyntaxError):
-            pass
+        except Exception:  # SyntaxError, ValueError, RecursionError, MemoryError, ...
+            parsed = None
+        # only a list of turns (strings / role-content dicts) is unpacked; a genuine
+        # prompt such as "[1, 2, 3]" or a JSON-array task is kept verbatim
+        if (isinstance(parsed, (list, tuple)) and parsed
+                and all(isinstance(t, (str, dict)) for t in parsed)):
+            return sanitize_text("\n\n".join(str(t) for t in parsed))
     return sanitize_text(s)
 
 

@@ -49,17 +49,40 @@ def novelty_weight(
     would otherwise look familiar), centred at ``midpoint`` with slope
     ``1/temp``: ``w ~ 1`` (fully trust the raw prediction) when the query
     closely resembles training data, ``w ~ 0`` (fully shrink to `model_mean`)
-    when it doesn't. Brute-force cosine (fine up to ~10^5 train queries); swap
-    in a FAISS bank for larger pools.
+    when it doesn't. Brute-force float32 cosine, computed in eval-row chunks
+    so peak memory is ``chunk_rows x Ntr`` rather than ``Nq x Ntr``; swap in a
+    FAISS bank for much larger pools.
     """
+    return weight_from_similarity(
+        topk_similarity(eval_emb, train_emb, k=k), midpoint=midpoint, temp=temp
+    )
+
+
+def topk_similarity(eval_emb: np.ndarray, train_emb: np.ndarray, *, k: int = 1,
+                    chunk_rows: int = 2048) -> np.ndarray:
+    """``(Nq,)`` max (``k=1``) or top-``k`` mean cosine similarity to ``train_emb``.
+
+    Independent of ``midpoint`` / ``temp``, so a sweep over those can compute
+    this once and call :func:`weight_from_similarity` per point."""
     if k < 1:
         raise ValueError(f"k must be >= 1, got {k}")
-    e = _unit(np.asarray(eval_emb, dtype=np.float64))
-    t = _unit(np.asarray(train_emb, dtype=np.float64))
-    sims = e @ t.T                                   # (Nq, Ntr)
-    kk = min(k, sims.shape[1])
-    topk = np.partition(sims, -kk, axis=1)[:, -kk:]
-    sim = topk.max(axis=1) if kk == 1 else topk.mean(axis=1)
+    t = _unit(np.asarray(train_emb, dtype=np.float32))
+    if t.ndim != 2 or t.shape[0] == 0:
+        raise ValueError("novelty_weight needs a non-empty training embedding bank")
+    e_all = np.asarray(eval_emb, dtype=np.float32)
+    kk = min(k, t.shape[0])
+    out = np.empty(len(e_all), dtype=np.float64)
+    for i in range(0, len(e_all), chunk_rows):
+        sims = _unit(e_all[i:i + chunk_rows]) @ t.T                   # (chunk, Ntr)
+        topk = np.partition(sims, -kk, axis=1)[:, -kk:]
+        out[i:i + chunk_rows] = topk.max(axis=1) if kk == 1 else topk.mean(axis=1)
+    return out
+
+
+def weight_from_similarity(sim: np.ndarray, *, midpoint: float = 0.35,
+                           temp: float = 0.08) -> np.ndarray:
+    """The sigmoid in :func:`novelty_weight`, applied to precomputed similarities."""
+    sim = np.asarray(sim, dtype=np.float64)
     return 1.0 / (1.0 + np.exp(-(sim - midpoint) / max(temp, 1e-6)))
 
 

@@ -11,11 +11,14 @@ against real APIs in production and against a deterministic echo in tests.
 
 :class:`ClientRegistry` maps ``model_id -> client`` and synthesises a default
 client for ids it has never seen, so an unfamiliar candidate pool never crashes
-the orchestrator.
+the orchestrator. When the registry was given real clients, synthesising an
+echo client for a missing id warns (its answers are placeholders).
 """
 
 from __future__ import annotations
 
+import re
+import warnings
 from dataclasses import dataclass, field
 from typing import Callable, Mapping, Optional
 
@@ -27,6 +30,7 @@ __all__ = [
     "LangChainClient",
     "ClientRegistry",
     "guess_provider",
+    "message_text",
 ]
 
 
@@ -40,6 +44,26 @@ class LLMResponse:
     cost: Optional[float] = None
     raw: object = None
     meta: dict = field(default_factory=dict)
+
+
+def message_text(msg: object) -> str:
+    """Plain text of a LangChain message (or anything else).
+
+    ``AIMessage.content`` may be a list of content blocks (tool use, thinking,
+    multimodal output); ``str()`` of that is a Python repr, not an answer. Text
+    blocks are joined and other block types skipped."""
+    content = getattr(msg, "content", msg)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, (list, tuple)):
+        parts = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, Mapping) and block.get("type", "text") == "text":
+                parts.append(str(block.get("text", "")))
+        return "".join(parts)
+    return str(content)
 
 
 class LLMClient:
@@ -88,7 +112,14 @@ class CallableClient(LLMClient):
 
 class LangChainClient(LLMClient):
     """A LangChain chat model. Pass an already-built model, or a string for
-    ``init_chat_model`` (optionally with ``provider=``). Lazily imported."""
+    ``init_chat_model`` (optionally with ``provider=``). Lazily imported.
+
+    ``model=`` is the provider's API model name when it differs from the pool
+    id (RouterBench / IRT-Router ids are usually not valid API names).
+    ``input_cost_per_token`` / ``output_cost_per_token`` price the call from
+    the response's ``usage_metadata``; without them ``cost`` stays ``None``
+    (unknown) and the token counts are still recorded in ``meta``.
+    """
 
     def __init__(
         self,
@@ -97,11 +128,14 @@ class LangChainClient(LLMClient):
         *,
         model: Optional[str] = None,
         provider: Optional[str] = None,
+        input_cost_per_token: Optional[float] = None,
+        output_cost_per_token: Optional[float] = None,
         **init_kwargs,
     ):
         self.model_id = str(model_id)
         self._chat = chat_model
-        self._spec = (model or model_id, provider or guess_provider(model_id), init_kwargs)
+        self._spec = (model or model_id, provider or guess_provider(model or model_id), init_kwargs)
+        self._prices = (input_cost_per_token, output_cost_per_token)
 
     def _model(self):
         if self._chat is None:
@@ -113,15 +147,25 @@ class LangChainClient(LLMClient):
 
     def invoke(self, prompt: str, **kw) -> LLMResponse:
         msg = self._model().invoke(prompt)
-        text = getattr(msg, "content", msg)
         meta = getattr(msg, "response_metadata", {}) or {}
         usage = getattr(msg, "usage_metadata", None)
         return LLMResponse(
-            text=text if isinstance(text, str) else str(text),
+            text=message_text(msg),
             model_id=self.model_id,
+            cost=self._cost(usage),
             raw=msg,
             meta={"response_metadata": meta, "usage_metadata": usage},
         )
+
+    def _cost(self, usage) -> Optional[float]:
+        in_price, out_price = self._prices
+        if usage is None or (in_price is None and out_price is None):
+            return None
+        get = usage.get if isinstance(usage, Mapping) else (lambda k, d=None: getattr(usage, k, d))
+        in_tok, out_tok = get("input_tokens"), get("output_tokens")
+        if in_tok is None and out_tok is None:
+            return None
+        return float((in_tok or 0) * (in_price or 0.0) + (out_tok or 0) * (out_price or 0.0))
 
 
 # --------------------------------------------------------------------------- #
@@ -137,10 +181,14 @@ _PROVIDER_HINTS = [
 
 
 def guess_provider(model_id: str) -> Optional[str]:
-    """Best-effort LangChain ``model_provider`` from a bare model id."""
+    """Best-effort LangChain ``model_provider`` from a bare model id -- a last
+    resort. Each hint must start a token (``o1-mini`` matches ``o1``,
+    ``yolo1`` does not). Prefer an explicit ``provider=`` / ``model=`` per pool
+    id (``ClientRegistry.langchain(pool, **{id: {...}})``): a substring can't
+    tell which host actually serves a given model."""
     low = str(model_id).lower()
     for needle, provider in _PROVIDER_HINTS:
-        if needle in low:
+        if re.search(rf"(?:^|[^a-z0-9]){re.escape(needle)}", low):
             return provider
     return None
 
@@ -148,12 +196,17 @@ def guess_provider(model_id: str) -> Optional[str]:
 # --------------------------------------------------------------------------- #
 # registry                                                                    #
 # --------------------------------------------------------------------------- #
+def _echo_factory(model_id: str) -> LLMClient:
+    return EchoClient(model_id)
+
+
 class ClientRegistry:
     """``model_id -> LLMClient``, with a factory for unknown ids.
 
     ``default_factory(model_id) -> LLMClient`` is called (and the result
     cached) the first time an unregistered id is looked up. It defaults to
-    :class:`EchoClient`, so an orchestrator over an unfamiliar pool still runs.
+    :class:`EchoClient`, so an orchestrator over an unfamiliar pool still runs;
+    ids that got a synthesised client are listed in :attr:`synthesized`.
     """
 
     def __init__(
@@ -163,7 +216,9 @@ class ClientRegistry:
         default_factory: Optional[Callable[[str], LLMClient]] = None,
     ):
         self._clients: dict[str, LLMClient] = dict(clients or {})
-        self._default_factory = default_factory or (lambda mid: EchoClient(mid))
+        self._default_factory = default_factory or _echo_factory
+        self._has_real_clients = bool(self._clients)
+        self.synthesized: set[str] = set()
 
     @classmethod
     def echo(cls, model_ids=()) -> "ClientRegistry":
@@ -171,7 +226,8 @@ class ClientRegistry:
 
     @classmethod
     def langchain(cls, model_ids=(), **per_model_kwargs) -> "ClientRegistry":
-        """Every id served by a :class:`LangChainClient` (provider guessed)."""
+        """Every id served by a :class:`LangChainClient` (provider guessed unless
+        ``per_model_kwargs[id]`` gives ``provider=`` / ``model=``)."""
         return cls(
             {m: LangChainClient(m, **per_model_kwargs.get(m, {})) for m in model_ids},
             default_factory=lambda mid: LangChainClient(mid),
@@ -183,7 +239,15 @@ class ClientRegistry:
     def get(self, model_id: str) -> LLMClient:
         mid = str(model_id)
         if mid not in self._clients:
-            self._clients[mid] = self._default_factory(mid)
+            client = self._default_factory(mid)
+            if self._default_factory is _echo_factory and self._has_real_clients:
+                warnings.warn(
+                    f"no client registered for model {mid!r}; answering with an EchoClient "
+                    "placeholder",
+                    stacklevel=2,
+                )
+            self._clients[mid] = client
+            self.synthesized.add(mid)
         return self._clients[mid]
 
     def __contains__(self, model_id: str) -> bool:

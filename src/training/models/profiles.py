@@ -61,9 +61,12 @@ def load_profile_entries(cfg: Config) -> dict:
 # --------------------------------------------------------------------------- #
 # empirical stats                                                             #
 # --------------------------------------------------------------------------- #
-def empirical_stats(responses: pd.DataFrame, model_id: str, cfg: Config) -> dict:
+def empirical_stats(responses: pd.DataFrame, model_id: str, cfg: Config, *,
+                    group: Optional[pd.DataFrame] = None) -> dict:
+    """``group`` (this model's rows, pre-split by the caller) skips the full-frame
+    filter -- :func:`build_model_profiles` passes one ``groupby`` group per model."""
     fam_map = _task_family_map(cfg)
-    g = responses[responses["model_id"] == model_id]
+    g = group if group is not None else responses[responses["model_id"] == model_id]
     if g.empty:
         return {}
 
@@ -167,11 +170,13 @@ def render_profile_text(
         facts.append(f"{int(structured['context_window'])}-token context window")
     if structured["release"]:
         facts.append(f"released {structured['release']}")
-    if structured["input_price_per_1k"] is not None:
-        facts.append(
-            f"priced at ${structured['input_price_per_1k']}/${structured['output_price_per_1k']} "
-            f"per 1K input/output tokens"
-        )
+    in_price, out_price = structured["input_price_per_1k"], structured["output_price_per_1k"]
+    if in_price is not None and out_price is not None:
+        facts.append(f"priced at ${in_price}/${out_price} per 1K input/output tokens")
+    elif in_price is not None:
+        facts.append(f"priced at ${in_price} per 1K input tokens")
+    elif out_price is not None:
+        facts.append(f"priced at ${out_price} per 1K output tokens")
     facts_sent = (" It has " + ", ".join(facts) + ".") if facts else ""
 
     emp_sent = ""
@@ -215,14 +220,18 @@ def build_model_profiles(
     if responses is None:
         responses = read_responses(cfg)
     pc = _profiles_cfg(cfg)
-    include_emp = bool(pc.get("include_empirical", True))
+    # default off: the empirical addendum summarises ALL responses (validation /
+    # test outcomes and cold-start models' own rows) and would leak them into
+    # the embedded profile a missing key used to silently enable it.
+    include_emp = bool(pc.get("include_empirical", False))
     version = int(pc.get("version", 1))
     entries = load_profile_entries(cfg)
 
     model_ids = sorted(responses["model_id"].dropna().unique().tolist())
+    groups = dict(tuple(responses.groupby("model_id", sort=False)))
     rows = []
     for mid in model_ids:
-        stats = empirical_stats(responses, mid, cfg)
+        stats = empirical_stats(responses, mid, cfg, group=groups.get(mid))
         entry = entries.get(mid)
         feature, full, structured = render_profile_text(
             mid, entry, stats, include_empirical=include_emp
@@ -266,3 +275,65 @@ def read_model_profiles(cfg: Config) -> pd.DataFrame:
         if col in df.columns:
             df[col] = df[col].map(lambda v: json.loads(v) if isinstance(v, str) and v else {})
     return df
+
+
+# --------------------------------------------------------------------------- #
+# embeddings                                                                  #
+# --------------------------------------------------------------------------- #
+def build_profile_embeddings(
+    cfg: Config,
+    pathway: Optional[str] = None,
+    *,
+    restart: bool = False,
+    text_column: str = "profile_text",
+):
+    """Embed each model's profile text (:func:`build_model_profiles`, built if
+    missing) with the ``pathway`` encoder -> a ``model_id -> vector``
+    :class:`~router.embeddings.EmbeddingStore`.
+
+    ``text_column`` ``"feature"`` embeds the curated description only;
+    ``"profile_text"`` (default) includes the empirical addendum when
+    ``profiles.include_empirical`` is set.
+    """
+    from router.embeddings import available_pathways, build_store, default_store_dir, load_encoder
+
+    profiles = _current_profiles(cfg)
+    profiles = profiles.sort_values("model_id").reset_index(drop=True)
+
+    pw = pathway or cfg.get("embedding.default_pathway") or available_pathways(cfg)[0]
+    encoder = load_encoder(cfg, pathway=pw)
+    out_dir = default_store_dir(cfg, "model_profile", pw)
+    # require_fingerprints: a store whose texts (or text_column) differ is
+    # re-encoded -- profile stores are tiny, so a legacy store is simply rebuilt
+    return build_store(
+        out_dir, profiles["model_id"].tolist(), profiles[text_column].tolist(), encoder,
+        id_field="model_id", resume=not restart, force=restart,
+        manifest_extra={"text_column": text_column}, require_fingerprints=True,
+    )
+
+
+def _current_profiles(cfg: Config) -> pd.DataFrame:
+    """Profiles rendered from the CURRENT config + responses.
+
+    Re-renders every call (cheap) and rewrites ``model_profiles.parquet`` only
+    when the rendered text differs, so editing ``configs/model_profiles.yaml``,
+    toggling ``profiles.include_empirical`` or rebuilding ``responses.parquet``
+    is picked up instead of reusing the stale parquet.
+    """
+    try:
+        existing = read_model_profiles(cfg)
+    except FileNotFoundError:
+        existing = None
+    try:
+        fresh = build_model_profiles(cfg)
+    except FileNotFoundError:
+        if existing is None:
+            raise
+        return existing          # no responses table to re-render from
+    key = ["model_id", "feature", "profile_text"]
+    if existing is None or not (
+        existing[key].sort_values("model_id").reset_index(drop=True)
+        .equals(fresh[key].sort_values("model_id").reset_index(drop=True))
+    ):
+        write_model_profiles(fresh, cfg)
+    return fresh

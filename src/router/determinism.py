@@ -12,7 +12,18 @@ import random
 import numpy as np
 
 
-def seed_everything(seed: int) -> None:
+def seed_everything(seed: int, *, deterministic_algorithms: bool = True) -> None:
+    """Seed ``random`` / numpy / torch.
+
+    ``deterministic_algorithms=True`` also calls
+    ``torch.use_deterministic_algorithms`` -- a *process-wide* switch (slower
+    CUDA kernels). Training entry points want it; serving-side encoder loads
+    pass ``False`` so they don't flip it for a co-located training / GPU job.
+
+    ``PYTHONHASHSEED`` is only set for *child* processes: hash randomisation of
+    the current interpreter is fixed at start-up, and ``setdefault`` leaves an
+    inherited value alone.
+    """
     os.environ.setdefault("PYTHONHASHSEED", str(seed))
     random.seed(seed)
     np.random.seed(seed)
@@ -21,6 +32,7 @@ def seed_everything(seed: int) -> None:
 
         torch.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
-        torch.use_deterministic_algorithms(True, warn_only=True)
+        if deterministic_algorithms:
+            torch.use_deterministic_algorithms(True, warn_only=True)
     except Exception:  # pragma: no cover
         pass

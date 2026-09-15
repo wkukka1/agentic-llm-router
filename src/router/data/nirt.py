@@ -22,6 +22,7 @@ has its own opponent-aware path via ``TrainingData.pairwise`` and is not folded 
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Optional, Sequence
 
 import numpy as np
@@ -39,6 +40,22 @@ try:  # optional torch base class
 except Exception:  # pragma: no cover
     _TorchDataset = object  # type: ignore[assignment,misc]
     _HAS_TORCH = False
+
+
+def _row_lookup(store, ids: pd.Series) -> np.ndarray:
+    """``int64`` store row per id (``-1`` if absent), resolved once per *unique*
+    id -- the long obs table repeats each query id once per model. Uses only the
+    public ``in store`` / ``rows_of``."""
+    codes, uniques = pd.factorize(ids.astype(str), sort=False)
+    present = [u for u in uniques if u in store]
+    uniq_rows = np.full(len(uniques), -1, dtype=np.int64)
+    if present:
+        hit = np.fromiter((u in store for u in uniques), dtype=bool, count=len(uniques))
+        uniq_rows[hit] = store.rows_of(present)
+    out = np.full(len(codes), -1, dtype=np.int64)
+    ok = codes >= 0
+    out[ok] = uniq_rows[codes[ok]]
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -67,16 +84,26 @@ class NIRTDataset(_TorchDataset):
         self.feature_store = feature_store
         self.return_ids = return_ids
 
-        mask = (
-            observations["query_id"].isin(query_store._index)
-            & observations["model_id"].isin(profile_store._index)
-            & observations["target"].notna()
-        )
+        # ids are compared as str on both sides: parquet-loaded stores hold str
+        # ids, an in-memory obs frame may hold ints -- a type mismatch must not
+        # silently drop every row
+        observations = observations.copy()
+        observations["query_id"] = observations["query_id"].astype(str)
+        observations["model_id"] = observations["model_id"].astype(str)
+        q_rows_all = _row_lookup(query_store, observations["query_id"])
+        m_rows_all = _row_lookup(profile_store, observations["model_id"])
+        mask = (q_rows_all >= 0) & (m_rows_all >= 0) & observations["target"].notna().to_numpy()
         self.obs = observations.loc[mask].reset_index(drop=True)
         self.dropped = int((~mask).sum())
+        if len(observations) and self.dropped == len(observations):
+            warnings.warn(
+                f"NIRTDataset: all {self.dropped} observations dropped (no query/model id "
+                "matched the embedding stores, or every target is NaN)",
+                stacklevel=2,
+            )
 
-        self._q_rows = query_store.rows_of(self.obs["query_id"].tolist())
-        self._m_rows = profile_store.rows_of(self.obs["model_id"].tolist())
+        self._q_rows = q_rows_all[mask]
+        self._m_rows = m_rows_all[mask]
         self._y = self.obs["target"].to_numpy(np.float32)
         self._cost = pd.to_numeric(self.obs["cost"], errors="coerce").to_numpy(np.float32)
         self._metric = self.obs["metric_type"].astype(str).to_numpy()
@@ -89,9 +116,8 @@ class NIRTDataset(_TorchDataset):
         # like the relevance / warm-up joins in nirt/baseline/data.py.
         self._feat = None
         if feature_store is not None:
-            qids = self.obs["query_id"].tolist()
-            rows = np.array([feature_store.row_of(q) if q in feature_store else -1 for q in qids])
-            self._feat = np.zeros((len(qids), feature_store.dim), dtype=np.float32)
+            rows = _row_lookup(feature_store, self.obs["query_id"])
+            self._feat = np.zeros((len(rows), feature_store.dim), dtype=np.float32)
             hit = rows >= 0
             self._feat[hit] = np.asarray(feature_store.matrix)[rows[hit]]
 

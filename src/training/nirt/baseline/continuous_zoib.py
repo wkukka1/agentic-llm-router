@@ -58,6 +58,9 @@ class ZOIBResponseHead(ResponseHead):
             raw_k = self.f_kappa(features).squeeze(-1) + self.log_kappa0
         mu = torch.sigmoid(z).clamp(self.mu_min, 1 - self.mu_min)
         kappa = (F.softplus(raw_k) + self.eps).clamp(self.min_conc, self.max_conc)
+        # floor alpha / beta through kappa (not by clamping them), so the Beta
+        # density keeps mean mu and gradients keep flowing at extreme mu
+        kappa = torch.maximum(kappa, self.min_conc / torch.minimum(mu, 1 - mu))
         pi = log_pi.exp()
         return ResponseOutput(z=z, params={
             "mu": mu, "kappa": kappa, "alpha": mu * kappa, "beta": (1 - mu) * kappa,
@@ -66,8 +69,8 @@ class ZOIBResponseHead(ResponseHead):
         })
 
     def _beta(self, out):
-        return torch.distributions.Beta(out["alpha"].clamp_min(self.min_conc),
-                                        out["beta"].clamp_min(self.min_conc))
+        # alpha, beta >= min_concentration by construction (see forward)
+        return torch.distributions.Beta(out["alpha"], out["beta"])
 
     def nll(self, y, out):
         y = y.to(out["mu"].dtype)

@@ -49,17 +49,29 @@ def build_pairwise_arrays(
     split: str = "train",
     pathway: str = "irt",
     query_pathway: Optional[str] = None,
+    query_features: Optional[str] = None,
 ) -> PairwiseArrays:
     """Materialise battles joinable to the query/profile embedding stores.
 
     ``source`` (``None`` -> every pairwise source, e.g. ``"chatbot_arena"`` /
     ``"gpt4_judge"``) and ``split`` select the battles; rows whose query or
-    either model lack an embedding are dropped (``n_dropped``)."""
+    either model lack an embedding are dropped (``n_dropped``).
+
+    ``query_features`` (the NIRT run's ``data.query_features``) concatenates the
+    same structured features the correctness dataset feeds the shared query
+    head, zero-filled for battle queries without a feature row -- exactly like
+    :class:`~router.data.nirt.NIRTDataset`."""
     df = data.pairwise(source=source, split=split, models="all")
     q_store = data.query_embeddings(query_pathway or pathway)
     m_store = data.profile_embeddings(pathway)
     if q_store is None or m_store is None:
         raise FileNotFoundError(f"embeddings for pathway '{pathway}' not built")
+    feat_store = None
+    if query_features:
+        feat_store = data.query_features(query_features)
+        if feat_store is None:
+            raise FileNotFoundError(f"query features '{query_features}' not built")
+    q_dim = q_store.dim + (feat_store.dim if feat_store is not None else 0)
 
     keep = (
         df["query_id"].isin(q_store._index)
@@ -71,10 +83,17 @@ def build_pairwise_arrays(
     df = df.loc[keep].reset_index(drop=True)
     if df.empty:
         return PairwiseArrays(
-            np.zeros((0, q_store.dim), np.float32), np.zeros((0, m_store.dim), np.float32),
+            np.zeros((0, q_dim), np.float32), np.zeros((0, m_store.dim), np.float32),
             np.zeros((0, m_store.dim), np.float32), np.zeros(0, np.float32), dropped,
         )
     e_q = np.ascontiguousarray(q_store.gather(df["query_id"].tolist()), dtype=np.float32)
+    if feat_store is not None:
+        qids = df["query_id"].tolist()
+        rows = np.array([feat_store.row_of(q) if q in feat_store else -1 for q in qids], dtype=np.int64)
+        feats = np.zeros((len(qids), feat_store.dim), dtype=np.float32)
+        hit = rows >= 0
+        feats[hit] = np.asarray(feat_store.matrix)[rows[hit]]
+        e_q = np.ascontiguousarray(np.concatenate([e_q, feats], axis=1), dtype=np.float32)
     e_a = np.ascontiguousarray(m_store.gather(df["model_a"].tolist()), dtype=np.float32)
     e_b = np.ascontiguousarray(m_store.gather(df["model_b"].tolist()), dtype=np.float32)
     y = df["score_a"].to_numpy(np.float32)

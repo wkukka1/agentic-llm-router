@@ -8,6 +8,7 @@ without importing anything evaluation-only.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import Optional
 
 import numpy as np
@@ -16,35 +17,69 @@ import pandas as pd
 from .frames import pivot_qm
 
 
+@contextmanager
+def pool_centering(model, pool_profile_embeddings: Optional[np.ndarray]):
+    """Within the block, a ``center_discrimination`` + ``projected`` model
+    centres on the mean over ``pool_profile_embeddings`` (``(M, profile_dim)``)
+    instead of the current forward batch, so scores don't depend on how rows
+    are chunked. A no-op for every other model; the previous reference is
+    restored on exit."""
+    uses_ref = (
+        pool_profile_embeddings is not None
+        and getattr(model, "center_discrimination", False)
+        and getattr(model, "model_params", None) == "projected"
+        and hasattr(model, "set_discrimination_reference")
+    )
+    if not uses_ref:
+        yield
+        return
+    prev = model._a_ref
+    model.set_discrimination_reference(pool_profile_embeddings)
+    try:
+        yield
+    finally:
+        model._a_ref = prev
+
+
 def predict_dataset(model, dataset, model_index: dict, batch_size: int = 8192):
-    """Return ``(y_true, y_prob)`` for every observation in ``dataset``."""
+    """Return ``(y_true, y_prob)`` for every observation in ``dataset``.
+
+    Rows are gathered chunk by chunk (never the full ``n_obs x (D_q + D_m)``
+    copy). Projected-mode centring uses the dataset's whole model pool as its
+    reference, so predictions don't depend on ``batch_size`` or row order."""
     import torch
 
-    g = dataset.gather()
-    q = torch.from_numpy(np.ascontiguousarray(g["query_embedding"], dtype=np.float32))
-    y = np.ascontiguousarray(g["target"], dtype=np.float64)
+    n = len(dataset)
+    y = np.ascontiguousarray(dataset.targets, dtype=np.float64)
+    model_ids = np.asarray(dataset.model_ids)
 
     projected = model.model_params == "projected"
+    pool_ref = None
     if projected:
-        ref_src = torch.from_numpy(np.ascontiguousarray(g["model_embedding"], dtype=np.float32))
+        _, first = np.unique(model_ids.astype(str), return_index=True)
+        if len(first):
+            pool_ref = dataset.gather(np.sort(first))["model_embedding"]
     else:
-        midx = np.array(
-            [model_index.get(str(m), -1) for m in dataset.model_ids], dtype=np.int64
-        )
+        midx = np.array([model_index.get(str(m), -1) for m in model_ids], dtype=np.int64)
         if (midx < 0).any():
-            missing = sorted({str(m) for m, i in zip(dataset.model_ids, midx) if i < 0})
+            missing = sorted({str(m) for m, i in zip(model_ids, midx) if i < 0})
             raise ValueError(
                 f"model_params='free' cannot score models absent from training: {missing}. "
                 f"Use a 'projected' run for cold-start / unseen models."
             )
-        ref_src = torch.from_numpy(midx)
 
-    out = np.empty(len(y), dtype=np.float64)
+    out = np.empty(n, dtype=np.float64)
     model.eval()
-    with torch.no_grad():
-        for i in range(0, len(out), batch_size):
-            sl = slice(i, i + batch_size)
-            out[sl] = torch.sigmoid(model(q[sl], ref_src[sl])).numpy()
+    with torch.no_grad(), pool_centering(model, pool_ref):
+        for i in range(0, n, batch_size):
+            idx = np.arange(i, min(i + batch_size, n))
+            g = dataset.gather(idx)
+            q = torch.from_numpy(np.ascontiguousarray(g["query_embedding"], dtype=np.float32))
+            if projected:
+                ref = torch.from_numpy(np.ascontiguousarray(g["model_embedding"], dtype=np.float32))
+            else:
+                ref = torch.from_numpy(midx[idx])
+            out[idx] = torch.sigmoid(model(q, ref)).numpy()
     return y, out
 
 

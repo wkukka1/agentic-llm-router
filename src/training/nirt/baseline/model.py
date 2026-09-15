@@ -44,8 +44,13 @@ class Output:
     relevance_gate: Optional[torch.Tensor] = None
     length_pred: Optional[torch.Tensor] = None
     response: Optional[ResponseOutput] = None    # response-head distribution params
+    response_head: Optional[nn.Module] = None     # the head that produced `response`
 
     def proba(self) -> torch.Tensor:
+        """The response head's probability (``sigmoid(logit)`` for Bernoulli; for a
+        continuous head ``sigmoid(logit)`` is not a predictive probability)."""
+        if self.response_head is not None and self.response is not None:
+            return self.response_head.as_probability(self.response)
         return torch.sigmoid(self.logit)
 
 
@@ -140,15 +145,21 @@ class BaselineNIRT(nn.Module):
     def forward(self, e_q, model_ref, r_q=None, neighbor_mean=None) -> Output:
         e = self.warmup(e_q, neighbor_mean)
         if self.use_relevance and r_q is None:
-            r_q = e_q.new_zeros(e_q.shape[0], self.relevance_dim)
+            # same fill the data path uses for an unclustered query: uniform 1/C
+            r_q = e_q.new_full((e_q.shape[0], self.relevance_dim), 1.0 / self.relevance_dim)
         a_q, gate = self.disc_head(e, r_q if self.use_relevance else None)
         b_q = self.diff_head(e)
         theta_m = self.latent_ability(model_ref)
         logit, base = self.interaction(a_q, theta_m, b_q, r_q if self.use_relevance else None)
         features = torch.cat([e, theta_m], dim=-1) if self.response_model != "bernoulli" else None
+        # the length head feeds no loss (no length labels) -- not run on every
+        # forward; call predict_length() explicitly
         return Output(logit=logit, base_irt=base, a_q=a_q, b_q=b_q, theta_m=theta_m,
                       relevance_gate=gate, response=self.response_head(logit, features),
-                      length_pred=self.length_head(e) if self.use_length_head else None)
+                      response_head=self.response_head)
+
+    def predict_length(self, e_q, neighbor_mean=None) -> Optional[torch.Tensor]:
+        return self.length_head(self.warmup(e_q, neighbor_mean)) if self.use_length_head else None
 
     @torch.no_grad()
     def predict_proba(self, e_q, model_ref, r_q=None, neighbor_mean=None) -> torch.Tensor:

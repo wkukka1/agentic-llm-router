@@ -121,7 +121,7 @@ def _pairwise_within_group(logit, y, groups, *, weighting: str = "none"):
         dY = Y.unsqueeze(2) - Y.unsqueeze(1)
         m = torch.triu(torch.ones(k, k, dtype=torch.bool, device=logit.device), 1) & (dY != 0)
         if not m.any():
-            return torch.zeros((), dtype=logit.dtype, device=logit.device)
+            return logit.sum() * 0.0      # graph-connected zero: backward() stays valid
         per_pair = F.binary_cross_entropy_with_logits(
             dZ[m], (dY[m] > 0).to(logit.dtype), reduction="none")
         w = dY[m].abs() if weighting == "abs_diff" else torch.ones_like(per_pair)
@@ -141,7 +141,9 @@ def _pairwise_within_group(logit, y, groups, *, weighting: str = "none"):
             w = dt[mm].abs() if weighting == "abs_diff" else torch.ones_like(per_pair)
             total = total + (per_pair * w).sum()
             wsum = wsum + w.sum()
-    return total / wsum.clamp_min(1e-12)
+    if not bool(wsum > 0):
+        return logit.sum() * 0.0          # no discordant pair in the batch
+    return total / wsum
 
 
 def _listwise_within_group(logit, y, groups, *, tau: float = 0.1):
@@ -163,7 +165,9 @@ def _listwise_within_group(logit, y, groups, *, tau: float = 0.1):
         total = total - (F.softmax(y[s:s + sz] / tau, dim=0)
                          * F.log_softmax(logit[s:s + sz], dim=0)).sum()
         ng += 1
-    return total / max(ng, 1)
+    if ng == 0:
+        return logit.sum() * 0.0          # every group has < 2 models
+    return total / ng
 
 
 def _weighted_bce(logit, y, weight=None):
@@ -210,35 +214,48 @@ def _loss_fn(kind: str, *, aux_weight: float = 0.5, tau: float = 0.1,
     raise ValueError(f"unknown loss {kind!r}; use {_POINTWISE + _GROUPED}")
 
 
-def _grouped_batches(qgroup: np.ndarray, batch_queries: int, gen):
+def _group_rows(qgroup: np.ndarray) -> list:
+    """Row indices per dense query group ``0..G-1`` (ascending within a group),
+    computed once with one stable argsort instead of a scan per group."""
+    qgroup = np.asarray(qgroup)
+    if len(qgroup) == 0:
+        return []
+    order = np.argsort(qgroup, kind="stable")
+    return np.split(order, np.cumsum(np.bincount(qgroup))[:-1])
+
+
+def _grouped_batches(group_rows: list, batch_queries: int, gen):
     """Yield row-index arrays, ``batch_queries`` whole query groups per batch
     (shuffled). Every model row for a sampled query is in the same batch, so the
-    pairwise / listwise losses see complete per-query model lists."""
+    pairwise / listwise losses see complete per-query model lists.
+    ``group_rows`` comes from :func:`_group_rows` (built once per fit); a raw
+    dense ``qgroup`` array is also accepted."""
     import torch
 
-    g_ids = np.unique(qgroup)
-    order = torch.randperm(len(g_ids), generator=gen).numpy()
-    rows_of = {g: np.where(qgroup == g)[0] for g in g_ids}
-    for i in range(0, len(g_ids), batch_queries):
-        chunk = g_ids[order[i : i + batch_queries]]
-        yield np.concatenate([rows_of[g] for g in chunk])
+    if isinstance(group_rows, np.ndarray):
+        group_rows = _group_rows(group_rows)
+    order = torch.randperm(len(group_rows), generator=gen).numpy()
+    for i in range(0, len(order), batch_queries):
+        yield np.concatenate([group_rows[g] for g in order[i : i + batch_queries]])
 
 
 def _val_regret(packed: dict, prob: np.ndarray) -> float:
     """Mean per-query routing regret: ``mean_q( max_m y[q,m] - y[q, argmax_m prob[q,m]] )``.
     Only queries with >= 2 models scored contribute. For ``val_metric: regret`` (P5)."""
     y = np.asarray(packed["y"], np.float64)
-    g = np.asarray(packed["qgroup"])
+    g = np.asarray(packed["qgroup"], np.int64)
     p = np.asarray(prob, np.float64)
-    reg, nq = 0.0, 0
-    for gid in np.unique(g):
-        m = g == gid
-        if m.sum() < 2:
-            continue
-        yy, pp = y[m], p[m]
-        reg += float(yy.max() - yy[int(pp.argmax())])
-        nq += 1
-    return reg / max(nq, 1)
+    if len(y) == 0:
+        return 0.0
+    counts = np.bincount(g)
+    ymax = np.full(len(counts), -np.inf)
+    np.maximum.at(ymax, g, y)
+    # first row (in row order) holding each group's max prob == np.argmax's pick
+    order = np.lexsort((np.arange(len(p)), -p, g))
+    starts = np.concatenate([[0], np.cumsum(counts)[:-1]])
+    valid = counts >= 2
+    picked = y[order[starts[valid]]]
+    return float((ymax[valid] - picked).sum() / max(int(valid.sum()), 1))
 
 
 def _query_variance_mask(y: np.ndarray, qgroup: np.ndarray) -> np.ndarray:
@@ -249,12 +266,15 @@ def _query_variance_mask(y: np.ndarray, qgroup: np.ndarray) -> np.ndarray:
     rate. Precomputed once over the whole packed split (not per-batch), so it
     is correct under both ``sampler: cell`` and ``sampler: query`` -- see
     ``train.zero_variance_weight`` (P7c)."""
-    out = np.zeros(len(y), dtype=bool)
-    for gid in np.unique(qgroup):
-        m = qgroup == gid
-        if float(np.std(y[m])) < 1e-12:
-            out[m] = True
-    return out
+    y = np.asarray(y, np.float64)
+    qgroup = np.asarray(qgroup, np.int64)
+    if len(y) == 0:
+        return np.zeros(0, dtype=bool)
+    G = int(qgroup.max()) + 1
+    lo, hi = np.full(G, np.inf), np.full(G, -np.inf)
+    np.minimum.at(lo, qgroup, y)
+    np.maximum.at(hi, qgroup, y)
+    return (hi - lo <= 1e-12)[qgroup]
 
 
 def _theta_cov_penalty(theta) -> "torch.Tensor":
@@ -284,24 +304,39 @@ def _collapse_diagnostics(model, theta_q: np.ndarray) -> dict:
     available in that configuration alone) how often the full router's argmax
     agrees with the query-independent constant ``argmax_m(-b_m)``. Logged into
     ``run.json`` history every epoch so the failure mode is visible during
-    training, not only via a post-hoc diagnostic run."""
+    training, not only via a post-hoc diagnostic run.
+
+    ``theta_q`` should hold one row per *query* (not per observation), so both
+    numbers are per-query rather than weighted by model coverage."""
     out = {"theta_effective_rank": effective_rank(theta_q)}
+    # the agreement is computed on the bilinear logit only -- exact only when the
+    # model has no interaction residual, so it is skipped otherwise
     if (getattr(model, "orientation", None) == "query_latent"
             and getattr(model, "model_params", None) == "free"
-            and getattr(model, "difficulty", None) == "scalar"):
+            and getattr(model, "difficulty", None) == "scalar"
+            and not getattr(model, "interaction", False)):
         import torch
 
         with torch.no_grad():
-            a, b = model.model_parameters(torch.arange(model.n_models))
-        full_logit = theta_q @ a.numpy().T - b.numpy()[None, :]
-        out["bias_argmax_agreement"] = bias_argmax_agreement(full_logit, b.numpy())
+            a, b = model.model_parameters(torch.arange(model.n_models, device=_device_of(model)))
+        a, b = a.cpu().numpy(), b.cpu().numpy()
+        full_logit = theta_q @ a.T - b[None, :]
+        out["bias_argmax_agreement"] = bias_argmax_agreement(full_logit, b)
     return out
+
+
+def _device_of(model):
+    try:
+        return next(model.parameters()).device
+    except StopIteration:  # pragma: no cover - parameter-free model
+        return "cpu"
 
 
 def _predict_packed(model, packed: dict, batch_size: int = 8192) -> np.ndarray:
     import torch
 
     projected = model.model_params == "projected"
+    dev = _device_of(model)
     q = torch.from_numpy(packed["q"])
     ref_src = torch.from_numpy(packed["m"]) if projected else torch.from_numpy(packed["midx"])
     out = np.empty(len(packed["y"]), dtype=np.float64)
@@ -309,8 +344,35 @@ def _predict_packed(model, packed: dict, batch_size: int = 8192) -> np.ndarray:
     with torch.no_grad():
         for i in range(0, len(out), batch_size):
             sl = slice(i, i + batch_size)
-            out[sl] = torch.sigmoid(model(q[sl], ref_src[sl])).numpy()
+            out[sl] = torch.sigmoid(model(q[sl].to(dev), ref_src[sl].to(dev))).cpu().numpy()
     return out
+
+
+# val_metric keys: lower is better / higher is better (the latter are negated
+# for early stopping and ReduceLROnPlateau, which both minimise)
+_VAL_LOWER = ("bce", "log_loss", "mse", "brier", "mae", "ece", "regret")
+_VAL_HIGHER = ("auc", "spearman_r", "pearson_r", "accuracy", "acc@0.5")
+
+
+def _drop_rows(packed: dict, keep: np.ndarray) -> dict:
+    """``packed`` restricted to ``keep`` rows (query groups re-densified)."""
+    out = {k: v[keep] for k, v in packed.items()}
+    _, out["qgroup"] = np.unique(out["qgroup"], return_inverse=True)
+    out["qgroup"] = np.ascontiguousarray(out["qgroup"], dtype=np.int64)
+    return out
+
+
+def _json_safe(obj):
+    """NaN / inf -> ``None`` so ``run.json`` is strict JSON."""
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, (float, np.floating)):
+        return float(obj) if np.isfinite(obj) else None
+    if isinstance(obj, np.integer):
+        return int(obj)
+    return obj
 
 
 # --------------------------------------------------------------------------- #
@@ -376,15 +438,45 @@ def fit(
         pairwise_arrays = build_pairwise_arrays(
             d, source=pcfg.get("source"), split="train", pathway=pathway,
             query_pathway=pcfg.get("query_pathway") or None,
+            # same concat as the correctness dataset, or the shared query head
+            # sees a narrower e_q than it was sized for
+            query_features=query_features,
         )
 
-    all_ids = sorted(set(map(str, train_ds.model_ids)) | set(map(str, val_ds.model_ids)))
+    if len(val_ds) == 0:
+        raise ValueError(
+            "fit: the validation split is empty -- early stopping and val_metrics need it "
+            "(set split.validation_fraction > 0 in the phase-0 config and rebuild splits)"
+        )
+
+    # `free` mode: a model seen only in validation would get an embedding row
+    # that never receives gradient, yet be scored, checkpointed and offered as a
+    # routing candidate -- index train models only and drop such val rows.
+    # `projected` mode scores any model from its profile, so val-only models stay.
+    model_params_cfg = mcfg.get("model_params", "projected")
+    train_ids = set(map(str, train_ds.model_ids))
+    if model_params_cfg == "free":
+        all_ids = sorted(train_ids)
+    else:
+        all_ids = sorted(train_ids | set(map(str, val_ds.model_ids)))
     model_index = {m: i for i, m in enumerate(all_ids)}
 
     tr = _pack(train_ds, model_index)
     va = _pack(val_ds, model_index)
     if (tr["midx"] < 0).any():  # pragma: no cover - defensive
         raise RuntimeError("training observation references a model id not in the index")
+    if (va["midx"] < 0).any():
+        unseen = sorted(set(va["model_ids"][va["midx"] < 0].astype(str)))
+        if verbose:
+            print(f"[nirt] dropping {int((va['midx'] < 0).sum()):,} validation rows for "
+                  f"{len(unseen)} model(s) absent from train: {unseen}")
+        va = _drop_rows(va, va["midx"] >= 0)
+        if len(va["y"]) == 0:
+            raise ValueError("fit: no validation rows left for models seen in training")
+
+    device = str(tcfg.get("device", "cpu") or "cpu")
+    if device == "auto":
+        device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # -- model ------------------------------------------------------------
     model = build_model(
@@ -392,7 +484,7 @@ def fit(
         n_models=len(model_index),
         query_dim=int(train_ds.query_dim),
         profile_dim=int(train_ds.model_dim),
-    )
+    ).to(device)
     projected = model.model_params == "projected"
     if pairwise_on and not projected:
         raise ValueError(
@@ -400,13 +492,29 @@ def fit(
             "'free' model has no row for battle participants outside the "
             "correctness training pool"
         )
+    if pairwise_on and (pairwise_arrays is None or len(pairwise_arrays) == 0):
+        n_drop = getattr(pairwise_arrays, "n_dropped", 0)
+        raise ValueError(
+            f"train.preference.enabled but zero battles survived the embedding join "
+            f"({n_drop:,} dropped: query or profile embedding missing). A bert query store "
+            f"built by phase0 holds only correctness queries -- rebuild it with "
+            f"`--bert-pairwise`, or point train.preference.query_pathway at a store that "
+            f"covers the battle queries."
+        )
+    if pairwise_on and pairwise_arrays.e_q.shape[1] != model.query_dim:
+        raise ValueError(
+            f"train.preference battle query width {pairwise_arrays.e_q.shape[1]} != model "
+            f"query_dim {model.query_dim} (data.query_features concat mismatch?)"
+        )
 
     lr = float(tcfg.get("lr", 1e-3))
     weight_decay = float(tcfg.get("weight_decay", 1e-5))
     batch_size = int(tcfg.get("batch_size", 4096))
     epochs = int(tcfg.get("epochs", 50))
     patience = int(tcfg.get("patience", 6))
-    val_key = tcfg.get("val_metric", "bce")
+    val_key = str(tcfg.get("val_metric", "bce") or "bce")
+    require_choice(val_key, _VAL_LOWER + _VAL_HIGHER, field="train.val_metric")
+    val_sign = -1.0 if val_key in _VAL_HIGHER else 1.0   # minimise sign * metric
     grad_clip = float(tcfg.get("grad_clip", 0.0) or 0.0)          # 0 -> off (legacy)
     lr_schedule = str(tcfg.get("lr_schedule", "none") or "none")  # {none, cosine, plateau}
     loss_kind = tcfg.get("loss", "soft_bce")
@@ -440,27 +548,42 @@ def fit(
     pw_weight = float(pcfg.get("weight", 0.3))
     pw_batch = int(pcfg.get("batch_size", 4096))
     pw = None
-    if pairwise_on and pairwise_arrays is not None and len(pairwise_arrays) > 0:
+    if pairwise_on:
         from .pairwise import pairwise_loss
 
         pw = {
-            "e_q": torch.from_numpy(pairwise_arrays.e_q),
-            "e_a": torch.from_numpy(pairwise_arrays.e_a),
-            "e_b": torch.from_numpy(pairwise_arrays.e_b),
-            "y": torch.from_numpy(pairwise_arrays.y),
+            "e_q": torch.from_numpy(pairwise_arrays.e_q).to(device),
+            "e_a": torch.from_numpy(pairwise_arrays.e_a).to(device),
+            "e_b": torch.from_numpy(pairwise_arrays.e_b).to(device),
+            "y": torch.from_numpy(pairwise_arrays.y).to(device),
         }
         if verbose:
             print(f"[nirt] pairwise auxiliary: {len(pairwise_arrays):,} battles "
                  f"({pairwise_arrays.n_dropped:,} dropped, no embedding), weight={pw_weight}")
+    pw_cursor = {"perm": None, "pos": 0}
 
-    qt = torch.from_numpy(tr["q"])
-    mt = torch.from_numpy(tr["m"])
-    yt = torch.from_numpy(tr["y"])
-    it = torch.from_numpy(tr["midx"])
-    gt = torch.from_numpy(tr["qgroup"])
+    def _next_battles():
+        """Next ``pw_batch`` battle indices, reshuffling when the pool is exhausted."""
+        npw = len(pw["y"])
+        if pw_cursor["perm"] is None or pw_cursor["pos"] >= npw:
+            pw_cursor["perm"], pw_cursor["pos"] = torch.randperm(npw, generator=gen), 0
+        s = pw_cursor["pos"]
+        pw_cursor["pos"] = s + pw_batch
+        return pw_cursor["perm"][s : s + pw_batch]
+
+    qt = torch.from_numpy(tr["q"]).to(device)
+    mt = torch.from_numpy(tr["m"]).to(device)
+    yt = torch.from_numpy(tr["y"]).to(device)
+    it = torch.from_numpy(tr["midx"]).to(device)
+    gt = torch.from_numpy(tr["qgroup"]).to(device)
     n = len(yt)
     gen = torch.Generator().manual_seed(seed)
     tr_zero_var = _query_variance_mask(tr["y"], tr["qgroup"]) if zero_variance_weight != 1.0 else None
+    tr_group_rows = _group_rows(tr["qgroup"]) if sampler == "query" else None
+    theta_once = theta_cov_weight > 0 and hasattr(model, "latent_query")
+    # one query per validation group for the collapse diagnostics (per-query, not
+    # weighted by how many models scored it)
+    va_first_row = np.unique(va["qgroup"], return_index=True)[1]
 
     baselines = marginal_baselines(tr["y"], tr["model_ids"], va["y"], va["model_ids"])
 
@@ -476,45 +599,46 @@ def fit(
         model.train()
         if sampler == "query":
             batches = [torch.from_numpy(b) for b in
-                       _grouped_batches(tr["qgroup"], batch_queries, gen)]
+                       _grouped_batches(tr_group_rows, batch_queries, gen)]
         else:
             perm = torch.randperm(n, generator=gen)
             batches = [perm[i : i + batch_size] for i in range(0, n, batch_size)]
         running = seen = 0.0
+        pw_running = pw_seen = 0.0
         for idx in batches:
             ref = mt[idx] if projected else it[idx]
-            logit = model(qt[idx], ref)
+            if theta_once:
+                # run the query head ONCE: the loss and the covariance penalty share
+                # one BatchNorm update and one dropout mask
+                theta = model.latent_query(qt[idx])
+                logit = model(qt[idx], ref, theta=theta)
+            else:
+                logit = model(qt[idx], ref)
             weight_idx = None
             if tr_zero_var is not None:
                 w = np.where(tr_zero_var[idx.numpy()], zero_variance_weight, 1.0).astype(np.float32)
-                weight_idx = torch.from_numpy(w)
+                weight_idx = torch.from_numpy(w).to(device)
             loss = loss_fn(logit, yt[idx], gt[idx], weight_idx)
-            if theta_cov_weight > 0 and hasattr(model, "latent_query"):
-                loss = loss + theta_cov_weight * _theta_cov_penalty(model.latent_query(qt[idx]))
+            if theta_once:
+                loss = loss + theta_cov_weight * _theta_cov_penalty(theta)
+            total = loss
+            if pw is not None:
+                # a genuine loss weight: the battle term joins the SAME step
+                b = _next_battles()
+                pw_loss = pairwise_loss(model, pw["e_q"][b], pw["e_a"][b], pw["e_b"][b], pw["y"][b])
+                total = loss + pw_weight * pw_loss
+                pw_running += float(pw_loss.item()) * len(b)
+                pw_seen += len(b)
             opt.zero_grad()
-            loss.backward()
-            if grad_clip > 0:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-            opt.step()
-            running += float(loss.item()) * len(idx)
-            seen += len(idx)
-        train_loss = running / max(seen, 1)
-
-        pw_loss_epoch = None
-        if pw is not None:
-            npw = len(pw["y"])
-            pw_perm = torch.randperm(npw, generator=gen)
-            pw_running = 0.0
-            for i in range(0, npw, pw_batch):
-                idx = pw_perm[i : i + pw_batch]
-                loss = pairwise_loss(model, pw["e_q"][idx], pw["e_a"][idx], pw["e_b"][idx], pw["y"][idx])
-                opt.zero_grad()
-                (pw_weight * loss).backward()
+            if total.requires_grad:        # defensive: nothing to learn from this batch
+                total.backward()
                 if grad_clip > 0:
                     torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
                 opt.step()
-                pw_running += float(loss.item()) * len(idx)
-            pw_loss_epoch = pw_running / max(npw, 1)
+            running += float(loss.item()) * len(idx)
+            seen += len(idx)
+        train_loss = running / max(seen, 1)
+        pw_loss_epoch = pw_running / max(pw_seen, 1) if pw is not None else None
 
         val_prob = _predict_packed(model, va, batch_size=max(batch_size, 8192))
         vm = prediction_metrics(va["y"], val_prob)
@@ -528,7 +652,8 @@ def fit(
         collapse_diag = None
         if hasattr(model, "latent_query"):
             with torch.no_grad():
-                theta_val = model.latent_query(torch.from_numpy(va["q"])).numpy()
+                theta_val = model.latent_query(
+                    torch.from_numpy(va["q"][va_first_row]).to(device)).cpu().numpy()
             collapse_diag = _collapse_diagnostics(model, theta_val)
             row.update(collapse_diag)
         history.append(row)
@@ -540,9 +665,30 @@ def fit(
                 + (f"  pairwise_loss {pw_loss_epoch:.4f}" if pw_loss_epoch is not None else "")
             )
 
+        # -- model selection first, so an aborting epoch is still considered --
+        score = val_sign * float(vm[val_key])
+        improved = bool(np.isfinite(score)) and score < best_val - 1e-5   # NaN never improves
+        if sched is not None:
+            if lr_schedule == "plateau":
+                if np.isfinite(score):
+                    sched.step(score)
+            else:
+                sched.step()
+        if improved:
+            best_val = score
+            best_epoch = epoch
+            best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
+            since_improved = 0
+        else:
+            since_improved += 1
+
         if collapse_diag is not None:
+            # effective rank is identically 1 when K == 1, so the rank criterion
+            # only means something for K >= 2
+            rank = collapse_diag.get("theta_effective_rank", float("nan"))
+            rank_collapsed = model.dim >= 2 and rank < collapse_rank_threshold
             is_collapsed = (
-                collapse_diag.get("theta_effective_rank", float("nan")) < collapse_rank_threshold
+                rank_collapsed
                 or collapse_diag.get("bias_argmax_agreement", 0.0) > collapse_agreement_threshold
             )
             if is_collapsed:
@@ -558,20 +704,10 @@ def fit(
             else:
                 collapse_streak = 0
 
-        score = vm.get(val_key, vm["bce"])
-        if sched is not None:
-            sched.step(score) if lr_schedule == "plateau" else sched.step()
-        if score < best_val - 1e-5:
-            best_val = score
-            best_epoch = epoch
-            best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
-            since_improved = 0
-        else:
-            since_improved += 1
-            if since_improved >= patience:
-                if verbose:
-                    print(f"[nirt] early stop at epoch {epoch} (best {best_epoch})")
-                break
+        if since_improved >= patience:
+            if verbose:
+                print(f"[nirt] early stop at epoch {epoch} (best {best_epoch})")
+            break
 
     if best_state is not None:
         model.load_state_dict(best_state)
@@ -599,6 +735,18 @@ def fit(
         base = Path(runs_dir) if runs_dir is not None else _resolve_runs_dir(nirt_cfg, phase0_cfg)
         out = base / name
         out.mkdir(parents=True, exist_ok=True)
+        # record which phase-0 config (paths, stores, pool) the run was trained
+        # against, so NIRTRouter.from_run can reload the same data
+        src = getattr(phase0_cfg, "source_path", None)
+        if src is not None:
+            from router.config import REPO_ROOT
+
+            src = Path(src).resolve()
+            try:
+                src = src.relative_to(REPO_ROOT)
+            except ValueError:
+                pass
+            nirt_cfg.setdefault("data", {})["phase0_config"] = src.as_posix()
         torch.save(
             {
                 "state_dict": model.state_dict(),
@@ -612,7 +760,7 @@ def fit(
         )
         (out / "run.json").write_text(
             json.dumps(
-                {
+                _json_safe({
                     "name": name,
                     "git_sha": _git_sha(),
                     "elapsed_sec": round(time.time() - t0, 1),
@@ -623,8 +771,9 @@ def fit(
                     "history": history,
                     "val_metrics": val_metrics,
                     "baselines": baselines,
-                },
+                }),
                 indent=2,
+                allow_nan=False,
             ),
             encoding="utf-8",
         )

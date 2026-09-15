@@ -50,20 +50,36 @@ def boundary_statistics(cfg: Optional[Config] = None, *, splits=("train", "valid
 
 
 def _frac(y: np.ndarray) -> dict:
-    n = max(len(y), 1)
-    return {"n": int(len(y)), "y==0": float((y <= 0).mean()), "y==1": float((y >= 1).mean()),
-            "0<y<1": float(((y > 0) & (y < 1)).mean()), "mean": float(y.mean())}
+    """Boundary / interior fractions over the FINITE scores (non-finite ones are
+    counted separately instead of silently falling in no bucket)."""
+    y = np.asarray(y, np.float64)
+    finite = np.isfinite(y)
+    f = y[finite]
+    if len(f) == 0:
+        return {"n": 0, "n_nonfinite": int((~finite).sum()), "y==0": float("nan"),
+                "y==1": float("nan"), "0<y<1": float("nan"), "mean": float("nan")}
+    return {"n": int(len(f)), "n_nonfinite": int((~finite).sum()),
+            "y==0": float((f <= 0).mean()), "y==1": float((f >= 1).mean()),
+            "0<y<1": float(((f > 0) & (f < 1)).mean()), "mean": float(f.mean())}
 
 
 # --------------------------------------------------------------------------- #
 # continuous metrics                                                          #
 # --------------------------------------------------------------------------- #
 def continuous_metrics(y, mean, proba, nll, lower=None, upper=None, lower50=None, upper50=None,
-                       interior_mask=None) -> dict:
+                       interior_mask=None, threshold: float = 0.5) -> dict:
+    """``interior_mask`` (interior-only heads, i.e. Beta): NLL, interval coverage
+    and width are computed on interior rows only -- a Beta interval can never
+    contain an exact 0 / 1, so scoring coverage on boundary rows only measures
+    the boundary fraction. MAE / RMSE / mean calibration are reported on all
+    rows and additionally on the interior (``*_interior``).
+
+    ``threshold`` is the run's ``binary_threshold``: the event the ``bce_diag_*``
+    labels (and a Normal head's ``proba``) refer to."""
     y = np.asarray(y, np.float64)
     mean = np.asarray(mean, np.float64)
     err = mean - y
-    m = np.ones(len(y), bool) if interior_mask is None else np.asarray(interior_mask)
+    m = np.ones(len(y), bool) if interior_mask is None else np.asarray(interior_mask, bool)
     out = {
         "nll_mean": float(np.mean(nll[m])),
         "nll_median": float(np.median(nll[m])),
@@ -73,48 +89,64 @@ def continuous_metrics(y, mean, proba, nll, lower=None, upper=None, lower50=None
         "mean_pred": float(mean.mean()),
         "observed_mean": float(y.mean()),
         # secondary BCE-after-threshold diagnostic (NOT the training objective)
-        **{f"bce_diag_{k}": v for k, v in prediction_metrics((y >= 0.5).astype(float), proba).items()
+        **{f"bce_diag_{k}": v
+           for k, v in prediction_metrics((y >= float(threshold)).astype(float), proba).items()
            if k in ("bce", "accuracy", "brier", "auc", "ece")},
     }
     rc = reliability_curve(y, np.clip(mean, 0, 1), n_bins=15)
     out["mean_calibration_ece"] = rc["ece"]
     out["mean_calibration_mce"] = rc["mce"]
     out["_reliability"] = rc["bins"]
+    if interior_mask is not None:
+        out["mae_interior"] = float(np.mean(np.abs(err[m]))) if m.any() else float("nan")
+        out["rmse_interior"] = float(np.sqrt(np.mean(err[m] ** 2))) if m.any() else float("nan")
+        out["coverage_population"] = "interior"
+    else:
+        out["coverage_population"] = "all"
     if lower is not None:
-        out["coverage_90"] = float(np.mean((y >= lower) & (y <= upper)))
-        out["interval_width_90"] = float(np.mean(np.asarray(upper) - np.asarray(lower)))
+        lo, hi = np.asarray(lower)[m], np.asarray(upper)[m]
+        out["coverage_90"] = float(np.mean((y[m] >= lo) & (y[m] <= hi)))
+        out["interval_width_90"] = float(np.mean(hi - lo))
     if lower50 is not None:
-        out["coverage_50"] = float(np.mean((y >= lower50) & (y <= upper50)))
+        lo, hi = np.asarray(lower50)[m], np.asarray(upper50)[m]
+        out["coverage_50"] = float(np.mean((y[m] >= lo) & (y[m] <= hi)))
     return out
 
 
 def evaluate_continuous(directory: str | Path, *, phase0_cfg: Optional[Config] = None,
                         split: str = "test", level: float = 0.9, write: bool = True) -> dict:
+    from training.data.facade import load_training_data
+
     d = Path(directory)
     cfg = phase0_cfg or load_config()
     model, blob, s = load_run(d)
     mi = blob["model_index"]
     head = model.response_head
     key = model.response_model
+    data = load_training_data(cfg)          # once per evaluation, shared below
 
-    ev = build_arrays(cfg, split=split, pathway=s["pathway"], binary_threshold=s["binary_threshold"],
-                      score_kind=s["score_kind"], use_relevance=model.use_relevance,
-                      use_warmup=model.use_warmup, model_index=mi)
+    ev = build_arrays(cfg, split=split, data=data, pathway=s["pathway"],
+                      binary_threshold=s["binary_threshold"], score_kind=s["score_kind"],
+                      use_relevance=model.use_relevance, use_warmup=model.use_warmup,
+                      model_index=mi)
 
-    fields = ["mean", "proba", "nll", "lower", "upper", "std"]
-    fw = batched_forward(model, ev, fields=tuple(fields), y=ev.y_soft, level=level)
-    fw50 = batched_forward(model, ev, fields=("lower", "upper"), level=0.5)
+    # ONE pass for every field + both interval levels (one Monte Carlo draw per batch)
+    fields = ["mean", "proba", "nll", "lower", "upper", "std", "a_q", "b_q",
+              *(["pi0", "pi1"] if key == "zoib" else []), *_RESPONSE_PARAMS.get(key, [])]
+    fw = batched_forward(model, ev, fields=tuple(dict.fromkeys(fields)), y=ev.y_soft,
+                         level=level, extra_levels=(0.5,))
     interior = (ev.y_soft > 0) & (ev.y_soft < 1)
     imask = interior if getattr(head, "interior_only", False) else None
 
     metrics = continuous_metrics(ev.y_soft, fw["mean"], fw["proba"], fw["nll"],
-                                 fw["lower"], fw["upper"], fw50["lower"], fw50["upper"], imask)
+                                 fw["lower"], fw["upper"], fw["lower@0.5"], fw["upper@0.5"], imask,
+                                 threshold=s["binary_threshold"])
     metrics["mean_uncertainty"] = float(fw["std"].mean())
 
     # boundary calibration for ZOIB
     boundary = None
     if key == "zoib":
-        bf = batched_forward(model, ev, fields=("pi0", "pi1"))
+        bf = fw
         boundary = {
             "pred_P(y=0)_mean": float(bf["pi0"].mean()),
             "actual_freq(y=0)": float((ev.y_soft <= 0).mean()),
@@ -124,51 +156,57 @@ def evaluate_continuous(directory: str | Path, *, phase0_cfg: Optional[Config] =
             "P(y=1)_calibration": _binned(bf["pi1"], (ev.y_soft >= 1).astype(float)),
         }
 
-    theta = theta_matrix(model, cfg, mi, s["pathway"])
+    theta = theta_matrix(model, cfg, mi, s["pathway"], data=data)
     spec = theta_spectrum(theta)
-    a_all = batched_forward(model, ev, fields=("a_q", "b_q"))
-    psum = parameter_summary(theta=theta, a_q=a_all["a_q"], b_q=a_all["b_q"],
+    psum = parameter_summary(theta=theta, a_q=fw["a_q"], b_q=fw["b_q"],
                              discrimination_constrained=bool(model.disc_head.constrain))
-    psum["response_params"], psum["response_flags"] = _response_param_summary(model, ev)
+    psum["response_params"], psum["response_flags"] = _response_param_summary(model, ev, fw)
 
     cold = None
     if model.model_params == "projected":
         from .eval import cold_start_baseline
 
-        cold = cold_start_baseline(model, cfg, blob, split=split, **s)
+        cold = cold_start_baseline(model, cfg, blob, split=split, data=data, **s)
 
     result = {
         "split": split, "response_model": key, "confidence_level": level,
         "metrics": {k: v for k, v in metrics.items() if not k.startswith("_")},
         "per_model": _per_group(ev.y_soft, fw["mean"], ev.model_ids),
-        "per_family": _per_group(ev.y_soft, fw["mean"], family_labels(ev.query_ids, cfg)),
+        "per_family": _per_group(ev.y_soft, fw["mean"],
+                                 family_labels(ev.query_ids, cfg, queries_df=data.queries)),
         "boundary_calibration": boundary,
         "theta_spectrum": spec,
         "parameter_summary": psum,
         "cold_start": cold,
     }
     if write:
-        prev = json.loads((d / "metrics.json").read_text()) if (d / "metrics.json").exists() else {}
-        (d / "metrics.json").write_text(json.dumps({**prev, split: result}, indent=2, default=float),
-                                        encoding="utf-8")
+        from .eval import _write_eval
+
+        _write_eval(d, split, result)
         save_theta_spectrum(spec, d)
         _write_json({"bins": metrics["_reliability"], "ece": metrics["mean_calibration_ece"]},
                     d, "mean_calibration.json")
         plots = d / "plots"
         plot_theta_spectrum(spec, plots / "theta_spectrum.png")
         _plot_mean_calibration(metrics["_reliability"], plots / "mean_calibration.png", key)
-        _plot_uncertainty_calibration(model, ev, fw, plots / "uncertainty_calibration.png", level)
+        _plot_uncertainty_calibration(model, ev, fw, plots / "uncertainty_calibration.png", level,
+                                      interior_mask=imask)
         if boundary:
             _plot_boundary_calibration(boundary, plots / "boundary_calibration.png")
     return result
 
 
-def _response_param_summary(model, ev) -> tuple:
+_RESPONSE_PARAMS = {"normal": ["sigma"], "beta": ["kappa", "mu"],
+                    "zoib": ["kappa", "mu", "pi0", "pi1", "pic"]}
+
+
+def _response_param_summary(model, ev, fw: Optional[dict] = None) -> tuple:
     key = model.response_model
-    want = {"normal": ["sigma"], "beta": ["kappa", "mu"], "zoib": ["kappa", "mu", "pi0", "pi1", "pic"]}.get(key, [])
+    want = _RESPONSE_PARAMS.get(key, [])
     if not want:
         return {}, []
-    fw = batched_forward(model, ev, fields=tuple(want))
+    if fw is None or any(k not in fw for k in want):
+        fw = batched_forward(model, ev, fields=tuple(want))
     from .diagnostics import _dist
 
     summ = {k: _dist(fw[k]) for k in want}
@@ -218,10 +256,11 @@ def compare_response_models(dirs: dict, *, cfg: Optional[Config] = None, split: 
 
             r = evaluate_checkpoint(p, phase0_cfg=cfg, split=split, write=False)
             pred = r["prediction"]
+            graded = r["graded"]     # p as the expected score vs y_soft, like the other rows
             rows[name] = {
                 "response_model": "bernoulli",
-                "nll": pred["bce"], "mae": pred["mae"], "rmse": pred["mse"] ** 0.5,
-                "mean_calibration_ece": r["calibration"]["ece"],
+                "nll": pred["bce"], "mae": graded["mae"], "rmse": graded["rmse"],
+                "mean_calibration_ece": graded["mean_calibration_ece"],
                 "bce_diag": pred["bce"], "accuracy": pred["accuracy"],
                 "cold_start": _cs(r.get("cold_start")),
                 "theta_effective_rank": r["theta_spectrum"]["effective_rank"],
@@ -242,8 +281,10 @@ def compare_response_models(dirs: dict, *, cfg: Optional[Config] = None, split: 
             }
     out = {"split": split, "models": rows,
            "note": "NLL is each model's own proper score (Bernoulli BCE vs Normal/Beta/ZOIB NLL) "
-                   "-- not directly comparable across rows; use it within a family and read "
-                   "MAE/RMSE/calibration/coverage across rows."}
+                   "-- not directly comparable across rows; use it within a family. "
+                   "MAE/RMSE/mean calibration are all scored against the graded y_soft and are "
+                   "comparable across rows. A Beta row's coverage is interior-conditional "
+                   "(its support excludes exact 0/1) and is not comparable to the others."}
     if write:
         (cfg.root / "artifacts/phase2").mkdir(parents=True, exist_ok=True)
         (cfg.root / "artifacts/phase2/comparison.json").write_text(json.dumps(out, indent=2, default=float),
@@ -273,15 +314,16 @@ def _plot_mean_calibration(bins, path, key):
     savefig(fig, path, plt)
 
 
-def _plot_uncertainty_calibration(model, ev, fw, path, level):
+def _plot_uncertainty_calibration(model, ev, fw, path, level, interior_mask=None):
     plt = pyplot()
     if plt is None:
         return
-    levels = np.linspace(0.1, 0.95, 10)
-    cov = []
-    for lv in levels:
-        q = batched_forward(model, ev, fields=("lower", "upper"), level=float(lv))
-        cov.append(float(np.mean((ev.y_soft >= q["lower"]) & (ev.y_soft <= q["upper"]))))
+    levels = [float(lv) for lv in np.linspace(0.1, 0.95, 10)]
+    q = batched_forward(model, ev, fields=(), extra_levels=tuple(levels))   # one pass
+    m = np.ones(len(ev.y_soft), bool) if interior_mask is None else np.asarray(interior_mask, bool)
+    y = ev.y_soft[m]
+    cov = [float(np.mean((y >= q[f"lower@{lv:g}"][m]) & (y <= q[f"upper@{lv:g}"][m])))
+           for lv in levels]
     fig, ax = plt.subplots(figsize=(5.5, 5))
     ax.plot([0, 1], [0, 1], "--", color="gray")
     ax.plot(levels, cov, "o-", color="#ff7f0e")

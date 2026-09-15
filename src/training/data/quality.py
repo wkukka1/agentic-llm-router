@@ -172,7 +172,9 @@ def check_responses(df: pd.DataFrame) -> QualityReport:
     # hash/id bug.
     from .normalize import normalize_query_text
 
-    norm = df.assign(_norm=df["query"].map(normalize_query_text))
+    # text is per query: work on distinct (query_id, query) pairs, not every row
+    pairs = df[["query_id", "query"]].drop_duplicates()
+    norm = pairs.assign(_norm=pairs["query"].map(normalize_query_text))
     qtext = norm.groupby("query_id")["_norm"].nunique()
     conflicting = qtext[qtext > 1]
     if len(conflicting):
@@ -184,7 +186,7 @@ def check_responses(df: pd.DataFrame) -> QualityReport:
         ))
     # raw-text variants that normalize together are expected (dedup target) but
     # worth reporting as a warning.
-    raw_var = df.groupby("query_id")["query"].nunique()
+    raw_var = pairs.groupby("query_id")["query"].nunique()
     raw_var = raw_var[raw_var > 1]
     if len(raw_var) and not len(conflicting):
         issues.append(QualityIssue(
@@ -219,5 +221,8 @@ def _summarize(df: pd.DataFrame) -> dict[str, Any]:
         "Multiple-choice observations": int(mc.sum()),
         "Chance-corrected observations": int(pd.Series(corrected).fillna(False).astype(bool).sum()),
         "Duplicate observations (absolute metrics)": int(dmask.sum()),
-        "Distinct content hashes": df["query"].map(content_hash).nunique(),
+        "Distinct content hashes": (
+            df["content_hash"].nunique() if "content_hash" in df.columns
+            else df["query"].drop_duplicates().map(content_hash).nunique()
+        ),
     }

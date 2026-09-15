@@ -14,7 +14,7 @@ import numpy as np
 
 from router.config import Config
 from router.embeddings import EmbeddingStore, default_store_dir
-from .query_bank import QueryBank
+from .query_bank import QueryBank, content_groups
 
 
 def warmup_store_dir(cfg: Config, pathway: str):
@@ -45,15 +45,14 @@ def build_warmup_representations(
     ids = [q for q in query_ids if q in retr_store and q in model_store]
 
     retr_vecs = retr_store.gather(ids)
+    groups = content_groups(cfg)      # exclude text-identical twins, not just the id
     out = np.zeros((len(ids), model_store.dim), dtype=np.float32)
     B = 4096
     for i in range(0, len(ids), B):
         chunk = ids[i : i + B]
-        res = bank.search(retr_vecs[i : i + B], k=k, exclude_ids=chunk)
-        for r, qid in enumerate(chunk):
-            nbr = [n for n in res.ids[r] if n and n in model_store]
-            if nbr:
-                out[i + r] = model_store.gather(nbr).mean(axis=0)
+        out[i : i + len(chunk)] = bank.neighbor_weighted_mean(
+            retr_vecs[i : i + B], model_store, k=k, exclude_ids=chunk,
+            exclude_groups=groups, weighting="uniform")[0]
 
     manifest = {
         "kind": "query_warmup",
@@ -65,6 +64,7 @@ def build_warmup_representations(
         "k": k,
         "complete": True,
         "bank_split": bank.manifest.get("split", "train"),
+        "self_exclusion": "content_hash" if groups else "query_id",
         "source": "mean irt-embedding of k nearest TRAIN queries (self-excluded)",
     }
     store = EmbeddingStore(ids, out, manifest, id_field="query_id")

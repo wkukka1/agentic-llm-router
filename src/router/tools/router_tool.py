@@ -43,8 +43,12 @@ class RouterTool(Tool):
         record from a :class:`~router.routing.base.RoutingResult` is the piece
         this stubs -- it needs :class:`~router.policy.RoutingPolicy`, which
         nothing implements yet.
+
+        The implementation must route a *copy*
+        (``dataclasses.replace(request, mode=RoutingMode.MODEL_SELECTION)``),
+        never mutate the caller's request -- a caller that falls back after an
+        error would otherwise keep a request stuck in ``MODEL_SELECTION``.
         """
-        request.mode = RoutingMode.MODEL_SELECTION
         raise NotImplementedError(
             "RouterTool needs a RoutingPolicy to turn a RoutingResult into a "
             "RoutingDecision; router.agentic.AgenticRouter.route_decision(prompt) "

@@ -101,10 +101,10 @@ def prediction_metrics(y_true: Sequence[float], y_prob: Sequence[float]) -> dict
     if n == 0:
         return {"n": 0}
 
-    p = np.clip(y_prob, _EPS, 1 - _EPS)
-    bce = float(-(y_true * np.log(p) + (1 - y_true) * np.log(1 - p)).mean())
+    bce = log_loss(y_true, y_prob)
     y_bin = (y_true >= 0.5).astype(int)
-    brier = float(np.mean((y_prob - y_true) ** 2))
+    brier = brier_score(y_true, y_prob)
+    acc = float(np.mean((y_prob >= 0.5) == y_bin))
     return {
         "n": n,
         "bce": bce,
@@ -112,23 +112,19 @@ def prediction_metrics(y_true: Sequence[float], y_prob: Sequence[float]) -> dict
         "mse": brier,
         "brier": brier,
         "mae": float(np.mean(np.abs(y_prob - y_true))),
-        "accuracy": float(np.mean((y_prob >= 0.5) == y_bin)),
+        "accuracy": acc,
         "pearson_r": _corr(y_prob, y_true),
         "spearman_r": _spearman(y_prob, y_true),
         "auc": _auc(y_bin, y_prob),
         "ece": _ece(y_true, y_prob),
-        "acc@0.5": float(np.mean((y_prob >= 0.5) == y_bin)),
+        "acc@0.5": acc,
         "pos_rate": float(y_bin.mean()),
         "pred_mean": float(y_prob.mean()),
     }
 
 
 def _bce_mse(y_true: np.ndarray, y_prob: np.ndarray) -> dict:
-    p = np.clip(y_prob, _EPS, 1 - _EPS)
-    return {
-        "bce": float(-(y_true * np.log(p) + (1 - y_true) * np.log(1 - p)).mean()),
-        "mse": float(np.mean((y_prob - y_true) ** 2)),
-    }
+    return {"bce": log_loss(y_true, y_prob), "mse": brier_score(y_true, y_prob)}
 
 
 def per_group_metrics(
@@ -146,13 +142,13 @@ def per_group_metrics(
     y_prob = np.asarray(y_prob, dtype=np.float64)
     g = np.asarray(groups).astype(str)
     out: dict[str, dict] = {"overall": prediction_metrics(y_true, y_prob)}
-    counts = {lbl: int((g == lbl).sum()) for lbl in np.unique(g)}
-    small = np.array([counts[lbl] < min_n for lbl in g])
-    for lbl in sorted(counts):
-        if counts[lbl] < min_n:
+    labels, inv, cnt = np.unique(g, return_inverse=True, return_counts=True)
+    small = cnt[inv] < min_n
+    for j, lbl in enumerate(labels):          # np.unique labels are already sorted
+        if cnt[j] < min_n:
             continue
-        m = g == lbl
-        out[lbl] = prediction_metrics(y_true[m], y_prob[m])
+        m = inv == j
+        out[str(lbl)] = prediction_metrics(y_true[m], y_prob[m])
     if small.any():
         out["(small)"] = prediction_metrics(y_true[small], y_prob[small])
     return out

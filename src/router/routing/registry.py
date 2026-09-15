@@ -17,13 +17,22 @@ __all__ = ["REGISTRY", "register", "build_router"]
 REGISTRY: dict[str, type["Router"]] = {}
 
 
+def _qualname(cls: type) -> str:
+    return f"{cls.__module__}.{cls.__qualname__}"
+
+
 def register(cls: type["Router"]) -> type["Router"]:
     """Class decorator: index ``cls`` under its ``kind``. Returns ``cls`` unchanged."""
     kind = getattr(cls, "kind", None)
     if not kind or kind == "router":
         raise ValueError(f"{cls.__name__} must set a distinct `kind` before @register")
     if kind in REGISTRY and REGISTRY[kind] is not cls:
-        raise ValueError(f"router kind {kind!r} already registered to {REGISTRY[kind].__name__}")
+        # a module reload makes a new class object with the same qualified name
+        # -- that's a re-registration, not a collision
+        if _qualname(REGISTRY[kind]) != _qualname(cls):
+            raise ValueError(
+                f"router kind {kind!r} already registered to {_qualname(REGISTRY[kind])}"
+            )
     REGISTRY[kind] = cls
     return cls
 

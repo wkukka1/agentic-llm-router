@@ -14,10 +14,14 @@ from __future__ import annotations
 
 import abc
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
+
+from ..decision import ModelScore
+from .plan import PlanStatus
 
 if TYPE_CHECKING:  # pragma: no cover - type hints only, not a runtime import
     from ..constraints import OptimizationObjective
+    from .budget import BudgetLedger, ExecutionLimits
     from .plan import Plan
 
 
@@ -35,7 +39,9 @@ class PlanScore:
     cost: float
     latency: float
     utility: float
-    within_budget: bool
+    #: ``None`` when no ledger / limits were given to check against -- an
+    #: unchecked score must not read as a pass
+    within_budget: Optional[bool] = None
 
 
 class PlanForecaster(abc.ABC):
@@ -51,21 +57,41 @@ class PlanForecaster(abc.ABC):
     def forecast_latency(self, plan: "Plan") -> float:
         raise NotImplementedError
 
-    def score_plan(self, plan: "Plan", objective: "OptimizationObjective") -> PlanScore:
+    def score_plan(
+        self,
+        plan: "Plan",
+        objective: "OptimizationObjective",
+        *,
+        ledger: Optional["BudgetLedger"] = None,
+        limits: Optional["ExecutionLimits"] = None,
+    ) -> PlanScore:
         """Combine the three forecasts into one :class:`PlanScore` via
-        ``objective`` -- the same :class:`~router.constraints.OptimizationObjective`
-        the router itself optimizes, so a plan's admission score and a
-        model's routing score never drift apart."""
+        ``objective.utility`` -- the same function the router optimizes, risk
+        term included (``CostForecast.confidence`` feeds ``1 - confidence``), so
+        a plan's admission score and a model's routing score never drift apart.
+
+        Writes the estimates, utility and ``EVALUATED`` status back onto
+        ``plan``. ``within_budget`` is checked against ``ledger.remaining()``
+        and ``limits`` when given."""
         cost = self.forecast_cost(plan)
         quality = self.forecast_quality(plan)
         latency = self.forecast_latency(plan)
-        utility = (
-            objective.quality_weight * quality
-            - objective.cost_weight * cost.total_cost
-            - objective.latency_weight * latency
-        )
-        # within_budget needs an ExecutionLimits/BudgetLedger to check against,
-        # which this signature doesn't receive -- always True is a placeholder
-        # until admission control (the caller of score_plan) exists.
+        utility = objective.utility(ModelScore(
+            model=None, score=quality, expected_quality=quality,
+            expected_cost=cost.total_cost, expected_latency=latency,
+            confidence=cost.confidence,
+        ))
+        within: Optional[bool] = None
+        if ledger is not None or limits is not None:
+            within = True
+            if ledger is not None:
+                within = within and cost.total_cost <= ledger.remaining()
+            if limits is not None:
+                within = within and cost.total_cost <= limits.max_cost and latency <= limits.max_latency
+        plan.estimated_cost = cost.total_cost
+        plan.estimated_quality = quality
+        plan.estimated_latency = latency
+        plan.utility = utility
+        plan.status = PlanStatus.EVALUATED
         return PlanScore(quality=quality, cost=cost.total_cost, latency=latency,
-                         utility=utility, within_budget=True)
+                         utility=utility, within_budget=within)
