@@ -26,7 +26,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from router.settings import settings
+from decompose.classifiers.prompt_decomposition.settings import settings
 from training.prompt_decomposition.data.arena_corpus import ARENA_GLOB, _content_text
 
 log = logging.getLogger(__name__)

@@ -20,10 +20,10 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import average_precision_score, precision_recall_curve, roc_auc_score
 
-from router.prompt_decomposition.features import build_features
-from router.prompt_decomposition.heads.attributes_model import AttributeModel
-from router.prompt_decomposition.heads.attributes_taxonomy import ATTRIBUTE_NAMES, describe
-from router.settings import settings
+from decompose.classifiers.prompt_decomposition.features import build_features
+from decompose.classifiers.prompt_decomposition.heads.attributes_model import AttributeModel
+from decompose.classifiers.prompt_decomposition.heads.attributes_taxonomy import ATTRIBUTE_NAMES, describe
+from decompose.classifiers.prompt_decomposition.settings import settings
 from training.prompt_decomposition.data.arena_corpus import load_arena_splits
 from training.prompt_decomposition.data.arena_labels import label_for, load_arena_labels
 from training.prompt_decomposition.metrics import expected_calibration_error

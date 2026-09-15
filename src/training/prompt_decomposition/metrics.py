@@ -30,7 +30,7 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
-from router.prompt_decomposition.calibration import _EPSILON, apply_temperature
+from decompose.classifiers.prompt_decomposition.calibration import _EPSILON, apply_temperature
 
 
 def expected_calibration_error(confidence: np.ndarray, correct: np.ndarray, n_bins: int = 15) -> float:

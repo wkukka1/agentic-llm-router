@@ -1,24 +1,36 @@
 *.env
 .env
-# ...but the template is committed: it documents every variable.
-!.env.example
-__pycache__/
 **/__pycache__/
-*.pyc
+**/.DS_Store
 .venv/
-.DS_Store
+.venv-lmeval/
+*.egg-info/
+.pytest_cache/
 
-# data + run outputs are reproducible from scripts
+# Data + build artifacts are reproducible from the scripts; do not commit them.
 data/raw/
 data/processed/
+data/splits/
+data/taxonomy/
+data/taxonomy/labeling_cache.json
+indexes/
+routerbench/
+# Phase 1 training runs / plots — reproducible from scripts
 artifacts/
-!artifacts/.gitkeep
-*.egg-info/
-src/*.egg-info/
-Thumbs.db
-desktop.ini
 
+# keep curated, human-editable taxonomy files under version control
+!data/taxonomy/candidate_abilities.yaml
+!data/taxonomy/final_taxonomy.yaml
+!data/taxonomy/cluster_labels.json
+
+# prompt decomposition
+# `.env` is ignored above; the template is committed because it documents
+# every variable the heads read.
+!.env.example
 # The hand-labelled real-prompt set is the project's key asset, not a
-# regenerable artifact. It is committed deliberately.
+# regenerable artifact. Committed deliberately, against the rule above.
 !data/handlabelled/
 !data/handlabelled/*.parquet
+!data/external/
+!data/external/*.parquet
+!data/synthetic/

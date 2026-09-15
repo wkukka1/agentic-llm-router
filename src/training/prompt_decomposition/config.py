@@ -13,7 +13,7 @@ from typing import Any
 
 import yaml
 
-from router.settings import DEFAULT_SEED, settings
+from decompose.classifiers.prompt_decomposition.settings import DEFAULT_SEED, settings
 
 
 @dataclass(slots=True)

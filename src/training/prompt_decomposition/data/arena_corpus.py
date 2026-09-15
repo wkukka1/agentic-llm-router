@@ -35,7 +35,7 @@ import logging
 import numpy as np
 import pandas as pd
 
-from router.settings import settings
+from decompose.classifiers.prompt_decomposition.settings import settings
 
 log = logging.getLogger(__name__)
 

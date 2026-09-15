@@ -16,9 +16,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from router.prompt_decomposition.features import FEATURE_SETS, build_features
-from router.prompt_decomposition.heads.length_model import LengthModel, bootstrap_ci, evaluate
-from router.settings import settings
+from decompose.classifiers.prompt_decomposition.features import FEATURE_SETS, build_features
+from decompose.classifiers.prompt_decomposition.heads.length_model import LengthModel, bootstrap_ci, evaluate
+from decompose.classifiers.prompt_decomposition.settings import settings
 from training.prompt_decomposition.data.arena_corpus import load_arena_splits
 
 log = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ def artifacts_dir() -> Path:
 def encode_splits(splits: dict[str, pd.DataFrame], encoder_model: str,
                   *, variant: str = "single_turn") -> dict[str, np.ndarray]:
     """Embed every split, cached on disk by content -- reruns are free."""
-    from router.embeddings.encoder import EmbeddingEncoder
+    from decompose.classifiers.prompt_decomposition.encoder import EmbeddingEncoder
 
     encoder = EmbeddingEncoder(encoder_model, max_length=256, batch_size=128)
     short = encoder_model.split("/")[-1]

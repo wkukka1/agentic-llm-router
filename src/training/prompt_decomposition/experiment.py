@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from router.prompt_decomposition.models import build as build_model
+from decompose.classifiers.prompt_decomposition.models import build as build_model
 from training.prompt_decomposition.config import ExperimentConfig
 from training.prompt_decomposition.data.dataset import load_splits
 from training.prompt_decomposition.metrics import (

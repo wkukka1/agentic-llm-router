@@ -29,7 +29,7 @@ import pandas as pd
 from scipy.stats import spearmanr
 from sklearn.metrics import roc_auc_score
 
-from router.settings import settings
+from decompose.classifiers.prompt_decomposition.settings import settings
 
 log = logging.getLogger(__name__)
 

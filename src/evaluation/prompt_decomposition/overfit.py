@@ -285,7 +285,7 @@ def align_to_corpus(frame: pd.DataFrame, corpus_prompts: list[str],
 
 def audit_heads(encoder_model: str = DEFAULT_ENCODER) -> list[AuditResult]:
     """Audit the domain and task label sets over one shared encoder."""
-    from router.embeddings.encoder import EmbeddingEncoder
+    from decompose.classifiers.prompt_decomposition.encoder import EmbeddingEncoder
 
     enc = EmbeddingEncoder(encoder_model, pooling="mean", max_length=256, batch_size=32)
     short = encoder_model.split("/")[-1]

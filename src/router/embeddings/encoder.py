@@ -1,148 +1,558 @@
-"""Frozen sentence-embedding extraction with an on-disk cache.
+"""Configurable text-encoder pathways + an on-disk embedding store.
 
-Several experiments reuse the same encoder over the same rows, so embeddings are
-computed once per (model, pooling, max_length, text) and memory-mapped back on
-subsequent runs. Without this, sweeping heads over a fixed encoder pays the
-encoder cost every time.
+Two backends, selected per *pathway* in ``configs/phase0.yaml -> embedding``:
+
+* ``sentence_transformer`` -- a ``sentence-transformers`` model (default
+  ``all-MiniLM-L6-v2``). Normalized sentence embeddings, good for kNN / FAISS.
+* ``bert`` -- a raw Hugging Face encoder (default ``bert-base-uncased``) with
+  ``cls`` or ``mean`` pooling. This is the NIRT-paper text pathway: the same
+  encoder embeds queries *and* LLM profile texts so a query's item parameters
+  and a model's ability vector live in one text space (and a cold-start model
+  can be placed from its profile alone).
+
+Inference is deterministic (eval mode, ``torch.no_grad``, fixed seeds, no
+dropout). Phase 0 does **not** fine-tune anything here.
+
+``EmbeddingStore`` persists ``query_id -> vector`` (or ``model_id -> vector``) as
+a float32 ``.npy`` matrix + a parquet id index + a JSON manifest.
 """
 
 from __future__ import annotations
 
 import hashlib
-import logging
+import json
 import os
-import threading
+import warnings
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Iterable, Optional, Sequence
 
 import numpy as np
-import torch
-from transformers import AutoModel, AutoTokenizer
 
-from router.settings import settings
+from ..config import Config, require_choice, section
+from ..determinism import seed_everything as _seed_everything
 
-log = logging.getLogger(__name__)
-
-#: Overridable with ROUTER_EMBEDDING_CACHE so a shared disk can be used
-#: across machines -- the cache is keyed by content, so sharing is safe.
-CACHE_DIR = settings().embedding_cache_dir
-
-
-def resolve_device(requested: str | None = None) -> str:
-    """Pick the best available torch device, honouring an explicit request."""
-    if requested and requested != "auto":
-        return requested
-    if torch.cuda.is_available():
-        return "cuda"
-    if torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"
+_BACKENDS = ("sentence_transformer", "bert")
+_DEFAULT_MODEL = {
+    "sentence_transformer": "sentence-transformers/all-MiniLM-L6-v2",
+    "bert": "bert-base-uncased",
+}
 
 
-def _pool(hidden: torch.Tensor, mask: torch.Tensor, strategy: str) -> torch.Tensor:
-    if strategy == "cls":
-        return hidden[:, 0]
-    if strategy == "mean":
-        expanded = mask.unsqueeze(-1).to(hidden.dtype)
-        return (hidden * expanded).sum(dim=1) / expanded.sum(dim=1).clamp(min=1e-9)
-    raise ValueError(f"unknown pooling {strategy!r}; expected 'cls' or 'mean'")
+def _resolve_device(pref: str) -> str:
+    if pref and pref != "auto":
+        return pref
+    try:
+        import torch
+
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    except Exception:  # pragma: no cover
+        return "cpu"
 
 
-class EmbeddingEncoder:
-    """Wraps a frozen HF encoder as a batched ``list[str] -> np.ndarray``."""
+@dataclass
+class EncoderConfig:
+    name: str = "default"                     # pathway name
+    backend: str = "sentence_transformer"     # {"sentence_transformer", "bert"}
+    model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
+    batch_size: int = 64
+    normalize: bool = True
+    max_seq_length: int = 256
+    pooling: str = "mean"                     # bert only: {"cls", "mean"}
+    device: str = "auto"
+    seed: int = 42
 
-    #: Models whose training used a fixed instruction prefix. Embedding raw
-    #: text into these is a silent quality loss -- the encoder was never shown
-    #: bare inputs, so the vectors land in a slightly different region of the
-    #: space than anything it was optimised for.
-    DEFAULT_PREFIXES: dict[str, str] = {
-        "intfloat/e5": "query: ",
-        "intfloat/multilingual-e5": "query: ",
-    }
+    def __post_init__(self):
+        require_choice(self.backend, _BACKENDS, field="embedding backend")
 
-    def __init__(
-        self,
-        model_name: str,
-        *,
-        prefix: str | None = None,
-        pooling: str = "mean",
-        max_length: int = 256,
-        batch_size: int = 64,
-        normalize: bool = True,
-        device: str | None = None,
-    ) -> None:
-        self.model_name = model_name
-        if prefix is None:
-            prefix = next((v for k, v in self.DEFAULT_PREFIXES.items()
-                           if model_name.startswith(k)), "")
-        self.prefix = prefix
-        self.pooling = pooling
-        self.max_length = max_length
-        self.batch_size = batch_size
-        self.normalize = normalize
-        self.device = resolve_device(device)
-        self._tokenizer = None
+    def fingerprint(self) -> str:
+        """Every field but ``name`` -- provenance only (includes ``device`` /
+        ``batch_size``, which don't change the vectors)."""
+        payload = json.dumps(
+            {k: v for k, v in self.__dict__.items() if k != "name"}, sort_keys=True
+        ).encode()
+        return hashlib.sha1(payload).hexdigest()[:12]
+
+    def vector_fingerprint(self) -> str:
+        """Only the fields that change the vectors. Decides whether a finished
+        store is still current and whether a partial build can be resumed, so a
+        device or batch-size change doesn't force a re-encode."""
+        fields = {
+            "backend": self.backend,
+            "model_name": self.model_name,
+            "normalize": bool(self.normalize),
+            "max_seq_length": int(self.max_seq_length or 0),
+            "pooling": self.pooling if self.backend == "bert" else None,
+        }
+        return hashlib.sha1(json.dumps(fields, sort_keys=True).encode()).hexdigest()[:12]
+
+
+class TextEncoder:
+    def __init__(self, cfg: EncoderConfig):
+        self.cfg = cfg
+        self.device = _resolve_device(cfg.device)
         self._model = None
+        self._tokenizer = None
 
-    def _ensure_loaded(self) -> None:
-        if self._model is not None:
-            return
-        log.info("loading encoder %s onto %s", self.model_name, self.device)
-        self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        self._model = AutoModel.from_pretrained(self.model_name).to(self.device).eval()
+    # -- model loading -------------------------------------------------
+    def _load_sentence_transformer(self):
+        from sentence_transformers import SentenceTransformer
+
+        m = SentenceTransformer(self.cfg.model_name, device=self.device)
+        if self.cfg.max_seq_length:
+            m.max_seq_length = int(self.cfg.max_seq_length)
+        m.eval()
+        return m
+
+    def _load_bert(self):
+        from transformers import AutoModel, AutoTokenizer
+
+        tok = AutoTokenizer.from_pretrained(self.cfg.model_name)
+        mdl = AutoModel.from_pretrained(self.cfg.model_name).to(self.device)
+        mdl.eval()
+        self._tokenizer = tok
+        return mdl
 
     @property
-    def signature(self) -> str:
-        """Identifies the cache namespace for this encoder configuration."""
-        raw = f"{self.model_name}|{self.prefix}|{self.pooling}|{self.max_length}|{self.normalize}"
-        return hashlib.sha1(raw.encode()).hexdigest()[:12]
+    def model(self):
+        if self._model is None:
+            # no deterministic-algorithms switch: that is process-wide and this
+            # also runs on the serving path next to training / GPU jobs
+            _seed_everything(self.cfg.seed, deterministic_algorithms=False)
+            self._model = (
+                self._load_bert() if self.cfg.backend == "bert"
+                else self._load_sentence_transformer()
+            )
+        return self._model
 
-    @torch.inference_mode()
-    def encode(self, texts: list[str]) -> np.ndarray:
-        self._ensure_loaded()
-        out: list[np.ndarray] = []
-        for start in range(0, len(texts), self.batch_size):
-            batch = [self.prefix + t for t in texts[start : start + self.batch_size]]
+    @property
+    def dim(self) -> int:
+        if self.cfg.backend == "bert":
+            return int(self.model.config.hidden_size)
+        get = getattr(self.model, "get_embedding_dimension", None) or \
+            getattr(self.model, "get_sentence_embedding_dimension")
+        return int(get())
+
+    # -- encoding ----------------------------------------------------
+    def iter_encode(
+        self,
+        texts: Sequence[str],
+        batch_size: Optional[int] = None,
+        show_progress: bool = False,
+        _start_offset: int = 0,
+    ):
+        """Yield ``(start_row, batch_vectors)`` per batch.
+
+        Streaming -- never accumulates the full matrix in memory. ``start_row``
+        is the absolute row index (``_start_offset`` + local offset), so callers
+        can resume a partial build.
+        """
+        _seed_everything(self.cfg.seed, deterministic_algorithms=False)
+        bs = int(batch_size or self.cfg.batch_size)
+        texts = [("" if t is None else str(t)) for t in texts]
+        rng = range(0, len(texts), bs)
+        if show_progress:
+            try:
+                from tqdm import tqdm
+
+                rng = tqdm(rng, desc=f"{self.cfg.backend}:{self.cfg.name}",
+                           initial=0, total=len(rng))
+            except Exception:
+                pass
+        for i in rng:
+            batch = list(texts[i : i + bs])
+            if self.cfg.backend == "bert":
+                vec = self._encode_bert_batch(batch)
+            else:
+                vec = self.model.encode(
+                    batch,
+                    batch_size=bs,
+                    normalize_embeddings=self.cfg.normalize,
+                    convert_to_numpy=True,
+                    show_progress_bar=False,
+                )
+            yield _start_offset + i, np.ascontiguousarray(vec, dtype=np.float32)
+
+    def encode(self, texts: Sequence[str], show_progress: bool = False) -> np.ndarray:
+        if len(texts) == 0:      # not `not texts`: ambiguous for Series / ndarray
+            return np.zeros((0, self.dim), dtype=np.float32)
+        parts = [v for _, v in self.iter_encode(texts, show_progress=show_progress)]
+        return np.vstack(parts) if parts else np.zeros((0, self.dim), dtype=np.float32)
+
+    def _encode_bert_batch(self, batch: list[str]) -> np.ndarray:
+        import torch
+
+        model = self.model  # lazy-loads self._tokenizer too (side effect of the property)
+        with torch.no_grad():
             enc = self._tokenizer(
-                batch,
-                padding=True,
-                truncation=True,
-                max_length=self.max_length,
+                batch, padding=True, truncation=True,
+                max_length=int(self.cfg.max_seq_length or 256),
                 return_tensors="pt",
             ).to(self.device)
-            hidden = self._model(**enc).last_hidden_state
-            pooled = _pool(hidden, enc["attention_mask"], self.pooling)
-            if self.normalize:
-                pooled = torch.nn.functional.normalize(pooled, p=2, dim=1)
-            out.append(pooled.float().cpu().numpy())
-        return np.vstack(out) if out else np.zeros((0, 0), dtype=np.float32)
+            hidden = model(**enc).last_hidden_state          # (b, t, h)
+            if self.cfg.pooling == "cls":
+                vec = hidden[:, 0]
+            else:  # mean pooling over non-pad tokens
+                mask = enc["attention_mask"].unsqueeze(-1).type_as(hidden)
+                vec = (hidden * mask).sum(1) / mask.sum(1).clamp(min=1e-9)
+            if self.cfg.normalize:
+                vec = torch.nn.functional.normalize(vec, p=2, dim=1)
+            return vec.cpu().float().numpy()
 
-    def encode_cached(self, texts: list[str], *, tag: str, cache_dir: Path = CACHE_DIR) -> np.ndarray:
-        """Encode with a cache keyed by encoder signature, tag and text content.
 
-        ``tag`` names the row set (e.g. ``full_prompt/train``). The content hash
-        guards against a stale cache if the underlying split is rebuilt.
+# --------------------------------------------------------------------------- #
+# config -> encoder                                                           #
+# --------------------------------------------------------------------------- #
+def _pathway_dict(cfg: Config) -> dict:
+    return section(cfg, "embedding")
+
+
+def available_pathways(cfg: Config) -> list[str]:
+    e = _pathway_dict(cfg)
+    if isinstance(e.get("pathways"), dict):
+        return list(e["pathways"])
+    return ["default"]
+
+
+def load_encoder(cfg: Config, pathway: Optional[str] = None) -> TextEncoder:
+    e = _pathway_dict(cfg)
+    seed = int(cfg.get("seed", 42))
+    pathways = e.get("pathways")
+    if isinstance(pathways, dict):
+        name = pathway or next(iter(pathways))
+        if name not in pathways:
+            raise KeyError(f"embedding pathway {name!r} not in config: {list(pathways)}")
+        return TextEncoder(_encoder_config(name, pathways[name], e, seed))
+    # flat / legacy form
+    return TextEncoder(_encoder_config("default", e, e, seed))
+
+
+def _encoder_config(name: str, p: dict, shared: dict, seed: int) -> EncoderConfig:
+    """``p`` is the pathway block; ``batch_size`` / ``device`` fall back to the
+    top-level ``embedding:`` block (``shared``) when the pathway doesn't set
+    them, and ``model_name`` defaults per backend."""
+    backend = p.get("backend", "sentence_transformer")
+    return EncoderConfig(
+        name=name,
+        backend=backend,
+        model_name=p.get("model_name") or _DEFAULT_MODEL.get(backend, EncoderConfig.model_name),
+        normalize=bool(p.get("normalize", True)),
+        max_seq_length=int(p.get("max_seq_length", 256)),
+        pooling=p.get("pooling", "mean"),
+        batch_size=int(p.get("batch_size", shared.get("batch_size", 64))),
+        device=p.get("device", shared.get("device", "auto")),
+        seed=seed,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# store                                                                       #
+# --------------------------------------------------------------------------- #
+def _ids_fingerprint(ids: Sequence[str]) -> str:
+    h = hashlib.sha1()
+    h.update(str(len(ids)).encode())
+    for i in ids:
+        h.update(b"\x00")
+        h.update(str(i).encode("utf-8"))
+    return h.hexdigest()[:16]
+
+
+def _texts_fingerprint(texts: Sequence[str]) -> str:
+    """Detects re-rendered profile texts / re-normalised query text under
+    unchanged ids (``None`` is encoded as ``""``, as :meth:`TextEncoder.iter_encode` does)."""
+    h = hashlib.sha1()
+    h.update(str(len(texts)).encode())
+    for t in texts:
+        h.update(b"\x00")
+        h.update(("" if t is None else str(t)).encode("utf-8"))
+    return h.hexdigest()[:16]
+
+
+class EmbeddingStore:
+    """`id -> vector` persisted as vectors.npy + ids.parquet + manifest.json.
+
+    ``id_field`` is ``query_id`` or ``model_id`` depending on what was encoded.
+    Large stores are memory-mapped on load (read-only access pattern).
+    """
+
+    MATRIX = "vectors.npy"
+    IDS = "ids.parquet"
+    MANIFEST = "manifest.json"
+    PROGRESS = "_progress.json"
+    # filenames used before the streaming rewrite -- still readable
+    _LEGACY = {
+        "vectors.npy": "embeddings.npy",
+        "ids.parquet": "embedding_ids.parquet",
+        "manifest.json": "embeddings_manifest.json",
+    }
+
+    def __init__(self, ids: Sequence[str], matrix: np.ndarray, manifest: dict,
+                 id_field: str = "query_id"):
+        assert len(ids) == matrix.shape[0], "id / row count mismatch"
+        # ids are always str (as build_store / parquet round-trips produce), so
+        # lookups behave the same whichever constructor built the store
+        self.ids = [str(i) for i in ids]
+        self.matrix = matrix if matrix.dtype == np.float32 else matrix.astype(np.float32)
+        self.manifest = manifest
+        self.id_field = manifest.get("id_field", id_field)
+        self._index = {qid: i for i, qid in enumerate(self.ids)}
+
+    # -- construction --------------------------------------------------
+    @classmethod
+    def _manifest(cls, encoder: TextEncoder, ids: Sequence[str], id_field: str,
+                  dim: int, texts: Optional[Sequence[str]] = None) -> dict:
+        return {
+            "pathway": encoder.cfg.name,
+            "backend": encoder.cfg.backend,
+            "model_name": encoder.cfg.model_name,
+            "pooling": encoder.cfg.pooling if encoder.cfg.backend == "bert" else None,
+            "dim": int(dim),
+            "normalized": encoder.cfg.normalize,
+            "count": len(ids),
+            "id_field": id_field,
+            "config_fingerprint": encoder.cfg.fingerprint(),
+            "vector_fingerprint": encoder.cfg.vector_fingerprint(),
+            "ids_fingerprint": _ids_fingerprint(ids),
+            "texts_fingerprint": _texts_fingerprint(texts) if texts is not None else None,
+            "device": encoder.device,
+            "batch_size": encoder.cfg.batch_size,
+            "complete": True,
+        }
+
+    @classmethod
+    def build(cls, ids: Sequence[str], texts: Sequence[str], encoder: TextEncoder,
+              id_field: str = "query_id", show_progress: bool = True) -> "EmbeddingStore":
+        """In-memory build (fine for small id sets and tests).
+
+        For large corpora on CPU use :func:`build_store` -- it streams to disk
+        and is resumable.
         """
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        content = hashlib.sha1("\x00".join(texts).encode()).hexdigest()[:12]
-        safe_tag = tag.replace("/", "__")
-        path = cache_dir / f"{self.signature}__{safe_tag}__{content}.npy"
+        matrix = encoder.encode(texts, show_progress=show_progress)
+        dim = int(matrix.shape[1]) if matrix.size else encoder.dim
+        return cls(ids, matrix, cls._manifest(encoder, ids, id_field, dim, texts), id_field)
 
-        if path.exists():
-            log.info("embedding cache hit: %s", path.name)
-            return np.load(path)
+    # -- io ----------------------------------------------------------
+    @classmethod
+    def _resolve(cls, d: Path, canonical: str) -> Path:
+        p = d / canonical
+        if p.exists():
+            return p
+        legacy = d / cls._LEGACY.get(canonical, canonical)
+        return legacy if legacy.exists() else p
 
-        vectors = self.encode(texts)
-        # Write to a unique temp file in the same directory, then rename.
-        # np.save is not atomic: two runs encoding the same rows -- which the
-        # sweep does constantly, since experiments share encoders -- can
-        # interleave inside one file and leave a truncated array that loads
-        # without error on the next run. os.replace is atomic on POSIX and on
-        # Windows, and same-directory keeps it on one filesystem.
-        tmp = path.with_name(f"{path.stem}.{os.getpid()}.{threading.get_ident()}.tmp.npy")
+    def save(self, directory: str | os.PathLike) -> Path:
+        import pandas as pd
+
+        d = Path(directory)
+        d.mkdir(parents=True, exist_ok=True)
+        np.save(d / self.MATRIX, np.ascontiguousarray(self.matrix, dtype=np.float32))
+        pd.DataFrame({self.id_field: self.ids, "row": range(len(self.ids))}).to_parquet(
+            d / self.IDS, index=False
+        )
+        (d / self.MANIFEST).write_text(json.dumps(self.manifest, indent=2), encoding="utf-8")
+        return d
+
+    @classmethod
+    def load(cls, directory: str | os.PathLike, mmap: bool = True) -> "EmbeddingStore":
+        import pandas as pd
+
+        d = Path(directory)
+        manifest = json.loads(cls._resolve(d, cls.MANIFEST).read_text(encoding="utf-8"))
+        if manifest.get("complete") is False:
+            raise IncompleteEmbeddingStore(
+                f"{d} is a partial build (rows_done < count); resume it with build_store()"
+            )
+        matrix = np.load(cls._resolve(d, cls.MATRIX), mmap_mode="r" if mmap else None)
+        id_field = manifest.get("id_field", "query_id")
+        ids_df = pd.read_parquet(cls._resolve(d, cls.IDS)).sort_values("row")
+        return cls(ids_df[id_field].tolist(), matrix, manifest, id_field=id_field)
+
+    @classmethod
+    def exists(cls, directory: str | os.PathLike) -> bool:
+        d = Path(directory)
+        m = cls._resolve(d, cls.MANIFEST)
+        if not m.exists():
+            return False
         try:
-            np.save(tmp, vectors)
-            os.replace(tmp, path)
-        finally:
-            tmp.unlink(missing_ok=True)
-        log.info("embedding cache write: %s %s", path.name, vectors.shape)
-        return vectors
+            return json.loads(m.read_text(encoding="utf-8")).get("complete", True)
+        except Exception:
+            return False
+
+    # -- access ----------------------------------------------------
+    def __len__(self) -> int:
+        return len(self.ids)
+
+    @property
+    def dim(self) -> int:
+        return int(self.matrix.shape[1])
+
+    def __contains__(self, _id: str) -> bool:
+        return _id in self._index
+
+    def row_of(self, _id: str) -> int:
+        return self._index[_id]
+
+    def rows_of(self, ids: Sequence[str]) -> np.ndarray:
+        return np.fromiter((self._index[i] for i in ids), dtype=np.int64, count=len(ids))
+
+    def get(self, _id: str) -> np.ndarray:
+        return np.asarray(self.matrix[self._index[_id]])
+
+    def gather(self, ids: Sequence[str]) -> np.ndarray:
+        """Return an ``(len(ids), dim)`` array for the given ids (copies)."""
+        return np.asarray(self.matrix[self.rows_of(ids)])
+
+    def subset(self, ids: Iterable[str]) -> "EmbeddingStore":
+        wanted = [q for q in ids if q in self._index]
+        rows = self.rows_of(wanted)
+        return EmbeddingStore(wanted, np.asarray(self.matrix[rows]),
+                              dict(self.manifest, count=len(wanted)), self.id_field)
+
+    def as_frame(self):
+        import pandas as pd
+
+        return pd.DataFrame(np.asarray(self.matrix), index=self.ids)
+
+    def close(self) -> None:
+        """Release the memory-map file handle (matters on Windows before a
+        rebuild / delete). The store is unusable afterwards."""
+        mm = getattr(self.matrix, "_mmap", None)
+        if mm is not None:
+            mm.close()
+        self.matrix = None  # type: ignore[assignment]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+
+class IncompleteEmbeddingStore(RuntimeError):
+    pass
+
+
+# --------------------------------------------------------------------------- #
+# resumable streaming build                                                   #
+# --------------------------------------------------------------------------- #
+def build_store(
+    directory: str | os.PathLike,
+    ids: Sequence[str],
+    texts: Sequence[str],
+    encoder: TextEncoder,
+    *,
+    id_field: str = "query_id",
+    flush_every: int = 25,
+    resume: bool = True,
+    force: bool = False,
+    show_progress: bool = True,
+    manifest_extra: Optional[dict] = None,
+    require_fingerprints: bool = False,
+) -> EmbeddingStore:
+    """Encode ``texts`` into ``directory`` incrementally and resumably.
+
+    Layout: ``vectors.npy`` (float32 memmap, shape ``(n, dim)``), ``ids.parquet``,
+    ``manifest.json``, and while in progress ``_progress.json``
+    (``rows_done`` + fingerprints). A killed run (OOM, power loss) leaves a
+    valid partial ``vectors.npy``; calling this again with the same ids/config
+    picks up from ``rows_done``.
+
+    A finished store is reused only when its ids, texts and vector-affecting
+    encoder settings all match. Stores written before those fingerprints existed
+    are reused on an id match alone, unless ``require_fingerprints`` (cheap,
+    small stores such as model profiles pass it so edited texts re-encode).
+    """
+    import pandas as pd
+
+    d = Path(directory)
+    d.mkdir(parents=True, exist_ok=True)
+    n = len(ids)
+    dim = encoder.dim
+    ids = [str(i) for i in ids]
+    texts = [("" if t is None else str(t)) for t in texts]
+    id_fp = _ids_fingerprint(ids)
+    txt_fp = _texts_fingerprint(texts)
+    vec_fp = encoder.cfg.vector_fingerprint()
+    cfg_fp = encoder.cfg.fingerprint()
+
+    mpath = d / EmbeddingStore.MANIFEST
+    ppath = d / EmbeddingStore.PROGRESS
+    vpath = d / EmbeddingStore.MATRIX
+
+    # already finished?
+    if not force and EmbeddingStore.exists(d):
+        man = json.loads(EmbeddingStore._resolve(d, EmbeddingStore.MANIFEST).read_text("utf-8"))
+
+        def _ok(key, expect):
+            got = man.get(key)
+            return got == expect if got is not None else not require_fingerprints
+
+        if (man.get("count") == n and _ok("ids_fingerprint", id_fp)
+                and _ok("vector_fingerprint", vec_fp) and _ok("texts_fingerprint", txt_fp)):
+            return EmbeddingStore.load(d)
+        if show_progress:
+            print(f"[build_store] {d.name}: existing store is stale (ids/texts/encoder changed), rebuilding")
+
+    rows_done = 0
+    if resume and not force and ppath.exists() and vpath.exists():
+        prog = json.loads(ppath.read_text("utf-8"))
+        if (prog.get("ids_fingerprint") == id_fp
+                and prog.get("config_fingerprint") == cfg_fp
+                and prog.get("texts_fingerprint", txt_fp) == txt_fp
+                and prog.get("dim") == dim):
+            rows_done = int(prog.get("rows_done", 0))
+            if show_progress:
+                print(f"[build_store] resuming {d.name} at row {rows_done}/{n}")
+        elif show_progress:
+            print(f"[build_store] {d.name}: fingerprint mismatch, restarting")
+
+    mode = "r+" if (rows_done > 0 and vpath.exists()) else "w+"
+    if mode == "w+" and mpath.exists():
+        # about to overwrite vectors/ids: the old manifest must stop claiming a
+        # complete store, or an interrupted rebuild would load as valid
+        old = json.loads(mpath.read_text("utf-8"))
+        mpath.write_text(json.dumps({**old, "complete": False}, indent=2), encoding="utf-8")
+    mm = np.lib.format.open_memmap(vpath, mode=mode, dtype=np.float32, shape=(n, dim))
+
+    # ids index is stable regardless of progress
+    pd.DataFrame({id_field: ids, "row": range(n)}).to_parquet(d / EmbeddingStore.IDS, index=False)
+
+    def _write_progress(done: int) -> None:
+        mm.flush()
+        ppath.write_text(json.dumps({
+            "rows_done": int(done), "count": n, "dim": dim,
+            "batch_size": encoder.cfg.batch_size,
+            "ids_fingerprint": id_fp, "config_fingerprint": cfg_fp,
+            "texts_fingerprint": txt_fp,
+        }), encoding="utf-8")
+
+    since_flush = 0
+    last = rows_done
+    for start, vec in encoder.iter_encode(
+        texts[rows_done:], show_progress=show_progress, _start_offset=rows_done
+    ):
+        mm[start : start + vec.shape[0]] = vec
+        last = start + vec.shape[0]
+        since_flush += 1
+        if since_flush >= flush_every:
+            _write_progress(last)
+            since_flush = 0
+    _write_progress(last)
+
+    if last < n:  # interrupted mid-stream without exception (shouldn't normally happen)
+        raise IncompleteEmbeddingStore(f"{d}: only {last}/{n} rows encoded")
+
+    mm.flush()
+    del mm
+    manifest = EmbeddingStore._manifest(encoder, ids, id_field, dim, texts)
+    if manifest_extra:
+        manifest.update(manifest_extra)
+    mpath.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    ppath.unlink(missing_ok=True)
+    return EmbeddingStore.load(d)
+
+
+def default_store_dir(cfg: Config, kind: str, pathway: str) -> Path:
+    """`<embedding.cache_dir>/<kind>__<pathway>` (kind e.g. 'query', 'model_profile')."""
+    base = cfg.resolve(cfg.get("embedding.cache_dir", "data/processed/embeddings"))
+    return base / f"{kind}__{pathway}"
