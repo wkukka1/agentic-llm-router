@@ -56,17 +56,23 @@ split, written under `artifacts/pool_expansion/<phase>/`:
 * **1d — derived headline numbers**: `oracle_cost_saving_ceiling = 1 -
   oracle_cost / best-single-model_cost` (oracle = cheapest model attaining each
   query's max true score, `routing.oracle_choice`, ties broken by cost);
-  `router_saving_at_minus{1,3}pt` (largest λ-frontier saving within {1,3} acc pts
-  of the best single model); the fraction of queries the oracle routes off the
-  best model + its model mix; ZOIB escalation rate at λ=0 and at the −3 pt point.
+  `router_saving_at_minus{1,3}pt` — λ is chosen on the **validation** split (cheapest
+  validation-frontier point within {1,3} acc pts of the best single model's validation
+  accuracy) and the saving/accuracy are then measured on test at that λ, so the number
+  is one a deployed router could have picked in advance. The same rule applied directly
+  to the test frontier is kept as `router_saving_at_minus{1,3}pt_test_ceiling` — an
+  optimistic ceiling, not a headline. Also: the fraction of queries the oracle routes off
+  the best model + its model mix; ZOIB escalation rate at λ=0 and at the −3 pt point
+  (validation-chosen λ, with the test-chosen λ as `*_test_ceiling`).
   `naive_argmax_oracle` (the pre-fix `true.argmax(1)` oracle) is recorded for
   comparison but does not feed the ledger.
 * **1e — cold-start status** (`cold_start.json`): if a cold arm exists, a
   `projected` ZOIB run + whether it beats the global-mean BCE baseline.
 * **1f — ablation** (`ablation.json`): 1c re-run with the phase's addition removed
   (predictor unchanged), giving the Δ in oracle ceiling and ZOIB −3 pt saving.
-* **provenance.json** — git sha, seed, pool composition, config/split/checkpoint
-  hashes. **battery.json** — all of the above in one document.
+* **provenance.json** — git sha, seed, pool composition, and hashes of the config the
+  battery ran under (file + resolved content), the split files under that config's
+  `paths.splits` (incl. `ood.json` when present), and the checkpoints. **battery.json** — all of the above in one document.
 
 Each run appends one row to `artifacts/pool_expansion/ledger.json`, re-rendering
 [pool_expansion_results.md](pool_expansion_results.md)

@@ -126,9 +126,9 @@ model, cfg, model_index = load_run("nirt-1d-projected")
 
 ## Classical IRT & routing
 
-[`baselines.py`](../src/router/nirt/baselines.py) fits a classical
-(multidimensional) 2PL with **no query features** — free per-query `theta_q`,
-per-model `a_m`, `b_m`:
+[`classical_irt.py`](../src/evaluation/baselines/classical_irt.py) fits a
+classical (multidimensional) 2PL with **no query features** — free per-query
+`theta_q`, per-model `a_m`, `b_m`:
 
 * **transductive ceiling** (`protocol="cell"`) — fit on a random 85 % of the
   split's `(query, model)` cells, predict the held-out 15 %. The
@@ -136,7 +136,7 @@ per-model `a_m`, `b_m`:
 * **`theta_q = 0` lower bound** (`protocol="main_effects"`) — fit `a_m`, `b_m` on
   train+val, predict test queries as `sigmoid(-b_m)` (no query information).
 
-[`routing.py`](../src/router/nirt/routing.py) turns any predictor into a policy
+[`routing.py`](../src/evaluation/nirt/routing.py) turns any predictor into a policy
 `m* = argmax_m (pred − λ · cost_norm)` and scores it on the dense test matrices.
 
 ### Results (test split — 3,677 queries, 9 warm RouterBench models)

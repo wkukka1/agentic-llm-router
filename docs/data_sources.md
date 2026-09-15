@@ -24,7 +24,7 @@ rescaling below removes that floor before Phase 1 sees the data.
 ### Approach: data-level rescaling (no new parameters)
 
 Implemented in
-[`src/router/data/chance_correction.py`](../src/router/data/chance_correction.py).
+[`src/training/data/chance_correction.py`](../src/training/data/chance_correction.py).
 For a multiple-choice observation with `n` answer choices, chance level is
 `c = 1/n`. The corrected score rescales `[c, 1]` onto `[0, 1]`:
 
@@ -180,7 +180,7 @@ workstream — see [anchor_judge.md](anchor_judge.md).
 ## 3. Canonical model registry
 
 File: [`configs/model_registry.yaml`](../configs/model_registry.yaml) ·
-Loader: [`src/router/data/model_registry.py`](../src/router/data/model_registry.py)
+Loader: [`src/training/data/model_registry.py`](../src/training/data/model_registry.py)
 
 ### Why
 

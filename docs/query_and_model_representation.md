@@ -94,7 +94,7 @@ embedding:
 ## 2. LLM profiles
 
 Files: [`configs/model_profiles.yaml`](../configs/model_profiles.yaml) (curated),
-[`src/router/models/profiles.py`](../src/router/models/profiles.py) (builder),
+[`src/training/models/profiles.py`](../src/training/models/profiles.py) (builder),
 `data/processed/model_profiles.parquet` (output).
 
 ### Purpose (NIRT / IRT-Router pathway)

@@ -33,7 +33,10 @@ needed.
    from the 0-shot-only correctness matrix. Discriminative = correctness
    varies across the pool (real routing signal); natural = an unweighted
    sample of everything else. Kept as two disjoint, separately-reported
-   strata rather than one reweighted blend.
+   strata rather than one reweighted blend. Queries whose prompt appears more
+   than once in RouterBench are excluded: their gold score is an average over
+   copies, so no single response text matches it
+   (`evaluation.data.judge_responses.duplicated_routerbench_query_ids`).
 3. **`scripts/data/collect_anchor_judgments.py`** — Phase A judges every
    candidate's answer against the anchor's (`src/router/judge/`), Phase B
    re-judges a ~10% margin-stratified subsample with position swapped (the

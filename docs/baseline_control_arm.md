@@ -2,7 +2,7 @@
 
 A deliberately simple, interpretable **control arm**, compared against in
 `scripts/route_compare.py` and isolated in
-[`src/router/nirt/baseline/`](../src/router/nirt/baseline/). Part 1 is the plain
+[`src/training/nirt/baseline/`](../src/training/nirt/baseline/). Part 1 is the plain
 Bernoulli / BCE core; Part 2 swaps the response head (heteroskedastic Gaussian /
 Beta / ZOIB) on the **same** IRT core and representation. Nothing here is tuned to
 hit a reference number.
