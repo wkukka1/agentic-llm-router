@@ -205,7 +205,7 @@ class AgenticRouter:
             if self.max_calls is not None and self._calls >= self.max_calls:
                 raise RuntimeError(f"max_calls={self.max_calls} model calls exhausted for this run")
             self._calls += 1
-            resp = self.clients.invoke(model_id, prompt)
+            resp = self.clients.complete(model_id, prompt)
         except Exception as exc:
             if depth == 0:
                 raise
@@ -216,7 +216,7 @@ class AgenticRouter:
             )
         return SubCall(
             prompt=prompt, model_id=model_id, predicted_quality=float(predicted_quality),
-            answer=resp.text, mode="single", depth=depth, cost=resp.cost,
+            answer=resp.content, mode="single", depth=depth, cost=resp.cost,
         )
 
     # ------------------------------------------------------------------ #

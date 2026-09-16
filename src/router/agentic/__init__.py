@@ -29,15 +29,17 @@ ar = AgenticRouter(NIRTRouter.from_run("nirt-2d-projected"),
 See ``docs/agentic_router.md``. LangChain is an optional dependency (the
 ``agentic`` extra); the defaults (echo clients, `RecursiveOrchestrator`,
 `HeuristicTriage`, `NaiveDecomposer`) need nothing beyond the core install.
+Clients are :class:`~router.llm.client.LLMClient`\\ s wrapping a
+:class:`~router.llm.adapters.base.ProviderAdapter` (``EchoAdapter``/
+``CallableAdapter``/``LangChainAdapter`` in :mod:`router.llm.adapters`) --
+build one directly and pass it to :meth:`ClientRegistry.register` for a
+custom client.
 """
 
 from __future__ import annotations
 
 from .llm_clients import (
-    CallableClient,
     ClientRegistry,
-    EchoClient,
-    LangChainClient,
     LLMClient,
     LLMResponse,
     guess_provider,
@@ -65,9 +67,6 @@ __all__ = [
     "ClientRegistry",
     "LLMResponse",
     "LLMClient",
-    "EchoClient",
-    "CallableClient",
-    "LangChainClient",
     "guess_provider",
     # triage
     "TriageDecision",

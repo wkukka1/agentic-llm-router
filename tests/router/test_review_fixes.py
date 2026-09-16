@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from router.agentic import AgenticRouter, CallableClient, ClientRegistry, HeuristicTriage, NaiveDecomposer
+from router.agentic import AgenticRouter, ClientRegistry, HeuristicTriage, NaiveDecomposer
 from router.agentic.llm_clients import LLMResponse, guess_provider, message_text
 from router.agentic.result import AgenticResult
 from router.agentic.triage import TriageDecision
@@ -23,6 +23,7 @@ from router.embeddings.encoder import EmbeddingStore
 from router.execution.budget import BudgetLedger
 from router.execution.results import ExecutionResult
 from router.execution.task import AgentTask, TaskStatus
+from router.llm.adapters.fakes import CallableAdapter
 from router.llm.client import LLMClient
 from router.llm.profile import LLMProfile
 from router.llm.registry import LLMRegistry
@@ -236,7 +237,8 @@ def test_int_ids_match_str_stores():
 # router.agentic                                                              #
 # --------------------------------------------------------------------------- #
 def _costed(model_ids):
-    return ClientRegistry({m: CallableClient(m, lambda p, m=m, **kw: LLMResponse(f"{m}:{p}", m, cost=1.0))
+    return ClientRegistry({m: LLMClient(CallableAdapter(
+        m, lambda p, m=m, **kw: LLMResponse(f"{m}:{p}", cost=1.0)))
                            for m in model_ids})
 
 
@@ -286,9 +288,9 @@ def test_failed_subcall_keeps_paid_siblings():
     def boom(p, **kw):
         if "second" in p:
             raise TimeoutError("provider timeout")
-        return LLMResponse("ok", "a", cost=1.0)
+        return LLMResponse("ok", cost=1.0)
 
-    reg = ClientRegistry({m: CallableClient(m, boom) for m in POOL})
+    reg = ClientRegistry({m: LLMClient(CallableAdapter(m, boom)) for m in POOL})
     res = AgenticRouter(_TextRouter([0.9, 0.9, 0.9]), reg).run("first part here and then second part here")
     assert res.mode == "orchestrated" and len(res.errors()) == 1
     assert res.cost == pytest.approx(1.0)

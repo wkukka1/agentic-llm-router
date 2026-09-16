@@ -9,15 +9,15 @@ import pytest
 from router.agentic import (
     AgenticRouter,
     ClientRegistry,
-    CallableClient,
-    EchoClient,
     HeuristicTriage,
+    LLMClient,
     NaiveDecomposer,
     RecursiveOrchestrator,
     TriageDecision,
     guess_provider,
 )
 from router.agentic.triage import best_from_result
+from router.llm.adapters.fakes import CallableAdapter, EchoAdapter
 from router.routing import RouterModel
 
 POOL = ["fast-small", "big-strong", "coder"]
@@ -52,23 +52,23 @@ class FakeTextRouter(RouterModel):
 # LLM clients                                                                    #
 # --------------------------------------------------------------------------- #
 def test_echo_client_is_deterministic():
-    b = EchoClient("m1")
-    r1, r2 = b.invoke("hello world"), b.invoke("hello world")
-    assert r1.text == r2.text
-    assert r1.model_id == "m1" and "m1" in r1.text
+    b = LLMClient(EchoAdapter("m1"))
+    r1, r2 = b.complete("hello world"), b.complete("hello world")
+    assert r1.content == r2.content
+    assert "m1" in r1.content
 
 
 def test_callable_client_wraps_fn():
-    b = CallableClient("m", lambda p, **kw: p.upper())
-    assert b.invoke("hi").text == "HI"
+    b = LLMClient(CallableAdapter("m", lambda p, **kw: p.upper()))
+    assert b.complete("hi").content == "HI"
 
 
 def test_registry_synthesises_unknown_ids():
-    reg = ClientRegistry({"known": EchoClient("known", prefix="k")})
-    assert reg.get("known").invoke("x").text.startswith("[k::known]")
-    # unseen id -> default EchoClient, cached
+    reg = ClientRegistry({"known": LLMClient(EchoAdapter("known", prefix="k"))})
+    assert reg.get("known").complete("x").content.startswith("[k::known]")
+    # unseen id -> default echo client, cached
     made = reg.get("surprise")
-    assert isinstance(made, EchoClient) and reg.get("surprise") is made
+    assert isinstance(made, LLMClient) and reg.get("surprise") is made
 
 
 def test_guess_provider():
@@ -179,8 +179,8 @@ def test_matrix_router_needs_a_resolver():
 
 
 def test_cost_is_summed_from_client_responses():
-    reg = ClientRegistry({m: CallableClient(m, lambda p, **kw: "ok") for m in POOL})
-    # CallableClient returns no cost -> total stays 0.0, no crash
+    reg = ClientRegistry({m: LLMClient(CallableAdapter(m, lambda p, **kw: "ok")) for m in POOL})
+    # CallableAdapter returns no cost -> total stays 0.0, no crash
     res = AgenticRouter(FakeTextRouter(), reg).run("a and then b and then c")
     assert res.cost == 0.0
 
