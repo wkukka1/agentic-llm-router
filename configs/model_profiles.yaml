@@ -1,0 +1,179 @@
+# LLM profiles (human-editable).
+#
+# `feature` is a short natural-language description of the model -- the same
+# style as GraphRouter / IRT-Router "llm descriptions". It is embedded by the
+# `irt` encoder pathway (BERT) to give each model a text vector, which Phase 1
+# uses to initialise the latent ability vector theta_m (crucial for cold-start
+# models that have no response data).
+#
+# Optional structured fields (params_b, context_window, release, modality,
+# input_price_per_1k, output_price_per_1k) are woven into the profile text and
+# kept in `model_profiles.parquet` for reference. `null` = unknown.
+#
+# Keys are canonical model_ids (see configs/model_registry.yaml). Models not
+# listed here fall back to a template built from the registry
+# (provider / family / version) plus the empirical addendum.
+
+version: 1
+
+defaults:
+  modality: [text]
+
+profiles:
+  # ---- RouterBench candidates (have dense correctness data) ----
+  gpt-4-1106-preview:
+    feature: >-
+      GPT-4 Turbo (November 2023 preview) is OpenAI's proprietary large
+      multimodal model, a strong general reasoner with broad world knowledge and
+      reliable instruction following. Among the strongest models in this pool on
+      math, coding and multiple-choice knowledge tasks.
+    params_b: null
+    context_window: 128000
+    release: "2023-11"
+    input_price_per_1k: 0.01
+    output_price_per_1k: 0.03
+
+  gpt-3.5-turbo-1106:
+    feature: >-
+      GPT-3.5 Turbo (November 2023) is OpenAI's fast, low-cost proprietary chat
+      model. A capable generalist, clearly below GPT-4 on hard reasoning, math
+      and code but competitive on everyday tasks at a fraction of the cost.
+    params_b: null
+    context_window: 16385
+    release: "2023-11"
+    input_price_per_1k: 0.001
+    output_price_per_1k: 0.002
+
+  claude-v1:
+    feature: >-
+      Claude v1 is an early Anthropic proprietary assistant model, tuned for
+      helpfulness and safety, with solid language and knowledge ability and
+      weaker mathematical reasoning.
+    context_window: 100000
+    release: "2023-03"
+
+  claude-v2:
+    feature: >-
+      Claude 2 is Anthropic's proprietary assistant with a long context window,
+      strong writing and comprehension, good multiple-choice knowledge accuracy
+      and moderate math/coding skill.
+    context_window: 100000
+    release: "2023-07"
+
+  claude-instant-v1:
+    feature: >-
+      Claude Instant v1 is Anthropic's fast, cheaper proprietary model. Lower
+      latency and cost than Claude 2 with a modest drop in reasoning quality.
+    context_window: 100000
+    release: "2023-03"
+
+  llama-2-70b-chat:
+    feature: >-
+      Llama 2 70B Chat is Meta's open-weight dense chat model (70B parameters,
+      RLHF-tuned). A strong open generalist for its era, competent on knowledge
+      and reasoning but noticeably weaker on math and code.
+    params_b: 70
+    context_window: 4096
+    release: "2023-07"
+
+  code-llama-34b-instruct:
+    feature: >-
+      Code Llama 34B Instruct is Meta's open-weight code-specialised model
+      derived from Llama 2 (34B parameters). Tuned for program synthesis and
+      infilling; general chat and knowledge performance is comparatively weak
+      and it often mis-formats multiple-choice answers.
+    params_b: 34
+    context_window: 16384
+    release: "2023-08"
+
+  mixtral-8x7b-instruct:
+    feature: >-
+      Mixtral 8x7B Instruct is Mistral AI's open-weight sparse mixture-of-experts
+      model (about 47B total / 13B active parameters). Fast for its quality, a
+      strong open reasoner and mid-pack on math and code.
+    params_b: 47
+    context_window: 32768
+    release: "2023-12"
+
+  mistral-7b-instruct:
+    feature: >-
+      Mistral 7B Instruct is Mistral AI's compact open-weight dense chat model
+      (7B parameters). Efficient and a good small-model generalist; limited math
+      and coding ability.
+    params_b: 7
+    context_window: 8192
+    release: "2023-09"
+
+  wizardlm-13b-v1.2:
+    feature: >-
+      WizardLM 13B v1.2 is an open-weight Llama-2-based model fine-tuned with
+      Evol-Instruct data (13B parameters). Good instruction following, average
+      reasoning, weak math.
+    params_b: 13
+    context_window: 4096
+    release: "2023-08"
+
+  yi-34b-chat:
+    feature: >-
+      Yi 34B Chat is 01.AI's open-weight bilingual (English/Chinese) dense chat
+      model (34B parameters). Strong multiple-choice knowledge accuracy and
+      solid Chinese-language performance.
+    params_b: 34
+    context_window: 4096
+    release: "2023-11"
+
+  # ---- GPT-4 Judge opponent already covered by mixtral-8x7b-instruct ----
+
+  # ---- A few high-traffic Arena models (pairwise data only) ----
+  gpt-4-0613:
+    feature: >-
+      GPT-4 (June 2023) is OpenAI's original proprietary GPT-4 release: a very
+      strong reasoner with an 8K context window, predating the Turbo variants.
+    context_window: 8192
+    release: "2023-06"
+  gpt-4-0314:
+    feature: >-
+      GPT-4 (March 2023) is the first public OpenAI GPT-4 checkpoint, a strong
+      general reasoner with an 8K context window.
+    context_window: 8192
+    release: "2023-03"
+  gpt-4-0125-preview:
+    feature: >-
+      GPT-4 Turbo (January 2024 preview) is an updated GPT-4 Turbo checkpoint
+      addressing "laziness" in completions, with a 128K context window.
+    context_window: 128000
+    release: "2024-01"
+  claude-2.1:
+    feature: >-
+      Claude 2.1 is Anthropic's proprietary assistant with a 200K context
+      window and reduced hallucination versus Claude 2.0.
+    context_window: 200000
+    release: "2023-11"
+  claude-2.0:
+    feature: >-
+      Claude 2.0 is Anthropic's proprietary long-context assistant, strong on
+      writing and comprehension.
+    context_window: 100000
+    release: "2023-07"
+  gemini-pro:
+    feature: >-
+      Gemini Pro is Google's proprietary multimodal model, a capable generalist
+      competitive with GPT-3.5-class systems on many tasks.
+    release: "2023-12"
+  mistral-medium:
+    feature: >-
+      Mistral Medium is Mistral AI's proprietary API model, positioned between
+      Mixtral and frontier models in quality.
+    release: "2023-12"
+  tulu-2-dpo-70b:
+    feature: >-
+      Tulu 2 DPO 70B is AllenAI's open-weight Llama-2-70B fine-tune with DPO,
+      a strong open instruction-following model.
+    params_b: 70
+    release: "2023-11"
+  vicuna-33b:
+    feature: >-
+      Vicuna 33B is an open-weight Llama-based chat model fine-tuned on user
+      conversations (33B parameters).
+    params_b: 33
+    release: "2023-08"

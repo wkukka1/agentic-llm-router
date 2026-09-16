@@ -1,0 +1,70 @@
+# Phase 1 -- plain Bernoulli / BCE NIRT baseline (control arm).
+#
+# Model:  logit p(y_qm = 1) = a_q . theta_m - b_q
+#         a_q = softplus(f_a(e_q)) * relevance_gate(r_q)     (discrimination, >= 0)
+#         b_q = f_b(e_q)                                     (difficulty; larger = harder)
+#         theta_m  = per-model learnable ability vector (free), or W_theta @ e_m (projected)
+#         p        = sigmoid(logit)     L = BCEWithLogits(logit, y)
+#
+# Data reaches the trainer through training.data.facade.load_training_data (which reads
+# configs/phase0.yaml). This file owns only the model + training + response
+# construction. Do NOT tune anything here to chase the reference ~0.67.
+
+seed: 42
+out_dir: artifacts/phase1/baseline
+
+data:
+  pathway: irt                 # query + profile embedding pathway (BERT-768)
+
+response:
+  # Binary-response construction. Arena / GPT-4-Judge (pairwise) are EXCLUDED --
+  # nirt_observations.parquet already contains only absolute-correctness metrics
+  # (RouterBench accuracy + mc_accuracy).
+  use_arena: false
+  score_kind: effective        # target column: effective (chance-corrected) | raw
+  binary_threshold: 0.5        # y = 1[score_effective >= threshold]; mc_accuracy is already {0,1}
+
+model:
+  theta_dim: 8                 # K latent ability dimensions (NOT claimed optimal)
+  model_params: free           # free = per-model theta_m ; projected = W_theta @ e_m (cold-start)
+  bound_ability: true          # projected only: theta_m = sigmoid(W_theta e_m)
+  query_hidden: 64             # hidden width of f_a / f_b / f_len ; 'none' -> linear
+  constrain_discrimination: true   # softplus -> a_q >= 0 (interpretable; ICCs monotone in ability).
+                                   # 'auto' would leave it unconstrained for K>1 (MIRT-style signed loadings).
+  interaction_hidden: 32
+  use_length_head: true        # independent auxiliary head; LOSS DISABLED (no length labels in Phase 0)
+  warmup:
+    enabled: false             # FAISS kNN warm-up blend of e_q (ablation default off)
+    alpha: 0.5
+    learnable: false
+
+ablation:
+  use_relevance: true          # condition a_q on r_q
+  use_warmup: false            # blend e_q with mean of k nearest train-query embeddings
+  use_interaction: true        # residual on top of the bare IRT score (gamma starts at 0)
+
+regularization:
+  # IRT is identifiable only up to a shift/scale of the latent space. These mild,
+  # documented terms fix a stable convention; they are NOT tuned to a val number.
+  theta_l2: 1.0e-4             # shrink ability scale
+  theta_center_l2: 1.0e-3      # pin mean_m theta_m ~ 0 (identifiability)
+  discrimination_l2: 0.0
+  difficulty_l2: 1.0e-4
+
+train:
+  target: binary               # {binary, soft}
+  loss: bce_with_logits
+  lr: 1.0e-3
+  weight_decay: 0.0
+  batch_size: 4096
+  epochs: 60
+  patience: 8
+  device: cpu
+  class_weighting: false       # BCEWithLogits pos_weight = #neg/#pos (default off; report imbalance first)
+
+retrieval:
+  k: 5                          # kNN for the warm-up blend (index itself is Phase 0)
+
+evaluation:
+  split: test
+  n_icc: 6

@@ -1,13 +1,10 @@
 [project]
 name = "agentic-llm-router"
 version = "0.1.0"
-description = "Prompt decomposition: domain and task classifiers for an LLM router"
+description = "Cost-aware LLM router research project (Foundation data pipeline + NIRT baseline)"
+readme = "README.md"
 requires-python = ">=3.11"
 
-# The core is deliberately light: label spaces, splitting, the lexical models,
-# serving and the audit need only these. Frozen sentence encoders pull in torch
-# and transformers, which is most of a gigabyte, so they live in an extra --
-# `pip install -e .[encoders]`. CI installs the core and runs offline.
 dependencies = [
   "numpy",
   "pandas",
@@ -15,26 +12,59 @@ dependencies = [
   "PyYAML",
   "scikit-learn",
   "scipy",
+  "python-dotenv",
+  "tqdm",
+  "datasets",
+  "sentence-transformers",
+  "transformers",
+  "torch",
+  "matplotlib",
+  "faiss-cpu",
+  "umap-learn",
+  "hdbscan",
 ]
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[project.scripts]
+router-phase0 = "training.phase0:main"
+prompt-decomposition = "prompt_decomposition.cli:main"
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "ruff",
+  "langchain-core>=0.3",
+  "import-linter",
+]
+labeling = [
+  "openai",
+  "anthropic",
+]
+encoders = [
+  "torch",
+  "transformers",
+  "huggingface_hub",
+]
+data = [
+  "datasets",
+  "huggingface_hub",
+  "tqdm",
+]
+agentic = [
+  "langchain>=0.3",
+  "langchain-core>=0.3",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "tests"]
 testpaths = ["tests"]
-
-[project.scripts]
-prompt-decomposition = "prompt_decomposition.cli:main"
-
-[project.optional-dependencies]
-dev = ["pytest", "ruff"]
-encoders = ["torch", "transformers", "huggingface_hub"]
-data = ["datasets", "huggingface_hub", "tqdm"]
+filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.ruff]
 line-length = 110
@@ -48,5 +78,35 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# Tests reach into internals deliberately, and re-import inside test bodies.
 "tests/*" = ["E402"]
+
+[tool.importlinter]
+root_packages = ["router", "training", "evaluation", "decompose"]
+exclude_type_checking_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Serving never imports training or evaluation"
+type = "forbidden"
+source_modules = ["router"]
+forbidden_modules = ["training", "evaluation"]
+
+ignore_imports = [
+  "router.routing.routers -> training.data.facade",
+]
+
+[[tool.importlinter.contracts]]
+name = "Training never imports evaluation"
+type = "forbidden"
+source_modules = ["training"]
+forbidden_modules = ["evaluation"]
+
+[[tool.importlinter.contracts]]
+name = "Decompose stays dependency-free"
+type = "forbidden"
+source_modules = ["decompose"]
+forbidden_modules = ["router", "training", "evaluation"]
+
+ignore_imports = [
+  "decompose.embedders.bert -> router.embeddings.encoder",
+  "decompose.embedders.sentence_transformer -> router.embeddings.encoder",
+]

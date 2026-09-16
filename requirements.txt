@@ -13,3 +13,9 @@ tabulate
 torch
 tqdm
 transformers
+sentence-transformers
+matplotlib
+faiss-cpu
+umap-learn
+hdbscan
+anthropic
