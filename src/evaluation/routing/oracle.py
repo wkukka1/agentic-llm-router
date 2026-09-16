@@ -52,7 +52,7 @@ from router.routing.base import _resolve_costs
 from ..nirt.routing import oracle_choice
 
 if TYPE_CHECKING:  # pragma: no cover - type hints only, not a runtime import
-    from router.routing.base import Router
+    from router.routing.base import RouterModel
 
 _TOL = 1e-9
 
@@ -70,7 +70,7 @@ def evaluate_router(
 
     ``true_df`` is ``[query_id x model_id]`` of the **observed** target and
     ``cost_df`` the matching per-cell cost (both restricted to ``router``'s
-    pool). Replaces the old ``Router.evaluate()`` method -- a serving class
+    pool). Replaces the old ``RouterModel.evaluate()`` method -- a serving class
     must not depend on ground truth, so this lives here instead. Delegates to
     :func:`routing_evaluation` -- returns oracle hit rate, regret quantiles,
     selected vs oracle quality / cost, and (with ``cost_df``) the cost-aware
@@ -597,7 +597,7 @@ def oracle_classifier_matrix(
 # compare several routers against the oracle                                  #
 # --------------------------------------------------------------------------- #
 def _routers_model_costs(
-    routers: Sequence["Router"], model_ids: Sequence[str],
+    routers: Sequence["RouterModel"], model_ids: Sequence[str],
 ) -> Optional[np.ndarray]:
     """The first router's ``default_model_costs`` that covers every model in
     ``model_ids`` -- the same vector that router's own ``route(lam=...)``
@@ -614,7 +614,7 @@ def _routers_model_costs(
 
 
 def compare_routers(
-    routers: Sequence["Router"],
+    routers: Sequence["RouterModel"],
     true_df: pd.DataFrame,
     cost_df: Optional[pd.DataFrame] = None,
     *,
@@ -627,7 +627,7 @@ def compare_routers(
     """Score several routers side by side against the oracle on one outcome matrix.
 
     Each router's predicted-quality matrix (over ``true_df``'s queries, aligned via
-    :meth:`Router.aligned_scores` to ``true_df.columns``) is handed to
+    :meth:`RouterModel.aligned_scores` to ``true_df.columns``) is handed to
     :func:`compare_routing_strategies`, which adds the hard-oracle upper bound and
     a random floor. Returns ``(summary_df, detail)``. Replaces the old
     ``router.routing.compare_routers`` -- comparing against ground truth is an

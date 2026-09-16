@@ -1,6 +1,6 @@
 """LLM clients: how the orchestrator actually *calls* a routed model.
 
-A :class:`Router` decides *which* ``model_id`` should answer; a client turns
+A :class:`~router.routing.base.RouterModel` decides *which* ``model_id`` should answer; a client turns
 that id into a callable LLM. Clients are pluggable so the same orchestrator runs
 against real APIs in production and against a deterministic echo in tests.
 

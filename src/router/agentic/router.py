@@ -1,4 +1,4 @@
-"""``AgenticRouter`` -- a :class:`~router.routing.base.Router` plus an orchestrator.
+"""``AgenticRouter`` -- a :class:`~router.routing.base.RouterModel` plus an orchestrator.
 
 Flow for a live prompt:
 
@@ -35,7 +35,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from ..routing.base import Router, RoutingResult
+from ..routing.base import RouterModel, RoutingResult
 from .llm_clients import ClientRegistry, LLMClient
 from .decompose import NaiveDecomposer, concat_synthesizer
 from .orchestrator import RecursiveOrchestrator
@@ -52,7 +52,7 @@ Triage = Callable[..., TriageDecision]
 class AgenticRouter:
     def __init__(
         self,
-        router: Router,
+        router: RouterModel,
         clients: Optional[ClientRegistry | dict[str, LLMClient]] = None,
         *,
         triage: Optional[Triage] = None,

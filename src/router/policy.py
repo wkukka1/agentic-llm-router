@@ -1,7 +1,7 @@
 """``RoutingPolicy``: turns a batch of :class:`~router.decision.ModelScore`\\ s
 into a :class:`~router.decision.RoutingDecision` and a destination.
 
-Sits one layer above :class:`router.routing.base.Router`: a ``Router``
+Sits one layer above :class:`router.routing.base.RouterModel`: a ``RouterModel``
 answers "how good is model m for query q"; a ``RoutingPolicy`` answers "given
 those scores, what do we actually do" -- pick a model and return to the user,
 hand back to the parent orchestrator, or spin up a new one. :class:`DefaultRoutingPolicy`

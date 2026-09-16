@@ -18,12 +18,12 @@ from router.agentic import (
     guess_provider,
 )
 from router.agentic.triage import best_from_result
-from router.routing import Router
+from router.routing import RouterModel
 
 POOL = ["fast-small", "big-strong", "coder"]
 
 
-class FakeTextRouter(Router):
+class FakeTextRouter(RouterModel):
     """Text-capable router: quality 0.9 for every model, unless the prompt
     contains 'hard' (0.2); 'coder' gets +0.05 when the prompt mentions code."""
 

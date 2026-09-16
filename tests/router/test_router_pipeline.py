@@ -1,6 +1,6 @@
 """``RoutingPipeline`` (router.router) -- the one piece of the production
 router-design scaffolding that composes entirely out of already-working code
-(PromptDecomposer, Router.route_text, DefaultRoutingPolicy). Everything else
+(PromptDecomposer, RouterModel.route_text, DefaultRoutingPolicy). Everything else
 under router.execution / router.llm / router.tools is exercised only by
 import (see test_scaffolding_imports.py)."""
 
@@ -14,13 +14,13 @@ from router.context import RoutingRequest
 from router.decision import DecisionDestination
 from router.llm.profile import LLMProfile
 from router.llm.registry import LLMRegistry
-from router.routing import Router
+from router.routing import RouterModel
 from router.router import RoutingPipeline
 
 POOL = ["fast-small", "big-strong", "coder"]
 
 
-class FakeTextRouter(Router):
+class FakeTextRouter(RouterModel):
     """Constant per-model scores, 'big-strong' always best -- enough to prove
     RoutingPipeline actually calls through to route_text and interprets the
     result, not a stand-in for real routing quality."""
@@ -63,7 +63,7 @@ def test_route_picks_the_highest_utility_model():
 
 
 def test_route_without_a_registry_falls_back_to_bare_model_ids():
-    """No LLMRegistry -- RoutingPipeline still runs against a plain Router,
+    """No LLMRegistry -- RoutingPipeline still runs against a plain RouterModel,
     using its string model_ids as candidates."""
     pipeline = RoutingPipeline(FakeTextRouter())
     decision = pipeline.route(RoutingRequest(request_id="r2", prompt="anything"))

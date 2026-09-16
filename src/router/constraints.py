@@ -41,7 +41,7 @@ class RoutingConstraints:
     """Hard and soft limits a candidate must clear before it's scored.
 
     ``required_capabilities`` is checked before scoring
-    (``Router.filter_candidates``). ``max_cost`` / ``max_latency`` /
+    (``RouterModel.filter_candidates``). ``max_cost`` / ``max_latency`` /
     ``min_quality`` are hard filters applied to the *scored* candidates by
     ``RoutingPipeline.route`` (``min_quality`` needs the prediction), compared
     against ``ModelScore.expected_cost`` / ``expected_latency`` /

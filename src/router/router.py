@@ -2,16 +2,14 @@
 entry point in the production router design.
 
 Named ``RoutingPipeline`` here, not ``Router`` -- the diagram's top-level
-pipeline class is called ``Router``, but this codebase already has an
-actively-used, tested ``Router`` (:class:`router.routing.base.Router`, the
-per-``(query, model)`` scorer). Reusing the name for a different class in the
-same package would be a namespace collision in practice even where Python
-technically allows it (``router.router.Router`` vs
-``router.routing.base.Router``), so this is deliberately renamed rather than
-shadowing it -- see ``docs/architecture.md``.
+pipeline class is called ``Router``, and the per-``(query, model)`` scorer
+that used to hold that name (:class:`router.routing.base.Router`) has since
+been renamed to :class:`router.routing.base.RouterModel` to free it up (see
+``docs/architecture.md``); this class becomes ``Router`` in the very next
+step of that same rename.
 
 Composes real, working pieces (:class:`~decompose.decomposer.PromptDecomposer`,
-:class:`~router.routing.base.Router`, :class:`~router.llm.registry.LLMRegistry`,
+:class:`~router.routing.base.RouterModel`, :class:`~router.llm.registry.LLMRegistry`,
 :class:`~router.policy.RoutingPolicy`) end to end. What it does *not* do is
 dispatch the call or hand off to an orchestrator -- that's
 :mod:`router.agentic` (already wired, simpler) or
@@ -36,13 +34,13 @@ from .policy import DefaultRoutingPolicy, RoutingPolicy
 if TYPE_CHECKING:  # pragma: no cover - type hints only, not a runtime import
     from .execution.orchestrator import OrchestratorFactory
     from .llm.registry import LLMRegistry
-    from .routing.base import Router
+    from .routing.base import RouterModel
 
 
 class RoutingPipeline:
     def __init__(
         self,
-        router_model: "Router",
+        router_model: "RouterModel",
         *,
         name: str = "pipeline",
         version: str = "0",
@@ -70,22 +68,22 @@ class RoutingPipeline:
         """Decompose -> filter -> rank -> decide.
 
         Ranking needs a text-capable :attr:`router_model`
-        (:attr:`~router.routing.base.Router.can_route_text`, e.g.
+        (:attr:`~router.routing.base.RouterModel.can_route_text`, e.g.
         ``NIRTRouter``/``KNNRouter``) since a live prompt has no prebuilt
         ``query_id``. This is real end-to-end glue, not a stub -- it's the
         one piece of the production design that composes entirely out of
-        already-working code (``PromptDecomposer``, ``Router.route_text``,
+        already-working code (``PromptDecomposer``, ``RouterModel.route_text``,
         ``DefaultRoutingPolicy``).
 
         Only the raw predicted-quality scores come from ``route_text`` --
         cost/latency tradeoffs are applied once, by ``routing_policy`` via
-        ``request.constraints.objective``, not also inside ``Router``'s own
+        ``request.constraints.objective``, not also inside ``RouterModel``'s own
         ``lam``-weighted selection (which this deliberately leaves at 0 to
         avoid scoring cost twice).
 
         ``expected_cost`` is the router's own per-model cost vector
-        (:attr:`~router.routing.base.Router.default_model_costs`, train-mean
-        USD/query) when it has one -- the same scale ``Router.route(lam=...)``
+        (:attr:`~router.routing.base.RouterModel.default_model_costs`, train-mean
+        USD/query) when it has one -- the same scale ``RouterModel.route(lam=...)``
         trades against -- and falls back to the profile's
         ``output_cost_per_token`` only when the router carries no cost signal.
 
@@ -156,7 +154,7 @@ def _apply_hard_limits(scores: list[ModelScore], constraints) -> list[ModelScore
 class _StubProfile:
     """Wraps a bare ``model_id`` string as a minimal candidate when no
     :class:`~router.llm.registry.LLMRegistry` was given -- lets
-    :meth:`RoutingPipeline.route` run against any existing ``Router`` (which
+    :meth:`RoutingPipeline.route` run against any existing ``RouterModel`` (which
     only knows string ids) without requiring the newer ``LLMProfile`` layer
     to be populated first."""
 

@@ -1,4 +1,4 @@
-"""Concrete :class:`~router.routing.base.Router` implementations.
+"""Concrete :class:`~router.routing.base.RouterModel` implementations.
 
 Every class here is a thin adapter over machinery that already exists elsewhere
 in the package -- the point is the *shared interface*, not new modelling:
@@ -28,7 +28,7 @@ from typing import Optional, Sequence
 import numpy as np
 import pandas as pd
 
-from .base import Router, _resolve_costs
+from .base import RouterModel, _resolve_costs
 from .registry import register
 
 __all__ = [
@@ -141,7 +141,7 @@ def _encode_texts(data, texts: Sequence[str], pathway: str, *,
 # MatrixRouter -- wrap a precomputed score frame                              #
 # --------------------------------------------------------------------------- #
 @register
-class MatrixRouter(Router):
+class MatrixRouter(RouterModel):
     """A router backed by an already-computed ``[query_id x model_id]`` frame of
     predicted quality. Handy for checkpoints whose matrices are produced
     elsewhere (ZOIB ``E[Y]``, the Bernoulli baseline) and for tests."""
@@ -151,7 +151,7 @@ class MatrixRouter(Router):
     def __init__(self, scores: pd.DataFrame, *, name: Optional[str] = None,
                  model_costs: Optional[Sequence[float]] = None):
         super().__init__(list(scores.columns), name=name)
-        # the pool is stringified by Router; the frame's labels must match or
+        # the pool is stringified by RouterModel; the frame's labels must match or
         # every reindex misses (int-labelled frames would route on all-NaN)
         scores = scores.astype(np.float64)
         scores.index = [str(q) for q in scores.index]
@@ -171,7 +171,7 @@ class MatrixRouter(Router):
 # NIRTRouter -- a trained NIRT / IRT-Router run                               #
 # --------------------------------------------------------------------------- #
 @register
-class NIRTRouter(Router):
+class NIRTRouter(RouterModel):
     """Route with a trained NIRT / IRT-Router response model.
 
     Build it from a saved run directory with :meth:`from_run`, or pass an
@@ -339,7 +339,7 @@ class NIRTRouter(Router):
 # KNNRouter -- RouterBench-style nearest-neighbour router                     #
 # --------------------------------------------------------------------------- #
 @register
-class KNNRouter(Router):
+class KNNRouter(RouterModel):
     """Predict a query's per-model quality as the mean over its ``k`` nearest
     training queries (cosine, retrieval embeddings). No training step."""
 
@@ -409,7 +409,7 @@ class KNNRouter(Router):
 # MLPRouter -- the IRT-free e_q -> R^M head                                   #
 # --------------------------------------------------------------------------- #
 @register
-class MLPRouter(Router):
+class MLPRouter(RouterModel):
     """A plain MLP mapping the query embedding to a per-model correctness vector
     (masked BCE). The "NIRT minus the bilinear form" ablation, exposed as a
     router. Fit it with
@@ -443,7 +443,7 @@ class MLPRouter(Router):
 # RandomRouter -- evaluation floor                                            #
 # --------------------------------------------------------------------------- #
 @register
-class RandomRouter(Router):
+class RandomRouter(RouterModel):
     """Uniform-random model per query (deterministic given ``seed``). Not a real
     strategy -- a floor to check that a learned router beats chance.
 

@@ -1,4 +1,4 @@
-"""Real logic added to router.routing.base.Router (filter_candidates,
+"""Real logic added to router.routing.base.RouterModel (filter_candidates,
 UnsupportedCandidatePolicy) plus router.execution.budget.BudgetLedger --
 the other pieces of the class-diagram scaffolding with actual behavior to
 test, not just importability."""
@@ -11,10 +11,10 @@ import pytest
 from router.execution.budget import BudgetLedger, ExecutionLimits
 from router.execution.orchestrator import Orchestrator, OrchestratorConfig
 from router.execution.task import AgentTask
-from router.routing.base import Router, UnsupportedCandidatePolicy
+from router.routing.base import RouterModel, UnsupportedCandidatePolicy
 
 
-class ConstRouter(Router):
+class ConstRouter(RouterModel):
     kind = "const"
 
     def predict_scores(self, query_ids):

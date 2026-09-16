@@ -11,7 +11,7 @@ from router.routing import (
     REGISTRY,
     MatrixRouter,
     RandomRouter,
-    Router,
+    RouterModel,
     RoutingResult,
     build_router,
     register,
@@ -160,14 +160,14 @@ def test_build_router_unknown_kind():
 def test_register_rejects_missing_kind():
     with pytest.raises(ValueError, match="distinct `kind`"):
         @register
-        class _NoKind(Router):
+        class _NoKind(RouterModel):
             def predict_scores(self, query_ids):
                 ...
 
 
 def test_register_custom_router_roundtrips():
     @register
-    class _ConstRouter(Router):
+    class _ConstRouter(RouterModel):
         kind = "_const_test"
 
         def predict_scores(self, query_ids):
@@ -244,7 +244,7 @@ def test_compare_routers_rejects_duplicate_names():
 
 
 def test_compare_routers_handles_non_string_query_ids():
-    """XD-08: compare_routers must align via Router.aligned_scores (which
+    """XD-08: compare_routers must align via RouterModel.aligned_scores (which
     stringifies ids the same way predict_scores does), not a raw reindex by
     the caller's original ids -- a non-string query id previously produced an
     all-NaN row that silently fell back to column 0."""

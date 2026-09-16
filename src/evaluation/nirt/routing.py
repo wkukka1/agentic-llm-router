@@ -6,7 +6,7 @@ the per-model mean cost -- the same formula and units
 :func:`router.nirt.routing_decision.routing_decision` (the served router's own
 decision rule) uses, via :func:`~router.nirt.routing_decision.cost_aware_utility`.
 ``lam`` is therefore in raw per-query cost units (USD), directly comparable to
-``Router.route(lam=...)``'s ``lam`` -- NOT a ``[0, 1]``-normalized scale. ``lam
+``RouterModel.route(lam=...)``'s ``lam`` -- NOT a ``[0, 1]``-normalized scale. ``lam
 = 0`` is quality-only routing.
 
 Everything is evaluated on the dense ``(query, model)`` matrices of a split:
@@ -98,7 +98,7 @@ def route(pred: np.ndarray, cost: np.ndarray, lam: float = 0.0) -> np.ndarray:
     non-finite predictions/costs are masked -- both via
     :func:`router.nirt.routing_decision.routing_decision`, the served
     router's own decision rule, so an offline ``lam`` sweep here selects
-    exactly what ``Router.route(lam=lam)`` would."""
+    exactly what ``RouterModel.route(lam=lam)`` would."""
     C = np.asarray(cost, np.float64).mean(axis=0)
     return routing_decision(pred, lam=lam, model_costs=C)
 

@@ -1,12 +1,12 @@
-"""The :class:`Router` interface -- one contract every routing strategy implements.
+"""The :class:`RouterModel` interface -- one contract every routing strategy implements.
 
-A router is a **decision layer** over a fixed candidate pool: given some queries it
+A router model is a **decision layer** over a fixed candidate pool: given some queries it
 predicts each model's quality ``E[Y | q, m]`` and then picks one model per query.
-Only :meth:`Router.predict_scores` is abstract -- the pool bookkeeping and the
+Only :meth:`RouterModel.predict_scores` is abstract -- the pool bookkeeping and the
 ``argmax`` / cost-aware selection
 (:func:`router.nirt.routing_decision.routing_decision`) are shared here so a
 new strategy is just "how do I score ``(query, model)``". Oracle-relative
-scoring needs ground truth, so it is not a method on ``Router`` -- see
+scoring needs ground truth, so it is not a method on ``RouterModel`` -- see
 :func:`evaluation.routing.oracle.evaluate_router`.
 
     from router.routing import NIRTRouter
@@ -17,10 +17,10 @@ scoring needs ground truth, so it is not a method on ``Router`` -- see
 
 Writing a new router (e.g. a bandit, an LLM-judge cascade)::
 
-    from router.routing import Router, register
+    from router.routing import RouterModel, register
 
     @register
-    class MyRouter(Router):
+    class MyRouter(RouterModel):
         kind = "my_router"
         def predict_scores(self, query_ids):
             ...  # -> DataFrame [query_id x model_id] of predicted quality
@@ -49,12 +49,12 @@ if TYPE_CHECKING:  # pragma: no cover - type hints only, not a runtime import
     from ..constraints import RoutingConstraints
     from ..models.artifacts import RouterModelArtifact
 
-__all__ = ["Router", "RoutingResult", "UnsupportedCandidatePolicy"]
+__all__ = ["RouterModel", "RoutingResult", "UnsupportedCandidatePolicy"]
 
 
 class UnsupportedCandidatePolicy(enum.Enum):
-    """What :meth:`Router.filter_candidates` does with a candidate this router
-    has no score for (not in :attr:`Router.model_ids`)."""
+    """What :meth:`RouterModel.filter_candidates` does with a candidate this router
+    has no score for (not in :attr:`RouterModel.model_ids`)."""
 
     ERROR = "error"
     DROP = "drop"
@@ -154,7 +154,7 @@ def _resolve_costs(
 # --------------------------------------------------------------------------- #
 # the interface                                                               #
 # --------------------------------------------------------------------------- #
-class Router(abc.ABC):
+class RouterModel(abc.ABC):
     """Abstract base class for a routing strategy over a fixed candidate pool.
 
     Subclasses implement :meth:`predict_scores`. Everything else -- selection,
@@ -207,7 +207,7 @@ class Router(abc.ABC):
                     raise ValueError(f"{model_id!r} is not a supported candidate for {self.name!r}")
                 if self.unsupported_policy is UnsupportedCandidatePolicy.DROP:
                     continue
-                # SCORE_WITH_PRIOR: kept. Router.route can't score a column outside the pool;
+                # SCORE_WITH_PRIOR: kept. RouterModel.route can't score a column outside the pool;
                 # RoutingPipeline.route gives it the pool-mean prediction with confidence 0.
             if required and not required.issubset(set(getattr(c, "capabilities", []) or [])):
                 continue

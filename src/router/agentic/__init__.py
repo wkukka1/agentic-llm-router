@@ -1,4 +1,4 @@
-"""Agentic routing: a trained :class:`~router.routing.base.Router` wrapped in an
+"""Agentic routing: a trained :class:`~router.routing.base.RouterModel` wrapped in an
 LLM orchestrator.
 
 ``AgenticRouter`` takes a live prompt, routes it, then **triages** on the

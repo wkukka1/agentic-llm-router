@@ -19,7 +19,7 @@ single responsibility and an enforced import direction
 
 | package | role | may import |
 |---|---|---|
-| [`router`](src/router/) | **serving**: model definitions, checkpoint inference, the `Router` interface, the agentic orchestrator | — |
+| [`router`](src/router/) | **serving**: model definitions, checkpoint inference, the `RouterModel` interface, the agentic orchestrator | — |
 | [`training`](src/training/) | the data pipeline + fitting/training code | `router` |
 | [`evaluation`](src/evaluation/) | anything that needs ground truth: oracle labels, routing/regret metrics, OOD eval, the LLM-judge pipeline | `router`, `training` |
 | [`decompose`](src/decompose/) | task decomposition signals/classifiers, kept dependency-free | (embedders wrap `router.embeddings.encoder` only) |
@@ -55,7 +55,7 @@ The README is a front door; the depth lives in `docs/`:
 | [prompt_decomposition.md](docs/prompt_decomposition.md) | The five heads: taxonomies, calibration, the handoff vector, known limits |
 | [prompt_decomposition_experiments.md](docs/prompt_decomposition_experiments.md) | Every head experiment including the failures, and why each was abandoned |
 | [pool_expansion.md](docs/pool_expansion.md) / [pool_expansion_results.md](docs/pool_expansion_results.md) | Candidate-pool expansion workstream (E0–E2 done, E3 superseded by irt_router.md) and its results ledger |
-| [routing_interface.md](docs/routing_interface.md) | The `Router` ABC, `RoutingResult`, registered strategies (`matrix`/`nirt`/`knn`/`mlp`/`random`) |
+| [routing_interface.md](docs/routing_interface.md) | The `RouterModel` ABC, `RoutingResult`, registered strategies (`matrix`/`nirt`/`knn`/`mlp`/`random`) |
 | [routing_evaluation.md](docs/routing_evaluation.md) | Oracle labels, regret/hit metrics, the prediction-vs-routing distinction |
 | [agentic_router.md](docs/agentic_router.md) | `AgenticRouter`: triage → single call or recursive decompose/route/synthesize |
 | [anchor_judge.md](docs/anchor_judge.md) | The query-matched gold/preference overlap pipeline resolving whether correctness and human/judge preference are one utility or two |
@@ -99,14 +99,14 @@ outcome = agent.run("Plan a 3-day trip to Kyoto and translate the itinerary to J
 outcome.mode   # "single" or "decompose"
 ```
 
-`Router` subclasses implement only `predict_scores(query_ids)`; the ABC
+`RouterModel` subclasses implement only `predict_scores(query_ids)`; the ABC
 supplies `.route()` / `.route_text()` / `.model_ids` /
 `.default_model_costs`. Registered strategies: `matrix`, `nirt`, `knn`,
 `mlp`, `random` (`router.routing.registry.build_router`). Full contract:
 [docs/routing_interface.md](docs/routing_interface.md). Oracle-relative
 scoring (regret, hit-rate — needs ground truth) is a free function,
 `evaluation.routing.oracle.evaluate_router`, deliberately kept out of
-`Router` itself so serving code never imports `evaluation`.
+`RouterModel` itself so serving code never imports `evaluation`.
 
 ## Data pipeline (Foundation)
 
@@ -193,7 +193,7 @@ parallel pipeline (`configs/irt_router.yaml`) — see
 
 ## Agentic router
 
-[`src/router/agentic/`](src/router/agentic/) wraps a `Router` with an LLM
+[`src/router/agentic/`](src/router/agentic/) wraps a `RouterModel` with an LLM
 client registry and a triage step: a query is either answered with a single
 routed model call, or decomposed into sub-tasks that are each routed and
 answered independently, then synthesized. Triage is driven by the router's

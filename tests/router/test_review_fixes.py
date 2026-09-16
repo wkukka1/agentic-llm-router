@@ -30,7 +30,7 @@ from router.nirt.routing_decision import routing_decision
 from router.nirt.shrinkage import novelty_weight
 from router.policy import DefaultRoutingPolicy
 from router.router import RoutingPipeline
-from router.routing import MatrixRouter, RandomRouter, Router
+from router.routing import MatrixRouter, RandomRouter, RouterModel
 from router.routing.registry import REGISTRY, register
 
 POOL = ["a", "b", "c"]
@@ -41,7 +41,7 @@ def _store(ids, dim, field="query_id", seed=0):
     return EmbeddingStore(ids, mat, {"id_field": field}, field)
 
 
-class _TextRouter(Router):
+class _TextRouter(RouterModel):
     kind = "review_text"
     can_route_text = True
 
@@ -161,7 +161,7 @@ def test_random_router_depends_on_query_not_position():
 def test_reregistering_same_qualname_is_allowed():
     """RR-16"""
     def make():
-        class ReloadProbe(Router):
+        class ReloadProbe(RouterModel):
             kind = "reload_probe"
 
             def predict_scores(self, query_ids):  # pragma: no cover
