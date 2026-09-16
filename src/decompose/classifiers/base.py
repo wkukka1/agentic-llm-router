@@ -33,9 +33,10 @@ class Classifier(abc.ABC):
 
 class SimpleClassifier(Classifier):
     """Base for a classifier with no sub-classifiers of its own -- concrete
-    classifiers (e.g. a language detector, a complexity heuristic) subclass
-    this and implement :meth:`classify` directly. No such classifiers exist
-    yet; this is scaffolding."""
+    classifiers subclass this and implement :meth:`classify` directly. See
+    :mod:`decompose.classifiers.prompt_heads` (``SurfaceClassifier``,
+    ``DomainClassifier``, ``TaskClassifier``, ``LengthClassifier``,
+    ``AttributeClassifier``) for the five real implementations."""
 
 
 class CompositeClassifier(Classifier):
