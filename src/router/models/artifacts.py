@@ -120,6 +120,43 @@ class BaselineArtifactPayload(ArtifactPayload):
 
 
 @dataclass
+class MLPArtifactPayload(ArtifactPayload):
+    """The IRT-free ``e_q -> R^M`` MLP router (:func:`router.nirt.baselines_infer.build_mlp_router`).
+
+    Unlike NIRT/baseline, ``training.trainers.mlp_router.fit_mlp_router``
+    persisted nothing before :class:`~training.trainers.mlp_router.MLPRouterTrainer`
+    -- there is no prior on-disk convention this wraps, this *is* the
+    convention. Rebuild with ``build_mlp_router(in_dim, len(model_ids), hidden,
+    dropout)`` + ``load_state_dict``."""
+
+    state_dict: dict[str, Any]
+    model_ids: list[str]
+    in_dim: int
+    hidden: int
+    dropout: float
+
+    def to_state(self) -> dict[str, Any]:
+        return {
+            "format": "mlp",
+            "state_dict": self.state_dict,
+            "model_ids": self.model_ids,
+            "in_dim": self.in_dim,
+            "hidden": self.hidden,
+            "dropout": self.dropout,
+        }
+
+    @classmethod
+    def from_state(cls, state: dict[str, Any]) -> "MLPArtifactPayload":
+        return cls(
+            state_dict=state["state_dict"],
+            model_ids=state["model_ids"],
+            in_dim=state["in_dim"],
+            hidden=state["hidden"],
+            dropout=state["dropout"],
+        )
+
+
+@dataclass
 class RouterModelArtifact:
     artifact_id: str
     payload: ArtifactPayload

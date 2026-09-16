@@ -5,6 +5,7 @@ from __future__ import annotations
 from router.models.artifacts import (
     ArtifactFormat,
     BaselineArtifactPayload,
+    MLPArtifactPayload,
     NIRTArtifactPayload,
     RouterModelArtifact,
 )
@@ -41,6 +42,19 @@ def test_baseline_payload_round_trips_through_to_state_and_from_state():
     state = payload.to_state()
     assert state["format"] == "baseline"
     assert BaselineArtifactPayload.from_state(state) == payload
+
+
+def test_mlp_payload_round_trips_through_to_state_and_from_state():
+    payload = MLPArtifactPayload(
+        state_dict={"w": [4.0]},
+        model_ids=["a", "b"],
+        in_dim=16,
+        hidden=32,
+        dropout=0.1,
+    )
+    state = payload.to_state()
+    assert state["format"] == "mlp"
+    assert MLPArtifactPayload.from_state(state) == payload
 
 
 def test_router_model_artifact_holds_a_payload_not_a_path():

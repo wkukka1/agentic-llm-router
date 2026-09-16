@@ -20,7 +20,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .artifacts import ArtifactFormat, NIRTArtifactPayload, RouterModelArtifact
+from .artifacts import ArtifactFormat, MLPArtifactPayload, NIRTArtifactPayload, RouterModelArtifact
 
 
 class ArtifactStore(abc.ABC):
@@ -41,10 +41,15 @@ class LocalArtifactStore(ArtifactStore):
     """``root_path`` is a NIRT ``runs_dir``: artifacts live at
     ``root_path/<artifact_id>/{model.pt,run.json}``.
 
-    Only :class:`~router.models.artifacts.NIRTArtifactPayload` is supported
-    today -- the only format with an existing on-disk convention to wrap.
-    Baseline/MLP payloads are Phase C's job, once those trainers exist as
-    ``RouterModelTrainer``s.
+    Supports :class:`~router.models.artifacts.NIRTArtifactPayload` (wraps the
+    existing ``training.nirt.train.fit`` convention) and
+    :class:`~router.models.artifacts.MLPArtifactPayload` (a new convention --
+    ``fit_mlp_router`` persisted nothing before this). **Not**
+    :class:`~router.models.artifacts.BaselineArtifactPayload`: that format's
+    loader lives under ``training`` (``training.nirt.baseline.checkpoint``),
+    which this ``router``-side module must not import -- see
+    :class:`~training.nirt.baseline.trainer.BaselineNIRTTrainer`, which
+    builds that payload in-memory instead of through this store.
     """
 
     def __init__(self, root_path: str | Path):
@@ -54,6 +59,15 @@ class LocalArtifactStore(ArtifactStore):
         return (self.root_path / artifact_id / "model.pt").exists()
 
     def load(self, artifact_id: str) -> RouterModelArtifact:
+        import torch
+
+        blob_path = self.root_path / artifact_id / "model.pt"
+        fmt = torch.load(blob_path, map_location="cpu", weights_only=True).get("format")
+        if fmt == "mlp":
+            return self._load_mlp(artifact_id)
+        return self._load_nirt(artifact_id)
+
+    def _load_nirt(self, artifact_id: str) -> RouterModelArtifact:
         from ..nirt.checkpoint import load_run
 
         model, config, model_index = load_run(artifact_id, runs_dir=self.root_path)
@@ -83,11 +97,30 @@ class LocalArtifactStore(ArtifactStore):
             hyperparameters=config,
         )
 
+    def _load_mlp(self, artifact_id: str) -> RouterModelArtifact:
+        import torch
+
+        blob = torch.load(self.root_path / artifact_id / "model.pt",
+                          map_location="cpu", weights_only=True)
+        payload = MLPArtifactPayload.from_state(blob)
+        meta = self._read_run_json(artifact_id)
+        return RouterModelArtifact(
+            artifact_id=artifact_id,
+            payload=payload,
+            content_hash=meta.get("content_hash", ""),
+            format=ArtifactFormat.PICKLE,
+            schema_version=meta.get("schema_version", "0"),
+            supported_model_ids=list(payload.model_ids),
+            router_model_name="mlp",
+            training_run_id=meta.get("training_run_id", artifact_id),
+            created_at=meta.get("created_at", ""),
+            hyperparameters=meta.get("hyperparameters", {}),
+        )
+
     def save(self, artifact: RouterModelArtifact) -> str:
-        if not isinstance(artifact.payload, NIRTArtifactPayload):
+        if not isinstance(artifact.payload, (NIRTArtifactPayload, MLPArtifactPayload)):
             raise NotImplementedError(
-                f"LocalArtifactStore.save only supports NIRTArtifactPayload today "
-                f"(got {type(artifact.payload).__name__})"
+                f"LocalArtifactStore.save does not support {type(artifact.payload).__name__}"
             )
         import torch
 
