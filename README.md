@@ -42,6 +42,7 @@ The README is a front door; the depth lives in `docs/`:
 
 | doc | covers |
 |---|---|
+| [RUNBOOK.md](docs/RUNBOOK.md) | Copy-paste commands to actually run every pipeline, end to end, in order |
 | [architecture.md](docs/architecture.md) | Class hierarchies across `router`/`training`/`evaluation`, the package-layering contract, intentional name collisions |
 | [workflows.md](docs/workflows.md) | Every runnable pipeline as a diagram + call-chain table (data → embeddings → training → eval → agentic serving) |
 | [data_structures.md](docs/data_structures.md) | `Config`, canonical parquet schemas, splits, the `TrainingData` facade, embedding stores |
