@@ -1,0 +1,12 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^git ls-tree -r --name-only origin/main -- src/evaluation/prompt_decomposition src/training/prompt_decomposition tests/prompt_decomposition \\| rg 'forest\\|prompt_decomposition'$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^sed -n '1,220p' pyproject\\.toml && printf '\\\\n--- requirements ---\\\\n' && sed -n '1,160p' requirements\\.txt && printf '\\\\n--- python ---\\\\n' && command -v python && python --version && command -v pytest \\|\\| true$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}
