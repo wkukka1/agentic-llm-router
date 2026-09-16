@@ -978,24 +978,21 @@ classDiagram
 None of the classes above exist yet as written; the current, as-built
 equivalents are documented elsewhere and look quite different in shape:
 
-- **Routing decision layer** — `router.routing.Router` (ABC, `kind` +
+- **Routing decision layer** — `router.routing.RouterModel` (ABC, `kind` +
   `predict_scores` + `route`) and its `matrix`/`nirt`/`knn`/`mlp`/`random`
-  implementations. No `PromptDecomposer`, `RoutingPolicy`, `LLMRegistry`, or
-  `AgentFactory` — it's the scorer alone. See
+  implementations. `router.router.Router` composes it with `PromptDecomposer`,
+  `RoutingPolicy` and `LLMRegistry` (still no `AgentFactory` wiring — nothing
+  constructs it in production yet). See
   [`docs/routing_interface.md`](routing_interface.md).
-- **Agentic layer** — `router.agentic.AgenticRouter` wraps a `Router` plus
-  `Triage` (`HeuristicTriage`/`LLMTriage`), an `LLMClient`/`ClientRegistry`,
-  and one of two orchestrators (`RecursiveOrchestrator`,
+- **Agentic layer** — `router.agentic.AgenticRouter` wraps a `RouterModel`
+  plus `Triage` (`HeuristicTriage`/`LLMTriage`), a `ClientRegistry` of
+  `router.llm.client.LLMClient`s (adapter-based, `complete`/`stream` — the
+  `invoke`-based duplicate this bullet used to describe has been merged into
+  this one), and one of two orchestrators (`RecursiveOrchestrator`,
   `LangChainToolOrchestrator`) that share no common base. It's a flat
   triage → single-or-decompose → synthesize flow: no `AgentTask` tree, no
   `Plan`/`PlanForecaster`, no `BudgetLedger`, no execution limits. See
   [`docs/agentic_router.md`](agentic_router.md).
-- **A second, unrelated `LLMClient`.** `router.llm.client` defines its own
-  `LLMClient`/`LLMClientFactory`/`LLMResponse` (adapter-based,
-  `complete`/`stream`), separate from `router.agentic.llm_clients.LLMClient`
-  (`invoke`-based, what the live agentic flow actually calls). Same name, two
-  different, currently-unrelated classes — a merge candidate for whichever of
-  `LLMClient`/`LLMClientFactory` above this becomes.
 - **Model definitions and response heads** — `NIRTModel`/`IRTRouterModel`
   (`nn.Module`s chosen by `build_model(cfg)` on an orientation string) and the
   `bernoulli`/`normal`/`beta`/`zoib` `ResponseHead` subclasses (only
