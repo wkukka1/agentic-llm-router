@@ -88,6 +88,41 @@ def test_pairwise_logit_diff_matches_manual_bilinear():
     assert torch.allclose(diff, z_a - z_b, atol=1e-5)
 
 
+def test_pairwise_logit_diff_uses_shared_centering_reference():
+    """XA-04: a_a/a_b come from two separate forward calls, so a
+    center_discrimination model must centre both on ONE shared reference --
+    not each on its own batch, which would bias z_a - z_b by
+    -(r_a - r_b) . theta. The fixed diff must match a manual computation
+    that shares one reference, and differ from the old batch-separate one."""
+    torch.manual_seed(0)
+    m = NIRTModel(query_dim=8, dim=3, model_params="projected", profile_dim=5,
+                  center_discrimination=True)
+    e_q = torch.randn(4, 8)
+    e_a = torch.randn(4, 5)
+    e_b = torch.randn(4, 5)
+
+    fixed_diff = pairwise_logit_diff(m, e_q, e_a, e_b)
+    assert m._a_ref is None   # the context manager restores the previous (unset) reference
+
+    theta = m.latent_query(e_q)
+
+    # old, buggy behaviour: a_a and a_b each centred on their OWN batch mean
+    m.set_discrimination_reference(None)
+    a_a_bad, b_a_bad = m.model_parameters(e_a)
+    a_b_bad, b_b_bad = m.model_parameters(e_b)
+    bad_diff = ((a_a_bad * theta).sum(-1) - b_a_bad) - ((a_b_bad * theta).sum(-1) - b_b_bad)
+
+    # fixed behaviour: both centred on the mean discrimination over e_a and e_b combined
+    m.set_discrimination_reference(torch.cat([e_a, e_b], dim=0))
+    a_a_good, b_a_good = m.model_parameters(e_a)
+    a_b_good, b_b_good = m.model_parameters(e_b)
+    good_diff = ((a_a_good * theta).sum(-1) - b_a_good) - ((a_b_good * theta).sum(-1) - b_b_good)
+    m.set_discrimination_reference(None)
+
+    assert torch.allclose(fixed_diff, good_diff, atol=1e-5)
+    assert not torch.allclose(fixed_diff, bad_diff, atol=1e-4)
+
+
 def test_pairwise_logit_diff_rejects_free_model():
     m = NIRTModel(query_dim=8, dim=3, n_models=2, model_params="free")
     with pytest.raises(ValueError, match="projected"):

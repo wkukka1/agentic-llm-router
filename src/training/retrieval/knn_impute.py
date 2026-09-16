@@ -59,14 +59,10 @@ def imputed_store_dir(cfg: Config, k: int, weighting: str = "similarity", *, ood
 
 
 def _observation_query_ids(cfg: Config) -> list[str]:
-    import pandas as pd
+    from training.data.nirt import observations
 
-    p = cfg.path("processed") / "nirt_observations.parquet"
-    if not p.exists():
-        raise FileNotFoundError(
-            f"{p} not built; run scripts/data/build_nirt_dataset.py first"
-        )
-    return sorted(pd.read_parquet(p, columns=["query_id"])["query_id"].astype(str).unique().tolist())
+    obs = observations(cfg, build=False)
+    return sorted(obs["query_id"].astype(str).unique().tolist())
 
 
 def build_knn_imputed_store(

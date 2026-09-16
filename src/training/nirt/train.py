@@ -35,7 +35,7 @@ from router.determinism import seed_everything
 from router.nirt.model import build_model
 from router.provenance import git_sha as _git_sha
 
-from .metrics import bias_argmax_agreement, effective_rank, marginal_baselines, prediction_metrics
+from .metrics import bias_argmax_agreement, marginal_baselines, participation_rank, prediction_metrics
 
 __all__ = ["fit", "RunResult", "seed_everything"]
 
@@ -241,7 +241,16 @@ def _grouped_batches(group_rows: list, batch_queries: int, gen):
 
 def _val_regret(packed: dict, prob: np.ndarray) -> float:
     """Mean per-query routing regret: ``mean_q( max_m y[q,m] - y[q, argmax_m prob[q,m]] )``.
-    Only queries with >= 2 models scored contribute. For ``val_metric: regret`` (P5)."""
+    Only queries with >= 2 models scored contribute. For ``val_metric: regret`` (P5).
+
+    Deliberately NOT ``router.nirt.routing_decision.regret`` (XD-06): this
+    operates on long/grouped per-observation training-batch data, not a dense
+    ``[Q, M]`` matrix, and differs from the dense-matrix version on purpose --
+    it excludes queries with fewer than 2 scored candidates, tie-breaks by row
+    order (not column order), and returns 0.0 on an empty split, all load-
+    bearing for early-stopping during training. Forcing this onto the shared
+    function would risk silently changing which epoch a real run selects as
+    its best."""
     y = np.asarray(packed["y"], np.float64)
     g = np.asarray(packed["qgroup"], np.int64)
     p = np.asarray(prob, np.float64)
@@ -308,7 +317,7 @@ def _collapse_diagnostics(model, theta_q: np.ndarray) -> dict:
 
     ``theta_q`` should hold one row per *query* (not per observation), so both
     numbers are per-query rather than weighted by model coverage."""
-    out = {"theta_effective_rank": effective_rank(theta_q)}
+    out = {"theta_effective_rank": participation_rank(theta_q)}
     # the agreement is computed on the bilinear logit only -- exact only when the
     # model has no interaction residual, so it is skipped otherwise
     if (getattr(model, "orientation", None) == "query_latent"
@@ -749,6 +758,7 @@ def fit(
             nirt_cfg.setdefault("data", {})["phase0_config"] = src.as_posix()
         torch.save(
             {
+                "format": "nirt",
                 "state_dict": model.state_dict(),
                 "config": nirt_cfg,
                 "n_models": len(model_index),
@@ -785,12 +795,13 @@ def fit(
 
 
 def _resolve_runs_dir(nirt_cfg: dict, phase0_cfg) -> Path:
+    """Absolute, else joined to ``phase0_cfg``'s root (if given) or
+    :data:`router.config.REPO_ROOT`. Both branches ultimately delegate to
+    :func:`router.config.resolve_path` (XD-11) -- ``Config.resolve`` already
+    handles the absolute-path case, so it's checked only once."""
     rel = nirt_cfg.get("runs_dir", DEFAULT_NIRT_RUNS_DIR)
-    p = Path(rel)
-    if p.is_absolute():
-        return p
     if phase0_cfg is not None and hasattr(phase0_cfg, "resolve"):
         return phase0_cfg.resolve(rel)
-    from router.config import REPO_ROOT
+    from router.config import resolve_path
 
-    return REPO_ROOT / rel
+    return resolve_path(rel)

@@ -95,6 +95,22 @@ def test_routing_report_and_lambda_tradeoff():
     assert sweep["cost"].iloc[-1] <= sweep["cost"].iloc[0] + 1e-9   # more lambda -> cheaper
 
 
+def test_route_matches_routing_decision_and_masks_missing_prediction():
+    """XA-02: route() must select exactly what routing_decision (the served
+    router's own decision rule) would, with a per-model mean cost vector and
+    NaN masking -- not the old per-cell cost leak with no masking."""
+    from evaluation.nirt.routing import route
+    from router.nirt.routing_decision import routing_decision
+
+    pred = np.array([[0.9, 0.85, np.nan]])
+    cost = np.array([[0.10, 0.00, 0.20]])
+    C = cost.mean(axis=0)
+    assert route(pred, cost, lam=0.5).tolist() == \
+        routing_decision(pred, lam=0.5, model_costs=C).tolist()
+    # a missing (NaN) prediction is never selected, even at lam=0
+    assert route(pred, cost, lam=0.0)[0] != 2
+
+
 def test_oracle_choice_breaks_ties_by_cost():
     from evaluation.nirt.routing import oracle_choice
 
@@ -154,6 +170,24 @@ def test_mlp_router_runs():
     M = mlp_router_matrix(model, mids, d, sorted(d.observations.query_id.unique())[:20], pathway="irt")
     assert M.shape == (20, 9)
     assert np.all((M.to_numpy() >= 0) & (M.to_numpy() <= 1))
+
+
+def test_ood_families_reads_evaluation_namespace():
+    """contracts.md: the stored run config must record which families were
+    held out under the SAME key ood_families() reads back -- scripts/nirt/
+    train_nirt.py --ood writes cfg["evaluation"]["ood_holdout_families"], not
+    cfg["data"][...] (a namespace nothing reads)."""
+    from evaluation.nirt.ood import ood_families
+
+    assert ood_families(None) == ("math", "code")   # default, no cfg
+    assert ood_families({"data": {"ood_holdout_families": ["math"]}}) == ("math", "code")
+    assert ood_families({"evaluation": {"ood_holdout_families": ["math"]}}) == ("math",)
+
+    # the exact write train_nirt.py --ood performs, round-tripped
+    cfg = {}
+    fams = ood_families(cfg)
+    cfg.setdefault("evaluation", {})["ood_holdout_families"] = list(fams)
+    assert ood_families(cfg) == fams
 
 
 def test_ood_split_real():

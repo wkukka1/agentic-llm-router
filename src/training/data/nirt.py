@@ -99,6 +99,38 @@ def read_nirt_observations(cfg: Config) -> pd.DataFrame:
     return pd.read_parquet(cfg.path("processed") / "nirt_observations.parquet")
 
 
+def observations(
+    cfg: Config,
+    *,
+    data: Optional["TrainingData"] = None,
+    build: bool = False,
+    **build_kw,
+) -> pd.DataFrame:
+    """Read ``nirt_observations.parquet`` if present (and no ``build_kw`` is
+    given); else build it in memory (never writes to disk) if ``build`` is
+    true -- ``build_kw`` always forces a rebuild regardless of ``build``, same
+    as a stale-but-present file being ignored; else raise.
+
+    The one training-side accessor for "read or build the observation table"
+    (XD-05 / XA-11) -- every call site used to have its own copy with a
+    different fallback (raise / crash / build-without-saving / silently widen
+    to the wrong, broader query set). ``router.data.nirt.NIRTDataset.
+    from_config`` (the serving-side reader) is deliberately NOT built on this
+    -- serving must never build data on the fly.
+    """
+    path = cfg.path("processed") / "nirt_observations.parquet"
+    if path.exists() and not build_kw:
+        return read_nirt_observations(cfg)
+    if not build and not build_kw:
+        raise FileNotFoundError(
+            f"{path} not built; run scripts/data/build_nirt_dataset.py, or pass build=True"
+        )
+    from .facade import load_training_data
+
+    d = data or load_training_data(cfg)
+    return build_nirt_observations(cfg, data=d, **build_kw)
+
+
 # --------------------------------------------------------------------------- #
 # dataset construction -- resolve `data` + build-if-missing, then delegate    #
 # --------------------------------------------------------------------------- #

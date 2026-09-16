@@ -21,7 +21,7 @@ from router.config import Config, load_config
 from training.data.families import family_labels
 
 from .calibration import calibration_report, plot_reliability, save_calibration
-from .checkpoint import load_run
+from .checkpoint import load_baseline_run
 from .data import _join, batched_forward, build_arrays, graded_labels
 from .diagnostics import (
     icc_curve,
@@ -142,7 +142,7 @@ def evaluate_checkpoint(
 
     d = Path(directory)
     cfg = phase0_cfg or load_config()
-    model, blob, s = load_run(d)
+    model, blob, s = load_baseline_run(d)
     mi = blob["model_index"]
     data = load_training_data(cfg)          # once per evaluation, shared below
 

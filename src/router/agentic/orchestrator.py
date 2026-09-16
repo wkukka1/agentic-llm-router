@@ -75,7 +75,12 @@ def build_router_tools(agent: "AgenticRouter", depth: int, steps: list[SubCall])
 
     def route_and_answer(query: str) -> str:
         """Route QUERY to the best model (recursively decomposing if the router
-        says it is still too complex) and return the answer."""
+        says it is still too complex) and return the answer.
+
+        This re-enters full triage + dispatch via ``agent._solve`` -- the only
+        thing bounding it is ``agent.max_depth`` (a bare depth counter). See
+        ``router.tools.router_tool``/``router.context.RoutingMode.MODEL_SELECTION``
+        for the (unimplemented) design intent of a stricter tool-only guard (XA-07)."""
         sc = agent._solve(query, depth + 1)
         steps.append(sc)
         return sc.answer

@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from router.config import REPO_ROOT, Config, load_config
+from router.config import Config, load_config, resolve_path as _resolve_path
 
 
 def base_parser(description: str) -> argparse.ArgumentParser:
@@ -39,9 +39,13 @@ def info(msg: str) -> None:
 
 
 def resolve(path: str | Path, root: str | Path | None = None) -> Path:
-    """Absolute ``path``, taken relative to ``root`` (default: the repo root)."""
-    p = Path(path)
-    return p if p.is_absolute() else Path(root or REPO_ROOT) / p
+    """Absolute ``path``, taken relative to ``root`` (default: the repo root).
+
+    A thin wrapper over :func:`router.config.resolve_path` (XD-11) -- kept as
+    its own name/signature since every caller here resolves a config *file*
+    path before any ``Config`` instance exists, so it can't become
+    ``Config.resolve`` itself."""
+    return _resolve_path(path, root=root)
 
 
 def json_default(obj: Any) -> Any:

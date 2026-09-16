@@ -9,9 +9,9 @@ from training.nirt.baseline.calibration import calibration_report
 from training.nirt.metrics import (
     bias_argmax_agreement,
     brier_score,
-    effective_rank,
     log_loss,
     marginal_baselines,
+    participation_rank,
     per_group_metrics,
     prediction_metrics,
     reliability_curve,
@@ -91,19 +91,19 @@ def test_calibration_report_fields():
 
 
 # --------------------------------------------------------------------------- #
-# P7: monotone-collapse diagnostics (effective_rank, bias_argmax_agreement)   #
+# P7: monotone-collapse diagnostics (participation_rank, bias_argmax_agreement) #
 # --------------------------------------------------------------------------- #
-def test_effective_rank_isotropic_vs_collapsed():
+def test_participation_rank_isotropic_vs_collapsed():
     rng = np.random.default_rng(0)
     iso = rng.standard_normal((500, 3))                                    # eff rank ~ 3
     collapsed = np.outer(rng.standard_normal(500), [1.0, 0.0, 0.0])        # eff rank ~ 1
-    assert effective_rank(collapsed) == pytest.approx(1.0, abs=0.05)
-    assert effective_rank(iso) > 2.5
+    assert participation_rank(collapsed) == pytest.approx(1.0, abs=0.05)
+    assert participation_rank(iso) > 2.5
 
 
-def test_effective_rank_nan_on_degenerate_input():
-    assert np.isnan(effective_rank(np.ones((1, 3))))       # < 2 rows
-    assert np.isnan(effective_rank(np.zeros((10, 3))))     # zero variance everywhere
+def test_participation_rank_nan_on_degenerate_input():
+    assert np.isnan(participation_rank(np.ones((1, 3))))       # < 2 rows
+    assert np.isnan(participation_rank(np.zeros((10, 3))))     # zero variance everywhere
 
 
 def test_bias_argmax_agreement_full_and_zero():

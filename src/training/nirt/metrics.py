@@ -154,7 +154,7 @@ def per_group_metrics(
     return out
 
 
-def effective_rank(theta: np.ndarray) -> float:
+def participation_rank(theta: np.ndarray) -> float:
     """Participation ratio of ``theta``'s covariance eigenvalues:
     ``(sum(lambda))^2 / sum(lambda^2)``. Ranges from 1 (all variance on one
     line -- the query head has collapsed to a 1-D difficulty scale) to ``K``
@@ -179,7 +179,7 @@ def bias_argmax_agreement(logit: np.ndarray, b_m: np.ndarray) -> float:
     agrees with the query-INDEPENDENT constant ``argmax_m(-b_m)`` -- "always
     route to the best-on-average model, ignore the query". High agreement
     (roughly >0.95) means the query term barely moves the routing decision --
-    the other half of the P7 collapse diagnosis alongside :func:`effective_rank`.
+    the other half of the P7 collapse diagnosis alongside :func:`participation_rank`.
 
     ``logit`` is a dense ``[Q, M]`` matrix (same model order as ``b_m``,
     ``[M]``)."""

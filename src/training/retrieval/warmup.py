@@ -37,11 +37,10 @@ def build_warmup_representations(
     retr_store = EmbeddingStore.load(default_store_dir(cfg, "query", retr_pw))
     model_store = EmbeddingStore.load(default_store_dir(cfg, "query", model_pathway))
 
-    import pandas as pd
-
     if query_ids is None:
-        obs = pd.read_parquet(cfg.path("processed") / "nirt_observations.parquet", columns=["query_id"])
-        query_ids = sorted(obs["query_id"].unique().tolist())
+        from training.data.nirt import observations
+
+        query_ids = sorted(observations(cfg, build=False)["query_id"].unique().tolist())
     ids = [q for q in query_ids if q in retr_store and q in model_store]
 
     retr_vecs = retr_store.gather(ids)

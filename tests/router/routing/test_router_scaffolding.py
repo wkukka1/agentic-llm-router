@@ -9,6 +9,8 @@ import pandas as pd
 import pytest
 
 from router.execution.budget import BudgetLedger, ExecutionLimits
+from router.execution.orchestrator import Orchestrator, OrchestratorConfig
+from router.execution.task import AgentTask
 from router.routing.base import Router, UnsupportedCandidatePolicy
 
 
@@ -104,3 +106,46 @@ def test_execution_limits_defaults_allow_shallow_recursion():
     limits = ExecutionLimits()
     assert limits.max_depth == 2
     assert limits.max_fanout > 0
+
+
+class _ConstOrchestrator(Orchestrator):
+    """Minimal concrete Orchestrator -- only can_spawn is under test here."""
+
+    def plan(self, task):
+        raise NotImplementedError
+
+    def execute(self, plan):
+        raise NotImplementedError
+
+    def replan(self, plan):
+        raise NotImplementedError
+
+
+def _orchestrator(max_depth=2):
+    config = OrchestratorConfig(
+        name="o", version="0", llm=None,
+        ledger=BudgetLedger("root", total=100.0),
+        limits=ExecutionLimits(max_depth=max_depth),
+    )
+    return _ConstOrchestrator(config)
+
+
+def test_can_spawn_allows_child_at_max_depth_not_beyond():
+    """XA-08: max_depth means "the depth of the deepest node allowed to
+    exist" here, the same convention AgenticRouter._solve uses (nodes exist
+    through depth == max_depth; recursion just stops there) -- not "the
+    deepest depth a child may be spawned at" (which would cap real nodes one
+    level shallower than the live agentic path allows)."""
+    orch = _orchestrator(max_depth=2)
+
+    orch.task = AgentTask(task_id="parent1", parent_task_id=None, root_task_id="root",
+                          prompt="p", depth=1)
+    at_max = AgentTask(task_id="c1", parent_task_id=None, root_task_id="root",
+                       prompt="p", depth=2)
+    assert orch.can_spawn(at_max) is True
+
+    orch.task = AgentTask(task_id="parent2", parent_task_id=None, root_task_id="root",
+                          prompt="p", depth=2)
+    past_max = AgentTask(task_id="c2", parent_task_id=None, root_task_id="root",
+                         prompt="p", depth=3)
+    assert orch.can_spawn(past_max) is False

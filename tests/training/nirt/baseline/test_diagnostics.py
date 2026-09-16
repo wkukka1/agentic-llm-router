@@ -1,21 +1,21 @@
-"""Phase 1 diagnostics: theta spectrum / effective rank / ICC sanity."""
+"""Phase 1 diagnostics: theta spectrum / entropy rank / ICC sanity."""
 
 from __future__ import annotations
 
 import numpy as np
 
 from training.nirt.baseline.diagnostics import (
-    effective_rank,
+    entropy_rank,
     icc_curve,
     parameter_summary,
     theta_spectrum,
 )
 
 
-def test_effective_rank_bounds():
-    assert effective_rank([1, 0, 0, 0]) == 1.0
-    assert effective_rank([1, 1, 1, 1]) == 4.0
-    assert 1.0 < effective_rank([3, 1, 0.5, 0.1]) < 4.0
+def test_entropy_rank_bounds():
+    assert entropy_rank([1, 0, 0, 0]) == 1.0
+    assert entropy_rank([1, 1, 1, 1]) == 4.0
+    assert 1.0 < entropy_rank([3, 1, 0.5, 0.1]) < 4.0
 
 
 def test_theta_spectrum_detects_collapse():
@@ -24,7 +24,7 @@ def test_theta_spectrum_detects_collapse():
     theta = np.outer(rng.standard_normal(40), direction)   # rank-1
     spec = theta_spectrum(theta)
     assert spec["collapsed"] is True
-    assert spec["effective_rank"] < 1.2
+    assert spec["entropy_rank"] < 1.2
 
 
 def test_theta_spectrum_full_rank():
@@ -32,7 +32,7 @@ def test_theta_spectrum_full_rank():
     theta = rng.standard_normal((40, 5))
     spec = theta_spectrum(theta)
     assert spec["collapsed"] is False
-    assert spec["effective_rank"] > 3.0
+    assert spec["entropy_rank"] > 3.0
     assert len(spec["singular_values"]) == 5
 
 

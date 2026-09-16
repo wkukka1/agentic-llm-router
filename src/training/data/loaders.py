@@ -105,15 +105,57 @@ def load_routerbench(cfg: Config) -> pd.DataFrame:
     return schemas.coerce_response_frame(out)
 
 
-def _melt_routerbench(wide: pd.DataFrame, shot: str, cfg: Config,
-                      question_text: Optional[dict[str, str]] = None) -> pd.DataFrame:
+def routerbench_model_columns(wide: pd.DataFrame) -> list[str]:
+    """Per-model score columns in a RouterBench wide pickle: every column that
+    isn't RouterBench metadata, carries no ``|`` (excluding the
+    ``<model>|total_cost`` / ``<model>|model_response`` companion columns),
+    and has a matching ``<model>|total_cost`` column.
+
+    The one place this filter is defined (XD-04) -- ``evaluation.data.
+    judge_responses`` calls it too, instead of an independently re-typed copy.
+    """
     meta_cols = {"sample_id", "prompt", "eval_name", "oracle_model_to_route_to"}
-    model_cols = [
+    return [
         c for c in wide.columns
         if c not in meta_cols
         and "|" not in c
         and f"{c}|total_cost" in wide.columns
     ]
+
+
+def routerbench_query_ids(
+    wide: pd.DataFrame, shot: str = "0shot", question_text: Optional[dict[str, str]] = None,
+) -> pd.Series:
+    """Canonical ``query_id`` per row of a RouterBench wide pickle.
+
+    ``shot="0shot"`` (the default) needs no ``question_text`` -- the row's own
+    prompt IS the query. For a multishot pickle, ``question_text`` maps
+    ``sample_id -> 0-shot question text`` (the underlying question, not the
+    few-shot exemplars, which aren't featurised), falling back to the native
+    prompt if the 0-shot sibling is somehow absent; the id then gets a
+    ``:shot`` suffix so it doesn't collide with the 0-shot id.
+
+    The one place this construction is defined (XD-04) -- ``evaluation.data.
+    judge_responses`` calls it too, instead of an independently re-typed copy.
+    """
+    native_prompt = wide["prompt"].map(render_prompt)
+    qtext = question_text or {}
+    is_multishot = shot != "0shot"
+    query = [
+        qtext.get(sid, np) if is_multishot else np
+        for sid, np in zip(wide["sample_id"].astype(str), native_prompt)
+    ]
+    eval_name = wide["eval_name"].astype(str)
+    suffix = "" if not is_multishot else f":{shot}"
+    return pd.Series(
+        [make_query_id(schemas.Source.ROUTERBENCH, e, q) + suffix for e, q in zip(eval_name, query)],
+        index=wide.index,
+    )
+
+
+def _melt_routerbench(wide: pd.DataFrame, shot: str, cfg: Config,
+                      question_text: Optional[dict[str, str]] = None) -> pd.DataFrame:
+    model_cols = routerbench_model_columns(wide)
 
     native_prompt = wide["prompt"].map(render_prompt)
     qtext = question_text or {}
@@ -134,11 +176,7 @@ def _melt_routerbench(wide: pd.DataFrame, shot: str, cfg: Config,
             "oracle_model_to_route_to": wide.get("oracle_model_to_route_to"),
         }
     )
-    suffix = "" if not is_multishot else f":{shot}"
-    base["query_id"] = [
-        make_query_id(schemas.Source.ROUTERBENCH, e, q) + suffix
-        for e, q in zip(base["eval_name"], base["query"])
-    ]
+    base["query_id"] = routerbench_query_ids(wide, shot, question_text).to_numpy()
     base["split"] = base["native_sample_id"].map(_parse_routerbench_split)
 
     choices_of = {e: _mc_choices(e, cfg) for e in base["eval_name"].unique()}

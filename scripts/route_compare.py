@@ -3,8 +3,10 @@ NIRT model (``query_latent``) vs the IRT-Router paper baseline (``model_latent``
 arXiv 2506.01048) vs "just always use the best model".
 
 Turns each per-(query, model) predictor into a policy `argmax_m U(q, m)`
-(`U = pred - lam * cost_norm`) on the evaluation split(s), and reports achieved
-accuracy / graded quality / cost and the savings vs a fixed reference model.
+(`U = pred - lam * C(m)`, `C(m)` the per-model mean cost, `lam` in raw USD
+units -- the same rule and scale `Router.route(lam=...)` uses) on the
+evaluation split(s), and reports achieved accuracy / graded quality / cost and
+the savings vs a fixed reference model.
 Analysis only -- the routing orchestrator itself is Phase 4.
 
     # RouterBench (Phase 2 default)
@@ -27,7 +29,7 @@ import numpy as np
 from training.cli import float_table, raw_parser, write_json, zeroshot_only
 from router.config import load_config
 from training.data.facade import load_training_data
-from training.nirt.baseline.checkpoint import load_run
+from training.nirt.baseline.checkpoint import load_baseline_run
 from training.nirt.baseline.data import checkpoint_matrix as _pred_matrix
 from evaluation.nirt.routing import (
     add_reward_columns,
@@ -43,10 +45,10 @@ DEFAULT_REFERENCE = "gpt-4-1106-preview"
 
 
 def _nirt_matrix(run_name, data, split):
-    from router.nirt.checkpoint import load_run as nirt_load_run
+    from router.nirt.checkpoint import load_run
     from router.nirt.predict import predict_matrix
 
-    model, cfg, midx = nirt_load_run(run_name)
+    model, cfg, midx = load_run(run_name)
     dcfg = cfg.get("data", {}) or {}
     pathway = dcfg.get("pathway", "irt")
     query_pathway = dcfg.get("query_pathway") or None
@@ -141,7 +143,7 @@ def main() -> int:
     # Pin the routing pool to what the ZOIB checkpoint was trained on -- the
     # global NIRT dataset may since have grown (pool-expansion phases), and a
     # stale checkpoint has no predictions for the new columns.
-    _zm, _zblob, _ = load_run(args.zoib)
+    _zm, _zblob, _ = load_baseline_run(args.zoib)
     pool = sorted(_zblob["model_index"], key=_zblob["model_index"].get)
 
     labels = {"test": "ID (test)", "ood": "OOD (held-out datasets)",

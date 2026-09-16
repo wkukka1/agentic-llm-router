@@ -171,6 +171,13 @@ class LangChainClient(LLMClient):
 # --------------------------------------------------------------------------- #
 # provider guessing                                                           #
 # --------------------------------------------------------------------------- #
+# LangChain `model_provider` names, for `init_chat_model` (LangChainClient
+# below) only. Two other, different provider vocabularies exist in this
+# codebase -- `router.llm.client`'s `_ADAPTERS` (`openai`/`anthropic`/`google`
+# only) and `configs/model_registry.yaml`'s `provider:` field (model-author
+# names, e.g. `meta`, `mistralai`, `zhipu`) -- with no translation between any
+# of the three (XA-10). They don't interact today: `guess_provider`'s output
+# never reaches `router.llm.client` or the registry.
 _PROVIDER_HINTS = [
     ("gpt", "openai"), ("o1", "openai"), ("o3", "openai"), ("davinci", "openai"),
     ("claude", "anthropic"),

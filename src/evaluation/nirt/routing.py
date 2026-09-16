@@ -1,9 +1,13 @@
 """Routing evaluation: turn a per-(query, model) predictor into a policy and
 measure achieved quality / accuracy and token-cost savings.
 
-A policy picks ``m* = argmax_m U(q, m)`` with ``U = pred - lam * cost_norm``
-(``cost_norm`` = cost scaled to ``[0, 1]`` by the largest cell cost, so ``lam``
-is comparable across matrices). ``lam = 0`` is quality-only routing.
+A policy picks ``m* = argmax_m U(q, m)`` with ``U = pred - lam * C(m)``, ``C(m)``
+the per-model mean cost -- the same formula and units
+:func:`router.nirt.routing_decision.routing_decision` (the served router's own
+decision rule) uses, via :func:`~router.nirt.routing_decision.cost_aware_utility`.
+``lam`` is therefore in raw per-query cost units (USD), directly comparable to
+``Router.route(lam=...)``'s ``lam`` -- NOT a ``[0, 1]``-normalized scale. ``lam
+= 0`` is quality-only routing.
 
 Everything is evaluated on the dense ``(query, model)`` matrices of a split:
 ``true`` (graded RouterBench ``performance``) and ``cost`` (USD per query, the
@@ -25,6 +29,8 @@ from typing import Optional, Sequence
 
 import numpy as np
 import pandas as pd
+
+from router.nirt.routing_decision import routing_decision
 
 
 # --------------------------------------------------------------------------- #
@@ -85,10 +91,16 @@ def _policy_row(name: str, choice: np.ndarray, true: np.ndarray, cost: np.ndarra
 
 
 def route(pred: np.ndarray, cost: np.ndarray, lam: float = 0.0) -> np.ndarray:
-    """Model index chosen per query for ``U = pred - lam * cost_norm``."""
-    cmax = cost.max()
-    cost_norm = cost / cmax if cmax > 0 else cost
-    return np.argmax(pred - lam * cost_norm, axis=1)
+    """Model index chosen per query for ``U = pred - lam * C(m)``.
+
+    ``C(m)`` is the per-model mean cost (not the per-cell realized cost -- a
+    live router could not know a query's exact serving cost in advance), and
+    non-finite predictions/costs are masked -- both via
+    :func:`router.nirt.routing_decision.routing_decision`, the served
+    router's own decision rule, so an offline ``lam`` sweep here selects
+    exactly what ``Router.route(lam=lam)`` would."""
+    C = np.asarray(cost, np.float64).mean(axis=0)
+    return routing_decision(pred, lam=lam, model_costs=C)
 
 
 def oracle_choice(

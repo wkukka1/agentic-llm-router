@@ -355,6 +355,23 @@ class NIRTModel(nn.Module):
             a = self._center_discrimination(a)
         return a, b
 
+    def score(self, theta: torch.Tensor, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+        """Logit from an already-computed ``(theta_q, a_m, b_m)`` triple -> ``(B,)``.
+
+        The bilinear base (scalar- or vector-difficulty) plus the interaction
+        residual when ``self.interaction`` is set -- the one place this scoring
+        formula is defined. ``forward`` calls it after ``model_parameters``;
+        ``training.nirt.pairwise.pairwise_logit_diff`` calls it twice (once per
+        battle side) against one shared ``theta`` (XD-09)."""
+        if self.difficulty == "vector":
+            base = (a * (theta - b)).sum(-1)
+        else:
+            base = (a * theta).sum(-1) - b
+        if self.interaction:
+            feats = torch.cat([theta, a, theta * a], dim=-1)      # (B, 3K)
+            base = base + self.interaction_gamma * self.interaction_net(feats).squeeze(-1)
+        return base
+
     def forward(
         self,
         e_q: torch.Tensor,
@@ -370,14 +387,7 @@ class NIRTModel(nn.Module):
         if theta is None:
             theta = self.latent_query(e_q)          # (B, K)
         a, b = self.model_parameters(model_ref)     # (B, K), (B,) or (B, K)
-        if self.difficulty == "vector":
-            base = (a * (theta - b)).sum(-1)
-        else:
-            base = (a * theta).sum(-1) - b
-        if self.interaction:
-            feats = torch.cat([theta, a, theta * a], dim=-1)      # (B, 3K)
-            base = base + self.interaction_gamma * self.interaction_net(feats).squeeze(-1)
-        return base
+        return self.score(theta, a, b)
 
     @torch.no_grad()
     def predict_proba(
