@@ -79,6 +79,47 @@ class NIRTArtifactPayload(ArtifactPayload):
 
 
 @dataclass
+class BaselineArtifactPayload(ArtifactPayload):
+    """A lossless wrapper around the ``model.pt`` dict
+    ``training.nirt.baseline.checkpoint.save_checkpoint`` already writes --
+    not a new format. Unlike :class:`NIRTArtifactPayload`, there is no
+    serving-side loader for this format yet (``training.nirt.baseline.checkpoint``
+    lives under ``training``, which ``router`` must not import), so
+    :class:`~router.models.store.LocalArtifactStore` does not support this
+    payload -- :class:`~training.nirt.baseline.trainer.BaselineNIRTTrainer`
+    builds it directly from the in-memory ``fit()`` result instead."""
+
+    state_dict: dict[str, Any]
+    model_cfg: dict[str, Any]
+    model_index: dict[str, int]
+    query_dim: int
+    profile_dim: int
+    relevance_dim: int
+
+    def to_state(self) -> dict[str, Any]:
+        return {
+            "format": "baseline",
+            "state_dict": self.state_dict,
+            "model_cfg": self.model_cfg,
+            "model_index": self.model_index,
+            "query_dim": self.query_dim,
+            "profile_dim": self.profile_dim,
+            "relevance_dim": self.relevance_dim,
+        }
+
+    @classmethod
+    def from_state(cls, state: dict[str, Any]) -> "BaselineArtifactPayload":
+        return cls(
+            state_dict=state["state_dict"],
+            model_cfg=state["model_cfg"],
+            model_index=state["model_index"],
+            query_dim=state["query_dim"],
+            profile_dim=state["profile_dim"],
+            relevance_dim=state["relevance_dim"],
+        )
+
+
+@dataclass
 class RouterModelArtifact:
     artifact_id: str
     payload: ArtifactPayload

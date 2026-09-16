@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from router.models.artifacts import ArtifactFormat, NIRTArtifactPayload, RouterModelArtifact
+from router.models.artifacts import (
+    ArtifactFormat,
+    BaselineArtifactPayload,
+    NIRTArtifactPayload,
+    RouterModelArtifact,
+)
 
 
 def _payload() -> NIRTArtifactPayload:
@@ -22,6 +27,20 @@ def test_nirt_payload_round_trips_through_to_state_and_from_state():
     assert state["format"] == "nirt"
     restored = NIRTArtifactPayload.from_state(state)
     assert restored == payload
+
+
+def test_baseline_payload_round_trips_through_to_state_and_from_state():
+    payload = BaselineArtifactPayload(
+        state_dict={"w": [3.0]},
+        model_cfg={"theta_dim": 2},
+        model_index={"a": 0, "b": 1},
+        query_dim=8,
+        profile_dim=8,
+        relevance_dim=0,
+    )
+    state = payload.to_state()
+    assert state["format"] == "baseline"
+    assert BaselineArtifactPayload.from_state(state) == payload
 
 
 def test_router_model_artifact_holds_a_payload_not_a_path():
