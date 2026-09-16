@@ -24,6 +24,13 @@ single responsibility and an enforced import direction
 | [`evaluation`](src/evaluation/) | anything that needs ground truth: oracle labels, routing/regret metrics, OOD eval, the LLM-judge pipeline | `router`, `training` |
 | [`decompose`](src/decompose/) | task decomposition signals/classifiers, kept dependency-free | (embedders wrap `router.embeddings.encoder` only) |
 
+The concrete classifiers under [`decompose/classifiers/`](src/decompose/classifiers/)
+are the prompt-decomposition heads: domain, task type, expected output length,
+and eleven free-label attributes. They turn a prompt into `PromptSignals` for
+`RoutingPipeline`. Their corpora and sweeps live in
+[`training/prompt_decomposition/`](src/training/prompt_decomposition/) and their
+audits in [`evaluation/prompt_decomposition/`](src/evaluation/prompt_decomposition/).
+
 This layering is enforced by `import-linter` (`[tool.importlinter]` in
 [`pyproject.toml`](pyproject.toml)) — see
 [docs/architecture.md](docs/architecture.md) for the full class hierarchy and
@@ -43,6 +50,9 @@ The README is a front door; the depth lives in `docs/`:
 | [nirt_model.md](docs/nirt_model.md) | The NIRT response model, both orientations, the capacity workstream (P1–P6) and its findings |
 | [baseline_control_arm.md](docs/baseline_control_arm.md) | The frozen Bernoulli/BCE and continuous (Normal/Beta/ZOIB) control arms |
 | [irt_router.md](docs/irt_router.md) | The IRT-Router paper's 20-LLM × 12-dataset benchmark, replicated as an isolated pipeline |
+| [prompt_signals.md](docs/prompt_signals.md) | Which prompt signals are measurable, which were measured impossible, and what each is worth |
+| [prompt_decomposition.md](docs/prompt_decomposition.md) | The five heads: taxonomies, calibration, the handoff vector, known limits |
+| [prompt_decomposition_experiments.md](docs/prompt_decomposition_experiments.md) | Every head experiment including the failures, and why each was abandoned |
 | [pool_expansion.md](docs/pool_expansion.md) / [pool_expansion_results.md](docs/pool_expansion_results.md) | Candidate-pool expansion workstream (E0–E2 done, E3 superseded by irt_router.md) and its results ledger |
 | [routing_interface.md](docs/routing_interface.md) | The `Router` ABC, `RoutingResult`, registered strategies (`matrix`/`nirt`/`knn`/`mlp`/`random`) |
 | [routing_evaluation.md](docs/routing_evaluation.md) | Oracle labels, regret/hit metrics, the prediction-vs-routing distinction |

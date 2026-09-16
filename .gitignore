@@ -22,3 +22,15 @@ artifacts/
 !data/taxonomy/candidate_abilities.yaml
 !data/taxonomy/final_taxonomy.yaml
 !data/taxonomy/cluster_labels.json
+
+# prompt decomposition
+# `.env` is ignored above; the template is committed because it documents
+# every variable the heads read.
+!.env.example
+# The hand-labelled real-prompt set is the project's key asset, not a
+# regenerable artifact. Committed deliberately, against the rule above.
+!data/handlabelled/
+!data/handlabelled/*.parquet
+!data/external/
+!data/external/*.parquet
+!data/synthetic/

@@ -1,87 +1,60 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "agentic-llm-router"
 version = "0.1.0"
 description = "Cost-aware LLM router research project (Foundation data pipeline + NIRT baseline)"
 readme = "README.md"
 requires-python = ">=3.11"
-
 dependencies = [
-  "numpy",
-  "pandas",
-  "pyarrow",
-  "PyYAML",
-  "scikit-learn",
-  "scipy",
-  "python-dotenv",
-  "tqdm",
-  "datasets",
-  "sentence-transformers",
-  "transformers",
-  "torch",
-  "matplotlib",
-  "faiss-cpu",
-  "umap-learn",
-  "hdbscan",
+    "numpy",
+    "pandas",
+    "pyarrow",
+    "pyyaml",
+    "python-dotenv",
+    "tqdm",
+    "datasets",
+    "scikit-learn",
+    "sentence-transformers",
+    "transformers",
+    "torch",
+    "matplotlib",
+    "scipy",
+    # query ability taxonomy (clustering) + FAISS query bank -- used by
+    # training.taxonomy / training.retrieval / Phase 1 relevance + warm-up.
+    "faiss-cpu",
+    "umap-learn",
+    "hdbscan",
+    # prompt decomposition: label sources, serving heads, report rendering
+    "huggingface_hub",
+    "tabulate",
 ]
 
-[build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.build_meta"
+[project.optional-dependencies]
+dev = ["pytest", "langchain-core>=0.3", "import-linter"]
+labeling = ["openai", "anthropic"]
+# router.agentic: LLM-driven orchestrator. Core install (echo backends,
+# RecursiveOrchestrator, HeuristicTriage) needs none of this.
+agentic = ["langchain>=0.3", "langchain-core>=0.3"]
 
 [project.scripts]
 router-phase0 = "training.phase0:main"
-prompt-decomposition = "prompt_decomposition.cli:main"
-
-[project.optional-dependencies]
-dev = [
-  "pytest",
-  "ruff",
-  "langchain-core>=0.3",
-  "import-linter",
-]
-labeling = [
-  "openai",
-  "anthropic",
-]
-encoders = [
-  "torch",
-  "transformers",
-  "huggingface_hub",
-]
-data = [
-  "datasets",
-  "huggingface_hub",
-  "tqdm",
-]
-agentic = [
-  "langchain>=0.3",
-  "langchain-core>=0.3",
-]
+prompt-decomposition = "scripts.prompt_decomposition_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src", "tests"]
 testpaths = ["tests"]
+pythonpath = ["tests", "src"]
 filterwarnings = ["ignore::DeprecationWarning"]
-
-[tool.ruff]
-line-length = 110
-target-version = "py311"
-
-[tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "C4"]
-ignore = [
-  "E501",  # line length is handled by the formatter, not the linter
-  "B008",  # argparse/dataclass defaults legitimately call functions
-]
-
-[tool.ruff.lint.per-file-ignores]
-"tests/*" = ["E402"]
 
 [tool.importlinter]
 root_packages = ["router", "training", "evaluation", "decompose"]
+# TYPE_CHECKING-only imports (e.g. router/data/nirt.py's `TrainingData` type hint)
+# are zero-runtime-cost and not the kind of layering violation this enforces.
 exclude_type_checking_imports = true
 
 [[tool.importlinter.contracts]]
@@ -89,9 +62,16 @@ name = "Serving never imports training or evaluation"
 type = "forbidden"
 source_modules = ["router"]
 forbidden_modules = ["training", "evaluation"]
-
+# NIRTRouter / KNNRouter / MLPRouter read pre-built embedding stores and a
+# train-split cost table off TrainingData, the same way NIRTRouter.from_run
+# reads a pre-built model checkpoint -- see the NOTE in router/routing/routers.py.
+# A serving-safe "artifact reader" split out of TrainingData would be new
+# abstraction; tracked here instead. (router/data/nirt.py no longer needs an
+# exception: NIRTDataset.from_config now requires `data` passed in and never
+# resolves it or builds the observation table itself -- that convenience is
+# training.data.nirt.nirt_dataset_from_config's job.)
 ignore_imports = [
-  "router.routing.routers -> training.data.facade",
+    "router.routing.routers -> training.data.facade",
 ]
 
 [[tool.importlinter.contracts]]
@@ -105,8 +85,44 @@ name = "Decompose stays dependency-free"
 type = "forbidden"
 source_modules = ["decompose"]
 forbidden_modules = ["router", "training", "evaluation"]
-
+# PromptEmbedder / SentenceEmbedder wrap the project's real, working encoder
+# (router.embeddings.encoder.TextEncoder) rather than reimplementing
+# tokenize/pool/normalize a second time -- see decompose/embedders/bert.py's
+# docstring for the tradeoff.
 ignore_imports = [
-  "decompose.embedders.bert -> router.embeddings.encoder",
-  "decompose.embedders.sentence_transformer -> router.embeddings.encoder",
+    "decompose.embedders.bert -> router.embeddings.encoder",
+    "decompose.embedders.sentence_transformer -> router.embeddings.encoder",
 ]
+
+[[tool.importlinter.contracts]]
+name = "Prompt-decomposition heads stay dependency-free like the rest of decompose"
+type = "forbidden"
+source_modules = ["decompose.classifiers"]
+forbidden_modules = ["router", "training", "evaluation"]
+# The trained heads take vectors from an `Embedder` rather than importing an
+# encoder, so unlike `decompose.embedders` they need no exception here.
+
+# Ruff config for the prompt-decomposition subsystem. Scoped with `src` and
+# `files` rather than applied repo-wide: the rest of the tree predates it and
+# imposing a new lint gate on someone else's code is not this subsystem's call.
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+include = [
+  "src/decompose/classifiers/**/*.py",
+  "src/training/prompt_decomposition/**/*.py",
+  "src/evaluation/prompt_decomposition/**/*.py",
+  "scripts/prompt_decomposition_cli.py",
+  "tests/prompt_decomposition/**/*.py",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4"]
+ignore = [
+  "E501",  # line length is handled by the formatter, not the linter
+  "B008",  # argparse/dataclass defaults legitimately call functions
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests reach into internals deliberately, and re-import inside test bodies.
+"tests/*" = ["E402"]

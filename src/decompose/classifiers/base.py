@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import abc
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from ..conversation import Conversation
 from ..signals import Signal
@@ -13,7 +13,7 @@ from ..signals import Signal
 @dataclass
 class ClassificationInput:
     prompt: str
-    conversation: Optional[Conversation] = None
+    conversation: Conversation | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
