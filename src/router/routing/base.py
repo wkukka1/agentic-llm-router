@@ -47,6 +47,7 @@ from ..nirt.routing_decision import no_selectable_rows, routing_decision
 
 if TYPE_CHECKING:  # pragma: no cover - type hints only, not a runtime import
     from ..constraints import RoutingConstraints
+    from ..llm.cost import CostModel
     from ..models.artifacts import RouterModelArtifact
 
 __all__ = ["RouterModel", "RoutingResult", "UnsupportedCandidatePolicy"]
@@ -171,13 +172,20 @@ class RouterModel(abc.ABC):
     can_route_text: ClassVar[bool] = False
 
     def __init__(self, model_ids: Sequence[str], *, name: Optional[str] = None,
-                 unsupported_policy: UnsupportedCandidatePolicy = UnsupportedCandidatePolicy.DROP):
+                 unsupported_policy: UnsupportedCandidatePolicy = UnsupportedCandidatePolicy.DROP,
+                 cost_model: Optional["CostModel"] = None,
+                 artifact: Optional["RouterModelArtifact"] = None):
         ids = [str(m) for m in model_ids]   # materialise once: may be an iterator
         if not ids:
             raise ValueError("a router needs a non-empty candidate pool")
         self._model_ids = ids
         self.name = name or self.kind
         self.unsupported_policy = unsupported_policy
+        #: set by RouterModelFactory.create when this router was built from a
+        #: RouterModelArtifact; None for the many routers still built directly
+        #: (from_run, raw kwargs) with no artifact behind them.
+        self.cost_model = cost_model
+        self.artifact = artifact
 
     # -- pool ----------------------------------------------------------------
     @property

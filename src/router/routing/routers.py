@@ -224,6 +224,44 @@ class NIRTRouter(RouterModel):
             name=name or f"nirt:{run_name}",
         )
 
+    @classmethod
+    def from_artifact(cls, artifact, cost_model=None, *, data=None, name: Optional[str] = None):
+        """The artifact-driven construction path
+        :class:`~router.models.registry.RouterModelFactory` describes:
+        rebuild the model in-memory from ``artifact.payload`` rather than
+        reading a checkpoint path -- otherwise identical to :meth:`from_run`.
+        """
+        from ..models.artifacts import NIRTArtifactPayload
+        from ..nirt.model import build_model
+
+        payload = artifact.payload
+        if not isinstance(payload, NIRTArtifactPayload):
+            raise TypeError(
+                f"NIRTRouter.from_artifact needs a NIRTArtifactPayload, "
+                f"got {type(payload).__name__}"
+            )
+        model = build_model(
+            payload.config.get("model", {}),
+            n_models=payload.n_models,
+            query_dim=payload.query_dim,
+            profile_dim=payload.profile_dim,
+        )
+        model.load_state_dict(payload.state_dict)
+        model.eval()
+        dcfg = payload.config.get("data", {}) or {}
+        router = cls(
+            model,
+            payload.model_index,
+            data=load_training_data_for_router(data, dcfg.get("phase0_config")),
+            pathway=dcfg.get("pathway", "irt"),
+            query_pathway=dcfg.get("query_pathway") or None,
+            query_features=dcfg.get("query_features") or None,
+            name=name or f"nirt:{artifact.artifact_id}",
+        )
+        router.cost_model = cost_model
+        router.artifact = artifact
+        return router
+
     @property
     def default_model_costs(self) -> Optional[np.ndarray]:
         return _lazy_model_costs(self)
