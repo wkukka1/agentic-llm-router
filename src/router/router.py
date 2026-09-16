@@ -1,12 +1,13 @@
-"""``RoutingPipeline``: decompose -> filter -> rank -> decide, the top-level
-entry point in the production router design.
+"""``Router``: decompose -> filter -> rank -> decide, the top-level entry
+point in the production router design (``docs/architecture.md``).
 
-Named ``RoutingPipeline`` here, not ``Router`` -- the diagram's top-level
-pipeline class is called ``Router``, and the per-``(query, model)`` scorer
-that used to hold that name (:class:`router.routing.base.Router`) has since
-been renamed to :class:`router.routing.base.RouterModel` to free it up (see
-``docs/architecture.md``); this class becomes ``Router`` in the very next
-step of that same rename.
+This is the diagram's top-level ``Router`` -- the class name was previously
+free only after :class:`router.routing.base.Router` (the per-``(query,
+model)`` scorer) was renamed to :class:`router.routing.base.RouterModel` to
+make room for it. Still missing the diagram's ``agentFactory`` wiring
+(``orchestrator_factory`` below is typed but nothing constructs an
+``Orchestrator`` from it yet -- that's :mod:`router.execution`, out of scope
+for this pass).
 
 Composes real, working pieces (:class:`~decompose.decomposer.PromptDecomposer`,
 :class:`~router.routing.base.RouterModel`, :class:`~router.llm.registry.LLMRegistry`,
@@ -37,7 +38,7 @@ if TYPE_CHECKING:  # pragma: no cover - type hints only, not a runtime import
     from .routing.base import RouterModel
 
 
-class RoutingPipeline:
+class Router:
     def __init__(
         self,
         router_model: "RouterModel",
@@ -154,7 +155,7 @@ def _apply_hard_limits(scores: list[ModelScore], constraints) -> list[ModelScore
 class _StubProfile:
     """Wraps a bare ``model_id`` string as a minimal candidate when no
     :class:`~router.llm.registry.LLMRegistry` was given -- lets
-    :meth:`RoutingPipeline.route` run against any existing ``RouterModel`` (which
+    :meth:`Router.route` run against any existing ``RouterModel`` (which
     only knows string ids) without requiring the newer ``LLMProfile`` layer
     to be populated first."""
 

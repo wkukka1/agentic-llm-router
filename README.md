@@ -27,7 +27,7 @@ single responsibility and an enforced import direction
 The concrete classifiers under [`decompose/classifiers/`](src/decompose/classifiers/)
 are the prompt-decomposition heads: domain, task type, expected output length,
 and eleven free-label attributes. They turn a prompt into `PromptSignals` for
-`RoutingPipeline`. Their corpora and sweeps live in
+`Router`. Their corpora and sweeps live in
 [`training/prompt_decomposition/`](src/training/prompt_decomposition/) and their
 audits in [`evaluation/prompt_decomposition/`](src/evaluation/prompt_decomposition/).
 

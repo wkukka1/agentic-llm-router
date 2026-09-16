@@ -6,7 +6,7 @@ answers "how good is model m for query q"; a ``RoutingPolicy`` answers "given
 those scores, what do we actually do" -- pick a model and return to the user,
 hand back to the parent orchestrator, or spin up a new one. :class:`DefaultRoutingPolicy`
 below is a concrete implementation, constructed by default in
-:class:`~router.router.RoutingPipeline` and live on its ``route`` path --
+:class:`~router.router.Router` and live on its ``route`` path --
 :meth:`decide` and :meth:`select_destination` are the two hooks it fills in.
 """
 
@@ -42,7 +42,7 @@ class DefaultRoutingPolicy(RoutingPolicy):
     """Argmax on ``context.request.constraints.objective.utility(score)``,
     always destined for the user -- no escalation, no policy versioning
     beyond the literal string below. The one concrete ``RoutingPolicy`` that
-    exists, so :class:`~router.router.RoutingPipeline` has something real to
+    exists, so :class:`~router.router.Router` has something real to
     compose with; a production policy would at minimum use
     :attr:`escalation_threshold` to pick
     :class:`~router.decision.DecisionDestination.PARENT_ORCHESTRATOR` when

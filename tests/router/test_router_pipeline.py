@@ -1,4 +1,4 @@
-"""``RoutingPipeline`` (router.router) -- the one piece of the production
+"""``Router`` (router.router) -- the one piece of the production
 router-design scaffolding that composes entirely out of already-working code
 (PromptDecomposer, RouterModel.route_text, DefaultRoutingPolicy). Everything else
 under router.execution / router.llm / router.tools is exercised only by
@@ -15,14 +15,14 @@ from router.decision import DecisionDestination
 from router.llm.profile import LLMProfile
 from router.llm.registry import LLMRegistry
 from router.routing import RouterModel
-from router.router import RoutingPipeline
+from router.router import Router
 
 POOL = ["fast-small", "big-strong", "coder"]
 
 
 class FakeTextRouter(RouterModel):
     """Constant per-model scores, 'big-strong' always best -- enough to prove
-    RoutingPipeline actually calls through to route_text and interprets the
+    Router actually calls through to route_text and interprets the
     result, not a stand-in for real routing quality."""
 
     kind = "fake_text"
@@ -50,7 +50,7 @@ def _registry() -> LLMRegistry:
 
 
 def test_route_picks_the_highest_utility_model():
-    pipeline = RoutingPipeline(FakeTextRouter(), llm_registry=_registry())
+    pipeline = Router(FakeTextRouter(), llm_registry=_registry())
     decision = pipeline.route(RoutingRequest(request_id="r1", prompt="explain quicksort"))
 
     assert decision.destination is DecisionDestination.USER
@@ -63,9 +63,9 @@ def test_route_picks_the_highest_utility_model():
 
 
 def test_route_without_a_registry_falls_back_to_bare_model_ids():
-    """No LLMRegistry -- RoutingPipeline still runs against a plain RouterModel,
+    """No LLMRegistry -- Router still runs against a plain RouterModel,
     using its string model_ids as candidates."""
-    pipeline = RoutingPipeline(FakeTextRouter())
+    pipeline = Router(FakeTextRouter())
     decision = pipeline.route(RoutingRequest(request_id="r2", prompt="anything"))
     assert decision.ranked_models[0].model.model_id == "big-strong"
 
@@ -79,7 +79,7 @@ def test_required_capability_filters_out_unsupported_candidates():
 
     constraints = RoutingConstraints(required_capabilities=["vision"],
                                      objective=OptimizationObjective())
-    pipeline = RoutingPipeline(FakeTextRouter(), llm_registry=reg)
+    pipeline = Router(FakeTextRouter(), llm_registry=reg)
     decision = pipeline.route(
         RoutingRequest(request_id="r3", prompt="describe this image", constraints=constraints)
     )
@@ -97,7 +97,7 @@ def test_cost_weight_can_change_the_winner():
                             output_cost_per_token=0.0))
 
     expensive_objective = OptimizationObjective(quality_weight=1.0, cost_weight=1.0)
-    pipeline = RoutingPipeline(FakeTextRouter(), llm_registry=reg)
+    pipeline = Router(FakeTextRouter(), llm_registry=reg)
     decision = pipeline.route(RoutingRequest(
         request_id="r4", prompt="anything",
         constraints=RoutingConstraints(objective=expensive_objective),

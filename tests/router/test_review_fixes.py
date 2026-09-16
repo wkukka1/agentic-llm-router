@@ -29,7 +29,7 @@ from router.llm.registry import LLMRegistry
 from router.nirt.routing_decision import routing_decision
 from router.nirt.shrinkage import novelty_weight
 from router.policy import DefaultRoutingPolicy
-from router.router import RoutingPipeline
+from router.router import Router
 from router.routing import MatrixRouter, RandomRouter, RouterModel
 from router.routing.registry import REGISTRY, register
 
@@ -61,7 +61,7 @@ class _TextRouter(RouterModel):
 # --------------------------------------------------------------------------- #
 def test_empty_registry_means_no_candidates():
     """RT-01"""
-    decision = RoutingPipeline(_TextRouter([0.1, 0.9, 0.5]), llm_registry=LLMRegistry()).route(
+    decision = Router(_TextRouter([0.1, 0.9, 0.5]), llm_registry=LLMRegistry()).route(
         RoutingRequest(request_id="r", prompt="x"))
     assert decision.ranked_models == []
 
@@ -74,13 +74,13 @@ def test_nan_score_never_ranks_first():
     ranked = DefaultRoutingPolicy().decide(ctx, scores).ranked_models
     assert [s.model for s in ranked][:2] == ["c", "b"]
     # and the pipeline drops non-finite scores altogether
-    d = RoutingPipeline(_TextRouter([float("nan"), 0.2, 0.9])).route(RoutingRequest(request_id="r", prompt="x"))
+    d = Router(_TextRouter([float("nan"), 0.2, 0.9])).route(RoutingRequest(request_id="r", prompt="x"))
     assert [s.model.model_id for s in d.ranked_models] == ["c", "b"]
 
 
 def test_min_quality_is_enforced():
     """RR-05"""
-    d = RoutingPipeline(_TextRouter([0.1, 0.9, 0.5])).route(
+    d = Router(_TextRouter([0.1, 0.9, 0.5])).route(
         RoutingRequest(request_id="r", prompt="x", constraints=RoutingConstraints(min_quality=0.4)))
     assert {s.model.model_id for s in d.ranked_models} == {"b", "c"}
 

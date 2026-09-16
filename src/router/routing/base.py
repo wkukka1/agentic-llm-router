@@ -208,7 +208,7 @@ class RouterModel(abc.ABC):
                 if self.unsupported_policy is UnsupportedCandidatePolicy.DROP:
                     continue
                 # SCORE_WITH_PRIOR: kept. RouterModel.route can't score a column outside the pool;
-                # RoutingPipeline.route gives it the pool-mean prediction with confidence 0.
+                # Router.route gives it the pool-mean prediction with confidence 0.
             if required and not required.issubset(set(getattr(c, "capabilities", []) or [])):
                 continue
             out.append(c)
