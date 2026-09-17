@@ -6,6 +6,8 @@ import (see test_scaffolding_imports.py)."""
 
 from __future__ import annotations
 
+import warnings
+
 import pandas as pd
 import pytest
 
@@ -85,6 +87,38 @@ def test_required_capability_filters_out_unsupported_candidates():
     )
     assert len(decision.ranked_models) == 1
     assert decision.ranked_models[0].model.model_id == "big-strong"
+
+
+def test_route_warns_when_max_latency_is_set_since_no_latency_signal_exists():
+    """RC-01: ModelScore.expected_latency is never populated on the live path
+    (no latency source exists anywhere in the package), so a non-default
+    max_latency silently filters nothing. Callers must be warned rather than
+    getting a no-op."""
+    pipeline = Router(FakeTextRouter(), llm_registry=_registry())
+    with pytest.warns(UserWarning, match="max_latency"):
+        pipeline.route(RoutingRequest(
+            request_id="r5", prompt="anything",
+            constraints=RoutingConstraints(max_latency=0.05),
+        ))
+
+
+def test_route_warns_when_latency_weight_is_set_since_no_latency_signal_exists():
+    """RC-01, the soft-objective half: latency_weight always multiplies a
+    permanent 0.0, so a non-default weight has zero effect on ranking."""
+    pipeline = Router(FakeTextRouter(), llm_registry=_registry())
+    objective = OptimizationObjective(quality_weight=1.0, latency_weight=1.0)
+    with pytest.warns(UserWarning, match="latency_weight"):
+        pipeline.route(RoutingRequest(
+            request_id="r6", prompt="anything",
+            constraints=RoutingConstraints(objective=objective),
+        ))
+
+
+def test_route_does_not_warn_when_latency_knobs_are_left_at_default():
+    pipeline = Router(FakeTextRouter(), llm_registry=_registry())
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        pipeline.route(RoutingRequest(request_id="r7", prompt="anything"))
 
 
 def test_cost_weight_can_change_the_winner():

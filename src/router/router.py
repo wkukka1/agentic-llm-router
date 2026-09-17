@@ -21,6 +21,7 @@ only produces a :class:`~router.decision.RoutingDecision`.
 from __future__ import annotations
 
 import math
+import warnings
 from typing import TYPE_CHECKING, Optional
 
 import numpy as np
@@ -94,8 +95,32 @@ class Router:
         ``supported=False``. The hard limits in ``request.constraints``
         (``min_quality`` / ``max_cost`` / ``max_latency``) are applied to the
         scored candidates before the policy ranks them.
+
+        **Latency is not wired up yet.** No signal source populates
+        ``ModelScore.expected_latency`` anywhere in this package (unlike
+        ``expected_cost``, which has a router/profile fallback), so it's
+        permanently ``0.0`` -- a non-default ``max_latency`` filters nothing,
+        and a non-default ``objective.latency_weight`` has zero effect on
+        ranking. ``route()`` warns rather than silently no-opping when either
+        is set to something other than its default (RC-01).
         """
         from .routing.base import UnsupportedCandidatePolicy
+
+        constraints = request.constraints
+        if constraints.max_latency is not None:
+            warnings.warn(
+                "RoutingConstraints.max_latency is set, but no latency signal "
+                "exists anywhere in router -- ModelScore.expected_latency is "
+                "always 0.0, so this hard limit filters nothing (RC-01)",
+                stacklevel=2,
+            )
+        if constraints.objective.latency_weight != 0.0:
+            warnings.warn(
+                "OptimizationObjective.latency_weight is set, but no latency "
+                "signal exists anywhere in router -- ModelScore.expected_latency "
+                "is always 0.0, so this weight has no effect on ranking (RC-01)",
+                stacklevel=2,
+            )
 
         context = self.build_context(request)
         if self.llm_registry is None:
