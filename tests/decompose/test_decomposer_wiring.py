@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 
 import numpy as np
+import pytest
 
 from decompose.classifiers.base import ClassificationInput
 from decompose.decomposer import PromptDecomposer, default_prompt_decomposer
@@ -43,3 +44,11 @@ def test_default_factory_wires_a_supplied_artifact_alongside_surface(tmp_path):
     assert set(signals.signals) == {"surface", "expected_tokens", "length_bucket"}
     assert signals.get("surface").value["log_words"] > 0
     assert signals.get("expected_tokens").value > 0
+
+
+def test_default_factory_rejects_an_unrecognized_artifact_paths_key(tmp_path):
+    """DC-01: a misspelled key ("domains" instead of "domain") must not be
+    silently dropped -- it previously matched none of the four checked keys
+    and returned a decomposer missing that head with no error or warning."""
+    with pytest.raises(ValueError, match="domains"):
+        default_prompt_decomposer({"domains": str(tmp_path)})

@@ -73,6 +73,12 @@ def default_prompt_decomposer(
     )
 
     paths = dict(artifact_paths or {})
+    unknown = set(paths) - {"domain", "task", "length", "attributes"}
+    if unknown:
+        raise ValueError(
+            f"default_prompt_decomposer: unknown artifact_paths key(s) {sorted(unknown)}; "
+            'expected any of "domain", "task", "length", "attributes"'
+        )
     classifiers: list[Classifier] = [SurfaceClassifier()]
     if "domain" in paths:
         classifiers.append(DomainClassifier(paths["domain"]))
