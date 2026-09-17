@@ -464,6 +464,33 @@ class MLPRouter(RouterModel):
         self._pathway = pathway
         self._cost_cache = _UNSET
 
+    @classmethod
+    def from_artifact(cls, artifact, cost_model=None, *, data=None, name: Optional[str] = None):
+        """The artifact-driven construction path
+        :class:`~router.models.registry.RouterModelFactory` describes: rebuild
+        the model in-memory from ``artifact.payload`` via
+        :func:`router.nirt.baselines_infer.build_mlp_router` + ``load_state_dict``,
+        mirroring :meth:`NIRTRouter.from_artifact`.
+        """
+        from ..models.artifacts import MLPArtifactPayload
+        from ..nirt.baselines_infer import build_mlp_router
+
+        payload = artifact.payload
+        if not isinstance(payload, MLPArtifactPayload):
+            raise TypeError(
+                f"MLPRouter.from_artifact needs an MLPArtifactPayload, "
+                f"got {type(payload).__name__}"
+            )
+        model = build_mlp_router(payload.in_dim, len(payload.model_ids), payload.hidden, payload.dropout)
+        model.load_state_dict(payload.state_dict)
+        model.eval()
+        router = cls(
+            model, payload.model_ids, data=data, name=name or f"mlp:{artifact.artifact_id}",
+        )
+        router.cost_model = cost_model
+        router.artifact = artifact
+        return router
+
     @property
     def default_model_costs(self) -> Optional[np.ndarray]:
         return _lazy_model_costs(self)

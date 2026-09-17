@@ -13,7 +13,9 @@ from helpers import FakeTrainingData, make_split_obs
 torch = pytest.importorskip("torch")
 
 from router.models.artifacts import MLPArtifactPayload
+from router.models.registry import RouterModelFactory
 from router.nirt.baselines_infer import mlp_router_matrix
+from router.routing.routers import MLPRouter
 from training.trainers.base import TrainingConfig
 from training.trainers.mlp_router_trainer import MLPRouterTrainer
 
@@ -35,17 +37,20 @@ def test_train_persists_and_reloads_a_working_router(tmp_path):
     model, model_ids = trainer.last_result
     assert artifact.payload.model_ids == list(model_ids)
 
-    from router.nirt.baselines_infer import build_mlp_router
-
-    rebuilt = build_mlp_router(artifact.payload.in_dim, len(artifact.payload.model_ids),
-                               artifact.payload.hidden, artifact.payload.dropout)
-    rebuilt.load_state_dict(artifact.payload.state_dict)
-    rebuilt.eval()
-
+    # MLPRouter.from_artifact (TT-01): the real reload path, not a hand-rebuild
+    # that dodges the class's own constructor.
+    router = MLPRouter.from_artifact(artifact, data=d)
     eval_ids = sorted(d.observations.query_id.unique())[:20]
     m_a = mlp_router_matrix(model, model_ids, d, eval_ids, pathway="irt")
-    m_b = mlp_router_matrix(rebuilt, artifact.payload.model_ids, d, eval_ids, pathway="irt")
+    m_b = router.predict_scores(eval_ids)
     assert np.allclose(m_a.to_numpy(), m_b.to_numpy())
+
+    # and the documented artifact-driven RouterModelFactory path this trainer
+    # exists to enable -- must not raise TypeError("no from_artifact")
+    factory = RouterModelFactory()
+    factory.register("mlp", MLPRouter)
+    router2 = factory.create(artifact, None)
+    assert isinstance(router2, MLPRouter)
 
 
 def test_typed_config_fields_override_hyperparameters(tmp_path, monkeypatch):

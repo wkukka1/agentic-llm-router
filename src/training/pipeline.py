@@ -25,12 +25,27 @@ that trainer's docstring). Adding a harness-level fallback save would need to
 know which artifact/payload shapes are safe to persist again, which the
 harness has no way to determine generically -- left undone rather than
 built untested.
+
+**Provenance: ``created_at`` is harness-stamped, ``training_dataset_version``
+is not populated by anything today.** No trainer sets either field on the
+``RouterModelArtifact`` it returns (``NIRTTrainer`` round-trips through
+``fit()``'s own ``run.json``, which never carries them; ``BaselineNIRTTrainer``/
+``MLPRouterTrainer`` construct the artifact directly with neither kwarg). Of
+the two, ``created_at`` -- "training happened now" -- is generically knowable
+regardless of trainer, so :meth:`TrainingHarness.train` stamps it on the
+artifact whenever the trainer left it blank, once, for all three trainers.
+``training_dataset_version`` is not: it names a ``DatasetRef`` this codebase
+doesn't have yet (see :mod:`training.trainers.base`'s docstring), and
+``dataset`` here is deliberately untyped (``Any``), so the harness has
+nothing to derive a version from. It stays ``""`` until a trainer is given a
+real dataset identity to report.
 """
 
 from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from router.models.artifacts import RouterModelArtifact
@@ -85,7 +100,7 @@ class TrainingRun:
 def _metrics_kwargs(d: dict[str, Any]) -> dict[str, float]:
     kw: dict[str, float] = {}
     for target, sources in (
-        ("loss", ("loss",)),
+        ("loss", ("loss", "train_loss")),
         ("accuracy", ("accuracy",)),
         ("bce", ("bce",)),
         ("auc", ("auc",)),
@@ -102,7 +117,13 @@ def _metrics_kwargs(d: dict[str, Any]) -> dict[str, float]:
 def _extract_metrics(last_result: Any) -> tuple[TrainingMetrics, ValidationMetrics]:
     """Best-effort: works for anything exposing ``val_metrics``/``history``
     dicts (``RunResult``, ``BaselineRun``); returns zero-valued defaults for
-    anything else (e.g. ``MLPRouterTrainer``'s bare tuple)."""
+    anything else (e.g. ``MLPRouterTrainer``'s bare tuple).
+
+    ``history`` rows only ever carry ``train_loss`` (matched onto
+    ``TrainingMetrics.loss``) -- neither wrapped trainer's per-epoch loop
+    computes train-split accuracy/bce/auc/spearman, so those four fields stay
+    at their ``0.0`` default regardless of trainer; only the validation split
+    (``val_metrics``) has them."""
     val_metrics = getattr(last_result, "val_metrics", None) or {}
     validation = ValidationMetrics(**_metrics_kwargs(val_metrics))
     history = getattr(last_result, "history", None) or []
@@ -119,6 +140,8 @@ class TrainingHarness:
         t0 = time.time()
         artifact = trainer.train(dataset, config)
         elapsed = time.time() - t0
+        if not artifact.created_at:
+            artifact.created_at = datetime.now(timezone.utc).isoformat()
         training, validation = _extract_metrics(trainer.last_result)
         training.training_time = elapsed
         return TrainingRun(

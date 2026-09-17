@@ -40,6 +40,9 @@ def test_harness_train_runs_nirt_and_loads_through_the_factory(tmp_path):
     assert run.artifact is not None
     assert run.training_metrics.training_time > 0
     assert np.isfinite(run.validation_metrics.bce) and run.validation_metrics.bce != 0.0
+    # NIRTTrainer's history rows carry "train_loss", not bare "loss" (TP-01) --
+    # _extract_metrics must read the key that's actually there.
+    assert np.isfinite(run.training_metrics.loss) and run.training_metrics.loss != 0.0
 
     factory = RouterModelFactory()
     factory.register("nirt", NIRTRouter)
@@ -72,6 +75,10 @@ def test_harness_train_runs_baseline():
     assert run.trainer_name == "baseline"
     assert run.artifact.router_model_name == "baseline"
     assert run.training_metrics.training_time > 0
+    # BaselineNIRTTrainer never sets created_at on its artifact -- the harness
+    # stamps it generically so provenance isn't silently blank (RM-03/TN-05).
+    assert run.created_at != ""
+    assert run.artifact.created_at != ""
 
 
 def test_harness_train_runs_mlp_router(tmp_path):
@@ -90,3 +97,13 @@ def test_harness_train_runs_mlp_router(tmp_path):
     # not a crash
     assert run.validation_metrics.bce == 0.0
     assert run.training_metrics.training_time > 0
+
+    # the artifact-driven load path this trainer exists to enable (TT-01) --
+    # must not raise TypeError("no from_artifact")
+    from router.models.registry import RouterModelFactory
+    from router.routing.routers import MLPRouter
+
+    factory = RouterModelFactory()
+    factory.register("mlp", MLPRouter)
+    router = factory.create(run.artifact, CostModel())
+    assert isinstance(router, MLPRouter)
