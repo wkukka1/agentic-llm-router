@@ -99,7 +99,7 @@ class LangChainAdapter(ProviderAdapter):
         return self._chat
 
     def complete(self, prompt: Prompt, **generation_kwargs) -> LLMResponse:
-        msg = self._model().invoke(prompt)
+        msg = self._model().invoke(prompt, **generation_kwargs)
         in_tok, out_tok = self._tokens(getattr(msg, "usage_metadata", None))
         return LLMResponse(
             content=message_text(msg),
@@ -109,7 +109,7 @@ class LangChainAdapter(ProviderAdapter):
         )
 
     def stream(self, prompt: Prompt, **generation_kwargs) -> Iterator[str]:
-        for chunk in self._model().stream(prompt):
+        for chunk in self._model().stream(prompt, **generation_kwargs):
             yield message_text(chunk)
 
     @staticmethod
