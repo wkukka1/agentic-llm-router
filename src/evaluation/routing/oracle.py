@@ -115,10 +115,17 @@ def evaluate_router(
 # --------------------------------------------------------------------------- #
 # oracle labels (evaluation-only)                                             #
 # --------------------------------------------------------------------------- #
-def _require_finite(true: np.ndarray, what: str, *, query_ids=None, model_ids=None) -> None:
+def _require_finite(true: np.ndarray, what: str, *, query_ids=None, model_ids=None,
+                     mask: Optional[np.ndarray] = None) -> None:
     """Raise ``ValueError`` if the outcome matrix has non-finite cells -- the oracle
-    (row max, regret, ranks) is only defined on a dense matrix."""
+    (row max, regret, ranks) is only defined on a dense matrix.
+
+    ``mask`` (optional, same shape) restricts the check to cells that matter --
+    e.g. only a query's tied-max cells, when checking ``cost`` (a non-max cell's
+    cost never affects the oracle's tie-break, so it needn't be dense there)."""
     bad = ~np.isfinite(true)
+    if mask is not None:
+        bad = bad & np.asarray(mask, bool)
     if not bad.any():
         return
     rows, cols = np.nonzero(bad)
@@ -128,7 +135,7 @@ def _require_finite(true: np.ndarray, what: str, *, query_ids=None, model_ids=No
         for r, c in zip(rows[:5], cols[:5])
     ]
     raise ValueError(
-        f"{what}: {int(bad.sum())} non-finite outcome cells, e.g. (query, model) {sample}; "
+        f"{what}: {int(bad.sum())} non-finite cells, e.g. (query, model) {sample}; "
         "the oracle needs a dense matrix -- restrict to fully observed queries/models first"
     )
 
@@ -186,6 +193,13 @@ def oracle_labels(
     oracle_score = true.max(axis=1)
     flag = (true >= oracle_score[:, None] - tol)
     n_ties = flag.sum(axis=1)
+    if cost is not None:
+        # a missing cost at a tied-max cell would make oracle_choice fall
+        # back to its NaN-safe-but-arbitrary tie-break there (EN-01/ER-02) --
+        # surface that as a clear error instead of a silently deprioritized
+        # model_id choice.
+        _require_finite(cost, "oracle_labels (cost, at the tied-max cells)",
+                        query_ids=query_ids, model_ids=models, mask=flag)
 
     # deterministic single oracle model: max score -> cheapest -> smallest id
     oracle_col = oracle_choice(
@@ -276,6 +290,13 @@ def routing_evaluation(
     _require_finite(true, "routing_evaluation",
                     query_ids=list(query_ids) if query_ids is not None else None,
                     model_ids=model_ids)
+    if cost is not None:
+        # same gap as oracle_labels (ER-02): a missing cost at a tied-max
+        # cell must be a clear error, not a silent EN-01 NaN-safe fallback.
+        at_max = true >= true.max(axis=1, keepdims=True) - _TOL
+        _require_finite(np.asarray(cost, np.float64), "routing_evaluation (cost, at the tied-max cells)",
+                        query_ids=list(query_ids) if query_ids is not None else None,
+                        model_ids=model_ids, mask=at_max)
     qi = np.arange(n_q)
     C = (np.asarray(model_costs, np.float64) if model_costs is not None
          else (cost.mean(axis=0) if cost is not None else None))
@@ -476,12 +497,18 @@ def compare_routing_strategies(
             _run(f"{name} (cost-aware lam={lam})", pmat, lam)
 
     if include_hard_oracle:
-        # route on the truth; break exact-quality ties toward the cheaper model
-        # so the upper bound is also the cheapest way to reach max quality.
-        tb = true.astype(np.float64).copy()
-        if cost is not None:
-            c = np.asarray(cost, np.float64)
-            tb = tb - 1e-9 * (c - c.min()) / (np.ptp(c) + 1e-12)
+        # route on the canonical oracle pick itself (max score -> min cost ->
+        # smallest model_id, the same rule oracle_labels/routing_evaluation's
+        # own o_idx uses) instead of re-deriving an equivalent ranking through
+        # a perturb-then-argmax trick that silently reverts to column-order
+        # ties once two candidates also tie on the perturbed cost (ER-01).
+        # A one-hot "prediction" at the oracle's own column guarantees
+        # routing_decision's argmax always reproduces oracle_choice exactly.
+        oracle_idx = oracle_choice(
+            true, cost if cost is not None else np.zeros_like(true), model_ids=model_ids,
+        )
+        tb = np.zeros_like(true)
+        tb[np.arange(true.shape[0]), oracle_idx] = 1.0
         _run("hard oracle (upper bound)", tb, 0.0)
     if include_random:
         rng = np.random.default_rng(0)

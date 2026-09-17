@@ -105,14 +105,15 @@ def route(pred: np.ndarray, cost: np.ndarray, lam: float = 0.0) -> np.ndarray:
 
 def oracle_choice(
     true: np.ndarray, cost: np.ndarray, *, tol: float = 1e-9,
-    model_ids: Optional[Sequence[str]] = None,
+    model_ids: Optional[Sequence[str]],
 ) -> np.ndarray:
     """Per-query index of the oracle model: the max observed score, ties broken by cost.
 
     Cost is **only a tie-breaker** among the models attaining the max score -- it is
     never traded off against score (that is the cost-aware utility, reported
     separately). Ties left after cost (equal score *and* equal cost) are broken by
-    one of two modes:
+    one of two modes. ``model_ids`` has no default -- every caller states its
+    choice explicitly, rather than silently landing on the legacy mode:
 
     * ``model_ids`` given -- the **canonical** rule: max score -> min cost ->
       lexicographically smallest ``model_id``. Independent of column order; new
@@ -126,10 +127,19 @@ def oracle_choice(
     overpays -- inflating the oracle cost (and deflating the oracle's cost-saving
     ceiling). Breaking the tie by cost matches RouterBench's own oracle
     (cheapest correct model) and does not change the oracle's quality.
+
+    A missing (``NaN``) cost at a query's max-scoring cell is treated as "unknown,
+    but still eligible" -- it never sorts as *cheaper* than a real cost (that would
+    let an unpriced model win a tie it may not deserve), but it also never sorts
+    as *worse* than a model that didn't even attain the max score. Residual ties
+    among only-NaN-cost max scorers fall through to the id/column tie-break.
     """
     true = np.asarray(true, np.float64)
     at_max = true >= true.max(axis=1, keepdims=True) - tol
     masked_cost = np.where(at_max, np.asarray(cost, np.float64), np.inf)
+    finite = masked_cost[np.isfinite(masked_cost)]
+    nan_sentinel = float(finite.max()) + 1.0 if finite.size else 0.0
+    masked_cost = np.where(np.isnan(masked_cost), nan_sentinel, masked_cost)
     if model_ids is None:
         return masked_cost.argmin(axis=1)
     ids = np.asarray([str(m) for m in model_ids])
@@ -161,7 +171,11 @@ def routing_report(
     rows: list[dict] = []
 
     # -- reference / bound policies --------------------------------------
-    rows.append(_policy_row("oracle (best per query)", oracle_choice(true, cost), true, cost))
+    # legacy tie-break (column order), kept explicit so historical numbers
+    # don't silently change if oracle_choice's default is ever revisited
+    rows.append(_policy_row(
+        "oracle (best per query)", oracle_choice(true, cost, model_ids=None), true, cost,
+    ))
     if train_quality:
         best_fixed = max(train_quality, key=train_quality.get)
         j = model_ids.index(best_fixed)

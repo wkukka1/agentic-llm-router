@@ -117,10 +117,37 @@ def test_oracle_choice_breaks_ties_by_cost():
     true = np.array([[1.0, 1.0, 0.0], [0.0, 0.3, 0.3], [1.0, 1.0, 1.0]])
     cost = np.array([[9.0, 1.0, 2.0], [5.0, 8.0, 3.0], [4.0, 2.0, 7.0]])
     # cheapest model attaining the row max: col1 (1.0), col2 (0.3), col1 (2.0)
-    assert oracle_choice(true, cost).tolist() == [1, 2, 1]
+    assert oracle_choice(true, cost, model_ids=None).tolist() == [1, 2, 1]
     # never worse quality than the plain argmax
-    q_oracle = true[np.arange(3), oracle_choice(true, cost)]
+    q_oracle = true[np.arange(3), oracle_choice(true, cost, model_ids=None)]
     assert np.allclose(q_oracle, true.max(axis=1))
+
+
+def test_oracle_choice_requires_model_ids_to_be_stated_explicitly():
+    """EN-02: the legacy column-order tie-break must be an explicit
+    ``model_ids=None`` opt-out, never a silent default."""
+    from evaluation.nirt.routing import oracle_choice
+
+    true = np.array([[1.0, 0.0]])
+    cost = np.array([[1.0, 2.0]])
+    with pytest.raises(TypeError):
+        oracle_choice(true, cost)
+
+
+def test_oracle_choice_nan_cost_at_every_tied_max_cell_does_not_pick_a_worse_model():
+    """EN-01: NaN sorts larger than inf in np.lexsort/np.sort, so a naive
+    tie-break can pick a below-max-score model when cost is unknown for
+    every model that actually attains the max score."""
+    from evaluation.nirt.routing import oracle_choice
+
+    true = np.array([[0.9, 0.9, 0.5]])
+    cost = np.array([[np.nan, np.nan, 0.01]])
+
+    canonical = oracle_choice(true, cost, model_ids=["m0", "m1", "m2"])
+    assert true[0, canonical[0]] == pytest.approx(0.9)
+
+    legacy = oracle_choice(true, cost, model_ids=None)
+    assert true[0, legacy[0]] == pytest.approx(0.9)
 
 
 # --------------------------------------------------------------------------- #

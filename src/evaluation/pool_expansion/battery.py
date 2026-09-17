@@ -331,7 +331,9 @@ def derived_headline(
     """
     n = true.shape[0]
     qi = np.arange(n)
-    o_choice = oracle_choice(true, cost)
+    # legacy tie-break (column order), kept explicit so historical numbers
+    # don't silently change if oracle_choice's default is ever revisited
+    o_choice = oracle_choice(true, cost, model_ids=None)
     oracle_cost_1k = float(cost[qi, o_choice].mean() * 1000)
 
     best_single = max(tq_acc, key=tq_acc.get)
