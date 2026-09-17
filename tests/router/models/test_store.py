@@ -14,7 +14,12 @@ from helpers import make_synthetic_irt, nirt_cfg, nirt_datasets
 
 torch = pytest.importorskip("torch")
 
-from router.models.artifacts import ArtifactFormat, NIRTArtifactPayload, RouterModelArtifact
+from router.models.artifacts import (
+    ArtifactFormat,
+    MLPArtifactPayload,
+    NIRTArtifactPayload,
+    RouterModelArtifact,
+)
 from router.models.store import LocalArtifactStore
 from router.nirt.checkpoint import load_run
 from router.nirt.predict import predict_dataset
@@ -76,6 +81,72 @@ def test_store_round_trips_save_then_load(tmp_path):
 
 def test_store_exists_is_false_for_a_missing_artifact(tmp_path):
     assert LocalArtifactStore(tmp_path).exists("nope") is False
+
+
+def _mlp_artifact(artifact_id: str, fill: float) -> RouterModelArtifact:
+    return RouterModelArtifact(
+        artifact_id=artifact_id,
+        payload=MLPArtifactPayload(
+            state_dict={"w": torch.full((2,), fill)},
+            model_ids=["a", "b"], in_dim=2, hidden=2, dropout=0.0,
+        ),
+        content_hash=str(fill), format=ArtifactFormat.PICKLE, router_model_name="mlp",
+    )
+
+
+def test_save_writes_model_pt_and_run_json_via_atomic_rename_not_in_place(tmp_path, monkeypatch):
+    """RM-01: a killed write must never leave a directory with a complete
+    model.pt and a missing/stale run.json (or vice versa) -- save() should
+    write to a same-directory temp path and os.replace() into place, not
+    write straight to the final path."""
+    import os as os_mod
+
+    store = LocalArtifactStore(tmp_path)
+    replaced: list[str] = []
+    real_replace = os_mod.replace
+
+    def spy_replace(src, dst):
+        replaced.append(str(src))
+        assert str(src) != str(dst), "save() must write to a temp path, not the final path directly"
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(os_mod, "replace", spy_replace)
+    store.save(_mlp_artifact("atomic-run", 1.0))
+
+    assert len(replaced) == 2  # model.pt and run.json each renamed into place
+    # no leftover temp files after a successful save
+    assert sorted(p.name for p in (tmp_path / "atomic-run").iterdir()) == ["model.pt", "run.json"]
+
+
+def test_save_overwrite_failure_leaves_the_previous_checkpoint_intact(tmp_path, monkeypatch):
+    """RM-01: torch.save writing straight to model.pt's final path means a
+    crash mid-write on an overwrite clobbers the previously-good checkpoint
+    in place. Writing to a temp file first means a failure here must leave
+    the old, still-loadable checkpoint untouched."""
+    store = LocalArtifactStore(tmp_path)
+    store.save(_mlp_artifact("run1", 1.0))
+    model_pt = tmp_path / "run1" / "model.pt"
+    run_json = tmp_path / "run1" / "run.json"
+    original_model_bytes = model_pt.read_bytes()
+    original_run_json = run_json.read_text(encoding="utf-8")
+
+    def boom(obj, f, *args, **kwargs):
+        # simulate a real partial write: some bytes land at the path torch.save
+        # was given, then the process dies -- corrupts whichever path save()
+        # actually writes to (the final path if non-atomic, a temp path if not)
+        from pathlib import Path
+
+        Path(f).write_bytes(b"corrupt-partial-write")
+        raise RuntimeError("simulated crash mid-write")
+
+    monkeypatch.setattr(torch, "save", boom)
+    with pytest.raises(RuntimeError):
+        store.save(_mlp_artifact("run1", 2.0))
+
+    assert model_pt.read_bytes() == original_model_bytes
+    assert run_json.read_text(encoding="utf-8") == original_run_json
+    # no stray temp files left behind in the artifact directory
+    assert sorted(p.name for p in (tmp_path / "run1").iterdir()) == ["model.pt", "run.json"]
 
 
 def test_store_save_rejects_a_non_nirt_payload(tmp_path):

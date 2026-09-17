@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import abc
 import json
+import os
+import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .artifacts import ArtifactFormat, MLPArtifactPayload, NIRTArtifactPayload, RouterModelArtifact
 
@@ -117,6 +119,20 @@ class LocalArtifactStore(ArtifactStore):
             hyperparameters=meta.get("hyperparameters", {}),
         )
 
+    @staticmethod
+    def _atomic_write(path: Path, write: Callable[[Path], None]) -> None:
+        """Write via a unique same-directory temp file, then :func:`os.replace`
+        (atomic on POSIX and Windows) into ``path``. A reader only ever sees
+        ``path`` fully absent or fully written -- never a half-written file
+        from a killed process, and never a good file clobbered mid-overwrite
+        by a bad one (RM-01). ``write(tmp_path)`` performs the actual write."""
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+        try:
+            write(tmp)
+            os.replace(tmp, path)
+        finally:
+            tmp.unlink(missing_ok=True)
+
     def save(self, artifact: RouterModelArtifact) -> str:
         if not isinstance(artifact.payload, (NIRTArtifactPayload, MLPArtifactPayload)):
             raise NotImplementedError(
@@ -126,24 +142,24 @@ class LocalArtifactStore(ArtifactStore):
 
         out = self.root_path / artifact.artifact_id
         out.mkdir(parents=True, exist_ok=True)
-        torch.save(artifact.payload.to_state(), out / "model.pt")
-        (out / "run.json").write_text(
-            json.dumps(
-                {
-                    "artifact_id": artifact.artifact_id,
-                    "content_hash": artifact.content_hash,
-                    "schema_version": artifact.schema_version,
-                    "router_model_name": artifact.router_model_name,
-                    "router_model_version": artifact.router_model_version,
-                    "training_dataset_version": artifact.training_dataset_version,
-                    "training_run_id": artifact.training_run_id,
-                    "created_at": artifact.created_at,
-                    "hyperparameters": artifact.hyperparameters,
-                },
-                indent=2,
-            ),
-            encoding="utf-8",
+        self._atomic_write(out / "model.pt", lambda tmp: torch.save(artifact.payload.to_state(), tmp))
+        run_json_text = json.dumps(
+            {
+                "artifact_id": artifact.artifact_id,
+                "content_hash": artifact.content_hash,
+                "schema_version": artifact.schema_version,
+                "router_model_name": artifact.router_model_name,
+                "router_model_version": artifact.router_model_version,
+                "training_dataset_version": artifact.training_dataset_version,
+                "training_run_id": artifact.training_run_id,
+                "created_at": artifact.created_at,
+                "hyperparameters": artifact.hyperparameters,
+            },
+            indent=2,
         )
+        # written last: a reader never sees a complete model.pt paired with a
+        # missing/stale run.json from an interrupted write (RM-01)
+        self._atomic_write(out / "run.json", lambda tmp: tmp.write_text(run_json_text, encoding="utf-8"))
         return str(out)
 
     def _read_run_json(self, artifact_id: str) -> dict[str, Any]:
