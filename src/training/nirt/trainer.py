@@ -12,30 +12,14 @@ callers who want the typed ``RouterModelArtifact`` shape, not a replacement.
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Any, Optional
 
 from router.models.artifacts import RouterModelArtifact
 from router.models.store import LocalArtifactStore
 
-from ..trainers.base import RouterModelTrainer, TrainingConfig
+from ..trainers.base import RouterModelTrainer, TrainingConfig, translate_training_config
 from .train import RunResult, fit
-
-
-def _nirt_cfg_from_config(config: TrainingConfig) -> dict:
-    """``config.hyperparameters`` is expected to already be shaped like
-    ``training.nirt.train.fit``'s ``nirt_cfg`` (``{"model": {...}, "train": {...},
-    "data": {...}}``); the typed fields on ``config`` override/fill it in."""
-    cfg = json.loads(json.dumps(config.hyperparameters))
-    cfg["seed"] = config.seed
-    if config.max_epochs is not None:
-        cfg.setdefault("train", {})["epochs"] = config.max_epochs
-    if config.early_stopping_patience is not None:
-        cfg.setdefault("train", {})["patience"] = config.early_stopping_patience
-    if config.preprocessing:
-        cfg.setdefault("data", {}).update(config.preprocessing)
-    return cfg
 
 
 class NIRTTrainer(RouterModelTrainer):
@@ -49,7 +33,7 @@ class NIRTTrainer(RouterModelTrainer):
     def train(self, dataset: Any, config: TrainingConfig) -> RouterModelArtifact:
         """``dataset`` is a ``(train_ds, val_ds)`` tuple (``fit``'s ``datasets=``),
         or ``None`` to let ``fit`` load from the phase-0 config."""
-        nirt_cfg = _nirt_cfg_from_config(config)
+        nirt_cfg = translate_training_config(config)
         self.last_result = fit(
             nirt_cfg, datasets=dataset, name=config.run_name,
             runs_dir=self.runs_dir, save=True, verbose=False,

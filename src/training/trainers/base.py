@@ -35,6 +35,7 @@ worked around rather than resolved:
 from __future__ import annotations
 
 import abc
+import json
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -49,6 +50,34 @@ class TrainingConfig:
     early_stopping_patience: Optional[int] = None
     hyperparameters: dict[str, Any] = field(default_factory=dict)
     preprocessing: dict[str, Any] = field(default_factory=dict)
+
+
+def translate_training_config(config: TrainingConfig) -> dict:
+    """``config.hyperparameters`` is expected to already be shaped like
+    ``training.nirt.train.fit``/``training.nirt.baseline.train.fit``'s own
+    config (``{"model": {...}, "train": {...}, "data": {...}}``); the typed
+    fields on ``config`` override/fill it in. Shared by ``NIRTTrainer`` and
+    ``BaselineNIRTTrainer`` (previously two byte-identical private copies,
+    TN-02) so a fix only needs to be made once.
+
+    ``"train"``/``"data"`` may already be present as an explicit ``None``
+    (a real YAML shape: ``train:`` with no children) -- ``dict.setdefault``
+    does not replace an already-present ``None``, so the sub-section is
+    normalized with ``... or {}`` before being written into, matching the
+    defensive unwrap both wrapped ``fit()`` functions already do on their own
+    config reads (TN-01)."""
+    cfg = json.loads(json.dumps(config.hyperparameters))
+    cfg["seed"] = config.seed
+    if config.max_epochs is not None:
+        cfg["train"] = cfg.get("train") or {}
+        cfg["train"]["epochs"] = config.max_epochs
+    if config.early_stopping_patience is not None:
+        cfg["train"] = cfg.get("train") or {}
+        cfg["train"]["patience"] = config.early_stopping_patience
+    if config.preprocessing:
+        cfg["data"] = cfg.get("data") or {}
+        cfg["data"].update(config.preprocessing)
+    return cfg
 
 
 class RouterModelTrainer(abc.ABC):

@@ -19,29 +19,13 @@ unchanged; this wrapper is an *additional* entry point for the typed
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any, Optional
 
 from router.models.artifacts import ArtifactFormat, BaselineArtifactPayload, RouterModelArtifact
 
-from ...trainers.base import RouterModelTrainer, TrainingConfig
+from ...trainers.base import RouterModelTrainer, TrainingConfig, translate_training_config
 from .train import BaselineRun, fit
-
-
-def _phase1_cfg_from_config(config: TrainingConfig) -> dict:
-    """``config.hyperparameters`` is expected to already be shaped like
-    ``training.nirt.baseline.train.fit``'s ``phase1_cfg``; the typed fields
-    on ``config`` override/fill it in."""
-    cfg = json.loads(json.dumps(config.hyperparameters))
-    cfg["seed"] = config.seed
-    if config.max_epochs is not None:
-        cfg.setdefault("train", {})["epochs"] = config.max_epochs
-    if config.early_stopping_patience is not None:
-        cfg.setdefault("train", {})["patience"] = config.early_stopping_patience
-    if config.preprocessing:
-        cfg.setdefault("data", {}).update(config.preprocessing)
-    return cfg
 
 
 class BaselineNIRTTrainer(RouterModelTrainer):
@@ -55,7 +39,7 @@ class BaselineNIRTTrainer(RouterModelTrainer):
     def train(self, dataset: Any, config: TrainingConfig) -> RouterModelArtifact:
         """``dataset`` is a ``(train_arrays, val_arrays)`` tuple (``fit``'s
         ``arrays=``), or ``None`` to let ``fit`` build them from config."""
-        phase1_cfg = _phase1_cfg_from_config(config)
+        phase1_cfg = translate_training_config(config)
         out_dir = str(Path(self.runs_dir) / config.run_name) if self.runs_dir else None
         run = fit(phase1_cfg, arrays=dataset, out_dir=out_dir, save=self.runs_dir is not None,
                   verbose=False)
