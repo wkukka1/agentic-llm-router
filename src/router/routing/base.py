@@ -43,7 +43,7 @@ from typing import TYPE_CHECKING, ClassVar, Mapping, Optional, Sequence
 import numpy as np
 import pandas as pd
 
-from ..nirt.routing_decision import no_selectable_rows, routing_decision
+from ..nirt.routing_decision import cost_aware_utility, no_selectable_rows, routing_decision
 
 if TYPE_CHECKING:  # pragma: no cover - type hints only, not a runtime import
     from ..constraints import RoutingConstraints
@@ -307,9 +307,10 @@ class RouterModel(abc.ABC):
 
         mat = scores.to_numpy(np.float64)
         selected = routing_decision(mat, lam=lam, model_costs=costs, eligible=elig)
-        util = np.where(np.isfinite(mat), 0.0, -np.inf)
-        if elig is not None:
-            util = np.where(np.asarray(elig, bool), util, -np.inf)
+        # the same cost-aware utility routing_decision actually selected on --
+        # not a cost-blind np.isfinite(mat) copy (RR-01), which misses a
+        # non-finite lam forcing every cell to -inf after `pred - lam*cost`
+        util = cost_aware_utility(mat, lam=lam, model_costs=costs, eligible=elig)
         return RoutingResult(
             query_ids=[str(q) for q in scores.index],
             model_ids=self.model_ids,

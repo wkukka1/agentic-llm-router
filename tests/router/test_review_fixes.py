@@ -123,6 +123,20 @@ def test_fallback_rows_are_flagged():
     assert res.fallback.tolist() == [False, True] and res.any_fallback
 
 
+def test_fallback_reflects_a_non_finite_lam_forcing_a_meaningless_selection():
+    """RR-01 (2026-09-16 delta review): fallback was computed from a
+    cost-blind copy of the utility matrix (just np.isfinite(mat)), separate
+    from the cost-aware utility routing_decision actually selects on. A
+    non-finite lam makes cost_aware_utility mask every cell to -inf (NaN
+    utility after `pred - lam*cost`), forcing routing_decision to the
+    meaningless column-0 fallback -- but the old cost-blind `util` still saw
+    the raw, finite scores and reported no_selectable_rows() == False."""
+    res = _matrix().route(["q1"], lam=float("nan"), model_costs=[0.1, 0.2, 0.3])
+    assert res.selected_model_ids[0] == POOL[0]
+    assert res.fallback.tolist() == [True]
+    assert res.any_fallback
+
+
 def test_nan_cost_is_rejected_and_never_selected():
     """RR-04"""
     with pytest.raises(ValueError, match="finite"):
