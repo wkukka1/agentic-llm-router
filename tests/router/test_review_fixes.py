@@ -159,6 +159,24 @@ def test_int_labelled_matrix_routes():
     assert res.selected_model_ids == ["2"] and not res.any_fallback
 
 
+def test_router_tool_does_not_reference_the_stale_routing_base_router_name():
+    """RC-02/RR-03: routing/base.py's Router -> RouterModel rename left
+    router_tool.py importing/type-hinting the old name -- harmless at plain
+    runtime (from __future__ import annotations + TYPE_CHECKING-only), but
+    breaks static type-checking and is now ambiguous with the new top-level
+    router.router.Router."""
+    import inspect
+
+    import router.tools.router_tool as mod
+    from router.routing.base import RouterModel
+
+    src = inspect.getsource(mod)
+    assert "routing.base import Router\n" not in src
+    assert "routing.base import RouterModel" in src
+    assert mod.RouterTool.__init__.__annotations__ == {"router": "'RouterModel'"}
+    assert RouterModel.__name__ == "RouterModel"
+
+
 def test_iterator_pool_is_materialised():
     """RR-08"""
     assert RandomRouter(m for m in POOL).model_ids == POOL
