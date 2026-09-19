@@ -207,6 +207,32 @@ def plot_report(report: ForestReport, path: str | Path, *, title: str | None = N
     return path
 
 
+def load_forest_corpus(*, max_rows: int = 6000, seed: int = 20260824):
+    """The exact rows the forest is fitted on: arena prompts with a routing label.
+
+    Its own function so anything that audits the forest -- the spot check in
+    particular -- reads the same rows rather than a lookalike sample. Same seed,
+    same cap, same rows; drift here would make a spot check describe data the
+    forest never saw.
+    """
+    import pandas as pd
+
+    from evaluation.prompt_decomposition.routing_value import load_routing_labels
+    from training.prompt_decomposition.data.arena_corpus import load_arena_splits
+
+    labels = load_routing_labels()
+    frames = []
+    for split, frame in load_arena_splits().items():
+        joined = frame.merge(labels, on="arena_id", how="inner")
+        joined["split"] = split
+        frames.append(joined)
+    rows = pd.concat(frames, ignore_index=True)
+    if max_rows < len(rows):
+        rng = np.random.default_rng(seed)
+        rows = rows.iloc[sorted(rng.choice(len(rows), max_rows, replace=False))].reset_index(drop=True)
+    return rows
+
+
 def run_forest_experiment(*, domain_run: str, task_run: str, encoder_model: str,
                           max_rows: int = 6000, seed: int = 20260824,
                           out_dir: str | Path = "artifacts/forest") -> ForestReport:
@@ -222,24 +248,11 @@ def run_forest_experiment(*, domain_run: str, task_run: str, encoder_model: str,
     hours-long one. The cap is a random subsample of the held-out corpus, not a
     prefix.
     """
-    import pandas as pd
-
     from decompose.classifiers.prompt_decomposition import DomainHead, TaskHead
     from decompose.classifiers.prompt_decomposition.encoder import EmbeddingEncoder
-    from evaluation.prompt_decomposition.routing_value import load_routing_labels
-    from training.prompt_decomposition.data.arena_corpus import load_arena_splits
     from training.prompt_decomposition.heads.forest import build_features
 
-    labels = load_routing_labels()
-    frames = []
-    for split, frame in load_arena_splits().items():
-        joined = frame.merge(labels, on="arena_id", how="inner")
-        joined["split"] = split
-        frames.append(joined)
-    rows = pd.concat(frames, ignore_index=True)
-    rng = np.random.default_rng(seed)
-    if max_rows < len(rows):
-        rows = rows.iloc[sorted(rng.choice(len(rows), max_rows, replace=False))].reset_index(drop=True)
+    rows = load_forest_corpus(max_rows=max_rows, seed=seed)
     y = (rows["routing_label"] == "strong_needed").to_numpy().astype(int)
     prompts = rows["prompt"].tolist()
     log.info("forest corpus: %d prompts, base rate %.3f", len(rows), y.mean())
