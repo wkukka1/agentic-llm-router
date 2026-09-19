@@ -704,3 +704,143 @@ The shipped 384-d encoder is English-trained and it shows.
 Non-English traffic is 47% of this corpus, so this is not a corner case. The
 domain ensemble already carries `multilingual-e5-large-instruct`; pointing the
 length head at it is the obvious next measurement.
+
+## Random forest on domain, task and the encoded query
+
+`evaluation.prompt_decomposition.forest_report`. A forest grown with
+`criterion="entropy"` -- so its impurity importances *are* information gain --
+over three feature families, predicting `strong_needed` (did the stronger model
+win the battle). 6,000 English arena prompts, 876 held out.
+
+| family | cols | info gain | per column | permutation drop | alone | without |
+|---|---|---|---|---|---|---|
+| domain | 8 | 0.022 | 0.00281 | −0.0032 | 0.525 | 0.555 |
+| task | 7 | 0.020 | 0.00286 | +0.0009 | 0.530 | 0.559 |
+| embedding | 384 | **0.958** | 0.00249 | +0.062 | 0.552 | 0.542 |
+
+AUC 0.566 against a 0.494 base rate. Information gain says the embedding is 96%
+of everything; **per column, domain and task are worth more than the average
+embedding dimension**, and the two highest-gain single columns in the model are
+`task.extract` and `domain.language`. The embedding wins by being 384 columns
+wide. Ablation is the arbiter and says everything is weak: every family alone
+lands 0.525–0.552, and domain's permutation drop is negative. Domain and task
+add about +0.01 AUC over the embedding alone -- inside the noise at 876 rows.
+
+## Spot check: the forest was not fed bad features
+
+Two explanations for the forest's result: the classifier outputs are wrong on
+this data, or they are right and the target does not depend on them. The spot
+check separates them (`evaluation.prompt_decomposition.spot_check`), on the
+exact rows the forest used.
+
+**Where the predictions land** (1,500 prompts): 6.2 effective domains of 8, top
+two holding 51% -- not the two-domain collapse suspected, but skewed.
+`software_tech` is 32.9% of this traffic against 13.1% of the training labels.
+
+**Accuracy, read by hand** (80 random prompts, marked against
+`domain_taxonomy.DOMAIN_DESCRIPTIONS`; the marked sheet is kept at
+`artifacts/forest/spot_check_review.csv`):
+
+| | correct | 95% Wilson | documented |
+|---|---|---|---|
+| domain top-1 | 74/80 = 0.925 | [0.846, 0.965] | 0.923 (external) |
+| domain in shortlist | 79/80 = 0.988 | [0.933, 0.998] | 0.980 |
+| task | 70/80 = 0.875 | [0.785, 0.931] | 0.844 |
+
+The heads perform on the forest's data exactly as documented. **The forest's
+verdict is about the target, not the features.**
+
+The misses are informative:
+
+- **Domain (6).** Five of six had the right answer second on the shortlist.
+  Three are "building software for X" read as X -- a trading bot as finance, a
+  chatbot as meta, an HTML page from sales copy as business.
+- **Task (10), and 7 of them one pattern: rare classes firing where `answer` or
+  `create` belong.** `classify` on explain-this and solve-this prompts (a group
+  theory definition, a physics word problem), `extract` on "tell me about SQL
+  QUALIFY", `media` on requests for *text* about images or for an HTML page.
+  The rare task classes are the weak spot, as their per-class precision already
+  said.
+- The corpus `language` column is not reliable: a Russian prompt is tagged `en`.
+
+## Per-model correctness: the opportunity is per prompt, not per category
+
+`evaluation.prompt_decomposition.per_model`, on RouterBench: 36,497 prompts, 11
+models, every model scored on every prompt -- observed correctness, not a
+preference vote. Routers are fitted on a hashed 70% and scored on the rest.
+
+| router | accuracy | $/prompt | gap closed |
+|---|---|---|---|
+| single best (GPT-4 for everything) | 0.7754 | 0.003312 | 0% |
+| best model per benchmark (true labels) | 0.7770 | 0.002740 | 1.2% |
+| best model per subset (86 true labels) | 0.7771 | 0.002738 | 1.2% |
+| oracle (best model per prompt) | **0.9104** | **0.000246** | 100% |
+
+**Even perfect category labels close 1.2% of the accuracy gap**, because GPT-4
+is the best model on 24 of 27 benchmarks -- knowing the category almost never
+changes the choice. Decomposed on the full table, **98% of the oracle's
+advantage is within categories**, and moving from 27 benchmark families to 86
+subsets moves that by 0.1 points. Finer categories do not help: model choice
+varies per prompt, which no category label can see. That is the job of a
+per-query model such as NIRT.
+
+**Cost is where category routing pays.** On the accuracy/cost frontier the
+per-benchmark router sits above every single model across the middle of the
+range. The cheapest single model matching its accuracy costs:
+
+| category router | cheapest single model at that accuracy |
+|---|---|
+| 0.769 at $0.00138 | GPT-4, 2.4x the cost |
+| 0.745 at $0.00080 | GPT-4, 4.1x |
+| 0.687 at $0.00026 | GPT-4, 12.9x |
+
+99% of GPT-4's accuracy at 42% of its cost; 96% at 24%.
+
+### With our predicted labels instead of the true ones
+
+The same analysis on a random 3,000 RouterBench prompts (2,105 train / 895
+test), with the domain and task heads' predictions as the categories.
+
+**The domain head is measurably weaker on exam-format prompts.** Scored where
+the benchmark fixes the domain (1,628 prompts; ambiguous subsets excluded, see
+`spot_check.BENCHMARK_DOMAIN`): **0.867** [0.849, 0.882], 0.958 in shortlist,
+against 0.925 on the chat prompts. By domain: science_math 0.97, business_law
+0.94 -- and three weak spots:
+
+| expected | accuracy | where it goes instead |
+|---|---|---|
+| culture (history, society, philosophy) | 0.52 | business_law 54 of 187 |
+| medicine_health | 0.59 | science_math 26 of 118 |
+| software_tech | 0.62 | science_math 15, language 11 of 73 |
+
+History-and-government questions read as politics, anatomy and virology as
+biology. Multiple-choice exam text is a different register from the chat
+prompts the head was trained on.
+
+**On accuracy, nothing moves.** On this sample GPT-4 is best in every category
+under every grouping, so every category router -- true labels included -- is
+identical to one model for everything: 0.0% of the gap. Between-category share
+of the oracle gap: benchmark 1.2%, domain 0.0%, task 0.3%, domain x task 0.7%.
+
+**On cost, predicted domain x task nearly matches the true labels at the top of
+the range** (`artifacts/per_model/frontier_predicted.png`). From about
+$0.0005/prompt up to GPT-4 its frontier tracks the true-benchmark router's
+closely; at the cheap end the true labels keep a margin of a few points (at
+$0.00011, 0.595 against 0.573). Domain alone or task alone captures less:
+around $0.001 both sit on the single-model line. The combination is what
+recovers most of the value. With 895 test prompts, differences of one or two
+points are inside the noise.
+
+### What this means
+
+- The classifiers are accurate on the traffic they were built for (0.925 /
+  0.875 by hand), less so on exam-format text (0.867).
+- **Category routing cannot improve accuracy here, and finer categories would
+  not change that**: 98% of the oracle's advantage is per prompt. Reaching it
+  needs a per-query model, not a better category.
+- **Category routing is a cost lever**, and predicted domain x task delivers
+  most of what perfect category labels would -- roughly GPT-4's accuracy at
+  2-4x lower cost at the high end of the frontier.
+- Caveats: RouterBench is benchmark prompts and 2023-era models. Whether GPT-4's
+  dominance holds for a current model pool is the first thing to check before
+  leaning on the accuracy result.
