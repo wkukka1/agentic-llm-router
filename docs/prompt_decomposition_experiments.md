@@ -844,3 +844,94 @@ points are inside the noise.
 - Caveats: RouterBench is benchmark prompts and 2023-era models. Whether GPT-4's
   dominance holds for a current model pool is the first thing to check before
   leaning on the accuracy result.
+
+## A newer model pool changes the answer (and the paper that explains why)
+
+The per-model results above are RouterBench: an 11-model pool from 2023 where
+GPT-4-1106 led the runner-up by twelve points. "Category routing cannot improve
+accuracy" was a fact about *that pool*. Pools are now pluggable
+(`training.prompt_decomposition.data.pools`) so the same analysis runs on any
+model set: `register_pool(name, loader)`, or `load_pool_from_frame` over a wide
+table of per-model scores.
+
+On **SPROUT** (CARROT; 6,637 prompts x 13 models from 2024-25 -- GPT-4o, Claude
+3.5 Sonnet, Llama-3.3-70B, Granite, Mixtral):
+
+| | RouterBench (2023) | SPROUT (2024-25) |
+|---|---|---|
+| best model's lead over runner-up | 12.4 pp | 1.4 pp |
+| between-category share of the oracle gap | 1.5% | **13.5%** |
+| gap closed by routing on the true category | 1.2% | **11.5%** |
+
+With the pool tightened, the category starts to matter -- because different
+models now win different categories. On SPROUT the per-category winners are
+Llama-3.3-70B (MATH, GPQA, MuSR), GPT-4o (MMLU-Pro, chat) and Claude 3.5 Sonnet
+(retrieval), where RouterBench had GPT-4 winning 24 of 27.
+
+### But it is format, not topic -- and our taxonomy encodes topic
+
+Our own heads do **not** recover that gain:
+
+| category | between-category share | gap closed (held out) |
+|---|---|---|
+| true source benchmark | 13.5% | 11.5% |
+| **predicted** source benchmark | 12.8% | **10.5%** |
+| our predicted domain | 2.3% | −0.4% |
+| our predicted task | 2.8% | 1.4% |
+| our domain x task | 5.4% | 1.1% |
+
+Two reasons. The domain head collapses on this corpus -- 64% `science_math`,
+because SPROUT is MMLU-Pro, MATH and GPQA. And the distinction that pays is
+*what kind of problem this is* -- multiple choice, a maths derivation,
+retrieval over a supplied context, open chat -- which is answer format and
+structure, not subject matter.
+
+**That distinction is cheap to predict.** A logistic head on frozen bge-small
+embeddings recovers the source benchmark at 0.965 over six labels, and routing
+on its prediction closes 10.5% of the gap against 11.5% for the true label:
+91% of the value, available at serving time.
+
+The caveat is that "source benchmark" is partly an artefact -- production
+traffic is not a mixture of six datasets, and dataset identity is easy to spot
+from formatting. What transfers is the mechanism: **route on problem format and
+structure, not on topic.** The task head is already closer to this than the
+domain head (1.4% against −0.4%), and the surface features already measure
+format-ish things.
+
+## The routing plateau (Lu et al., arXiv 2606.07587)
+
+Published work that independently reaches this project's central finding, with
+a sharper diagnostic. 21 routers across five benchmarks converge to a narrow
+band far below the oracle -- a *routing plateau* -- because routers learn
+global model-capability averages rather than instance-level correctness.
+
+Their Sec 5.1 stratification is implemented as
+`evaluation.prompt_decomposition.per_model.stratify_hard_easy`. A solvable
+prompt is **hard** when exactly one model gets it, or when few do and the
+globally best model is wrong on it; everything else is **easy**, because the
+best-on-average model already collects it. Our reproduction:
+
+| | fraction hard | hard/easy gap ratio | share of gap on hard |
+|---|---|---|---|
+| RouterBench (ours) | 13.6% | 39.3x | 86.6% |
+| RouterBench (paper) | 11.1% | 38.5x | 90.8% |
+| SPROUT (ours) | 11.8% | 44.0x | 85.5% |
+| CARROT/SPROUT (paper) | 11.8% | 27.2x | 69.9% |
+
+(Gap sizes differ because we measure against the best single model and the
+paper against the mean over its 21 routers; the shape is the same.)
+
+Three things taken from it:
+
+- **`selection_concentration`** is their Fig. 4 check, and our category router
+  fails it exactly as their routers do: it picks Claude 3.5 Sonnet on 99.8% of
+  prompts and 99.6% of *hard* prompts, while the oracle's hard-prompt mass sits
+  on Llama-3.3-70B (13.8%), Llama-405B (12.7%) and Llama-3.1-70B (12.3%). A
+  router whose hard-prompt choices match its overall choices is defaulting.
+- **`knn_router`**: plain similarity search over frozen embeddings ranks top-2
+  on all five of their benchmarks. It is the baseline any router here has to
+  beat before its machinery is worth anything.
+- **Their remedies were small.** Scaling the training set 30k -> 300k,
+  upgrading ModernBERT-base to ModernBERT-large, and end-to-end fine-tuning
+  together bought +2.13 pp, closing 14.6% of the oracle gap. More data and a
+  bigger encoder are not the way out of the plateau.
