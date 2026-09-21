@@ -6,8 +6,11 @@ every one of them landed near chance. That label conflates two things: whether
 the prompt was hard, and whether *these two* models differ on it.
 
 This module asks the question routing actually turns on, against a target that
-is not a vote. RouterBench scores every one of its models on every query, so
-per-model correctness is observed rather than inferred. The question is:
+is not a vote. A model pool scores every one of its models on every query, so
+per-model correctness is observed rather than inferred. Pools are plugged in by
+name (`training.prompt_decomposition.data.pools`), because a routing conclusion
+drawn on a 2023 pool may be a fact about that pool rather than about routing.
+The question is:
 
     If each category is sent to the model that is best *for that category*,
     how much of the gap between "one model for everything" and "the best
@@ -29,7 +32,6 @@ however accurately it is predicted.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,79 +39,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from training.prompt_decomposition.data.pools import CorrectnessTable
+
 log = logging.getLogger(__name__)
-
-ROUTERBENCH_META = ("sample_id", "prompt", "eval_name", "oracle_model_to_route_to")
-
-
-@dataclass(slots=True)
-class CorrectnessTable:
-    """Prompts x models: correctness in [0, 1] and the cost of each call."""
-
-    prompts: pd.DataFrame          # one row per prompt; at least `prompt`, `split`
-    correct: np.ndarray            # (n_prompts, n_models)
-    cost: np.ndarray               # (n_prompts, n_models), dollars per call
-    models: list[str] = field(default_factory=list)
-
-    def __post_init__(self) -> None:
-        if self.correct.shape != self.cost.shape or self.correct.shape != (
-                len(self.prompts), len(self.models)):
-            raise ValueError(
-                f"correct {self.correct.shape}, cost {self.cost.shape}, "
-                f"{len(self.prompts)} prompts x {len(self.models)} models -- must agree")
-
-    def subset(self, mask: np.ndarray) -> CorrectnessTable:
-        return CorrectnessTable(self.prompts[mask].reset_index(drop=True),
-                                self.correct[mask], self.cost[mask], list(self.models))
-
-
-def benchmark_family(eval_name: str) -> str:
-    """`mmlu-professional-law` -> `mmlu`; the ~30 tiny Chinese-language sets ->
-    `chinese`; everything else keeps its name.
-
-    Not a split on the first hyphen, which turns `grade-school-math` into
-    `grade` and `arc-challenge` into `arc`.
-    """
-    name = eval_name.split(".")[0]
-    for prefix in ("mmlu", "mtbench"):
-        if name.startswith(prefix):
-            return prefix
-    if name.lower().startswith("chinese"):
-        return "chinese"
-    return name
-
-
-def _split_of(key: str) -> str:
-    """Hashed, so a rebuild never moves a prompt between train and test."""
-    return "train" if int(hashlib.sha1(key.encode()).hexdigest()[:8], 16) / 0xFFFFFFFF < 0.7 \
-        else "test"
-
-
-def load_routerbench(path: str | Path = "routerbench/routerbench_0shot.pkl") -> CorrectnessTable:
-    """RouterBench's wide table as a :class:`CorrectnessTable`.
-
-    Rows missing any model's score are dropped rather than imputed: an imputed
-    correctness would be a guess about exactly the quantity being measured.
-    """
-    raw = pd.read_pickle(path)
-    models = [c for c in raw.columns if "|" not in c and c not in ROUTERBENCH_META]
-    cost_cols = [f"{m}|total_cost" for m in models]
-    complete = raw[models + cost_cols].notna().all(axis=1)
-    raw = raw[complete].reset_index(drop=True)
-    prompts = pd.DataFrame({
-        "sample_id": raw["sample_id"].astype(str),
-        "prompt": raw["prompt"].astype(str),
-        "eval_name": raw["eval_name"].astype(str),
-        # The benchmark family: the *true* category, known without any
-        # classifier, and so the bound on what category routing can do.
-        "benchmark": raw["eval_name"].map(benchmark_family),
-    })
-    prompts["split"] = [_split_of(k) for k in prompts["sample_id"]]
-    log.info("routerbench: %d prompts x %d models (%d incomplete rows dropped)",
-             len(prompts), len(models), int((~complete).sum()))
-    return CorrectnessTable(prompts, raw[models].to_numpy(float),
-                            raw[cost_cols].to_numpy(float), models)
-
 
 @dataclass(slots=True)
 class RouterResult:
@@ -126,6 +58,9 @@ class PerModelReport:
     n_train: int
     n_test: int
     models: list[str]
+    #: False when the pool prices nothing; cost figures are then meaningless
+    #: and are printed as `--` rather than as zeros.
+    priced: bool = True
     #: model -> held-out accuracy overall
     model_accuracy: dict[str, float] = field(default_factory=dict)
     model_cost: dict[str, float] = field(default_factory=dict)
@@ -141,8 +76,21 @@ class PerModelReport:
                  f"  {'router':28} {'accuracy':>9} {'$/prompt':>10} {'gap closed':>11}"]
         for r in self.routers:
             gap = "" if np.isnan(r.gap_closed) else f"{r.gap_closed:>10.1%}"
-            lines.append(f"  {r.name:28} {r.accuracy:>9.4f} {r.cost:>10.6f} {gap:>11}")
+            cost = f"{r.cost:>10.6f}" if self.priced else f"{'--':>10}"
+            lines.append(f"  {r.name:28} {r.accuracy:>9.4f} {cost} {gap:>11}")
         return "\n".join(lines)
+
+
+def spendable(table: CorrectnessTable) -> tuple[np.ndarray, bool]:
+    """The cost matrix to optimise against, and whether it is real.
+
+    An unpriced pool gets zeros rather than NaN: NaN poisons every argmax, and
+    silently substituting 1.0 -- as a caller did once -- prints a cost column
+    of ones that reads like dollars. Zeros make cost-weighted choice collapse
+    to accuracy, which is the honest behaviour when nothing is priced, and the
+    flag travels so reports can print `--` instead of a number.
+    """
+    return (table.cost, True) if table.has_cost else (np.zeros_like(table.cost), False)
 
 
 def _pick(correct: np.ndarray, cost: np.ndarray, cost_weight: float) -> int:
@@ -177,10 +125,12 @@ def category_router(train: CorrectnessTable, test: CorrectnessTable, grouping: s
 def build_report(table: CorrectnessTable, groupings: list[str], *,
                  cost_weight: float = 0.0) -> PerModelReport:
     """Fit every router on train, score on test, and fill in gap closed."""
+    costs, priced = spendable(table)
+    table = CorrectnessTable(table.prompts, table.correct, costs, table.models, table.name)
     train = table.subset((table.prompts["split"] == "train").to_numpy())
     test = table.subset((table.prompts["split"] == "test").to_numpy())
     report = PerModelReport(n_train=len(train.prompts), n_test=len(test.prompts),
-                            models=list(table.models))
+                            models=list(table.models), priced=priced)
     report.model_accuracy = dict(zip(table.models, test.correct.mean(axis=0).tolist(),
                                      strict=True))
     report.model_cost = dict(zip(table.models, test.cost.mean(axis=0).tolist(), strict=True))
@@ -303,6 +253,11 @@ def cost_frontier(table: CorrectnessTable, groupings: list[str], *,
     curve sits above the single-model curve.
     """
     weights = np.concatenate([[0.0], np.geomspace(1, 1e4, 25)]) if weights is None else weights
+    costs, priced = spendable(table)
+    if not priced:
+        raise ValueError(f"pool {table.name!r} has no prices; a cost frontier over "
+                         f"unpriced models would be a curve through made-up numbers")
+    table = CorrectnessTable(table.prompts, table.correct, costs, table.models, table.name)
     train = table.subset((table.prompts["split"] == "train").to_numpy())
     test = table.subset((table.prompts["split"] == "test").to_numpy())
     rows = []
@@ -348,3 +303,144 @@ def plot_frontier(frontier: pd.DataFrame, path: str | Path, *,
     fig.savefig(path, dpi=140)
     plt.close(fig)
     return path
+
+
+# --- diagnostics from "The Routing Plateau" (arXiv 2606.07587) ---------------
+#
+# The paper evaluates 21 routers on five benchmarks and finds they all converge
+# to a narrow band far below the oracle -- a *routing plateau* caused by a
+# correctness-prediction bottleneck: routers learn global model-capability
+# averages rather than instance-level correctness. Its sharpest diagnostic is
+# the hard/easy split below, which localises the whole oracle gap.
+
+
+def stratify_hard_easy(table: CorrectnessTable, *, threshold: float = 0.5) -> pd.Series:
+    """Label each prompt `hard`, `easy` or `unsolvable`, per the paper's Sec 5.1.
+
+    A solvable prompt is **hard** when either
+
+    * exactly one model in the pool gets it right -- the router must find that
+      one model, or
+    * few do (at most ``max(8, ceil(K/2))``) *and the globally best model is
+      wrong on it* -- so the router has to look past the strongest model.
+
+    Every other solvable prompt is **easy**: the best-on-average model already
+    handles it, and any router that defaults to that model collects it. A
+    prompt no model solves is `unsolvable` and belongs to neither -- it cannot
+    be routed well or badly.
+
+    ``threshold`` binarises graded scores; RouterBench and SPROUT both carry
+    fractional judge scores for some items.
+    """
+    correct = table.correct >= threshold
+    n_correct = correct.sum(axis=1)
+    k = len(table.models)
+    top_model = int(table.correct.mean(axis=0).argmax())
+    few = n_correct <= max(8, -(-k // 2))
+    hard = (n_correct == 1) | (few & ~correct[:, top_model] & (n_correct > 1))
+    labels = np.where(n_correct == 0, "unsolvable", np.where(hard, "hard", "easy"))
+    return pd.Series(labels, index=table.prompts.index, name="difficulty")
+
+
+@dataclass(slots=True)
+class PlateauReport:
+    """Where the oracle gap lives: on the hard prompts, or spread evenly."""
+
+    pool: str
+    n: int
+    f_hard: float
+    f_unsolvable: float
+    gap_hard: float
+    gap_easy: float
+    #: gap_hard / gap_easy -- the paper reports 10.7x to 38.5x
+    ratio: float
+    #: share of the *total* oracle gap contributed by hard prompts (69.9-90.8%)
+    explained_by_hard: float
+    best_model: str = ""
+
+    def summary(self) -> str:
+        return (f"{self.pool}: {self.n} prompts, {self.f_hard:.1%} hard, "
+                f"{self.f_unsolvable:.1%} unsolvable\n"
+                f"  oracle gap on hard {self.gap_hard:.3f} vs easy {self.gap_easy:.3f} "
+                f"({self.ratio:.1f}x), hard prompts hold {self.explained_by_hard:.1%} "
+                f"of the total gap\n"
+                f"  best single model: {self.best_model}")
+
+
+def plateau_report(table: CorrectnessTable, *, threshold: float = 0.5) -> PlateauReport:
+    """The oracle gap, split over the hard and easy prompts.
+
+    ``gap`` here is oracle minus the single best model, measured within each
+    subset -- the paper measures against the all-router mean, which needs a
+    fleet of routers; the best single model is the same reference our routers
+    are scored against and makes the two analyses comparable.
+    """
+    difficulty = stratify_hard_easy(table, threshold=threshold).to_numpy()
+    best = int(table.correct.mean(axis=0).argmax())
+    oracle = table.correct.max(axis=1)
+    baseline = table.correct[:, best]
+
+    def gap(mask: np.ndarray) -> float:
+        return float((oracle[mask] - baseline[mask]).mean()) if mask.any() else 0.0
+
+    hard, easy = difficulty == "hard", difficulty == "easy"
+    total = float((oracle - baseline).sum())
+    return PlateauReport(
+        pool=table.name, n=len(table.prompts),
+        f_hard=float(hard.mean()), f_unsolvable=float((difficulty == "unsolvable").mean()),
+        gap_hard=gap(hard), gap_easy=gap(easy),
+        ratio=gap(hard) / gap(easy) if gap(easy) > 0 else float("inf"),
+        explained_by_hard=float((oracle[hard] - baseline[hard]).sum() / total) if total else 0.0,
+        best_model=table.models[best],
+    )
+
+
+def selection_concentration(table: CorrectnessTable, picks: np.ndarray, *,
+                            threshold: float = 0.5) -> pd.DataFrame:
+    """How a router spreads its choices, on hard prompts against all prompts.
+
+    The paper's Fig. 4: routers pick the same two or three models whatever the
+    difficulty, while the oracle's correct-model mass on hard prompts is spread
+    right across the pool. A router whose hard-prompt distribution matches its
+    overall one is not routing, it is defaulting.
+    """
+    difficulty = stratify_hard_easy(table, threshold=threshold).to_numpy()
+    correct = table.correct >= threshold
+    share = lambda mask: pd.Series(picks[mask]).value_counts(normalize=True)  # noqa: E731
+    oracle_mass = pd.Series(
+        (correct[difficulty == "hard"].sum(axis=0) /
+         max(correct[difficulty == "hard"].sum(), 1)), index=range(len(table.models)))
+    frame = pd.DataFrame({
+        "router_all": share(np.ones(len(picks), bool)),
+        "router_hard": share(difficulty == "hard"),
+        "oracle_hard_mass": oracle_mass,
+    }).fillna(0.0)
+    frame.index = [short_model(table.models[i]) for i in frame.index]
+    return frame.sort_values("oracle_hard_mass", ascending=False)
+
+
+def knn_router(train: CorrectnessTable, test: CorrectnessTable, train_vectors: np.ndarray,
+               test_vectors: np.ndarray, *, k: int = 16, cost_weight: float = 0.0,
+               name: str = "knn") -> RouterResult:
+    """Pick the model with the best score among the k nearest training prompts.
+
+    The paper's headline baseline: plain similarity search over frozen
+    embeddings ranks top-2 on all five benchmarks, matching routers with far
+    more machinery. Anything we build should be measured against it, because if
+    it cannot beat kNN the extra machinery is decoration.
+    """
+    train_unit = train_vectors / np.clip(np.linalg.norm(train_vectors, axis=1, keepdims=True),
+                                         1e-12, None)
+    test_unit = test_vectors / np.clip(np.linalg.norm(test_vectors, axis=1, keepdims=True),
+                                       1e-12, None)
+    picks = np.empty(len(test_unit), dtype=int)
+    for start in range(0, len(test_unit), 512):          # blocked: the full matrix is n x m
+        block = test_unit[start:start + 512] @ train_unit.T
+        for i, row in enumerate(block):
+            neighbours = np.argpartition(-row, min(k, len(row) - 1))[:k]
+            utility = (train.correct[neighbours].mean(axis=0)
+                       - cost_weight * train.cost[neighbours].mean(axis=0))
+            picks[start + i] = int(np.nanargmax(utility))
+    rows = np.arange(len(picks))
+    return RouterResult(name=name, accuracy=float(test.correct[rows, picks].mean()),
+                        cost=float(test.cost[rows, picks].mean()))

@@ -13,8 +13,6 @@ import pandas as pd
 import pytest
 
 from evaluation.prompt_decomposition.per_model import (
-    CorrectnessTable,
-    benchmark_family,
     build_report,
     category_router,
     cost_frontier,
@@ -22,6 +20,7 @@ from evaluation.prompt_decomposition.per_model import (
     plot_frontier,
     plot_report,
 )
+from training.prompt_decomposition.data.pools import CorrectnessTable, benchmark_family
 
 
 def _table(correct, categories, cost=None, split=None):
