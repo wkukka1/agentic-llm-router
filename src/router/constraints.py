@@ -27,13 +27,15 @@ class OptimizationObjective:
     risk_weight: float = 0.0
 
     def utility(self, score: "ModelScore") -> float:
-        risk = 1.0 - score.confidence
-        return (
-            self.quality_weight * score.expected_quality
-            - self.cost_weight * score.expected_cost
-            - self.latency_weight * score.expected_latency
-            - self.risk_weight * risk
+        # A zero-weight term is switched off: skip it rather than multiply, since
+        # ``0 * nan`` and ``0 * inf`` are ``nan`` and would poison the whole sum.
+        terms = (
+            (self.quality_weight, score.expected_quality),
+            (-self.cost_weight, score.expected_cost),
+            (-self.latency_weight, score.expected_latency),
+            (-self.risk_weight, 1.0 - score.confidence),
         )
+        return sum((weight * value for weight, value in terms if weight), 0.0)
 
 
 @dataclass

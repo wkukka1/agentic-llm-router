@@ -47,13 +47,64 @@ def dense_matrices(obs: pd.DataFrame):
     return true.loc[keep], cost.loc[keep]
 
 
-def eval_matrices(data, split: str = "test", models: Optional[list[str]] = None):
-    """Return aligned ``(true, cost)`` DataFrames [query x model] for ``split``."""
+#: within one source, a model observed on fewer than this fraction of the source's queries is a
+#: straggler (e.g. ``moonshot_v1_search``: 1 of 3,790 IRT-Router test queries) and is left out of
+#: that source's pool -- one straggler would otherwise leave no query with every model observed.
+SOURCE_MIN_COVERAGE = 0.5
+
+
+def _restrict_to_source(obs: pd.DataFrame, source: str) -> pd.DataFrame:
+    """``obs`` rows from ``source``, minus straggler models (see :data:`SOURCE_MIN_COVERAGE`)."""
+    obs = obs[obs["source"] == source]
+    if obs.empty:
+        return obs
+    coverage = obs.groupby("model_id")["query_id"].nunique() / obs["query_id"].nunique()
+    return obs[obs["model_id"].isin(coverage.index[coverage >= SOURCE_MIN_COVERAGE])]
+
+
+def _no_dense_queries_message(obs: pd.DataFrame, split: str, source: Optional[str] = None) -> str:
+    """Why ``dense_matrices(obs)`` came back empty, for the error a caller would otherwise hit as an
+    ``IndexError`` deep in a metric. ``obs`` is already restricted to the split / pool / source."""
+    if obs.empty:
+        scope = f" from source {source!r}" if source else ""
+        return f"no {split!r} observations{scope} for the requested split / models"
+    n_models = obs["model_id"].nunique()
+    per_query = obs.groupby("query_id")["model_id"].nunique()
+    coverage = ", ".join(f"{k} models -> {v:,} queries"
+                         for k, v in per_query.value_counts().sort_index(ascending=False).head(5).items())
+    head = (f"no {split!r} query has a target and cost for every one of the {n_models} pool models: "
+            f"{len(per_query):,} queries are observed, but by at most {per_query.max()} models each "
+            f"({coverage}). ")
+    if source:
+        return head + (f"Even within source {source!r} no dense [query x model] matrix exists -- "
+                       f"pass a `models` sub-pool that co-occurs on queries.")
+    return head + ("The pool spans sources with disjoint model sets, so no dense [query x model] "
+                   "matrix exists -- evaluate one source's dense pool (`source=` / `--source <name>`), "
+                   "use a dense config (e.g. --config configs/irt_router.yaml), or pass a `models` "
+                   "sub-pool that co-occurs on queries.")
+
+
+def eval_matrices(data, split: str = "test", models: Optional[list[str]] = None,
+                  source: Optional[str] = None):
+    """Return aligned ``(true, cost)`` DataFrames [query x model] for ``split``.
+
+    ``source`` (an ``obs["source"]`` value, e.g. ``"routerbench"``) restricts to that source's
+    queries and to the models it actually covers, so a pool that spans sources with disjoint
+    model sets still yields one dense matrix per source.
+
+    Raises ``ValueError`` (rather than returning zero rows) when no query has every model
+    observed -- an empty matrix only fails later, obscurely, inside the routing metrics.
+    """
     obs = data.nirt_observations()
     obs = obs[obs["split"] == split]
     if models is not None:
         obs = obs[obs["model_id"].isin(models)]
-    return dense_matrices(obs)
+    if source is not None:
+        obs = _restrict_to_source(obs, source)
+    true, cost = dense_matrices(obs)
+    if true.empty:
+        raise ValueError(_no_dense_queries_message(obs, split, source))
+    return true, cost
 
 
 def align(matrix: pd.DataFrame, like: pd.DataFrame) -> np.ndarray:

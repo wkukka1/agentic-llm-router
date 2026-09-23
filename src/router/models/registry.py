@@ -47,7 +47,8 @@ class RouterModelFactory:
             artifact = store.load(artifact_or_id)
         else:
             artifact = artifact_or_id
-            cost_model = store_or_cost_model
+            if cost_model is None:      # don't clobber an explicit ``cost_model=`` keyword
+                cost_model = store_or_cost_model
 
         model_class = self._registry.get(artifact.router_model_name)
         if model_class is None:

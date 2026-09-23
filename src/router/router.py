@@ -86,8 +86,11 @@ class Router:
         ``expected_cost`` is the router's own per-model cost vector
         (:attr:`~router.routing.base.RouterModel.default_model_costs`, train-mean
         USD/query) when it has one -- the same scale ``RouterModel.route(lam=...)``
-        trades against -- and falls back to the profile's
-        ``output_cost_per_token`` only when the router carries no cost signal.
+        trades against. A kept candidate outside the pool is priced at the pool
+        maximum on that same scale; the profile's ``output_cost_per_token`` is
+        used only when the router carries no cost signal at all.
+        ``RoutingDecision.artifact_id`` is the router model's artifact id, if it
+        was built from one.
 
         Non-finite scores are dropped (a model with no prediction must never
         win). Candidates kept by ``UnsupportedCandidatePolicy.SCORE_WITH_PRIOR``
@@ -136,6 +139,10 @@ class Router:
         pool_costs = self.router_model.default_model_costs
         cost_of = (dict(zip(self.router_model.model_ids, map(float, pool_costs)))
                    if pool_costs is not None else {})
+        # a candidate outside the pool has no entry in ``cost_of``; price it at the
+        # pool max (pessimistic, same choice as ``_mean_train_costs``) so it stays on
+        # the router's USD/query scale -- the profile's per-token price is ~1000x smaller
+        off_pool_cost = max(cost_of.values()) if cost_of else None
         with_prior = (self.router_model.unsupported_policy
                       is UnsupportedCandidatePolicy.SCORE_WITH_PRIOR)
 
@@ -150,16 +157,26 @@ class Router:
                 continue
             if not math.isfinite(value):
                 continue
+            if model_id in cost_of:
+                expected_cost = cost_of[model_id]
+            elif off_pool_cost is not None:
+                expected_cost = off_pool_cost
+            else:
+                expected_cost = getattr(cand, "output_cost_per_token", 0.0)
             scores.append(ModelScore(
                 model=cand,
                 score=value,
                 expected_quality=value,
-                expected_cost=cost_of.get(model_id, getattr(cand, "output_cost_per_token", 0.0)),
+                expected_cost=expected_cost,
                 confidence=confidence,
                 supported=supported,
             ))
         scores = _apply_hard_limits(scores, request.constraints)
-        return self.routing_policy.decide(context, scores)
+        decision = self.routing_policy.decide(context, scores)
+        if decision.artifact_id is None:
+            artifact = getattr(self.router_model, "artifact", None)
+            decision.artifact_id = getattr(artifact, "artifact_id", None)
+        return decision
 
 
 def _apply_hard_limits(scores: list[ModelScore], constraints) -> list[ModelScore]:

@@ -30,6 +30,17 @@ def raw_parser(description: str | None) -> argparse.ArgumentParser:
     )
 
 
+def add_source_arg(ap: argparse.ArgumentParser) -> None:
+    """``--source``: evaluate one data source's dense model pool (see ``eval_matrices(source=)``).
+
+    Needed on the default mixed pool, whose sources (RouterBench / IRT-Router) share no model, so no
+    query has every pool model observed."""
+    ap.add_argument("--source", default=None,
+                    help="restrict evaluation to one source's queries + the models it covers "
+                         "(e.g. routerbench, irt_router); required when the run's pool spans "
+                         "sources with disjoint model sets")
+
+
 def get_config(args: argparse.Namespace) -> Config:
     return load_config(args.config)
 

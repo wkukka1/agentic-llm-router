@@ -134,6 +134,8 @@ def _resolve_costs(
     which ``argmax`` would pick whenever ``lam > 0``."""
     if costs is None:
         return None
+    if isinstance(costs, pd.Series):    # labelled: align by index like a Mapping, not by position
+        costs = costs.to_dict()
     if isinstance(costs, Mapping):
         missing = [m for m in model_ids if m not in costs]
         if missing:
@@ -341,7 +343,10 @@ class RouterModel(abc.ABC):
             lam=lam, model_costs=model_costs, eligible=eligible,
         )
 
-    __call__ = route
+    def __call__(self, *args, **kwargs) -> RoutingResult:
+        # not ``__call__ = route``: that binds the base function, so a subclass
+        # overriding route() would be bypassed by ``router(...)``
+        return self.route(*args, **kwargs)
 
     def route_text(
         self,
