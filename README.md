@@ -147,12 +147,12 @@ ds     = d.nirt_dataset(split="train", pathway="irt")       # -> {query_embeddin
 Current outputs from the checked-in raw data:
 
 ```
-734,469 observations   196,791 queries   69 models   88 datasets
-by metric : mc_accuracy 294,998 | judge_preference 218,202 | arena_preference 114,954 | accuracy 106,315
-by source : routerbench 401,313 | gpt4_judge 218,202 | chatbot_arena 114,954
-train / val / test queries : 157,271 / 19,672 / 19,767
-cold-start models : claude-2.0, code-llama-34b-instruct, vicuna-13b, yi-34b-chat
-NIRT observations : 328,347  (train 262,548 / val 32,706 / test 33,093; 9 warm models, 36,483 queries)
+1,904,408 observations   271,305 queries   90 models   100 datasets
+by metric : mc_accuracy 869,456 | accuracy 693,796 | judge_preference 226,202 | arena_preference 114,954
+by source : routerbench 802,626 | irt_router 760,626 | gpt4_judge 218,202 | chatbot_arena 114,954 | anchor_judge 8,000
+train / val / test queries : 216,939 / 27,072 / 27,235
+cold-start models : claude-2.0, gpt_4o_mini, mistral_7b_instruct_v02, mixtral_8x7b_instruct, vicuna-13b
+NIRT observations : 1,449,159  (train 1,159,880 / val 143,954 / test 145,325; 29 warm models, 110,997 queries)
 ```
 
 Dataset sources, schema, chance correction and split mechanics:

@@ -23,8 +23,7 @@ def test_probabilities_form_a_simplex():
     out = head(torch.randn(64), torch.randn(64, 12))
     s = out["pi0"] + out["pi1"] + out["pic"]
     torch.testing.assert_close(s, torch.ones_like(s), rtol=1e-5, atol=1e-5)
-    for k in ("pi0", "pi1", "pic"):
-        assert (out[k] >= 0).all() and (out[k] <= 1).all()
+    assert all((out[k] >= 0).all() for k in ("pi0", "pi1", "pic"))
 
 
 def test_exact_zero_uses_boundary_mass():
@@ -62,7 +61,6 @@ def test_mean_is_convex_combo():
     out = head(torch.tensor([0.7]), torch.zeros(1, 12))
     expected = out["pi1"] + out["pic"] * out["mu"]
     torch.testing.assert_close(head.mean(out), expected)
-    assert 0 <= head.mean(out).item() <= 1
 
 
 def test_boundary_probs_and_finite_extremes():

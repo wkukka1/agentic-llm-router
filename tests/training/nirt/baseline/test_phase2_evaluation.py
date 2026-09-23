@@ -50,7 +50,8 @@ def test_binned_calibration():
     assert rows[0]["actual"] == pytest.approx(0.05)
 
 
-def test_boundary_statistics_on_real_data(tmp_path):
+@pytest.mark.real_data
+def test_boundary_statistics_on_real_data():
     from router.config import load_config
     from training.nirt.baseline.continuous_eval import boundary_statistics
 
@@ -59,5 +60,6 @@ def test_boundary_statistics_on_real_data(tmp_path):
         stats = boundary_statistics(cfg, write=False)
     except FileNotFoundError:
         pytest.skip("phase 0 artifacts not present")
+    assert stats["by_split"]
     for sp, f in stats["by_split"].items():
         assert abs(f["y==0"] + f["y==1"] + f["0<y<1"] - 1.0) < 1e-6

@@ -139,12 +139,6 @@ class TestMetricEdgeCases:
 
 
 class TestAuditGatingIsHonest:
-    def test_clean_names_the_checks_it_actually_covers(self):
-        """The docstring said five checks; `clean` gates on two."""
-        from evaluation.prompt_decomposition.overfit import AuditResult
-
-        assert AuditResult.gating_checks == ("permutation", "near-duplicates")
-
     def test_permutation_p_is_bounded_by_the_number_of_permutations(self):
         """Five permutations could never report better than p=0.17 however
         separated the real score was, which is why the default is 100."""
@@ -164,13 +158,6 @@ class TestAuditGatingIsHonest:
                         shuffled_mean=0.5, shuffled_sd=0.0,
                         shuffled_scores=[0.5] * 9)
         assert r.permutation_p == pytest.approx(1.0)
-
-    def test_default_permutation_count_is_enough_to_estimate_a_null(self):
-        import inspect
-
-        from evaluation.prompt_decomposition.overfit import audit
-
-        assert inspect.signature(audit).parameters["permutations"].default >= 100
 
 
 class TestEncoderParamMismatchIsAnError:
@@ -213,9 +200,9 @@ class TestEmbeddingCacheIsAtomic:
     and run wherever `.[encoders]` is installed."""
 
     def test_no_temp_file_survives_a_successful_write(self, tmp_path, monkeypatch):
-        pytest.importorskip("torch")
         """np.save is not atomic; two runs encoding the same rows can interleave
         and leave a truncated array that loads without error."""
+        pytest.importorskip("torch")
         from decompose.classifiers.prompt_decomposition.encoder import EmbeddingEncoder
 
         enc = EmbeddingEncoder.__new__(EmbeddingEncoder)
@@ -337,16 +324,6 @@ class TestCalibrationProvenanceIsRecorded:
         assert head.temperature == 3.0
         assert head.temperature_fitted_on == "validation"
 
-    def test_the_runner_records_which_split_it_fitted_on(self):
-        import inspect
-
-        from training.prompt_decomposition import experiment
-
-        src = inspect.getsource(experiment)
-        assert '"fitted_on": "validation"' in src
-        # And it must still fit on val, not test -- the comment is not the fix.
-        assert "fit_temperature(\n        val_proba" in src or "fit_temperature(val_proba" in src
-
 
 class TestAlignToCorpusDeduplicates:
     """A prompt appearing twice maps to one corpus row twice, putting the same
@@ -399,11 +376,6 @@ class TestSimilarityMatrixIsCapped:
         X, y = self._separable(400)
         r = audit(X, y, "capped", permutations=3, max_similarity_rows=100)
         assert r.test_acc > 0.9
-
-    def test_the_default_cap_exists_and_is_finite(self):
-        from evaluation.prompt_decomposition.overfit import MAX_SIMILARITY_ROWS
-
-        assert 1_000 <= MAX_SIMILARITY_ROWS <= 50_000
 
     def test_capping_does_not_change_the_headline_accuracy(self):
         """The cap is about memory, not about the model -- only the

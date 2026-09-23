@@ -50,6 +50,9 @@ where = ["src"]
 testpaths = ["tests"]
 pythonpath = ["tests", "src"]
 filterwarnings = ["ignore::DeprecationWarning"]
+markers = [
+    "real_data: reads the built data/ tables (10-25s each, skips when absent); deselect with -m 'not real_data'",
+]
 
 [tool.importlinter]
 root_packages = ["router", "training", "evaluation", "decompose"]

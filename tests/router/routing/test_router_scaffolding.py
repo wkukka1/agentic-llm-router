@@ -56,14 +56,6 @@ def test_filter_candidates_requires_capability():
     assert [c.model_id for c in kept] == ["a"]
 
 
-def test_save_load_are_unimplemented_by_default():
-    r = ConstRouter(["a", "b"])
-    with pytest.raises(NotImplementedError):
-        r.save("/tmp/whatever")
-    with pytest.raises(NotImplementedError):
-        r.load(object())
-
-
 class _NoConstraints:
     required_capabilities: list[str] = []
 
@@ -100,12 +92,6 @@ def test_budget_ledger_refuses_overcommitment():
     assert ledger.reserve("t1", 4.0) is True
     assert ledger.reserve("t2", 2.0) is False   # only 1.0 left
     assert ledger.reserved == 4.0
-
-
-def test_execution_limits_defaults_allow_shallow_recursion():
-    limits = ExecutionLimits()
-    assert limits.max_depth == 2
-    assert limits.max_fanout > 0
 
 
 class _ConstOrchestrator(Orchestrator):

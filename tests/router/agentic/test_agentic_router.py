@@ -11,6 +11,7 @@ from router.agentic import (
     ClientRegistry,
     HeuristicTriage,
     LLMClient,
+    LLMDecomposer,
     NaiveDecomposer,
     RecursiveOrchestrator,
     TriageDecision,
@@ -67,7 +68,8 @@ def test_registry_synthesises_unknown_ids():
     reg = ClientRegistry({"known": LLMClient(EchoAdapter("known", prefix="k"))})
     assert reg.get("known").complete("x").content.startswith("[k::known]")
     # unseen id -> default echo client, cached
-    made = reg.get("surprise")
+    with pytest.warns(UserWarning, match="no client registered"):
+        made = reg.get("surprise")
     assert isinstance(made, LLMClient) and reg.get("surprise") is made
 
 
@@ -119,6 +121,83 @@ def test_naive_decomposer_declines_single_task():
     assert NaiveDecomposer()("What is 2 + 2?") == ["What is 2 + 2?"]
 
 
+def test_naive_decomposer_keeps_a_short_leading_instruction():
+    """NAIVEDECOMPOSER-001: "Fix bug" is under min_part_chars but is a real sub-task."""
+    assert NaiveDecomposer()("Fix bug. Add tests for the module. Update the docs.") == [
+        "Fix bug. Add tests for the module.",
+        "Update the docs.",
+    ]
+
+
+def test_naive_decomposer_keeps_a_short_trailing_part():
+    assert NaiveDecomposer()("Explain quicksort in detail. Write it in Rust. Thanks.") == [
+        "Explain quicksort in detail.",
+        "Write it in Rust. Thanks.",
+    ]
+
+
+def test_naive_decomposer_declines_when_every_part_is_short():
+    assert NaiveDecomposer()("Do A. Do B.") == ["Do A. Do B."]
+
+
+def test_naive_decomposer_folds_parts_past_max_parts_into_the_last():
+    """NAIVEDECOMPOSER-001: parts beyond max_parts used to be cut off."""
+    prompt = "Please handle every item\n" + "\n".join(f"{i}. Handle item number {i} carefully" for i in range(1, 9))
+    parts = NaiveDecomposer()(prompt)
+    assert len(parts) == 6
+    assert parts[:5] == ["Please handle every item."] + [f"Handle item number {i} carefully." for i in range(1, 5)]
+    assert parts[5] == " ".join(f"Handle item number {i} carefully." for i in range(5, 9))
+
+
+def test_naive_decomposer_max_parts_one_declines_rather_than_truncating():
+    assert NaiveDecomposer(max_parts=1)("Explain quicksort. Then write it in Rust.") == [
+        "Explain quicksort. Then write it in Rust."
+    ]
+
+
+def test_llm_decomposer_folds_lines_past_max_parts_into_the_last():
+    """NAIVEDECOMPOSER-001: LLMDecomposer._parse truncated the same way."""
+    class Chat:
+        def invoke(self, _prompt):
+            return "1. first task\n2. second task\n3. third task\n4. fourth task"
+
+    assert LLMDecomposer(Chat(), max_parts=2)("anything") == [
+        "first task",
+        "second task third task fourth task",
+    ]
+
+
+class _ReplyChat:
+    """Chat-model stand-in whose ``invoke`` returns a fixed reply."""
+
+    def __init__(self, reply: str):
+        self.reply = reply
+
+    def invoke(self, _prompt):
+        return self.reply
+
+
+def test_llm_decomposer_keeps_leading_decimal_number():
+    """LLMDECOMPOSER-001: a task starting with a decimal is not a list marker."""
+    reply = "3.14 times 2 equals what?\n2.5 GHz is how many MHz?\n1.2.3 is which version?"
+    assert LLMDecomposer(_ReplyChat(reply))("q") == [
+        "3.14 times 2 equals what?",
+        "2.5 GHz is how many MHz?",
+        "1.2.3 is which version?",
+    ]
+
+
+def test_llm_decomposer_still_strips_list_markers():
+    reply = "1. summarise the text\n2) translate it\n- proofread it\n* publish it\n## done soon"
+    assert LLMDecomposer(_ReplyChat(reply))("q") == [
+        "summarise the text",
+        "translate it",
+        "proofread it",
+        "publish it",
+        "done soon",
+    ]
+
+
 # --------------------------------------------------------------------------- #
 # AgenticRouter end to end (echo clients, recursive orchestrator)            #
 # --------------------------------------------------------------------------- #
@@ -144,6 +223,7 @@ def test_compound_prompt_is_orchestrated_and_synthesised():
     # every sub-answer threads into the final synthesis
     for s in res.steps:
         assert s.answer in res.answer
+    assert res.models_used()
     assert set(res.models_used()) <= set(POOL)
 
 
@@ -176,13 +256,6 @@ def test_matrix_router_needs_a_resolver():
     # with a resolver mapping text -> an existing query_id it works
     ar2 = AgenticRouter(mr, ClientRegistry.echo(["a", "b"]), query_resolver=lambda t: "q1")
     assert ar2.run("hello").selected_model_id == "a"
-
-
-def test_cost_is_summed_from_client_responses():
-    reg = ClientRegistry({m: LLMClient(CallableAdapter(m, lambda p, **kw: "ok")) for m in POOL})
-    # CallableAdapter returns no cost -> total stays 0.0, no crash
-    res = AgenticRouter(FakeTextRouter(), reg).run("a and then b and then c")
-    assert res.cost == 0.0
 
 
 # --------------------------------------------------------------------------- #

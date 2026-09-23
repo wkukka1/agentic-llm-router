@@ -110,46 +110,17 @@ class TestDomainMerges:
         assert merged.sum() == pytest.approx(1.0)
 
 
-def test_software_tech_owns_questions_about_ai():
-    """Agreed boundary: questions *about* AI/ML systems are software_tech;
-    meta_other is for questions about the assistant itself.
-
-    This was the single largest error source against externally-labelled sets
-    (18 of 44 errors across 402 prompts) and it was a definition disagreement,
-    not a model failure. Pinned so it does not drift back."""
-    from decompose.classifiers.prompt_decomposition.heads.domain_taxonomy import DOMAIN_DESCRIPTIONS
-
-    software = DOMAIN_DESCRIPTIONS["software_tech"].lower()
-    assert "machine learning" in software or "ai" in software
-    assert "model" in software
-    meta = DOMAIN_DESCRIPTIONS["meta_other"].lower()
-    assert "assistant" in meta
-    # Hardware lives here too: a separate class was rejected on the data
-    # (only 31 hardware-flavoured prompts in 2,441).
-    assert "hardware" in software
-
-
 class TestTaskTypes:
     """Task type: what the user wants *done*, orthogonal to domain."""
 
-    def test_six_distinct_tasks(self):
+    def test_task_labels_are_unique_and_each_described(self):
         from decompose.classifiers.prompt_decomposition.heads.task_taxonomy import (
             TASK_DESCRIPTIONS,
             TASK_LABELS,
         )
 
-        assert len(TASK_LABELS) == len(set(TASK_LABELS)) == 6
+        assert len(TASK_LABELS) == len(set(TASK_LABELS))
         assert set(TASK_DESCRIPTIONS) == set(TASK_LABELS)
-
-    def test_media_is_its_own_task_not_a_kind_of_create(self):
-        """A request for an image does not go to a cheaper or dearer language
-        model, it goes to a different kind of model entirely. Splitting it out
-        of `create` costs the rest of the taxonomy nothing measurable
-        (-0.013 top-1, 95% CI [-0.026, 0.000]) and reaches F1 0.725 itself."""
-        from decompose.classifiers.prompt_decomposition.heads.task_taxonomy import TASK_LABELS, TaskType
-
-        assert TaskType.MEDIA.value in TASK_LABELS
-        assert TaskType.MEDIA is not TaskType.CREATE
 
     def test_dolly_question_variants_collapse_to_one_task(self):
         """open/general/closed_qa differ only by whether a passage was

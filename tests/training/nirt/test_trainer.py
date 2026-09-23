@@ -17,7 +17,7 @@ from training.nirt.trainer import NIRTTrainer
 from training.trainers.base import TrainingConfig
 
 
-def test_train_returns_an_artifact_that_predicts_like_fit_directly(tmp_path):
+def test_train_returns_an_artifact_that_loads_through_the_factory_and_predicts(tmp_path):
     train_obs, val_obs, q_store, m_store = make_synthetic_irt(n_queries=200, seed=5)
     train_ds, val_ds = nirt_datasets(train_obs, val_obs, q_store, m_store)
 
@@ -33,8 +33,9 @@ def test_train_returns_an_artifact_that_predicts_like_fit_directly(tmp_path):
     factory = RouterModelFactory()
     factory.register("nirt", NIRTRouter)
     router = factory.create(artifact, CostModel())
-    y, p = predict_dataset(router._model, val_ds, router._model_index)
-    assert p.shape == y.shape and np.all((p >= 0) & (p <= 1))
+    _, p_loaded = predict_dataset(router._model, val_ds, router._model_index)
+    _, p_fitted = predict_dataset(trainer.last_result.model, val_ds, trainer.last_result.model_index)
+    np.testing.assert_allclose(p_loaded, p_fitted, atol=1e-6)
 
 
 def test_typed_config_fields_override_hyperparameters(tmp_path):

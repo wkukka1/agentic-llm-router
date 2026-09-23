@@ -59,6 +59,8 @@ def test_harness_run_accepts_a_training_job(tmp_path):
     job = TrainingJob(run_id="harness-job", trainer=trainer, dataset=(train_ds, val_ds), config=config)
     run = TrainingHarness().run(job)
     assert run.run_id == "harness-job"
+    assert run.trainer_name == "nirt"
+    assert run.artifact is not None
 
 
 def test_harness_train_runs_baseline():

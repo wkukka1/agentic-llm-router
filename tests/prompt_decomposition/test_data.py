@@ -129,8 +129,12 @@ def test_frozen_eval_prompts_are_all_hand_labelled():
 
     if not Path(FROZEN_EVAL_PATH).exists():
         pytest.skip("frozen eval set not present")
+    hand_path = Path("data/handlabelled/real_prompts.parquet")
+    if not hand_path.exists():
+        pytest.skip("hand-labelled set not present")
     frozen = pd.read_parquet(FROZEN_EVAL_PATH)
-    hand = pd.read_parquet("data/handlabelled/real_prompts.parquet")
+    hand = pd.read_parquet(hand_path)
     merged = frozen.merge(hand, on="prompt", suffixes=("_frozen", "_hand"))
     assert len(merged) == len(frozen)
+    assert (merged["domain_frozen"] == merged["domain_hand"]).all()
     assert (merged["domain_frozen"] == merged["domain_hand"]).all()

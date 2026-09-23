@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 from helpers import make_synthetic_irt, nirt_cfg, nirt_datasets
@@ -51,6 +53,22 @@ def test_factory_create_from_id_and_store(tmp_path):
     router = factory.create("factory-run-b", store, CostModel())
     assert isinstance(router, NIRTRouter)
     assert router.artifact.artifact_id == artifact.artifact_id
+
+
+def test_factory_create_forwards_the_cost_model_keyword():
+    """ROUTERMODELFACTORY-001: ``create(artifact, cost_model=cm)`` overwrote the
+    keyword with the (None) positional slot, so ``from_artifact`` got no cost model."""
+    class Recorder:
+        @classmethod
+        def from_artifact(cls, artifact, cost_model=None):
+            return cost_model
+
+    factory = RouterModelFactory()
+    factory.register("recorder", Recorder)
+    artifact = SimpleNamespace(router_model_name="recorder")
+    cost_model = CostModel()
+    assert factory.create(artifact, cost_model=cost_model) is cost_model
+    assert factory.create(artifact, cost_model) is cost_model    # positional still works
 
 
 def test_factory_raises_a_clear_error_for_an_unregistered_kind(tmp_path):

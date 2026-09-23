@@ -57,12 +57,14 @@ def test_typed_config_fields_override_hyperparameters():
     assert trainer.last_result.config["train"]["epochs"] == 5
 
 
-def test_train_does_not_write_to_disk_without_a_runs_dir(tmp_path):
+def test_train_does_not_write_to_disk_without_a_runs_dir(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     tr, va = _tiny_arrays()
     trainer = BaselineNIRTTrainer()  # no runs_dir
     config = TrainingConfig(run_name="baseline-run-3", hyperparameters=baseline_cfg(k=2, epochs=8))
     trainer.train((tr, va), config)
     assert trainer.last_result.path is None
+    assert not any(tmp_path.rglob("*.pt"))
 
 
 def test_train_writes_to_disk_when_a_runs_dir_is_given(tmp_path):

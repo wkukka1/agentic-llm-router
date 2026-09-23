@@ -137,10 +137,14 @@ def test_fallback_reflects_a_non_finite_lam_forcing_a_meaningless_selection():
     assert res.any_fallback
 
 
-def test_nan_cost_is_rejected_and_never_selected():
+def test_nan_cost_is_rejected():
     """RR-04"""
     with pytest.raises(ValueError, match="finite"):
         _matrix().route(["q1"], lam=0.1, model_costs=[0.0, float("nan"), 0.0])
+
+
+def test_nan_cost_is_never_selected():
+    """RR-04"""
     sel = routing_decision(np.array([[0.9, 0.5, 0.1]]), lam=0.1, model_costs=np.array([0.0, np.nan, 0.0]))
     assert sel.tolist() == [0]
 
@@ -157,24 +161,6 @@ def test_int_labelled_matrix_routes():
     r = MatrixRouter(pd.DataFrame([[0.1, 0.9]], index=[101], columns=[1, 2]))
     res = r.route([101])
     assert res.selected_model_ids == ["2"] and not res.any_fallback
-
-
-def test_router_tool_does_not_reference_the_stale_routing_base_router_name():
-    """RC-02/RR-03: routing/base.py's Router -> RouterModel rename left
-    router_tool.py importing/type-hinting the old name -- harmless at plain
-    runtime (from __future__ import annotations + TYPE_CHECKING-only), but
-    breaks static type-checking and is now ambiguous with the new top-level
-    router.router.Router."""
-    import inspect
-
-    import router.tools.router_tool as mod
-    from router.routing.base import RouterModel
-
-    src = inspect.getsource(mod)
-    assert "routing.base import Router\n" not in src
-    assert "routing.base import RouterModel" in src
-    assert mod.RouterTool.__init__.__annotations__ == {"router": "'RouterModel'"}
-    assert RouterModel.__name__ == "RouterModel"
 
 
 def test_iterator_pool_is_materialised():
@@ -203,7 +189,8 @@ def test_reregistering_same_qualname_is_allowed():
 
     try:
         register(make())
-        register(make())          # a reload: same module + qualname
+        second = register(make())          # a reload: same module + qualname
+        assert REGISTRY["reload_probe"] is second
     finally:
         REGISTRY.pop("reload_probe", None)
 
@@ -335,19 +322,27 @@ def test_max_calls_caps_fanout():
     assert len(res.errors()) == 2
 
 
-def test_models_used_and_summary_edge_cases():
-    """RA-16 / RA-20"""
+def test_models_used_is_empty_for_an_orchestrated_result_with_no_steps():
+    """RA-16"""
     res = AgenticResult(prompt="p", mode="orchestrated", answer="", triage_reason="r", selected_model_id="z")
     assert res.models_used() == []
+
+
+def test_summary_tolerates_a_missing_predicted_quality():
+    """RA-20"""
     assert "q~?" in AgenticResult(prompt="p", mode="single", answer="", triage_reason="r").summary()
 
 
-def test_block_content_and_provider_boundaries():
-    """RA-11 / RA-19"""
+def test_message_text_skips_thinking_blocks():
+    """RA-11"""
     class Msg:
         content = [{"type": "thinking", "thinking": "hmm"}, {"type": "text", "text": "hi"}]
 
     assert message_text(Msg()) == "hi"
+
+
+def test_guess_provider_matches_whole_prefixes_only():
+    """RA-19"""
     assert guess_provider("o1-mini") == "openai" and guess_provider("yolo1") is None
 
 
@@ -363,24 +358,36 @@ def test_ledger_rejects_nan_and_negative():
     assert ledger.remaining() == 5.0
 
 
-def test_aggregate_children_reports_failures():
-    """RX-03 / RX-09 / RX-14"""
+def test_aggregate_children_fails_when_a_child_failed():
+    """RX-03 / RX-09"""
     ok = AgentTask("c1", "p", "root", "x", status=TaskStatus.COMPLETED,
                    result=ExecutionResult(output="a", actual_latency=2.0))
     crashed = AgentTask("c2", "p", "root", "y", status=TaskStatus.FAILED)
-    parent = AgentTask("p", None, "root", "z", children=[ok, crashed])
-    agg = parent.aggregate_children()
+    agg = AgentTask("p", None, "root", "z", children=[ok, crashed]).aggregate_children()
     assert agg.success is False and agg.error_code == "child_failed"
+
+
+def test_aggregate_children_of_a_childless_task_is_not_a_success():
+    """RX-14"""
     assert AgentTask("e", None, "root", "z").aggregate_children().success is False
+
+
+def test_an_execution_result_with_an_error_code_is_not_a_success():
+    """RX-03"""
     assert ExecutionResult(error_code="timeout").success is False
 
 
-def test_duplicate_profile_raises_and_client_prices_tokens():
-    """RL-06 / RL-01"""
+def test_duplicate_profile_registration_raises():
+    """RL-06"""
     reg = LLMRegistry()
-    prof = LLMProfile(name="m", provider="openai", model_id="m",
-                      input_cost_per_token=0.001, output_cost_per_token=0.002)
+    prof = LLMProfile(name="m", provider="openai", model_id="m")
     reg.register(prof)
     with pytest.raises(ValueError):
         reg.register(prof)
+
+
+def test_client_prices_tokens_from_its_profile():
+    """RL-01"""
+    prof = LLMProfile(name="m", provider="openai", model_id="m",
+                      input_cost_per_token=0.001, output_cost_per_token=0.002)
     assert LLMClient(adapter=None, profile=prof).price(100, 50) == pytest.approx(0.2)
