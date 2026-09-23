@@ -1,7 +1,7 @@
 # Runbook: how to run everything, end to end
 
 A copy-paste guide to actually running this repo's pipelines, in order. For
-*why* each step exists and what calls what, see [workflows.md](workflows.md)
+_why_ each step exists and what calls what, see [workflows.md](workflows.md)
 — this doc is the fast path, that one is the reference.
 
 Run everything from the repo root, with the venv active.
@@ -79,11 +79,18 @@ python scripts/retrieval/build_warmup.py                       # -> query_warmup
 from router.config import load_config
 from training.data.facade import load_training_data
 d = load_training_data(load_config())
-d.correctness_matrix(split="train").shape
+d.correctness_matrix(split="train", combine_metrics=["accuracy", "mc_accuracy"]).shape
 ```
 
-Expect `734,469 observations · 196,791 queries · 69 models · 88 datasets`
-(current checked-in raw data). Full numbers: [README](../README.md#data-pipeline-foundation).
+`combine_metrics` matters: RouterBench's free-form (`accuracy`) and
+multiple-choice (`mc_accuracy`) observations are separate metric types that
+are never pooled automatically, so omitting it silently drops most rows.
+
+Expect roughly `(88820, 29)` — 29 is the count of _warm_ models that have
+ever received a correctness-benchmark score (RouterBench + IRT-Router suite);
+the other ~56 warm models are Arena-preference-only and correctly never
+appear here (see `d.pairwise()` for those). Full pipeline numbers:
+[README](../README.md#data-pipeline-foundation).
 
 ---
 
@@ -94,10 +101,7 @@ This is the main model. Defaults live in [`configs/nirt.yaml`](../configs/nirt.y
 override on the CLI:
 
 ```bash
-python scripts/nirt/train_nirt.py \
-  --config configs/nirt.yaml \
-  --dim 2 --model-params projected \
-  --name nirt-2d-projected
+python scripts/nirt/train_nirt.py --config configs/nirt.yaml --dim 2 --model-params projected --name nirt-2d-projected
 ```
 
 Writes `data/processed/nirt_runs/nirt-2d-projected/{model.pt, run.json}`.
@@ -121,30 +125,51 @@ Pick the script for the question you're asking — all load an existing
 checkpoint, none of them retrain (except `ab_orientation.py` and
 `complexity_search.py`, which train fresh comparison runs):
 
-| question | command |
-|---|---|
-| Prediction quality on a split | `python scripts/nirt/eval_nirt.py --run nirt-2d-projected --split test` |
-| Full leaderboard: prediction + ranking + routing + AIQ vs every baseline | `python scripts/nirt/compare.py --run nirt-2d-projected --split test` |
-| `query_latent` vs `model_latent`, head-to-head | `python scripts/nirt/ab_orientation.py --dim 2 --model-params projected` |
-| Does cold-start work from profile text alone? | `python scripts/nirt/coldstart.py --run nirt-2d-projected --split test` |
-| Has `theta_q` collapsed (ignoring the query)? | `python scripts/nirt/theta_collapse.py --run nirt-2d-projected --split test` |
-| Overfitting or underfitting? | `python scripts/nirt/train_test_gap.py` |
-| Where does underfitting come from? | `python scripts/nirt/capacity_diagnostics.py --nirt-run nirt-2d-projected` |
-| Best k for kNN-imputed query embeddings? | `python scripts/nirt/knn_impute_sweep.py` |
-| Does novelty-weighted shrinkage fix OOD calibration? | `python scripts/nirt/shrinkage_eval.py --nirt-run nirt-2d-projected --splits ood` |
+| question                                                                 | command                                                                           |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| Prediction quality on a split                                            | `python scripts/nirt/eval_nirt.py --run nirt-2d-projected --split test`           |
+| Full leaderboard: prediction + ranking + routing + AIQ vs every baseline | `python scripts/nirt/compare.py --run nirt-2d-projected --split test --source routerbench` |
+| `query_latent` vs `model_latent`, head-to-head                           | `python scripts/nirt/ab_orientation.py --dim 2 --model-params projected`          |
+| Does cold-start work from profile text alone?                            | `python scripts/nirt/coldstart.py --run nirt-2d-projected --split test`           |
+| Has `theta_q` collapsed (ignoring the query)?                            | `python scripts/nirt/theta_collapse.py --run nirt-2d-projected --split test`      |
+| Overfitting or underfitting?                                             | `python scripts/nirt/train_test_gap.py`                                           |
+| Where does underfitting come from?                                       | `python scripts/nirt/capacity_diagnostics.py --nirt-run nirt-2d-projected --source routerbench` |
+| Best k for kNN-imputed query embeddings?                                 | `python scripts/nirt/knn_impute_sweep.py`                                         |
+| Does novelty-weighted shrinkage fix OOD calibration?                     | `python scripts/nirt/shrinkage_eval.py --nirt-run nirt-2d-projected --splits test --source routerbench` |
 
 All write JSON reports under `data/processed/nirt_runs/<run>/` or
-`artifacts/phase2/`.
+`artifacts/phase2/`. `shrinkage_eval.py` and `capacity_diagnostics.py` always write
+to the same `artifacts/phase2/*.json` path, whatever `--source` / `--splits` you pass —
+copy the file aside if you want to keep a report.
+
+**Dense pool / `--source`.** The routing-style scripts (`compare.py`,
+`route_eval.py`, `capacity_diagnostics.py`, `shrinkage_eval.py`) score a full
+`[query × model]` matrix, so they only keep queries observed by _every_ model in
+the pool. The default 29-model pool (`nirt-2d-projected`, §2) is the union of
+RouterBench (11 models) and the IRT-Router suite (17), which never answer the
+same query, so with no `--source` they stop with
+`no 'test' query has a target and cost for every one of the 29 pool models`.
+Pass **`--source routerbench`** (11 models, 7,354 test queries) or
+**`--source irt_router`** (17 models, 3,790) to score one source's dense pool. The
+model is unchanged (it still predicts with all 29); only the evaluation is
+restricted, and models seen on under half of that source's queries are left out
+(`moonshot_v1_search`: 1 test query). Numbers from different sources are on
+different candidate sets — don't compare them to each other. Runs trained on a
+single-source config (`configs/irt_router.yaml`, §6) don't need the flag.
+
+Not yet source-aware, so on the 29-model run they stop with the same error:
+`coldstart.py`, `ab_orientation.py`, `knn_impute_sweep.py`, `complexity_search.py`.
 
 ---
 
 ## 4. Routing evaluation
 
-"Is the prediction good" (§3) → "does it produce good *routing decisions*."
+"Is the prediction good" (§3) → "does it produce good _routing decisions_."
 
 ```bash
-# per-(query,model) oracle labels + regret/hit metrics for one run
-python scripts/nirt/route_eval.py --run nirt-2d-projected --split test --lam 0.1
+# per-(query,model) oracle labels + regret/hit metrics for one run -- one source's dense pool
+# (see "Dense pool / --source" in §3); outputs are suffixed with the source
+python scripts/nirt/route_eval.py --run nirt-2d-projected --split test --source routerbench --lam 0.1
 
 # leaderboard across POLICIES (NIRT, IRT-Router, Bernoulli, ZOIB E[Y]/LCB) + λ-sweep AIQ
 python scripts/route_compare.py --nirt-run nirt-2d-projected --lam 0.1
@@ -152,6 +177,11 @@ python scripts/route_compare.py --nirt-run nirt-2d-projected --lam 0.1
 # candidate-pool expansion battery (only when adding a new model to the pool)
 python scripts/pool_expansion/run_phase.py --phase E3 --added-models <model_id>
 ```
+
+`route_eval.py` needs `--source` on the 29-model run, for the reason given under
+"Dense pool / `--source`" in §3, and writes `route_eval_<split>_<source>.json`
+(plus `_per_query.csv` and `oracle_labels_<split>_<source>.parquet`). Routing over
+the full sparse 29-model pool with per-query candidate sets is not implemented.
 
 `route_compare.py` is the one to run for a "how are we doing overall"
 snapshot — it writes `artifacts/{phase2,irt_router}/routing_comparison.json`
