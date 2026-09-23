@@ -97,7 +97,7 @@ python scripts/pool_expansion/run_phase.py --phase E1 \
 | **E1** | un-hold the two RouterBench cold-start models (`yi-34b-chat`, `code-llama-34b-instruct`) via `split.force_warm` |
 | **E2** | RouterBench 5-shot (`sources.routerbench.shots: ["0shot","5shot"]`) — 0-/5-shot as separate items sharing a split group |
 | **E3** | *(superseded — see below)* modern cheap-competent models via lm-eval-harness |
-| **E4** | an external benchmark source (RouteLLM / MixInstruct / the `evaluations/LLMRouterBench` submodule) |
+| **E4** | LLMRouterBench performance-cost setting (13 flagship models, 10 datasets, real cost) -- see [llmrouterbench.md](llmrouterbench.md) |
 | **E5** | profile-only cold-start models (only once `n_warm ≥ ~20`) |
 
 ---
