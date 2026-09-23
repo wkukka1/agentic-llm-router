@@ -3,4 +3,5 @@ from training.data.facade import load_training_data
 
 
 d = load_training_data(load_config())
-d.correctness_matrix(split="train").shape
+print(d.summary())
+print(d.correctness_matrix(split="train", combine_metrics=["accuracy", "mc_accuracy"]).shape)

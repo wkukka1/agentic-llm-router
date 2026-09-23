@@ -11,9 +11,15 @@ fed back into the model). See `docs/routing_evaluation.md`.
         --zoib artifacts/irt_router/zoib --bernoulli artifacts/irt_router/bernoulli \
         --oracle-classifier
 
-Writes  <runs_dir>/<run>/route_eval_<split>.json
-        <runs_dir>/<run>/route_eval_<split>_per_query.csv
-        <runs_dir>/<run>/oracle_labels_<split>.parquet
+The oracle needs a dense [query x model] matrix. The default 29-model pool (RouterBench + IRT-Router)
+has none -- its two sources share no model -- so pass `--source routerbench` (or `irt_router`) to score
+one source's dense pool:
+
+    python scripts/nirt/route_eval.py --run nirt-2d-projected --split test --source routerbench --lam 0.1
+
+Writes  <runs_dir>/<run>/route_eval_<split>[_<source>].json
+        <runs_dir>/<run>/route_eval_<split>[_<source>]_per_query.csv
+        <runs_dir>/<run>/oracle_labels_<split>[_<source>].parquet
 """
 
 from __future__ import annotations
@@ -23,7 +29,7 @@ import sys
 import numpy as np
 import yaml
 
-from training.cli import float_table, raw_parser, resolve, write_json
+from training.cli import add_source_arg, float_table, raw_parser, resolve, write_json
 from router.config import load_config
 from router.nirt.checkpoint import load_run as nirt_load_run
 from router.nirt.predict import predict_matrix
@@ -98,6 +104,7 @@ def main() -> int:
     ap = raw_parser(__doc__)
     ap.add_argument("--run", required=True, help="NIRT run name under runs_dir")
     ap.add_argument("--split", default="test")
+    add_source_arg(ap)
     ap.add_argument("--config", default=None, help="phase0 / data config")
     ap.add_argument("--nirt-config", default="configs/nirt.yaml")
     ap.add_argument("--lam", type=float, default=0.0, help="cost weight for the cost-aware router/oracle")
@@ -121,7 +128,7 @@ def main() -> int:
     pathway = (run_cfg.get("data", {}) or {}).get("pathway", "irt")
     pool = sorted(midx, key=midx.get)
 
-    true_df, cost_df = eval_matrices(d, split=args.split, models=pool)
+    true_df, cost_df = eval_matrices(d, split=args.split, models=pool, source=args.source)
     model_ids = list(true_df.columns)
     true = true_df.to_numpy(np.float64)
     cost = cost_df.to_numpy(np.float64)
@@ -140,7 +147,7 @@ def main() -> int:
         preds["Bernoulli"] = _zoib_matrix(args.bernoulli, p0, args.split, "proba", true_df)
     if args.oracle_classifier:
         q_store = d.query_embeddings(pathway)
-        tr_true, tr_cost = eval_matrices(d, split="train", models=pool)
+        tr_true, tr_cost = eval_matrices(d, split="train", models=pool, source=args.source)
         tr_keep = [q for q in tr_true.index if q in q_store]
         tr_emb = q_store.gather(tr_keep)
         tr_true, tr_cost = tr_true.loc[tr_keep], tr_cost.loc[tr_keep]
@@ -172,13 +179,14 @@ def main() -> int:
     # -- artifacts --------------------------------------------------------
     out_dir = runs_dir / args.run
     out_dir.mkdir(parents=True, exist_ok=True)
-    lab_path = out_dir / f"oracle_labels_{args.split}.parquet"
+    tag = f"{args.split}_{args.source}" if args.source else args.split
+    lab_path = out_dir / f"oracle_labels_{tag}.parquet"
     labels.to_parquet(lab_path, index=False)
-    pq_path = out_dir / f"route_eval_{args.split}_per_query.csv"
+    pq_path = out_dir / f"route_eval_{tag}_per_query.csv"
     per_query.to_csv(pq_path, index=False)
 
     payload = {
-        "run": args.run, "split": args.split, "config": args.config,
+        "run": args.run, "split": args.split, "source": args.source, "config": args.config,
         "pool": model_ids, "n_queries": int(true.shape[0]),
         "lam": args.lam, "tolerance": args.tolerance,
         "target": "y_soft (chance-corrected graded score, split via eval_matrices)",
@@ -200,13 +208,13 @@ def main() -> int:
             ),
         },
     }
-    ev_path = write_json(out_dir / f"route_eval_{args.split}.json", payload, announce=False)
+    ev_path = write_json(out_dir / f"route_eval_{tag}.json", payload, announce=False)
 
     if args.per_query_model:
         from evaluation.routing.oracle import per_query_model_table
 
         pqm = per_query_model_table(preds[nirt_key], true, cost, model_ids, query_ids)
-        pqm.to_parquet(out_dir / f"route_eval_{args.split}_per_query_model.parquet", index=False)
+        pqm.to_parquet(out_dir / f"route_eval_{tag}_per_query_model.parquet", index=False)
 
     print(f"\nwrote {ev_path}\n      {pq_path}\n      {lab_path}")
     return 0

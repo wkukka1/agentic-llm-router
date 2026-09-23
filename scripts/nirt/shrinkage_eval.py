@@ -21,7 +21,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from training.cli import float_table, raw_parser, write_json, zeroshot_only
+from training.cli import add_source_arg, float_table, raw_parser, write_json, zeroshot_only
 from router.config import load_config
 from router.nirt.checkpoint import load_run
 from router.nirt.predict import predict_matrix
@@ -50,6 +50,7 @@ def main() -> int:
     ap.add_argument("--config", default=None)
     ap.add_argument("--nirt-run", required=True)
     ap.add_argument("--splits", default="ood", help="comma list; each scored against the same train pathway")
+    add_source_arg(ap)
     ap.add_argument("--k", type=int, default=1)
     ap.add_argument("--midpoints", default="0.15,0.25,0.35,0.45,0.55")
     ap.add_argument("--temp", type=float, default=0.08)
@@ -72,7 +73,7 @@ def main() -> int:
 
     out_all: dict = {}
     for split in [s.strip() for s in args.splits.split(",") if s.strip()]:
-        true_df, cost_df = eval_matrices(d, split=split)
+        true_df, cost_df = eval_matrices(d, split=split, source=args.source)
         true_df, cost_df = zeroshot_only(true_df, cost_df)
         model_ids = list(true_df.columns)
         true, cost = true_df.to_numpy(np.float64), cost_df.to_numpy(np.float64)
