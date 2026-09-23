@@ -41,7 +41,9 @@ class Source:
                                      # routerbench: query_ids (docs/anchor_judge.md) --
                                      # query_id is carried through verbatim from the
                                      # correctness data, never re-derived under this source.
-    ALL = {ROUTERBENCH, ARENA, GPT4_JUDGE, LM_HARNESS, IRT_ROUTER, ANCHOR_JUDGE}
+    LLMROUTERBENCH = "llmrouterbench"  # arXiv 2601.07206 -- performance-cost setting only
+                                       # (13 flagship models, real $/token); see docs/llmrouterbench.md
+    ALL = {ROUTERBENCH, ARENA, GPT4_JUDGE, LM_HARNESS, IRT_ROUTER, ANCHOR_JUDGE, LLMROUTERBENCH}
 
     # Sources whose observations are pairwise preferences, not absolute scores.
     PAIRWISE = {ARENA, GPT4_JUDGE, ANCHOR_JUDGE}
@@ -59,16 +61,20 @@ class MetricType:
     JUDGE_PREFERENCE = "judge_preference"  # LLM-judge pairwise outcome in {1.0, 0.5, 0.0}
     LIKELIHOOD_ACC = "acc"           # lm-harness `acc`
     LIKELIHOOD_ACC_NORM = "acc_norm"  # lm-harness `acc_norm`
+    LLM_JUDGE_SCORE = "llm_judge_score"  # absolute per-(query,model) LLM-as-judge grade
+                                          # (LLMRouterBench HLE/SimpleQA/ArenaHard) -- NOT
+                                          # pairwise, unlike JUDGE_PREFERENCE above
     ALL = {
         ACCURACY, EXACT_MATCH, F1, PASS_AT_1, MC_ACCURACY,
         ARENA_PREFERENCE, JUDGE_PREFERENCE, LIKELIHOOD_ACC, LIKELIHOOD_ACC_NORM,
+        LLM_JUDGE_SCORE,
     }
 
     # Pairwise-preference metrics: kept OUT of the absolute response matrix.
     PAIRWISE = {ARENA_PREFERENCE, JUDGE_PREFERENCE}
     # Absolute correctness metrics: the primary AMIRT response signal.
     CORRECTNESS = {ACCURACY, MC_ACCURACY, EXACT_MATCH, F1, PASS_AT_1,
-                   LIKELIHOOD_ACC, LIKELIHOOD_ACC_NORM}
+                   LIKELIHOOD_ACC, LIKELIHOOD_ACC_NORM, LLM_JUDGE_SCORE}
 
 
 # Valid closed interval for each metric's *raw* score.
@@ -82,6 +88,7 @@ METRIC_RANGES: dict[str, tuple[float, float]] = {
     MetricType.JUDGE_PREFERENCE: (0.0, 1.0),
     MetricType.LIKELIHOOD_ACC: (0.0, 1.0),
     MetricType.LIKELIHOOD_ACC_NORM: (0.0, 1.0),
+    MetricType.LLM_JUDGE_SCORE: (0.0, 1.0),
 }
 
 
