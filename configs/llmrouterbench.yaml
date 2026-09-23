@@ -54,6 +54,16 @@ sources:
       - glm-4.6
       - kimi-k2-0905
       - intern-s1
+    # baseline_config_performance_cost.yaml `filters.splits` -- the framework's own
+    # whitelist of non-demo split names actually used for this setting. A result file
+    # under any other split (e.g. a dev/scratch run) is dropped at load time rather than
+    # silently averaged into one of these via query_id collision.
+    splits:
+      - test
+      - hybrid
+      - v1
+      - test_3000
+      - verified
 
 # Deliberately its OWN block, not an addition to phase0.yaml's -- gpqa/mmlupro must not
 # inherit RouterBench's `mmlu*` -> 4 prefix rule (MMLU-Pro is 10-choice, not 4).
@@ -68,7 +78,12 @@ chance_correction:
   clip: true
   warn_on_missing_choices: true
 
+# presplit=false: unlike RouterBench/IRT-Router, LLMRouterBench's own result files carry
+# no train/test partition of their own (every file's `split` is a run identifier --
+# test/hybrid/v1/test_3000/verified -- not a data-split label), so there is no
+# metadata['origin'] for make_presplit to honour. Content-hash group splitting instead.
 split:
-  presplit: true
+  presplit: false
   train_fraction: 0.7
-  validation_fraction: 0.3
+  validation_fraction: 0.15
+  test_fraction: 0.15

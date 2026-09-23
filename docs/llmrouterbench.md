@@ -16,11 +16,20 @@ from `huggingface.co/datasets/NPULH/LLMRouterBench` into
 `evaluations/LLMRouterBench/results/bench/` — the framework's own expected location.
 
 Each result file is `results/bench/<dataset>/<split>/<model>/<timestamp>.json`:
-`{dataset_name, split, model_name, records: [{index, origin_query, prompt, prediction,
+`{dataset_name, split, model_name, demo, records: [{index, origin_query, prompt, prediction,
 ground_truth, score, prompt_tokens, completion_tokens, cost}]}`. A `score: null` record (a
 failed generation) is dropped, never coerced to `0.0` the way the framework's own
 `BaselineDataLoader` does — see `training/data/schemas.py`'s "missing values are never
 fabricated" rule.
+
+The loader also drops, each with a warning naming what was dropped: files with `demo: true`
+(smoke-test runs, which can otherwise carry a later timestamp than a real one and evict it
+from the dedup-to-latest step); a `model_name` outside `sources.llmrouterbench.pool`; a
+`split` outside `sources.llmrouterbench.splits`; and a `dataset_name` outside the ten in the
+table below (the raw results tree includes datasets from the *performance-only* setting or
+excluded ones like `arc-agi` that must never enter this pool). If every file present gets
+filtered out, or none exist at all, `load_llmrouterbench` raises with an actionable message
+rather than failing downstream with a generic "missing columns" error.
 
 ## Datasets (10) and metric types
 
@@ -56,6 +65,11 @@ python scripts/data/download_llmrouterbench.py   --config configs/llmrouterbench
 python scripts/data/build_response_matrix.py      --config configs/llmrouterbench.yaml
 python scripts/data/build_splits.py               --config configs/llmrouterbench.yaml
 ```
+
+The last step uses content-hash group splitting (`split.presplit: false`), not IRT-Router's
+pre-partitioned mode — LLMRouterBench's own `split` field is a run identifier
+(`test`/`hybrid`/`v1`/`test_3000`/`verified`), not a train/test partition, so there is no
+`metadata['origin']` for `make_presplit` to key off.
 
 ## Results
 

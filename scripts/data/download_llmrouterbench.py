@@ -44,7 +44,10 @@ def main() -> int:
     info(f"extracting into {dest.parent} ...")
     dest.parent.mkdir(parents=True, exist_ok=True)
     with tarfile.open(archive_path, "r:gz") as tf:
-        tf.extractall(dest.parent)
+        # a fetched-third-party archive gets the hardened extraction filter
+        # (PEP 706) -- refuses members that would write outside dest.parent
+        # (tar-slip, CVE-2007-4559), absolute paths, or device/symlink tricks
+        tf.extractall(dest.parent, filter="data")
 
     if not dest.exists():
         info(f"ERROR: expected {dest} after extraction; check the archive's internal layout")

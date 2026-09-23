@@ -680,13 +680,17 @@ def _llmrouterbench_latest_files(results_dir: Path) -> list[Path]:
     """One file per ``(dataset_name, split, model_name)``, keeping the file with the
     lexicographically-latest ``<timestamp>.json`` stem when a combination was re-run --
     mirrors the reference framework's own dedup (``baselines/data_loader.py``'s
-    ``_find_result_files`` / ``_get_latest_file_by_timestamp``)."""
+    ``_find_result_files`` / ``_get_latest_file_by_timestamp``). A file whose header
+    marks ``demo: true`` is skipped outright (mirrors ``_should_skip_file``'s
+    ``skip_demo``), so a later-timestamped smoke-test run can never evict a real one."""
     groups: dict[tuple[str, str, str], list[Path]] = {}
     for path in sorted(results_dir.rglob("*.json")):
         try:
             header = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError) as e:
             warnings.warn(f"LLMRouterBench: skipping unreadable {path}: {e}")
+            continue
+        if header.get("demo"):
             continue
         key = (header.get("dataset_name"), header.get("split"), header.get("model_name"))
         if None in key:
@@ -709,13 +713,18 @@ def load_llmrouterbench(cfg: Config) -> pd.DataFrame:
     generation) are dropped, never coerced to ``0.0`` -- see
     ``training.data.schemas``'s "missing values are never fabricated" rule. Multiple
     result files for the same ``(dataset, split, model)`` are deduplicated to the
-    latest by filename timestamp.
+    latest by filename timestamp. A ``model_name`` outside ``sources.llmrouterbench.pool``,
+    a ``split`` outside ``sources.llmrouterbench.splits`` (when configured), and a
+    ``dataset_name`` outside :data:`_LLMROUTERBENCH_METRIC_TYPES` (e.g. the paper's own
+    excluded ``arc-agi``) are all dropped, each with a warning naming what was dropped --
+    never silently admitted or silently absorbed.
     """
     src = section(cfg, "sources").get("llmrouterbench", {})
     results_dir = cfg.resolve(
         src.get("local_dir", "evaluations/LLMRouterBench/results/bench")
     )
     pool = {str(m) for m in (src.get("pool") or [])}
+    allowed_splits = {str(s) for s in (src.get("splits") or [])}
     if not results_dir.exists():
         raise FileNotFoundError(
             f"LLMRouterBench results dir not found: {results_dir}\n"
@@ -723,16 +732,29 @@ def load_llmrouterbench(cfg: Config) -> pd.DataFrame:
         )
 
     dropped_missing_score = 0
+    dropped_out_of_pool: dict[str, int] = {}
+    dropped_out_of_split: dict[str, int] = {}
+    dropped_unknown_dataset: dict[str, int] = {}
+    n_files_seen = 0
     records: list[dict] = []
     for path in _llmrouterbench_latest_files(results_dir):
+        n_files_seen += 1
         payload = json.loads(path.read_text(encoding="utf-8"))
         dataset = str(payload["dataset_name"])
         split = payload.get("split")
         model_native = str(payload["model_name"])
+        n_rows = len(payload.get("records", []))
         if pool and model_native not in pool:
+            dropped_out_of_pool[model_native] = dropped_out_of_pool.get(model_native, 0) + n_rows
+            continue
+        if allowed_splits and str(split) not in allowed_splits:
+            dropped_out_of_split[str(split)] = dropped_out_of_split.get(str(split), 0) + n_rows
+            continue
+        if dataset not in _LLMROUTERBENCH_METRIC_TYPES:
+            dropped_unknown_dataset[dataset] = dropped_unknown_dataset.get(dataset, 0) + n_rows
             continue
         model_id = canonical_model_id(model_native)
-        metric_type = _LLMROUTERBENCH_METRIC_TYPES.get(dataset, schemas.MetricType.ACCURACY)
+        metric_type = _LLMROUTERBENCH_METRIC_TYPES[dataset]
         is_mc = metric_type == schemas.MetricType.MC_ACCURACY
         n_choices = _mc_choices(dataset, cfg) if is_mc else None
 
@@ -769,6 +791,32 @@ def load_llmrouterbench(cfg: Config) -> pd.DataFrame:
         warnings.warn(
             f"LLMRouterBench: dropped {dropped_missing_score} record(s) with score=null "
             f"(a failed generation the framework itself would otherwise silently score 0.0)"
+        )
+    if dropped_out_of_pool:
+        warnings.warn(
+            f"LLMRouterBench: dropped {sum(dropped_out_of_pool.values())} record(s) for "
+            f"{len(dropped_out_of_pool)} out-of-pool model(s): {sorted(dropped_out_of_pool)}"
+        )
+    if dropped_out_of_split:
+        warnings.warn(
+            f"LLMRouterBench: dropped {sum(dropped_out_of_split.values())} record(s) for "
+            f"split(s) outside sources.llmrouterbench.splits: {sorted(dropped_out_of_split)}"
+        )
+    if dropped_unknown_dataset:
+        warnings.warn(
+            f"LLMRouterBench: dropped {sum(dropped_unknown_dataset.values())} record(s) for "
+            f"dataset(s) outside the performance-cost setting: {sorted(dropped_unknown_dataset)}"
+        )
+    if not records:
+        if n_files_seen == 0:
+            raise FileNotFoundError(
+                f"LLMRouterBench: no result files found under {results_dir}\n"
+                f"Run: python scripts/data/download_llmrouterbench.py --config <this config>"
+            )
+        raise ValueError(
+            f"LLMRouterBench: {n_files_seen} result file(s) found under {results_dir}, but "
+            f"every record was filtered out (pool/splits/dataset/score) -- check "
+            f"sources.llmrouterbench.pool and .splits against what's actually on disk"
         )
     return schemas.coerce_response_frame(pd.DataFrame.from_records(records))
 
