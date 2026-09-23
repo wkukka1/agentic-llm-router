@@ -175,7 +175,10 @@ def _to_parquet(df: pd.DataFrame, path: Path) -> None:
     import json
 
     for col in out.columns:
-        if out[col].map(lambda v: isinstance(v, (dict, list))).any():
+        # Plain iteration, not `.map(...).any()`: under pandas 3 an
+        # Arrow-backed string column maps to string dtype, and `.any()` on it
+        # raises "Cannot perform reduction 'any' with string dtype".
+        if any(isinstance(v, (dict, list)) for v in out[col]):
             out[col] = out[col].map(
                 lambda v: json.dumps(v, default=str) if isinstance(v, (dict, list)) else v
             )

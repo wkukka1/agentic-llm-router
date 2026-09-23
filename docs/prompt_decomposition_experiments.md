@@ -935,3 +935,64 @@ Three things taken from it:
   upgrading ModernBERT-base to ModernBERT-large, and end-to-end fine-tuning
   together bought +2.13 pp, closing 14.6% of the oracle gap. More data and a
   bigger encoder are not the way out of the plateau.
+
+## Will's end-to-end pipeline: run, measured, and where it goes wrong
+
+Run from scratch on RouterBench (0-shot + 5-shot): response matrix (802,626
+observations, chance-corrected) -> leakage-checked splits (58,344 / 7,268 /
+7,354 queries) -> NIRT observations -> BERT query embeddings (72,966) + profile
+embeddings -> `train_nirt.py --dim 2 --model-params projected` -> `eval_nirt`,
+`route_eval`, `misroute_analysis`.
+
+**Prediction quality is real.** Test BCE 0.615 against a 0.654 per-model-mean
+baseline (-0.039), AUC 0.717, accuracy 0.681, ECE 0.018. The predictor is
+calibrated and beats "assume each model's average correctness".
+
+**Routing quality is not.**
+
+| | quality | cost / 1k |
+|---|---|---|
+| best fixed model (gpt-4-1106-preview) | 0.7883 | $5.75 |
+| NIRT router (argmax, lambda=0) | 0.7875 | $5.69 |
+| oracle (per query) | 0.9149 | $0.38 |
+
+It lands 0.0008 *below* always-calling-GPT-4 -- **-0.6% of the oracle gap** --
+at the same cost. Oracle hit rate 1.7%. The oracle is 13.7 points better and
+15x cheaper, so the opportunity is there and the router does not take it.
+
+### Why
+
+`misroute_analysis.py` and the plateau stratification agree on the mechanism.
+
+1. **It defaults.** The router picks gpt-4 on 7,252 of 7,354 queries (98.6%);
+   seven of the eleven models are never picked once. Yet yi-34b is *a* best
+   option on 5,111 queries, gpt-3.5 on 4,982, mixtral on 4,443.
+2. **The regret is concentrated and recoverable.** 18% of queries are
+   mis-routed; 794 catastrophic cases (regret > 0.5) carry 84.3% of all regret,
+   and 854 queries holding 86.1% of regret had a pool model scoring >= 0.8 that
+   the router passed over. This is not "no model could answer".
+3. **The ranking knows, the argmax does not.** On mis-routes the model it
+   should have taken was ranked #2 by NIRT on 48.9% of the regret mass, #3 on
+   16.3%; median rank 3 of 11.
+4. **It fails precisely where the gain is.** Hard prompts (paper's Sec 5.1
+   definition) are 12.7% of the split and hold **84.9%** of the oracle gap, a
+   37.2x hard/easy ratio. On those prompts the router picks gpt-4 ~99.4% of the
+   time, while the oracle's correct-model mass is spread almost uniformly over
+   the other ten (yi 12.8%, gpt-3.5 11.7%, claude-v1 10.7%, claude-v2 10.5%,
+   claude-instant 10.1%, mixtral 9.7%, wizardlm 9.3%, mistral 8.1%).
+
+That is the routing plateau (arXiv 2606.07587) reproduced end to end in this
+repo: a calibrated per-(query, model) predictor whose argmax collapses onto the
+globally strongest model, because the learned global capability prior dominates
+the instance-level differences that decide the hard queries.
+
+### Two pipeline bugs found while running it
+
+* **An empty build passes its own quality check.** `loaders.load_all` catches
+  `FileNotFoundError` per source and only warns, so a missing
+  `routerbench_5shot.pkl` skipped RouterBench entirely -- and
+  `build_response_matrix.py` printed `wrote responses (0 rows)` followed by
+  "No issues detected". A build that finds nothing should fail.
+* **`_to_parquet` breaks on pandas 3.** `out[col].map(...).any()` raises
+  "Cannot perform reduction 'any' with string dtype" on Arrow-backed string
+  columns (pandas 3.0.5 here; fine on 2.x). Fixed by iterating instead.
