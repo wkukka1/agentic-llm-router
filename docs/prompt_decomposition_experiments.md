@@ -996,3 +996,219 @@ the instance-level differences that decide the hard queries.
 * **`_to_parquet` breaks on pandas 3.** `out[col].map(...).any()` raises
   "Cannot perform reduction 'any' with string dtype" on Arrow-backed string
   columns (pandas 3.0.5 here; fine on 2.x). Fixed by iterating instead.
+
+## The signals do have a job: triage, not difficulty
+
+Everything above measures the heads against *difficulty*, and they lose to the
+global prior. But the agentic loop makes a second, structural decision before
+difficulty is ever consulted -- one shot, or decompose and route each part --
+and that decision was being made by a hand-written phrase list in
+`router.agentic.triage`.
+
+The list was wrong in a way that is easy to demonstrate:
+
+```
+Summarise transformers, then implement attention in NumPy and analyse its complexity.
+  -> single -> gpt-4-1106-preview   (before)
+```
+
+It contained `" and then "` but not `", then"`. A three-deliverable prompt
+answered in one shot, and the orchestrator never ran.
+
+**What was built.** `StructureClassifier`, a `Classifier` in
+`decompose/classifiers/prompt_heads.py` like the other heads, emitting
+`multi_part` (with its evidence attached) and `part_count`. The evidence is
+named, not scored: distinct task verbs, sequence markers matched after a clause
+boundary, enumerated items, question marks, length. `HeuristicTriage` now takes
+it and prefers it, falling back to the old list when no classifier is given;
+`AgenticRouter` wires it in by default.
+
+Two properties worth recording, because both were mistakes on the first pass:
+
+* **A sequence marker alone is enough.** Requiring two known task verbs as
+  corroboration made the classifier *narrower* than the list it replaced, and
+  broke two of Will's orchestrator tests. The verb list is exactly the
+  brittleness being removed, so it may inform the reported reason but cannot
+  gate the decision. The asymmetry justifies it: triage pays a little for a
+  false "decompose" and loses the entire point on a false "single".
+* **Fixing triage is not enough.** With triage corrected the same prompt came
+  back "nothing to decompose" -- `_SPLIT_RE` in `router.agentic.decompose`
+  lacked the comma form too. Both ends needed the fix, and the chain test pins
+  the join.
+
+After:
+
+```
+What is 2+2?
+  -> single -> gpt-4-1106-preview (q~0.57): best predicted quality 0.57 >= 0.55
+Summarise transformers, then implement attention in NumPy and analyse its complexity.
+  -> orchestrated (recursive) -> 2 sub-call(s): prompt looks multi-part
+     (sequence marker ', then' joining 3 task verbs); decompose so each part
+     routes independently
+```
+
+Note what this is *not*: it is not evidence that prompt features predict
+difficulty. It is a structural property of the text -- how many deliverables
+are asked for -- which is why a rule can do it when nothing we tried could
+predict correctness. The heads' value is in the decisions that are structural,
+and the measurements above are the reason to stop looking for it elsewhere.
+
+## kNN vs trained NIRT, in Will's harness (and a correction)
+
+Earlier in this work I wrote that kNN with no training "beats trained NIRT on
+the frontier, +0.023 vs +0.0005". That was measured with our code. Run both
+through his `compare_routers` on the `test` split (7,354 queries x 11 models),
+and the picture is sharper in one direction and wrong in the other.
+
+**Correction: on raw argmax quality, the trained model wins, everywhere.**
+
+| router (lam=0) | quality | cost/1k | regret | oracle hit |
+|---|---|---|---|---|
+| NIRT (trained) | **0.7875** | 5.69 | **0.1274** | **0.820** |
+| kNN k=25 | 0.7728 | 4.05 | 0.1421 | 0.815 |
+| kNN k=10 | 0.7358 | 3.23 | 0.1792 | 0.778 |
+| kNN k=5 | 0.6973 | 2.70 | 0.2177 | 0.741 |
+| hard oracle | 0.9149 | 0.38 | 0.0 | 1.0 |
+| random | 0.5715 | 1.48 | 0.3435 | 0.594 |
+
+NIRT is the better predictor on every column. Training is doing something.
+
+**What survives, and is much larger than reported: the frontier gain.** Quality
+at a cost is not an achievement unless it beats mixing the two endpoint models
+at that same cost. In that column:
+
+| policy | quality | cost/1k | gpt-4 share | vs mixture |
+|---|---|---|---|---|
+| NIRT argmax | 0.7875 | 5.69 | **98.6%** | **+0.004** |
+| always gpt-4 | 0.7883 | 5.75 | 100% | 0.000 |
+| kNN k=5 argmax | 0.6699 | 1.46 | 15.5% | **+0.178** |
+| NIRT + margin=0.1 | 0.7348 | 1.86 | 32.3% | **+0.216** |
+| kNN k=25 + margin=0.1 | 0.7216 | 1.51 | 22.2% | +0.227 |
+| kNN k=25 + margin=0.2 | 0.6544 | 0.52 | 4.8% | +0.228 |
+
+The trained router's argmax buys **+0.004** over free mixing, at 98.6% gpt-4 --
+it is `always gpt-4` with extra steps, and the table says so on the next row.
+The untrained kNN buys +0.178 while sending 15.5% to gpt-4. Not because it
+predicts better -- it predicts *worse* on every metric above -- but because it
+spreads, and spreading is what the mixture line charges for.
+
+**The conclusion is not "use kNN". It is that the selection rule dominates the
+predictor.** Holding the predictor fixed and only changing argmax -> margin=0.1
+moves NIRT from +0.004 to +0.216, a 60x difference. Changing the predictor
+while holding the rule fixed moves things by 0.01-0.05. The better predictor
+plus the better rule (NIRT + margin=0.1: 0.735 quality at 1.86/1k, a **67% cost
+cut for 5.3 quality points**) is the configuration to take forward, and it is
+the trained model that gets there -- but only once it is allowed to not pick
+gpt-4.
+
+One diagnostic worth keeping: for kNN k=5 and k=10 the `margin=0.02` row is
+*identical* to argmax. A k-neighbour mean is quantised to multiples of 1/k, so
+a 0.02 margin falls below the predictor's own resolution and can never change a
+choice. If a margin sweep shows no movement at the low end, check the
+predictor's granularity before concluding the rule does nothing.
+
+## The margin rule on the 2024-25 pool (SPROUT): holds, and for a different reason
+
+RouterBench is a pool where one model dominates, which is the condition that
+makes "always pick the strongest" hard to beat. SPROUT's 13 models are stronger
+and closer together, so the rule needed re-testing there before anything is
+claimed generally. Predictor: kNN (k=16) over frozen MiniLM embeddings,
+train -> test, 4,685 / 1,952 prompts.
+
+| policy | quality | cost/1k | gpt-4o share | vs mixture |
+|---|---|---|---|---|
+| argmax | 0.8503 | 3.31 | 27.1% | +0.070 |
+| margin=0.02 | 0.8473 | 2.41 | 19.8% | +0.103 |
+| **margin=0.05** | **0.8398** | **1.75** | 16.3% | **+0.122** |
+| margin=0.1 | 0.8120 | 0.88 | 7.2% | +0.129 |
+| margin=0.2 | 0.7552 | 0.29 | 1.3% | +0.096 |
+| always gpt-4o | 0.8496 | 5.05 | 100% | 0.000 |
+| oracle (cheapest correct) | 0.9783 | 0.51 | 2.4% | +0.310 |
+
+**The rule holds: margin=0.05 matches gpt-4o's quality to within 1.0 point at
+65% less cost.** Push to margin=0.1 and it is 73% cheaper for 3.8 points.
+
+**But the failure mode it fixes is absent here.** On RouterBench the argmax
+sent 98.6% of traffic to gpt-4 and bought +0.004 over free mixing. On SPROUT
+the same kind of predictor already spreads -- 27.1% to gpt-4o -- and argmax
+alone buys +0.070. The collapse-onto-one-model pathology is a property of a
+pool with a dominant model, not of routing. So:
+
+* the margin rule is worth having on both pools, but
+* the *dramatic* version of the result (60x) is specific to RouterBench, and
+* a router evaluated only on RouterBench will look better than it is, because
+  the baseline it beats there (`always gpt-4`) is unusually strong.
+
+**The prices are not verified, and the conclusion does not depend on them.**
+SPROUT ships token counts but prices nothing, and none of its 13 models were in
+`configs/model_prices.yaml`. The block added for them is recalled public list
+pricing, explicitly marked `UNVERIFIED` in the file, and **must be re-priced
+before any dollar figure here is published**. To separate the rule from the
+guesses, the whole sweep was re-run 20 times with every rate multiplied by a
+random factor in [0.5, 1.5]:
+
+| policy | median vs mixture | min | max | positive |
+|---|---|---|---|---|
+| argmax | +0.081 | +0.005 | +0.198 | 20/20 |
+| margin=0.05 | +0.164 | +0.107 | +0.270 | 20/20 |
+| margin=0.1 | +0.192 | +0.119 | +0.294 | 20/20 |
+| margin=0.2 | +0.181 | +0.090 | +0.271 | 20/20 |
+
+The margin rule beats both free mixing and its own argmax in every price world
+drawn. The ordering is robust; the dollar amounts are not.
+
+## Why `CostModel` is blocked, and which pool unblocks it
+
+`CostModel` (the UML's predicted-cost type, not yet built) needs a per-model
+price and a predicted token count. On the current processed build it cannot be
+fit, and the reason is structural rather than a bug:
+
+```
+rows 802,626   input_tokens  non-null 0        output_tokens non-null 0
+               cost          non-null 802,626  latency       non-null 0
+source: routerbench only
+```
+
+RouterBench ships a precomputed `total_cost` per (model, query) and **no token
+counts at all** -- that is why `configs/model_prices.yaml` says RouterBench "is
+NOT priced here". No amount of work on that source will produce the columns:
+input and output counts are not separable from one blended dollar figure.
+
+**SPROUT has them.** `num_input_tokens` and `num_output_tokens` are on every
+cell, which is what made the cost analysis above possible once a price table
+existed. So the sequence is: price the SPROUT models properly (the block added
+here is unverified), then fit `CostModel` against SPROUT, not RouterBench.
+
+Second thing that table says: the current build is **RouterBench-only**. The
+other sources' raw files are absent, and since `load_all` now raises rather
+than warning, that is visible instead of silent -- but it does mean every
+number computed from the processed tables is one pool.
+
+## Running the test suite: two environment traps
+
+Both cost about an hour each to find, and neither announces itself -- the
+suite simply stops, with no output, forever.
+
+**1. faiss deadlocks unless OpenMP is pinned to one thread.** `pytest tests`
+hangs inside `faiss::IndexFlat::search`. It looks like a slow test: the process
+is alive, RSS ~5 GB, and there is no error. It is not slow -- accumulated CPU
+time stops advancing entirely while elapsed time climbs, which is the tell.
+Run the suite as:
+
+```bash
+OMP_NUM_THREADS=1 PYTHONPATH=src pytest tests -q
+```
+
+To diagnose the next one of these: `ps -o pid,time,etime -p <pid>` twice a few
+seconds apart. If `TIME` is frozen and `ELAPSED` is growing, it is blocked, not
+working, and `sample <pid> 3` names the call it is blocked in.
+
+**2. A dead HuggingFace download hangs the process rather than failing it.** A
+separate hang traced to a half-finished `multilingual-e5-large-instruct`
+download: the HTTPS socket was in `CLOSE_WAIT` and the main thread was parked
+on the cache lock, which is never released. `HF_HUB_OFFLINE=1` turns that into
+an immediate error. Everything the suite needs is already cached, so the
+offline flag is the right default for a local run.
+
+Neither is caused by anything in this work; both are worth putting in the
+README, because "the tests hang" is otherwise an unfalsifiable bug report.
