@@ -44,9 +44,21 @@ PRED = TRUE.copy()
 class TestSelectionRule:
     def test_a_zero_margin_is_argmax(self):
         """The knob has to contain the incumbent policy or the comparison in
-        `margin_sweep` is not a like-for-like one."""
-        picks = margin_selection(PRED, COST, margin=0.0)
-        assert picks.tolist() == [0, 0, 0, 2]   # q3: all tie at 1.0, cheapest wins
+        `margin_sweep` is not a like-for-like one.
+
+        q3 ties at 1.0 across all three models and still goes to column 0, not
+        to the cheapest: plain `argmax` breaks ties by column order. This once
+        read `[0, 0, 0, 2]`, from a private copy of the rule that took the
+        tie-break saving for free and so understated what the baseline costs.
+        """
+        assert margin_selection(PRED, COST, margin=0.0).tolist() == [0, 0, 0, 0]
+
+    def test_a_zero_margin_is_the_served_rule_itself(self):
+        """Not merely equal to argmax -- the same function the router calls."""
+        from router.nirt.routing_decision import routing_decision
+
+        assert margin_selection(PRED, COST, margin=0.0).tolist() == \
+            routing_decision(PRED, model_costs=COST.mean(axis=0)).tolist()
 
     def test_a_margin_takes_the_cheapest_within_it(self):
         picks = margin_selection(PRED, COST, margin=0.1)

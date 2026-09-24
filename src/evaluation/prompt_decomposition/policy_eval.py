@@ -31,16 +31,22 @@ def margin_selection(pred: np.ndarray, cost: np.ndarray, *, margin: float,
                      lam: float = 0.0) -> np.ndarray:
     """Cheapest candidate whose utility is within ``margin`` of the best.
 
-    The same rule as :class:`router.policy.MarginRoutingPolicy`, expressed over
-    matrices so a whole split can be scored at once. ``margin=0`` reduces to
-    argmax, which is what makes the comparison a like-for-like one.
+    Delegates to :func:`router.nirt.routing_decision.routing_decision` -- the
+    rule the *served* router applies -- rather than reimplementing it. It used
+    to have its own copy, and the copy had drifted: it broke ties on cost even
+    at ``margin=0``, so the sweep's "argmax (incumbent)" control row was not
+    actually the incumbent. It quietly collected the tie-breaking savings and
+    flattered the baseline, which matters most on a predictor whose scores are
+    quantised (a k-neighbour mean ties constantly).
+
+    ``cost`` is the ``[Q, M]`` per-cell cost matrix these evaluations carry,
+    while the served rule takes a per-model vector; the column means are used,
+    which is the same ``C(m)`` the router itself routes on.
     """
-    utility = pred - lam * cost
-    best = utility.max(axis=1, keepdims=True)
-    within = utility >= best - margin
-    # ties on cost keep the higher-utility model: order by (cost, -utility)
-    order = np.lexsort((-utility, np.where(within, cost, np.inf)), axis=1)
-    return order[:, 0]
+    from router.nirt.routing_decision import routing_decision
+
+    model_costs = np.nanmean(np.asarray(cost, np.float64), axis=0)
+    return routing_decision(pred, lam=lam, model_costs=model_costs, margin=margin)
 
 
 def score_selection(picks: np.ndarray, true: np.ndarray, cost: np.ndarray | None,

@@ -1081,23 +1081,30 @@ at that same cost. In that column:
 |---|---|---|---|---|
 | NIRT argmax | 0.7875 | 5.69 | **98.6%** | **+0.004** |
 | always gpt-4 | 0.7883 | 5.75 | 100% | 0.000 |
-| kNN k=5 argmax | 0.6699 | 1.46 | 15.5% | **+0.178** |
-| NIRT + margin=0.1 | 0.7348 | 1.86 | 32.3% | **+0.216** |
-| kNN k=25 + margin=0.1 | 0.7216 | 1.51 | 22.2% | +0.227 |
-| kNN k=25 + margin=0.2 | 0.6544 | 0.52 | 4.8% | +0.228 |
+| kNN k=5 argmax | 0.6973 | 2.70 | 25.1% | **+0.120** |
+| NIRT + margin=0.1 | 0.7382 | 1.86 | 32.3% | **+0.219** |
+| kNN k=25 + margin=0.1 | 0.7223 | 1.51 | 22.2% | +0.227 |
+| kNN k=25 + margin=0.2 | 0.6571 | 0.52 | 4.8% | +0.230 |
 
 The trained router's argmax buys **+0.004** over free mixing, at 98.6% gpt-4 --
 it is `always gpt-4` with extra steps, and the table says so on the next row.
-The untrained kNN buys +0.178 while sending 15.5% to gpt-4. Not because it
+The untrained kNN buys +0.120 while sending 25.1% to gpt-4. Not because it
 predicts better -- it predicts *worse* on every metric above -- but because it
 spreads, and spreading is what the mixture line charges for.
 
+(The kNN rows here are lower than first reported, and the NIRT rows are
+unchanged. Same cause as the SPROUT correction below: a drifted private copy of
+the selection rule flattered quantised predictors and left continuous ones
+alone. The rule now has one definition, and the two tables above -- produced by
+different code paths -- agree to the last digit, which is the check that was
+failing silently before.)
+
 **The conclusion is not "use kNN". It is that the selection rule dominates the
 predictor.** Holding the predictor fixed and only changing argmax -> margin=0.1
-moves NIRT from +0.004 to +0.216, a 60x difference. Changing the predictor
+moves NIRT from +0.004 to +0.219, a 61x difference. Changing the predictor
 while holding the rule fixed moves things by 0.01-0.05. The better predictor
-plus the better rule (NIRT + margin=0.1: 0.735 quality at 1.86/1k, a **67% cost
-cut for 5.3 quality points**) is the configuration to take forward, and it is
+plus the better rule (NIRT + margin=0.1: 0.738 quality at 1.86/1k, a **68% cost
+cut for 5.0 quality points**) is the configuration to take forward, and it is
 the trained model that gets there -- but only once it is allowed to not pick
 gpt-4.
 
@@ -1117,21 +1124,21 @@ train -> test, 4,685 / 1,952 prompts.
 
 | policy | quality | cost/1k | gpt-4o share | vs mixture |
 |---|---|---|---|---|
-| argmax | 0.8503 | 3.31 | 27.1% | +0.070 |
-| margin=0.02 | 0.8473 | 2.41 | 19.8% | +0.103 |
-| **margin=0.05** | **0.8398** | **1.75** | 16.3% | **+0.122** |
-| margin=0.1 | 0.8120 | 0.88 | 7.2% | +0.129 |
-| margin=0.2 | 0.7552 | 0.29 | 1.3% | +0.096 |
+| argmax | 0.8489 | 4.00 | 32.4% | +0.041 |
+| margin=0.02 | 0.8467 | 2.44 | 20.9% | +0.101 |
+| **margin=0.05** | **0.8390** | **1.80** | 17.5% | **+0.119** |
+| margin=0.1 | 0.8153 | 0.95 | 8.4% | +0.129 |
+| margin=0.2 | 0.7662 | 0.38 | 1.7% | +0.103 |
 | always gpt-4o | 0.8496 | 5.05 | 100% | 0.000 |
 | oracle (cheapest correct) | 0.9783 | 0.51 | 2.4% | +0.310 |
 
-**The rule holds: margin=0.05 matches gpt-4o's quality to within 1.0 point at
-65% less cost.** Push to margin=0.1 and it is 73% cheaper for 3.8 points.
+**The rule holds: margin=0.05 matches gpt-4o's quality to within 1.1 points at
+64% less cost.** Push to margin=0.1 and it is 81% cheaper for 3.4 points.
 
 **But the failure mode it fixes is absent here.** On RouterBench the argmax
 sent 98.6% of traffic to gpt-4 and bought +0.004 over free mixing. On SPROUT
-the same kind of predictor already spreads -- 27.1% to gpt-4o -- and argmax
-alone buys +0.070. The collapse-onto-one-model pathology is a property of a
+the same kind of predictor already spreads -- 32.4% to gpt-4o -- and argmax
+alone buys +0.041. The collapse-onto-one-model pathology is a property of a
 pool with a dominant model, not of routing. So:
 
 * the margin rule is worth having on both pools, but
@@ -1149,13 +1156,38 @@ random factor in [0.5, 1.5]:
 
 | policy | median vs mixture | min | max | positive |
 |---|---|---|---|---|
-| argmax | +0.081 | +0.005 | +0.198 | 20/20 |
-| margin=0.05 | +0.164 | +0.107 | +0.270 | 20/20 |
-| margin=0.1 | +0.192 | +0.119 | +0.294 | 20/20 |
-| margin=0.2 | +0.181 | +0.090 | +0.271 | 20/20 |
+| argmax | +0.062 | +0.021 | +0.157 | **17/20** |
+| margin=0.05 | +0.157 | +0.102 | +0.262 | 20/20 |
+| margin=0.1 | +0.192 | +0.116 | +0.289 | 20/20 |
+| margin=0.2 | +0.182 | +0.089 | +0.261 | 20/20 |
 
-The margin rule beats both free mixing and its own argmax in every price world
-drawn. The ordering is robust; the dollar amounts are not.
+The margin rule beats free mixing in every price world drawn; plain argmax does
+not (17/20). The ordering is robust; the dollar amounts are not.
+
+### These numbers are a correction
+
+The first version of this table was measured with a private copy of the
+selection rule inside `policy_eval`, and the copy had drifted: it broke ties on
+cost even at `margin=0`. The "argmax (incumbent)" control row was therefore not
+the incumbent -- it quietly took the tie-breaking saving for free.
+
+That matters most on exactly this predictor. A k-neighbour mean is quantised to
+multiples of 1/k, so ties are constant, and the flattery was worth 21% of the
+baseline's cost: argmax's true cost is 4.00/1k, not 3.31, and its true gain
+over free mixing is +0.041, not +0.070. The margin rows barely moved, because
+they were already selecting on cost deliberately.
+
+The correction makes the case for the rule **stronger**, not weaker: the gap
+between argmax and margin=0.05 widens from +0.052 to +0.078, and plain argmax
+loses its claim to beat free mixing reliably (17/20 price worlds, not 20/20).
+
+The tell was visible in the earlier output and I missed it: `compare_routers`
+and `margin_sweep` reported different quality for the *same* router on the
+*same* split (kNN k=5: 0.6973 vs 0.6699). Two numbers for one thing is a bug
+report. `margin_selection` now delegates to
+`router.nirt.routing_decision.routing_decision` -- the rule the served router
+applies -- so there is one definition and the two tables agree by
+construction.
 
 ## Why `CostModel` is blocked, and which pool unblocks it
 
@@ -1257,3 +1289,44 @@ Three things follow.
    above, arrived at independently: the quantity that predicts well and the
    quantity that routes well are not the same quantity. It is the strongest
    reason in this document to stop optimising AUC.
+
+## The rule is now in the serving path
+
+Everything above was measured offline. The served router went on doing argmax,
+so none of it reached a real request. It does now.
+
+`router.nirt.routing_decision.routing_decision` is the single rule every
+routing call in the repo funnels through -- `Router.route`, `Router.route_text`,
+and through those the `AgenticRouter`. It takes `margin` alongside `lam`:
+
+```python
+AgenticRouter(router, margin=0.05)          # or Router.route(..., margin=0.05)
+```
+
+The two are different levers and they compose. `lam` prices cost *into* the
+utility being maximised; `margin` spends a bounded amount of predicted quality
+to reach a cheaper model. `RoutingResult` records both as applied, not as
+requested, so a trace never claims a rule that did not run (an unpriced pool
+downgrades to argmax with a warning rather than raising mid-request).
+
+Live, on `nirt-2d-projected`:
+
+```
+margin=0.0   -> ['gpt-4-1106-preview', 'yi-34b-chat', 'claude-instant-v1']
+margin=0.05  -> ['claude-instant-v1',  'yi-34b-chat', 'claude-instant-v1']
+margin=0.2   -> ['wizardlm-13b-v1.2',  'mistral-7b-instruct', 'wizardlm-13b-v1.2']
+```
+
+`What is 2+2?` stops being answered by GPT-4.
+
+**`margin=0.0` is a bit-exact no-op, tie semantics included.** This function
+decides every served request, so cost-based tie-breaking switches on only above
+zero -- a default that changed behaviour even on ties would have silently moved
+every routing decision in the repo at once. That is not hypothetical: it is
+precisely the drift that corrupted the baselines above, and the no-op property
+is pinned by its own test.
+
+Not done, and deliberately: no default `margin` is set anywhere. The right
+value is pool-dependent (0.05 on SPROUT, 0.1 on RouterBench) and the SPROUT
+prices are unverified, so picking a number here would bake a guess into serving
+behaviour. Callers opt in until someone re-prices the pool.

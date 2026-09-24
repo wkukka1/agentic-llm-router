@@ -220,10 +220,24 @@ not hard-code these; pass `--config path/to.yaml` to any script.
 ## Tests
 
 ```bash
-pytest -q
+OMP_NUM_THREADS=1 HF_HUB_OFFLINE=1 pytest -q
 ```
 
-417 tests across `tests/router/{agentic,embeddings,nirt,routing}`,
+**Both environment variables matter, and without them the suite hangs rather
+than fails** — no output, no error, just a process that never returns:
+
+* `OMP_NUM_THREADS=1` — faiss deadlocks inside `IndexFlat::search` when its
+  OpenMP pool contends with the other native libraries here. The run looks
+  merely slow. To tell the difference, check the process twice a few seconds
+  apart with `ps -o pid,time,etime -p <pid>`: if `TIME` is frozen while
+  `ELAPSED` grows, it is blocked, not working, and `sample <pid> 3` names the
+  call it is stuck in. With the pin the full suite takes ~3.5 minutes.
+* `HF_HUB_OFFLINE=1` — a half-finished model download leaves a lock in
+  `~/.cache/huggingface` that is never released, and the next run parks on it
+  forever with its HTTPS socket in `CLOSE_WAIT`. Offline turns that into an
+  immediate, readable error. Everything the suite needs is already cached.
+
+891 tests across `tests/router/{agentic,embeddings,nirt,routing}`,
 `tests/training/{data,models,nirt,retrieval,taxonomy}`,
 `tests/evaluation/{data,judge,nirt,pool_expansion,routing}`,
 `tests/decompose/`. Shared builders (config fixtures, FAISS bank, synthetic

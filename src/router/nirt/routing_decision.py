@@ -1,9 +1,14 @@
-"""The routing policy itself -- pure argmax, no ground truth involved.
+"""The routing policy itself -- argmax by default, no ground truth involved.
 
 Split out of ``evaluation.routing.oracle`` (which owns everything
 oracle/regret-related, all needing observed outcomes) so serving code --
 :mod:`router.routing.base` -- can make a decision without importing
 ``evaluation``.
+
+Every routing call in the repo selects here, so this module's default
+behaviour *is* the router's behaviour. :func:`routing_decision` grew a
+``margin`` for the cheapest-within-tolerance rule; it is off unless a caller
+asks, and ``margin=0`` is argmax down to the tie semantics.
 """
 
 from __future__ import annotations
@@ -51,6 +56,7 @@ def routing_decision(
     lam: float = 0.0,
     model_costs: Optional[np.ndarray] = None,
     eligible: Optional[np.ndarray] = None,
+    margin: float = 0.0,
 ) -> np.ndarray:
     """Per-query model index for ``argmax_m [pred - lam * C(m)]``.
 
@@ -59,12 +65,48 @@ def routing_decision(
     router's live decision rule; it is deliberately independent of
     ``evaluation.routing.oracle``'s tie-*inclusive* oracle labels, which grade the
     router against ground truth and must never feed back into it.
+
+    ``margin > 0`` switches from argmax to **the cheapest model whose utility is
+    within ``margin`` of the best**. The two rules differ far more than the
+    parameter suggests: measured on RouterBench, argmax sends 98.6% of queries
+    to gpt-4 and gains +0.004 quality over randomly mixing the cheapest and
+    strongest models at the same spend -- i.e. almost exactly what having no
+    router at all would get -- while ``margin=0.1`` gains +0.219 and cuts cost
+    68% for 5.0 quality points. ``lam`` and ``margin`` are different levers:
+    ``lam`` prices cost into the utility being maximised, ``margin`` spends a
+    bounded amount of predicted quality to buy a cheaper model. They compose.
+
+    ``margin=0.0`` is exactly the old argmax, tie semantics included, so it is a
+    strict no-op default; cost-based tie-breaking only switches on above zero.
+    A positive ``margin`` needs ``model_costs`` -- with no prices there is no
+    "cheapest" to pick.
     """
     util = cost_aware_utility(pred, lam=lam, model_costs=model_costs, eligible=eligible)
     rows_all_bad = no_selectable_rows(util)
     if rows_all_bad.any():   # nothing eligible -> fall back to column 0, flagged by caller
         util[rows_all_bad, 0] = -1e18
-    return util.argmax(axis=1)
+    if not margin:
+        return util.argmax(axis=1)
+    if margin < 0:
+        raise ValueError(f"margin must be >= 0, got {margin}")
+    if model_costs is None:
+        raise ValueError(
+            "routing_decision: margin > 0 needs model_costs -- the rule picks the "
+            "cheapest candidate within the margin, and without prices there is no "
+            "cheapest. Pass model_costs, or use margin=0 for plain argmax."
+        )
+    costs = np.asarray(model_costs, np.float64)
+    # a model with no usable price can still be selected, but never *because* it
+    # looked cheap: treat it as the dearest rather than letting NaN win a sort
+    costs = np.where(np.isfinite(costs), costs, np.inf)
+    within = util >= util.max(axis=1, keepdims=True) - margin
+    # -inf cells are never `within` (their utility is not finite), so masked and
+    # ineligible candidates stay unselectable exactly as under argmax
+    effective = np.where(within, costs[None, :], np.inf)
+    columns = np.broadcast_to(np.arange(util.shape[1]), util.shape)
+    # primary key last: cheapest, then highest utility, then lowest column index
+    # -- so a cost tie falls back to argmax's own answer rather than to chance
+    return np.lexsort((columns, -util, effective), axis=1)[:, 0]
 
 
 def no_selectable_rows(util: np.ndarray) -> np.ndarray:

@@ -76,7 +76,11 @@ class RoutingResult:
     an all-False ``eligible`` row). Their ``selected`` is column 0 by
     convention; it is *not* a real choice and may even be an ineligible model,
     so callers must check this before dispatching. ``lam`` is the cost weight
-    actually applied (``0`` when no cost vector resolved).
+    actually applied (``0`` when no cost vector resolved), and ``margin`` the
+    quality the selection was allowed to give up to reach a cheaper model
+    (``0`` = plain argmax, and likewise ``0`` when no cost vector resolved).
+    Both record what was *applied*, not what was asked for, so a result can be
+    read back without knowing how it was called.
     """
 
     query_ids: list[str]
@@ -86,6 +90,7 @@ class RoutingResult:
     lam: float = 0.0
     model_costs: Optional[np.ndarray] = None
     fallback: Optional[np.ndarray] = None
+    margin: float = 0.0
 
     @property
     def any_fallback(self) -> bool:
@@ -276,6 +281,7 @@ class Router(abc.ABC):
         lam: float,
         model_costs,
         eligible,
+        margin: float = 0.0,
     ) -> RoutingResult:
         scores = scores.reindex(columns=self._model_ids).astype(np.float64)
         costs = (
@@ -298,7 +304,15 @@ class Router(abc.ABC):
             elig = np.where(pd.isna(arr), False, arr).astype(bool)
 
         mat = scores.to_numpy(np.float64)
-        selected = routing_decision(mat, lam=lam, model_costs=costs, eligible=elig)
+        if margin and costs is None:
+            warnings.warn(
+                f"{self.name}: margin={margin} requested but no model cost vector "
+                "resolved; selecting on quality only (RoutingResult.margin records 0.0)",
+                stacklevel=3,
+            )
+            margin = 0.0
+        selected = routing_decision(mat, lam=lam, model_costs=costs, eligible=elig,
+                                    margin=margin)
         util = np.where(np.isfinite(mat), 0.0, -np.inf)
         if elig is not None:
             util = np.where(np.asarray(elig, bool), util, -np.inf)
@@ -310,6 +324,7 @@ class Router(abc.ABC):
             lam=float(lam),
             model_costs=costs,
             fallback=no_selectable_rows(util),
+            margin=float(margin),
         )
 
     def route(
@@ -319,6 +334,7 @@ class Router(abc.ABC):
         lam: float = 0.0,
         model_costs: Optional[Sequence[float] | Mapping[str, float] | np.ndarray] = None,
         eligible: Optional[pd.DataFrame | np.ndarray] = None,
+        margin: float = 0.0,
     ) -> RoutingResult:
         """Pick one model per query.
 
@@ -329,7 +345,7 @@ class Router(abc.ABC):
         """
         return self._route_from_scores(
             self.aligned_scores(query_ids),
-            lam=lam, model_costs=model_costs, eligible=eligible,
+            lam=lam, model_costs=model_costs, eligible=eligible, margin=margin,
         )
 
     __call__ = route
@@ -342,6 +358,7 @@ class Router(abc.ABC):
         lam: float = 0.0,
         model_costs: Optional[Sequence[float] | Mapping[str, float] | np.ndarray] = None,
         eligible: Optional[pd.DataFrame | np.ndarray] = None,
+        margin: float = 0.0,
     ) -> RoutingResult:
         """:meth:`route`, but from raw prompt text (via :meth:`predict_scores_text`).
 
@@ -352,7 +369,7 @@ class Router(abc.ABC):
         scores = scores.copy()
         scores.index = [str(i) for i in range(len(scores))]
         return self._route_from_scores(
-            scores, lam=lam, model_costs=model_costs, eligible=eligible,
+            scores, lam=lam, model_costs=model_costs, eligible=eligible, margin=margin,
         )
 
     # Oracle-relative evaluation needs ground truth and lives in
