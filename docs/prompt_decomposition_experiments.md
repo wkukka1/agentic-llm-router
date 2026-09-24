@@ -1212,3 +1212,48 @@ offline flag is the right default for a local run.
 
 Neither is caused by anything in this work; both are worth putting in the
 README, because "the tests hang" is otherwise an unfalsifiable bug report.
+
+## Cosine agreement: the encoder-sensitivity check, finished
+
+Will's two objections to the agreement signal were (1) that exact-match
+disagreement cannot work on tasks with no single right answer, and (2) that
+cosine similarity "really depends on your encoder". The first is why the signal
+is cosine rather than exact match. This is the second, answered: the same
+sweep, three encoders, both slices of RouterBench, threshold re-tuned per
+encoder.
+
+**Free-form** (n=9,676) -- the slice the objection was about:
+
+| encoder | AUC | best tau | quality | cost/1k | kept cheap | vs mixture |
+|---|---|---|---|---|---|---|
+| bge-small-en-v1.5 | 0.727 | 0.88 | 0.5872 | $2.71 | 71% | **+0.0400** |
+| all-MiniLM-L6-v2 | 0.727 | 0.77 | 0.5848 | $2.65 | 73% | **+0.0389** |
+| e5-large-v2 | 0.746 | 0.91 | 0.5850 | $2.72 | 72% | **+0.0376** |
+
+**Multiple-choice** (n=26,821):
+
+| encoder | AUC | best tau | quality | cost/1k | kept cheap | vs mixture |
+|---|---|---|---|---|---|---|
+| bge-small-en-v1.5 | 0.703 | 0.97 | 0.8161 | $1.15 | 48% | +0.0270 |
+| all-MiniLM-L6-v2 | 0.689 | 0.91 | 0.8159 | $1.15 | 48% | +0.0269 |
+| e5-large-v2 | 0.688 | 0.96 | 0.8160 | $1.15 | 48% | +0.0269 |
+
+Three things follow.
+
+1. **The gain does not depend on the encoder.** +0.038 to +0.040 on free-form
+   and +0.027 on multiple-choice, across a 384-d small model and a 1024-d large
+   one. What *does* depend on the encoder is the threshold -- 0.77 to 0.91 for
+   the same behaviour -- so tau has to be tuned per encoder and is not a
+   constant to hard-code. That is exactly the sensitivity Will named, and it
+   lives in the threshold rather than in the result.
+2. **The free-form slice is the better one, not the worse one.** +0.040 vs
+   +0.027. The worry was that agreement would collapse where there is no single
+   right answer; measured, it does the opposite. Multiple-choice is where the
+   signal is *weakest*, because a 4-way question makes two models agree by
+   chance far too often.
+3. **Better ranking is not better routing, again.** e5-large has the best
+   free-form AUC by a clear margin (0.746 vs 0.727) and the *worst* frontier
+   gain of the three. This is the same dissociation as the NIRT-vs-kNN result
+   above, arrived at independently: the quantity that predicts well and the
+   quantity that routes well are not the same quantity. It is the strongest
+   reason in this document to stop optimising AUC.
