@@ -40,6 +40,11 @@ _SPLIT_RE = re.compile(
     rf"|{_NO_SPLIT_BEFORE}[?.]\s+(?-i:(?=[A-Z]))"   # sentence boundary before a capital
     r"|\band then\b|\bafter that\b|\bthen,\b|\bfollowed by\b|\bas well as\b"
     r"|;\s+then\b"
+    # ", then" -- the comma form. Present in neither this list nor the triage
+    # marker list, so "Summarise X, then implement Y, then analyse Z" was
+    # triaged as one task and, once triage was fixed, still came back as one
+    # part with "nothing to decompose".
+    r"|,\s*then\b"
     r")\s*",
     re.IGNORECASE,
 )

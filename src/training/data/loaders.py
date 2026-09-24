@@ -670,13 +670,33 @@ LOADERS = {
 
 
 def load_all(cfg: Config, sources: Optional[Iterable[str]] = None) -> pd.DataFrame:
-    sources = list(sources) if sources else list(LOADERS)
-    frames = []
-    for s in sources:
+    """Load every requested source and concatenate.
+
+    A missing file is skipped with a warning only when the caller took the
+    default set: most installs have one or two of the five sources on disk, and
+    failing on the others would make the default unusable. When the caller
+    *named* the sources, a missing file is an error -- they asked for that one.
+
+    Loading nothing at all always raises. It used to return an empty frame,
+    which `build_response_matrix.py` wrote out as `responses (0 rows)` and then
+    passed through its own quality checks with "No issues detected": a build
+    that found no data reported success.
+    """
+    explicit = sources is not None
+    requested = list(sources) if sources else list(LOADERS)
+    frames, skipped = [], {}
+    for s in requested:
         try:
             frames.append(LOADERS[s](cfg))
         except FileNotFoundError as exc:
+            if explicit:
+                raise
+            skipped[s] = str(exc)
             warnings.warn(f"skipping source '{s}': {exc}")
     if not frames:
-        return schemas.coerce_response_frame(schemas.empty_response_frame())
+        detail = "; ".join(f"{k}: {v}" for k, v in skipped.items()) or "no loaders ran"
+        raise FileNotFoundError(
+            f"no sources loaded from {requested} -- refusing to build an empty "
+            f"response matrix. {detail}"
+        )
     return pd.concat(frames, ignore_index=True)

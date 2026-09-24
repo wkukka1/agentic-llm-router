@@ -59,19 +59,45 @@ def _fmt_q(q: float) -> str:
 class HeuristicTriage:
     """Router-quality threshold + a lexical multi-part check. No LLM."""
 
-    def __init__(self, *, quality_threshold: float = 0.55, max_chars_single: int = 600):
+    def __init__(self, *, quality_threshold: float = 0.55, max_chars_single: int = 600,
+                 structure=None):
+        """``structure`` is an optional
+        :class:`decompose.classifiers.base.Classifier` that emits a
+        ``multi_part`` signal -- when given, it replaces the literal marker
+        list below.
+
+        The markers are a hand-written list, and a hand-written list is always
+        one phrasing short: it has ``" and then "`` and ``"; then"`` but not
+        ``", then"``, so *"Summarise transformers, then implement attention in
+        NumPy and analyse its complexity"* -- three deliverables -- triaged as a
+        single shot. `StructureClassifier` decides the same question from
+        counted evidence (task verbs joined by a sequence marker, enumerated
+        items, questions, length) instead of a phrase list.
+        """
         self.quality_threshold = float(quality_threshold)
         self.max_chars_single = int(max_chars_single)
+        self.structure = structure
 
-    def __call__(self, prompt: str, *, model_id: str, predicted_quality: float,
-                 scores: Optional[dict] = None) -> TriageDecision:
+    def _multipart(self, prompt: str) -> tuple[bool, str]:
+        """Is this compound, and why. Signal first, marker list as fallback."""
+        if self.structure is not None:
+            from decompose.classifiers.base import ClassificationInput
+
+            for signal in self.structure.classify(ClassificationInput(prompt=prompt)):
+                if signal.name == "multi_part":
+                    reasons = (signal.metadata or {}).get("reasons") or []
+                    return bool(signal.value), "; ".join(reasons)
         low = prompt.lower()
-        multipart = (
+        return (
             prompt.count("?") >= 3
             or len(prompt) > self.max_chars_single
             or any(m in low for m in _MULTIPART_MARKERS)
             or len(_ENUMERATION_RE.findall(prompt)) >= 2
-        )
+        ), "lexical markers"
+
+    def __call__(self, prompt: str, *, model_id: str, predicted_quality: float,
+                 scores: Optional[dict] = None) -> TriageDecision:
+        multipart, why = self._multipart(prompt)
         q = float(predicted_quality)
         known = math.isfinite(q)
         # an unscorable prompt (NaN) is not evidence of a strong model
@@ -82,7 +108,8 @@ class HeuristicTriage:
                       f"{_fmt_q(q)} < {self.quality_threshold:.2f}")
             mode = "orchestrate"
         elif multipart:
-            reason = "prompt looks multi-part (decompose so each part routes independently)"
+            reason = (f"prompt looks multi-part ({why}); decompose so each part "
+                      f"routes independently")
             mode = "orchestrate"
         elif not known:
             reason = f"no usable router score for this prompt (best candidate {model_id}); decompose"

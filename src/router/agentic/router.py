@@ -33,11 +33,13 @@ recursion tree (``max_depth`` alone bounds depth, not fan-out).
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from collections.abc import Callable
+
+from decompose.classifiers.prompt_heads import StructureClassifier
 
 from ..routing.base import Router, RoutingResult
-from .llm_clients import ClientRegistry, LLMClient
 from .decompose import NaiveDecomposer, concat_synthesizer
+from .llm_clients import ClientRegistry, LLMClient
 from .orchestrator import RecursiveOrchestrator
 from .result import AgenticResult, SubCall
 from .triage import HeuristicTriage, TriageDecision, best_from_result
@@ -53,23 +55,25 @@ class AgenticRouter:
     def __init__(
         self,
         router: Router,
-        clients: Optional[ClientRegistry | dict[str, LLMClient]] = None,
+        clients: ClientRegistry | dict[str, LLMClient] | None = None,
         *,
-        triage: Optional[Triage] = None,
+        triage: Triage | None = None,
         orchestrator: object = None,
-        decomposer: Optional[Decomposer] = None,
-        synthesizer: Optional[Synthesizer] = None,
+        decomposer: Decomposer | None = None,
+        synthesizer: Synthesizer | None = None,
         encoder: object = None,
         lam: float = 0.0,
         max_depth: int = 2,
-        max_calls: Optional[int] = None,
-        query_resolver: Optional[Callable[[str], str]] = None,
+        max_calls: int | None = None,
+        query_resolver: Callable[[str], str] | None = None,
     ):
         self.router = router
         if not isinstance(clients, ClientRegistry):
             clients = ClientRegistry(clients or None)
         self.clients = clients
-        self.triage = triage or HeuristicTriage()
+        # Default triage reads the structure signal rather than a phrase list:
+        # the list missed ", then" and answered a three-part request in one shot.
+        self.triage = triage or HeuristicTriage(structure=StructureClassifier())
         self.orchestrator = orchestrator or RecursiveOrchestrator()
         self.decomposer = decomposer or NaiveDecomposer()
         self.synthesizer = synthesizer or concat_synthesizer
@@ -148,7 +152,7 @@ class AgenticRouter:
         )
 
     # -- recursion unit ------------------------------------------------
-    def _solve(self, prompt: str, depth: int, *, decision: Optional[TriageDecision] = None) -> SubCall:
+    def _solve(self, prompt: str, depth: int, *, decision: TriageDecision | None = None) -> SubCall:
         """Solve one (sub-)prompt: a leaf ``SubCall`` (single) or a branch whose
         ``children`` are the orchestrator's sub-calls."""
         if decision is None:
@@ -183,7 +187,7 @@ class AgenticRouter:
 
     def _answer_directly(
         self, prompt: str, depth: int, *,
-        model_id: Optional[str] = None, predicted_quality: float = float("nan"),
+        model_id: str | None = None, predicted_quality: float = float("nan"),
     ) -> SubCall:
         """Route ``prompt`` (if the model was not already chosen) and invoke it."""
         if model_id is None:
@@ -222,7 +226,7 @@ class AgenticRouter:
     # ------------------------------------------------------------------ #
     # convenience                                                        #
     # ------------------------------------------------------------------ #
-    def with_langchain_orchestrator(self, llm, **kw) -> "AgenticRouter":
+    def with_langchain_orchestrator(self, llm, **kw) -> AgenticRouter:
         """Return a copy that decomposes via a LangChain tool-calling agent."""
         from .orchestrator import LangChainToolOrchestrator
 
@@ -230,7 +234,7 @@ class AgenticRouter:
         clone.orchestrator = LangChainToolOrchestrator(llm, **kw)
         return clone
 
-    def _shallow_copy(self) -> "AgenticRouter":
+    def _shallow_copy(self) -> AgenticRouter:
         c = AgenticRouter.__new__(AgenticRouter)
         c.__dict__.update(self.__dict__)
         c._decisions, c._calls = {}, 0
