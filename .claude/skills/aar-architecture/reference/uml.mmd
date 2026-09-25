@@ -71,6 +71,7 @@ classDiagram
         +float maxCost
         +float maxLatency
         +float minQuality
+        +float qualityMargin
         +List~String~ requiredCapabilities
         +OptimizationObjective objective
     }
@@ -86,6 +87,8 @@ classDiagram
     }
 
     note for OptimizationObjective "The only definition of utility. lambda = costWeight. Offline code imports this class and never reimplements it."
+
+    note for RoutingConstraints "qualityMargin is the caller's quality budget: how much predicted quality this request gives up to reach a cheaper model. Relative twin of minQuality, and adaptive per prompt. The selection rule itself is routing_decision(margin=...)."
 
     RoutingRequest --> RoutingConstraints
     RoutingRequest --> RoutingMode

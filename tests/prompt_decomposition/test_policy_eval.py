@@ -19,6 +19,7 @@ import pytest
 
 from evaluation.prompt_decomposition.policy_eval import (
     frontier_gain,
+    margin_for_target_saving,
     margin_selection,
     margin_sweep,
     score_selection,
@@ -197,3 +198,45 @@ def test_an_endpoint_on_the_boundary_is_not_lost_to_float_noise():
                            "cost_per_1k": [1.0 + 1e-13]})
     out = frontier_gain(nudged, "cheap", "strong", per_model)
     assert out.loc[0, "vs_mixture"] == pytest.approx(0.0, abs=1e-9)
+
+
+class TestMarginForTargetSaving:
+    """Turning "spend 50% less" into a margin, against measured data.
+
+    The reason this exists rather than a hard-coded preset: the same margin
+    buys different savings on different pools (0.1 cut cost 68% on RouterBench,
+    81% on SPROUT), so a preset is correct only on the pool it was read off.
+    """
+
+    @pytest.fixture
+    def table(self):
+        return margin_sweep(PRED, TRUE, COST, MODELS, margins=(0.0, 0.05, 0.2))
+
+    def test_it_returns_the_smallest_margin_that_clears_the_target(self, table):
+        """Margin is quality given up, so the cheapest way to hit a target is
+        the one to report."""
+        loose = margin_for_target_saving(table, 0.10)
+        tight = margin_for_target_saving(table, 0.90)
+        assert loose["margin"] <= tight["margin"]
+
+    def test_it_reports_what_the_target_costs_in_quality(self, table):
+        hit = margin_for_target_saving(table, 0.50)
+        assert hit["saving"] >= 0.50
+        assert hit["quality_given_up"] >= 0.0
+        assert hit["baseline_policy"].startswith("always ")
+
+    def test_a_zero_target_is_met_by_doing_nothing(self, table):
+        assert margin_for_target_saving(table, 0.0)["margin"] == 0.0
+
+    def test_an_unreachable_target_raises_and_says_what_was_possible(self, table):
+        with pytest.raises(ValueError, match="no margin in this sweep saves 99%"):
+            margin_for_target_saving(table, 0.99)
+
+    def test_a_nonsense_target_is_refused(self, table):
+        with pytest.raises(ValueError, match="target_saving must be in"):
+            margin_for_target_saving(table, 1.5)
+
+    def test_a_table_with_no_fixed_row_is_refused(self):
+        bare = pd.DataFrame({"policy": ["margin=0.05"], "quality": [0.9], "cost_per_1k": [1.0]})
+        with pytest.raises(ValueError, match="no 'always <model>' row"):
+            margin_for_target_saving(bare, 0.5)

@@ -2,8 +2,8 @@
 
 The behaviour under test is the one the measurements called for -- take the
 cheapest candidate the ranker rates within a margin of its best, rather than
-the top of the ranking, which on RouterBench meant gpt-4 for 98.6% of queries
-and scored no better than having no router at all.
+the top of the ranking, which collapsed onto the single strongest model and
+scored no better than having no router at all.
 """
 
 from __future__ import annotations
@@ -121,3 +121,48 @@ def test_cost_weighted_objectives_still_work():
     then applies to that utility, not to raw quality."""
     d = MarginRoutingPolicy(margin=0.0).decide(_context(quality_only=False), _scores())
     assert d.selected_model_id in {"mid", "cheap"}      # never the dear one at cost_weight=1
+
+
+class TestThePerRequestBudget:
+    """Cost sensitivity belongs to the request, not the deployment.
+
+    The same service answers "summarise this changelog" and "write the
+    migration"; they do not deserve the same budget, and a policy-level
+    constant cannot tell them apart.
+    """
+
+    def _ctx(self, quality_margin):
+        objective = OptimizationObjective(quality_weight=1.0, cost_weight=0.0)
+        request = RoutingRequest(
+            request_id="r1", prompt="p",
+            constraints=RoutingConstraints(objective=objective,
+                                           quality_margin=quality_margin))
+        return RoutingContext(request=request, signals=PromptSignals())
+
+    def test_the_request_budget_overrides_the_policy_default(self):
+        policy = MarginRoutingPolicy(margin=0.0)          # deployment says argmax
+        assert policy.decide(self._ctx(0.5), _scores()).selected_model_id == "cheap"
+
+    def test_a_tight_budget_overrides_a_generous_policy(self):
+        policy = MarginRoutingPolicy(margin=0.5)          # deployment says cheap
+        assert policy.decide(self._ctx(0.0), _scores()).selected_model_id == "strong"
+
+    def test_none_means_the_caller_did_not_say_so_the_default_stands(self):
+        policy = MarginRoutingPolicy(margin=0.02)
+        assert policy.decide(self._ctx(None), _scores()).selected_model_id == "mid"
+
+    def test_omitting_it_entirely_is_the_same_as_none(self):
+        """Existing callers built `RoutingConstraints` before this field
+        existed; they must keep the behaviour they had."""
+        policy = MarginRoutingPolicy(margin=0.02)
+        assert policy.decide(_context(), _scores()).selected_model_id == "mid"
+
+    def test_the_reason_reports_the_budget_actually_applied(self):
+        """Not the policy's default -- a log that names the wrong number is
+        worse than one that names none."""
+        d = MarginRoutingPolicy(margin=0.02).decide(self._ctx(0.5), _scores())
+        assert "within 0.5" in d.reason
+
+    def test_a_negative_budget_is_refused(self):
+        with pytest.raises(ValueError, match="quality_margin must be >= 0"):
+            MarginRoutingPolicy().decide(self._ctx(-0.1), _scores())

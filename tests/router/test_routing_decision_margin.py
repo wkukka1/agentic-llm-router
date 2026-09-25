@@ -5,10 +5,10 @@ in the repo goes through, so anything that changes its default changes every
 served decision at once. The first class exists to pin that, and is the reason
 the cost tie-break only switches on above zero.
 
-The rule itself is small; the reason it is here is not. Measured on
-RouterBench, argmax sends 98.6% of queries to gpt-4 and gains +0.004 over
-mixing the cheapest and strongest models at the same spend, while margin=0.1
-gains +0.219 and cuts cost 68%.
+The rule itself is small; the reason it is here is not. Argmax on this
+repo's rankers collapses onto the single strongest model and scores about what
+no router would score; a margin recovers most of the cost. Figures live in
+docs/prompt_decomposition_experiments.md, not in copies here.
 """
 
 from __future__ import annotations
@@ -183,3 +183,41 @@ class TestTheTwoImplementationsAgree:
         tied = np.array([1.0, 1.0, 1.0])
         assert routing_decision(tied[None, :], model_costs=COSTS, margin=0.0)[0] == 0
         assert self._decide(0.0, tied, COSTS) == "m2"        # the cheapest
+
+
+class TestPerRequestOnTheLivePath:
+    """`AgenticRouter.with_margin` -- the live path's per-request knob.
+
+    A copy rather than a mutable attribute, so two concurrent callers with
+    different budgets cannot change each other's routing.
+    """
+
+    def _router(self, margin=0.0):
+        from router.agentic.router import AgenticRouter
+        from tests.router.test_router_pipeline import FakeTextRouter
+
+        return AgenticRouter(FakeTextRouter(), margin=margin)
+
+    def test_it_returns_a_copy_with_the_new_budget(self):
+        base = self._router(0.0)
+        wide = base.with_margin(0.2)
+        assert wide.margin == 0.2
+        assert base.margin == 0.0, "the original must be untouched"
+        assert wide is not base
+
+    def test_the_copy_keeps_everything_else(self):
+        base = self._router(0.0)
+        wide = base.with_margin(0.2)
+        assert wide.router is base.router
+        assert wide.triage is base.triage
+        assert wide.max_depth == base.max_depth
+
+    def test_a_negative_budget_is_refused(self):
+        with pytest.raises(ValueError, match="margin must be >= 0"):
+            self._router().with_margin(-0.1)
+
+    def test_the_copy_starts_with_clean_per_run_state(self):
+        """`_shallow_copy` resets the decision cache; a budget change must not
+        inherit routes decided under the old one."""
+        wide = self._router(0.0).with_margin(0.2)
+        assert wide._decisions == {} and wide._calls == 0

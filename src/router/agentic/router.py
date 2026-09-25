@@ -80,9 +80,8 @@ class AgenticRouter:
         self.synthesizer = synthesizer or concat_synthesizer
         self.encoder = encoder
         self.lam = float(lam)
-        # `margin` is the measured lever, not `lam`: on RouterBench, argmax
-        # sends 98.6% of queries to gpt-4 for +0.004 over free mixing, while
-        # margin=0.1 gains +0.219 at 68% less cost. Default 0.0 keeps the
+        # `margin` is the measured lever, not `lam` -- see
+        # docs/prompt_decomposition_experiments.md. Default 0.0 keeps the
         # served behaviour identical until a caller opts in.
         self.margin = float(margin)
         self.max_depth = int(max_depth)
@@ -234,6 +233,30 @@ class AgenticRouter:
     # ------------------------------------------------------------------ #
     # convenience                                                        #
     # ------------------------------------------------------------------ #
+    def with_margin(self, margin: float) -> AgenticRouter:
+        """A copy that spends ``margin`` quality to reach a cheaper model.
+
+        Cost sensitivity belongs to the request, not the deployment -- the same
+        service answers "summarise this changelog" and "write the migration",
+        and they do not deserve the same budget. A copy rather than a mutable
+        attribute so two concurrent callers cannot change each other's routing:
+
+            router.with_margin(0.02).run(prompt)   # barely cheaper, barely worse
+            router.with_margin(0.15).run(prompt)   # much cheaper, noticeably worse
+
+        The margin is a quality budget, not a savings target. What it promises
+        is the floor -- "no worse than ``margin`` below the best this router
+        can predict" -- and that holds on any pool. What it buys varies by
+        pool, so translate a savings target with
+        ``evaluation.prompt_decomposition.policy_eval.margin_for_target_saving``
+        rather than guessing.
+        """
+        if margin < 0:
+            raise ValueError(f"margin must be >= 0, got {margin}")
+        clone = self._shallow_copy()
+        clone.margin = float(margin)
+        return clone
+
     def with_langchain_orchestrator(self, llm, **kw) -> AgenticRouter:
         """Return a copy that decomposes via a LangChain tool-calling agent."""
         from .orchestrator import LangChainToolOrchestrator

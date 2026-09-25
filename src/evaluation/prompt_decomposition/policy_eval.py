@@ -123,3 +123,52 @@ def frontier_gain(table: pd.DataFrame, cheap_model: str, strong_model: str,
         (out["cost_per_1k"] >= lo_c - slack) & (out["cost_per_1k"] <= hi_c + slack))
     out["vs_mixture"] = out["quality"] - out["mixture_at_same_cost"]
     return out
+
+
+def margin_for_target_saving(table: pd.DataFrame, target_saving: float) -> dict:
+    """The smallest margin in ``table`` that saves at least ``target_saving``.
+
+    The gap between what a caller wants to say and what the router can promise.
+    A caller says "spend 50% less"; the rule takes a *quality* budget, and the
+    same budget buys different savings on different pools -- margin 0.1 cut
+    cost 68% on RouterBench and 81% on SPROUT. Guessing a margin from a savings
+    target is therefore wrong on any pool but the one it was guessed on.
+
+    So resolve it against a measured sweep instead. ``table`` is
+    :func:`margin_sweep` output for the pool in question; savings are measured
+    against its fixed-model row, which is the thing a caller means by "less".
+    The *smallest* qualifying margin is returned, because margin is quality
+    given up: hitting the target with the smallest budget is the point.
+
+    Raises when no margin in the sweep reaches the target -- a target the pool
+    cannot meet is a question to answer, not a number to round down to.
+    """
+    if not 0.0 <= target_saving < 1.0:
+        raise ValueError(f"target_saving must be in [0, 1), got {target_saving}")
+    fixed = table[table["policy"].str.startswith("always ")]
+    if fixed.empty:
+        raise ValueError("table has no 'always <model>' row to measure savings against")
+    baseline = float(fixed.iloc[0]["cost_per_1k"])
+
+    rows = table[table["policy"].str.startswith(("argmax", "margin"))].copy()
+    rows["margin"] = [0.0 if p.startswith("argmax") else float(p.split("=", 1)[1])
+                      for p in rows["policy"]]
+    rows["saving"] = 1.0 - rows["cost_per_1k"] / baseline
+    ok = rows[rows["saving"] >= target_saving].sort_values("margin")
+    if ok.empty:
+        best = rows.loc[rows["saving"].idxmax()]
+        raise ValueError(
+            f"no margin in this sweep saves {target_saving:.0%}; the widest tried "
+            f"({best['policy']}) saves {best['saving']:.0%} and gives up "
+            f"{baseline and float(fixed.iloc[0]['quality']) - float(best['quality']):.4f} "
+            f"quality. Widen the sweep or lower the target."
+        )
+    hit = ok.iloc[0]
+    return {
+        "margin": float(hit["margin"]),
+        "saving": float(hit["saving"]),
+        "quality": float(hit["quality"]),
+        "quality_given_up": float(fixed.iloc[0]["quality"]) - float(hit["quality"]),
+        "cost_per_1k": float(hit["cost_per_1k"]),
+        "baseline_policy": str(fixed.iloc[0]["policy"]),
+    }
