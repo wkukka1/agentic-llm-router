@@ -56,13 +56,49 @@ _LINE_PREFIX_RE = re.compile(r"^\s*(?:[-*•]+|\d+[.)]|#+)\s*")
 class NaiveDecomposer:
     """Regex split on list markers / "and then" / question boundaries. No LLM."""
 
-    def __init__(self, *, max_parts: int = 6, min_part_chars: int = 8):
+    def __init__(self, *, max_parts: int = 6, min_part_words: int = 2):
         self.max_parts = max_parts
-        self.min_part_chars = min_part_chars
+        # Words, not characters. The guard exists to stop punctuation residue
+        # becoming a paid model call, and a character count answers a different
+        # question: "plot it" is 7 characters and an entirely real task, while
+        # "accordingly" is 11 and is not one.
+        self.min_part_words = min_part_words
+
+    def _coalesce(self, raw: list[str]) -> list[str]:
+        """Fold fragments into their neighbours rather than discarding them.
+
+        Dropping anything here loses a sub-task silently: "Do these: 1. read
+        the file 2. compute the mean 3. plot it" used to come back as three
+        parts, one of which was the lead-in "Do these:" -- billed as its own
+        model call -- while "plot it" vanished for being below a character
+        threshold. The caller asked for three things, paid for three calls, and
+        got two of them answered, with no error raised anywhere.
+
+        So: a clause ending in ``:`` introduces the next one and is prepended
+        to it, and anything with too few words to be a request of its own joins
+        the part before it. Nothing is thrown away.
+        """
+        out: list[str] = []
+        lead_in = ""
+        for part in raw:
+            if lead_in:
+                part, lead_in = f"{lead_in} {part}".strip(), ""
+            if part.endswith(":"):        # a lead-in, not a task
+                lead_in = part
+            elif len(part.split()) < self.min_part_words and out:
+                out[-1] = f"{out[-1]} {part}"
+            else:
+                out.append(part)
+        if lead_in:                       # trailing colon with nothing after it
+            if out:
+                out[-1] = f"{out[-1]} {lead_in}"
+            else:
+                out.append(lead_in)
+        return out
 
     def __call__(self, prompt: str) -> list[str]:
-        raw = _SPLIT_RE.split(prompt.strip())
-        parts = [p.strip(" \t\n-*.") for p in raw if p and len(p.strip()) >= self.min_part_chars]
+        raw = [p.strip(" \t\n-*.") for p in _SPLIT_RE.split(prompt.strip()) if p and p.strip()]
+        parts = self._coalesce(raw)
         # de-dupe while keeping order
         seen, out = set(), []
         for p in parts:

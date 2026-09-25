@@ -68,13 +68,16 @@ def routing_decision(
 
     ``margin > 0`` switches from argmax to **the cheapest model whose utility is
     within ``margin`` of the best**. The two rules differ far more than the
-    parameter suggests: measured on RouterBench, argmax sends 98.6% of queries
-    to gpt-4 and gains +0.004 quality over randomly mixing the cheapest and
-    strongest models at the same spend -- i.e. almost exactly what having no
-    router at all would get -- while ``margin=0.1`` gains +0.219 and cuts cost
-    68% for 5.0 quality points. ``lam`` and ``margin`` are different levers:
-    ``lam`` prices cost into the utility being maximised, ``margin`` spends a
-    bounded amount of predicted quality to buy a cheaper model. They compose.
+    parameter suggests: on a ranker whose scores are dominated by global model
+    capability, argmax collapses onto the single strongest model and scores
+    about what having no router at all would score, while a margin recovers
+    most of the cost without much of the quality. Measured figures live in
+    docs/prompt_decomposition_experiments.md -- they are pool-dependent and are
+    deliberately not restated here, because copies of them drift.
+
+    ``lam`` and ``margin`` are different levers: ``lam`` prices cost into the
+    utility being maximised, ``margin`` spends a bounded amount of predicted
+    quality to buy a cheaper model. They compose.
 
     ``margin=0.0`` is exactly the old argmax, tie semantics included, so it is a
     strict no-op default; cost-based tie-breaking only switches on above zero.
