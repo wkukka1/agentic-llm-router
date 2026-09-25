@@ -1124,16 +1124,24 @@ train -> test, 4,685 / 1,952 prompts.
 
 | policy | quality | cost/1k | gpt-4o share | vs mixture |
 |---|---|---|---|---|
-| argmax | 0.8489 | 4.00 | 32.4% | +0.041 |
-| margin=0.02 | 0.8467 | 2.44 | 20.9% | +0.101 |
-| **margin=0.05** | **0.8390** | **1.80** | 17.5% | **+0.119** |
-| margin=0.1 | 0.8153 | 0.95 | 8.4% | +0.129 |
-| margin=0.2 | 0.7662 | 0.38 | 1.7% | +0.103 |
+| argmax | 0.8489 | **5.62** | 32.4% | **off the frontier** |
+| margin=0.02 | 0.8467 | 3.06 | 20.9% | +0.077 |
+| **margin=0.05** | **0.8390** | **2.02** | 17.5% | **+0.110** |
+| margin=0.1 | 0.8163 | 0.92 | 8.4% | +0.132 |
+| margin=0.2 | 0.7656 | 0.32 | 1.7% | +0.105 |
 | always gpt-4o | 0.8496 | 5.05 | 100% | 0.000 |
-| oracle (cheapest correct) | 0.9783 | 0.51 | 2.4% | +0.310 |
+| oracle (cheapest correct) | 0.9783 | 0.64 | 2.5% | +0.305 |
 
 **The rule holds: margin=0.05 matches gpt-4o's quality to within 1.1 points at
-64% less cost.** Push to margin=0.1 and it is 81% cheaper for 3.4 points.
+60% less cost.** Push to margin=0.1 and it is 82% cheaper for 3.3 points.
+
+**And argmax is now worse than useless here.** At 5.62/1k it costs *11% more*
+than simply always calling gpt-4o (5.05), for slightly *less* quality. There is
+no `vs_mixture` figure because the point falls outside the cheap-to-strong cost
+span entirely -- you cannot beat a mixture you are dearer than. A router that
+spends more than the single best model and returns less is strictly worse than
+having no router, and only the corrected prices made that visible: under the
+original estimates argmax looked like a modest +0.041.
 
 **But the failure mode it fixes is absent here.** On RouterBench the argmax
 sent 98.6% of traffic to gpt-4 and bought +0.004 over free mixing. On SPROUT
@@ -1146,13 +1154,35 @@ pool with a dominant model, not of routing. So:
 * a router evaluated only on RouterBench will look better than it is, because
   the baseline it beats there (`always gpt-4`) is unusually strong.
 
-**The prices are not verified, and the conclusion does not depend on them.**
-SPROUT ships token counts but prices nothing, and none of its 13 models were in
-`configs/model_prices.yaml`. The block added for them is recalled public list
-pricing, explicitly marked `UNVERIFIED` in the file, and **must be re-priced
-before any dollar figure here is published**. To separate the rule from the
-guesses, the whole sweep was re-run 20 times with every rate multiplied by a
-random factor in [0.5, 1.5]:
+**The prices: 6 of 13 verified on 2026-09-25, and the conclusion survived the
+corrections.** SPROUT ships token counts but prices nothing, and none of its 13
+models were in `configs/model_prices.yaml`. The block added for them began as
+recalled list pricing; it has since been checked against provider pages, and
+every entry now carries `verified: <date>` with a source or `verified: false`.
+
+Two estimates were wrong, in opposite directions:
+
+| model | estimated | actual |
+|---|---|---|
+| aws-claude-3-5-sonnet-v1 | 3.00 / 15.00 | **6.00 / 30.00** |
+| wxai-llama-3-3-70b | 1.80 flat | **0.7526 flat** |
+
+The Sonnet miss is the instructive one: Bedrock **doubled** that rate on
+2025-12-01 when the model moved to Public Extended Access, so the recalled
+figure had been correct and silently stopped being so. No amount of care at
+recall time catches that; only checking the page does.
+
+Seven remain unverified -- the 2024-vintage watsonx models, which IBM has
+deprecated or withdrawn and no longer publishes rates for (its billing docs are
+JS-rendered and cannot be fetched). Their values follow IBM's documented
+Resource Unit ladder (1 RU = 1000 tokens, base $0.0001/RU = $0.10 per 1M, each
+model a whole multiple), which is the right shape but an unconfirmed rung. The
+cheap endpoint of the mixture line is one of them, so absolute dollar figures
+here still rest partly on estimates.
+
+That is why the sweep was also re-run 20 times with every rate multiplied by a
+random factor in [0.5, 1.5] -- a range that comfortably contains both
+corrections found above:
 
 | policy | median vs mixture | min | max | positive |
 |---|---|---|---|---|
