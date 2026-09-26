@@ -1360,3 +1360,76 @@ Not done, and deliberately: no default `margin` is set anywhere. The right
 value is pool-dependent (0.05 on SPROUT, 0.1 on RouterBench) and the SPROUT
 prices are unverified, so picking a number here would bake a guess into serving
 behaviour. Callers opt in until someone re-prices the pool.
+
+## Where the agreement signal stops, and what the literature does about it
+
+Three measurements this session converge on one boundary, and a paper confirms it.
+
+**1. Agreement does not work on hard queries.** Of free-form RouterBench
+queries in the hard stratum where two cheap models *agree* (cosine >= 0.95),
+**61.6%** are cases where both are wrong; the cheap model is wrong 86.8% of the
+time even under confident agreement. AUC 0.616 on hard against 0.721 on easy.
+Two weak models converge on the same wrong answer. A cascade that keeps the
+cheap answer when they agree is therefore exactly wrong where the regret is.
+
+**2. It also costs more than the alternative where it does work.** A cascade
+needs two cheap calls before it can decide, plus a strong call when it
+escalates. On easy queries the margin rule reaches the same savings with one
+call, so the cascade is dominated there and useless on hard. That closes the
+direction.
+
+**3. Where it does work is narrower than "free-form".** Predicting *hardness*
+(not correctness) from a cheap model's response lifts within-benchmark AUC from
+0.525 to 0.677 -- the first real movement on hardness in this whole effort. But
+broken down per benchmark, all of it is grade-school-math:
+
+| benchmark | n | prompt only | + response |
+|---|---|---|---|
+| grade-school-math | 2,252 | 0.511 | **0.690** |
+| mbpp | 130 | 0.458 | 0.491 |
+| consensus_summary | 109 | 0.667 | 0.664 |
+| chinese_zodiac | 105 | 0.666 | 0.659 |
+| bias_detection | 86 | 0.633 | 0.653 |
+
+GSM is 77% of the free-form slice, so it carried the weighted average. The real
+line is not multiple-choice vs free-form; it is **checkable vs not**. Two
+different numeric answers is evidence; two different summaries is not.
+
+**This also puts an earlier claim in doubt.** The documented result that cosine
+agreement gains more on free-form (+0.040) than multiple-choice (+0.027) was
+measured on that same GSM-dominated slice, and needs the same per-benchmark
+decomposition before it stands.
+
+### RoBoN (Geuter & Kornhardt, arXiv 2512.05542) reaches the same boundary
+
+A NeurIPS 2025 workshop paper that routes a fixed budget of *n* generations
+across a model suite one at a time, training-free, at exact compute parity with
+single-model best-of-*n*. It scores candidates with
+
+    Score(S) = sum_l w_l * (alpha * r_l + (1 - alpha) * agree_S(a_l)),  alpha = 0.4
+
+where `w` is a softmax over reward-model scores and `agree` is the share of the
+selected set sharing the same normalized answer.
+
+Two things matter for us:
+
+* **Their agreement is exact string match on an extracted answer** -- "the boxed
+  final value for math", canonically normalized. It structurally cannot run
+  where no answer can be extracted, which is why all five benchmarks (MATH500,
+  OlympiadBench, MinervaMath, GSM8K, MMLU-STEM) are maths or STEM
+  multiple-choice. The published state of the art in agreement-based routing is
+  checkable-answer-only too. Our finding is not a failure to find something
+  others have.
+* **They pair agreement with a reward model** (Skywork-Reward-V2-Llama-3.1-8B),
+  normalized per model by empirical CDF because raw rewards are not comparable
+  across models. At `alpha = 0` the policy degenerates to majority voting --
+  which is close to what our cascade was. We had the agreement half and no
+  reward half.
+
+That reframes the hard stratum: not "unreachable", but "needs a component we do
+not have". A reward model scores a response without ground truth, which is
+exactly the missing input both for the cascade and for any level-2 evaluation.
+
+Note the regimes differ. RoBoN spends *more* (n generations) to buy accuracy;
+the margin rule spends *less* at similar quality. Opposite directions on the
+same frontier, so the two compose rather than compete.

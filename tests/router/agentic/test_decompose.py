@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from router.agentic.decompose import NaiveDecomposer
+import pytest
+
+from router.agentic.decompose import LLMDecomposer, NaiveDecomposer
 
 
 class TestNothingIsSilentlyDropped:
@@ -38,3 +40,89 @@ class TestNothingIsSilentlyDropped:
 
     def test_a_bare_lead_in_does_not_crash(self):
         assert NaiveDecomposer()("Steps:") == ["Steps:"]
+
+
+class _Stub:
+    """A chat model that returns a canned string, and records what it was asked."""
+
+    def __init__(self, text: str | Exception):
+        self.text, self.seen = text, []
+
+    def invoke(self, prompt):
+        self.seen.append(prompt)
+        if isinstance(self.text, Exception):
+            raise self.text
+        return self.text
+
+
+class TestLLMDecomposer:
+    """The semantic decomposer -- the level-2 path.
+
+    `NaiveDecomposer` only fires when the caller has already written the seams
+    in ("do X, then Y"). Implicitly compound work -- "write a report on the
+    competitive landscape" -- is one sentence with no markers, and needs a model
+    to see that it is research, then synthesis, then writing. This class is that
+    hook, and until now it had no test at all.
+    """
+
+    def test_it_splits_an_implicitly_compound_request(self):
+        chat = _Stub("research the battery market\nsynthesise the findings\nwrite the report")
+        assert LLMDecomposer(chat)("Write a report on EV batteries.") == [
+            "research the battery market", "synthesise the findings", "write the report"]
+
+    def test_the_request_reaches_the_model(self):
+        chat = _Stub("a task\nb task")
+        LLMDecomposer(chat)("Write a report on EV batteries.")
+        assert "EV batteries" in chat.seen[0]
+
+    def test_a_single_task_comes_back_unchanged(self):
+        assert LLMDecomposer(_Stub("just the one thing"))("x") == ["just the one thing"]
+
+    def test_numbering_the_model_adds_anyway_is_stripped(self):
+        assert LLMDecomposer(_Stub("1. alpha task\n2) beta task\n- gamma task"))("x") == [
+            "alpha task", "beta task", "gamma task"]
+
+    def test_a_preamble_is_not_a_task(self):
+        """'Here are the sub-tasks:' is commentary, and paying a model to answer
+        it is pure waste."""
+        out = LLMDecomposer(_Stub("Here are the sub-tasks:\nfirst real task\nsecond real task"))("x")
+        assert out == ["first real task", "second real task"]
+
+    def test_an_empty_answer_declines_rather_than_returning_nothing(self):
+        assert LLMDecomposer(_Stub("   \n  \n"))("original prompt") == ["original prompt"]
+
+    class TestItNeverLosesWorkSilently:
+        """The bug this class exists to prevent: ask for twelve things, get
+        charged for eight, and be handed an answer that reads complete."""
+
+        def test_exceeding_max_parts_warns_and_names_what_was_dropped(self):
+            chat = _Stub("\n".join(f"step number {i}" for i in range(1, 13)))
+            with pytest.warns(UserWarning, match="dropping the last 4"):
+                out = LLMDecomposer(chat, max_parts=8)("x")
+            assert len(out) == 8
+
+        def test_within_the_cap_there_is_no_warning(self):
+            import warnings as _w
+
+            with _w.catch_warnings():
+                _w.simplefilter("error")
+                assert len(LLMDecomposer(_Stub("a task\nb task"), max_parts=8)("x")) == 2
+
+        def test_the_naive_decomposer_warns_too(self):
+            with pytest.warns(UserWarning, match="dropping the last 2"):
+                NaiveDecomposer(max_parts=3)("do a. Then do b. Then do c. Then do d. Then do e.")
+
+    class TestItFailsSafe:
+        def test_a_provider_error_falls_back_instead_of_raising(self):
+            chat = _Stub(RuntimeError("provider exploded"))
+            with pytest.warns(UserWarning, match="using the fallback decomposer"):
+                assert LLMDecomposer(chat)("Explain quicksort. Then write it.") == [
+                    "Explain quicksort.", "Then write it."]
+
+        def test_an_over_long_prompt_falls_back_rather_than_truncating(self):
+            """Truncating the request would drop its later sub-tasks before the
+            model ever saw them."""
+            chat = _Stub("should not be used")
+            with pytest.warns(UserWarning, match="using the fallback decomposer"):
+                LLMDecomposer(chat, max_prompt_chars=50)("word " * 100)
+            assert chat.seen == [], "the model must not be called at all"

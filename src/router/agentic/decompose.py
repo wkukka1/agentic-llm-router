@@ -53,6 +53,26 @@ _SPLIT_RE = re.compile(
 _LINE_PREFIX_RE = re.compile(r"^\s*(?:[-*•]+|\d+[.)]|#+)\s*")
 
 
+def _cap(parts: list[str], max_parts: int, who: str) -> list[str]:
+    """Apply the fan-out cap, and say so when it bites.
+
+    The cap is a real budget guard -- a 50-way decomposition is 50 paid calls --
+    but dropping the tail silently means the caller asks for twelve things, is
+    charged for eight, and is handed a synthesized answer that reads as though
+    it covered everything. Whoever set `max_parts` should hear that it was the
+    binding constraint, not discover it in a bill.
+    """
+    if len(parts) <= max_parts:
+        return parts
+    warnings.warn(
+        f"{who}: decomposed into {len(parts)} sub-tasks but max_parts={max_parts}; "
+        f"dropping the last {len(parts) - max_parts} "
+        f"({[p[:40] for p in parts[max_parts:]]}). Raise max_parts to keep them.",
+        stacklevel=3,
+    )
+    return parts[:max_parts]
+
+
 class NaiveDecomposer:
     """Regex split on list markers / "and then" / question boundaries. No LLM."""
 
@@ -105,7 +125,9 @@ class NaiveDecomposer:
             if p.lower() not in seen:
                 seen.add(p.lower())
                 out.append(p if p.endswith(("?", ".", "!")) else p + ".")
-        return out[: self.max_parts] if len(out) > 1 else [prompt]
+        if len(out) <= 1:
+            return [prompt]
+        return _cap(out, self.max_parts, type(self).__name__)
 
 
 class LLMDecomposer:
@@ -151,7 +173,7 @@ class LLMDecomposer:
             if len(ln) < 4 or ln.endswith(":"):
                 continue
             parts.append(ln)
-        return parts[: self.max_parts]
+        return _cap(parts, self.max_parts, type(self).__name__)
 
 
 def concat_synthesizer(original: str, pairs: Sequence[tuple[str, str]]) -> str:
