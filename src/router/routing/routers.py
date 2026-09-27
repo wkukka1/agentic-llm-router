@@ -119,6 +119,16 @@ def load_training_data_for_router(data=None, config_path=None):
     return load_training_data(load_config(config_path))
 
 
+def _lazy_training_data(router):
+    """Shared ``_data`` body for NIRTRouter / MLPRouter: the injected
+    ``TrainingData``, else the one for ``router._phase0_config``, loaded on first
+    use. Constructing a router (e.g. ``RouterModelFactory.create``) must not
+    read the full ``data/processed`` tables -- a fresh checkout has none."""
+    if router._data_cache is None:
+        router._data_cache = load_training_data_for_router(None, router._phase0_config)
+    return router._data_cache
+
+
 def _encode_texts(data, texts: Sequence[str], pathway: str, *,
                   fallback_pathway: Optional[str] = None, encoder=None,
                   cache: Optional[dict] = None) -> np.ndarray:
@@ -208,12 +218,14 @@ class NIRTRouter(RouterModel):
         name: Optional[str] = None,
         cost_model: Optional["CostModel"] = None,
         artifact: Optional["RouterModelArtifact"] = None,
+        phase0_config: Optional[str] = None,
     ):
         super().__init__(sorted(model_index, key=model_index.get), name=name,
                          cost_model=cost_model, artifact=artifact)
         self._model = model
         self._model_index = dict(model_index)
-        self._data = load_training_data_for_router(data)
+        self._data_cache = data
+        self._phase0_config = phase0_config
         self._pathway = pathway
         self._query_pathway = query_pathway or pathway
         self._query_features = query_features
@@ -235,7 +247,8 @@ class NIRTRouter(RouterModel):
         return cls(
             model,
             model_index,
-            data=load_training_data_for_router(data, dcfg.get("phase0_config")),
+            data=data,
+            phase0_config=dcfg.get("phase0_config"),
             pathway=dcfg.get("pathway", "irt"),
             query_pathway=dcfg.get("query_pathway") or None,
             query_features=dcfg.get("query_features") or None,
@@ -270,7 +283,8 @@ class NIRTRouter(RouterModel):
         return cls(
             model,
             payload.model_index,
-            data=load_training_data_for_router(data, dcfg.get("phase0_config")),
+            data=data,
+            phase0_config=dcfg.get("phase0_config"),
             pathway=dcfg.get("pathway", "irt"),
             query_pathway=dcfg.get("query_pathway") or None,
             query_features=dcfg.get("query_features") or None,
@@ -278,6 +292,10 @@ class NIRTRouter(RouterModel):
             cost_model=cost_model,
             artifact=artifact,
         )
+
+    @property
+    def _data(self):
+        return _lazy_training_data(self)
 
     @property
     def default_model_costs(self) -> Optional[np.ndarray]:
@@ -480,10 +498,12 @@ class MLPRouter(RouterModel):
                  pathway: str = "irt", query_pathway: Optional[str] = None,
                  query_features: Optional[str] = None, name: Optional[str] = None,
                  cost_model: Optional["CostModel"] = None,
-                 artifact: Optional["RouterModelArtifact"] = None):
+                 artifact: Optional["RouterModelArtifact"] = None,
+                 phase0_config: Optional[str] = None):
         super().__init__(model_ids, name=name or "mlp", cost_model=cost_model, artifact=artifact)
         self._model = model
-        self._data = load_training_data_for_router(data)
+        self._data_cache = data
+        self._phase0_config = phase0_config
         self._pathway = pathway
         self._query_pathway = query_pathway or pathway
         self._query_features = query_features
@@ -515,6 +535,10 @@ class MLPRouter(RouterModel):
             query_features=payload.query_features,
             cost_model=cost_model, artifact=artifact,
         )
+
+    @property
+    def _data(self):
+        return _lazy_training_data(self)
 
     @property
     def default_model_costs(self) -> Optional[np.ndarray]:
