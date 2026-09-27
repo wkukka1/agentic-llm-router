@@ -272,6 +272,17 @@ def test_compare_routers_rejects_duplicate_names():
         compare_routers(routers, true_df, cost_df)
 
 
+def test_compare_routers_raises_when_a_routers_pool_is_missing_a_model():
+    """MOD-001 (evaluation.routing.oracle): compare_routers must guard the
+    same reindex-introduces-an-all-NaN-column failure mode evaluate_router
+    already guards (test_evaluate_raises_when_outcomes_lack_a_pool_model)."""
+    true_df, cost_df = _mats()  # columns GPT-A, GPT-B, GPT-C
+    partial_pool_router = MatrixRouter(true_df[["GPT-A", "GPT-C"]], name="partial")
+
+    with pytest.raises(ValueError, match="GPT-B"):
+        compare_routers([partial_pool_router], true_df, cost_df)
+
+
 def test_compare_routers_handles_non_string_query_ids():
     """XD-08: compare_routers must align via RouterModel.aligned_scores (which
     stringifies ids the same way predict_scores does), not a raw reindex by

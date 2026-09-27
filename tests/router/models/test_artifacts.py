@@ -57,6 +57,32 @@ def test_mlp_payload_round_trips_through_to_state_and_from_state():
     assert MLPArtifactPayload.from_state(state) == payload
 
 
+def test_mlp_artifact_payload_round_trips_pathway_fields():
+    """MLPROUTERTRAINER-001: pathway/query_pathway/query_features must survive
+    a to_state/from_state round trip so the serving side can restore them."""
+    payload = MLPArtifactPayload(
+        state_dict={}, model_ids=["a", "b"], in_dim=8, hidden=16, dropout=0.1,
+        pathway="bert", query_pathway="bert-query", query_features="len",
+    )
+    restored = MLPArtifactPayload.from_state(payload.to_state())
+    assert restored.pathway == "bert"
+    assert restored.query_pathway == "bert-query"
+    assert restored.query_features == "len"
+
+
+def test_mlp_artifact_payload_from_state_defaults_pathway_for_old_artifacts():
+    """Backward compatibility: an artifact saved before this field existed
+    has no pathway/query_pathway/query_features keys at all."""
+    old_state = {
+        "format": "mlp", "state_dict": {}, "model_ids": ["a"],
+        "in_dim": 4, "hidden": 8, "dropout": 0.1,
+    }
+    restored = MLPArtifactPayload.from_state(old_state)
+    assert restored.pathway == "irt"
+    assert restored.query_pathway is None
+    assert restored.query_features is None
+
+
 def test_router_model_artifact_holds_a_payload_not_a_path():
     artifact = RouterModelArtifact(
         artifact_id="run-1",

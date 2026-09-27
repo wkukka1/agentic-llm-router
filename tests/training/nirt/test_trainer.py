@@ -70,3 +70,27 @@ def test_runs_dir_none_falls_back_to_the_default_runs_dir(tmp_path, monkeypatch)
     expected = tmp_path / router_config.DEFAULT_NIRT_RUNS_DIR / "trainer-default-dir"
     assert expected.exists()
     assert artifact.artifact_id == "trainer-default-dir"
+
+
+def test_relative_runs_dir_saves_and_loads_consistently(tmp_path, monkeypatch):
+    """MOD-001: when NIRTTrainer is given an explicit relative runs_dir,
+    fit() and LocalArtifactStore must resolve it the same way (against
+    REPO_ROOT), not CWD. This test verifies that save/load are consistent."""
+    import router.config as router_config
+
+    # Monkeypatch REPO_ROOT so the relative path resolves to tmp_path
+    monkeypatch.setattr(router_config, "REPO_ROOT", tmp_path)
+
+    train_obs, val_obs, q_store, m_store = make_synthetic_irt(n_queries=200, seed=16)
+    train_ds, val_ds = nirt_datasets(train_obs, val_obs, q_store, m_store)
+
+    # Use a relative runs_dir
+    trainer = NIRTTrainer(runs_dir="rel_runs")
+    config = TrainingConfig(run_name="trainer-rel-dir", hyperparameters=nirt_cfg())
+    artifact = trainer.train((train_ds, val_ds), config)
+
+    # If save/load paths don't match, load() would fail or load a stale run
+    assert artifact.artifact_id == "trainer-rel-dir"
+    expected = tmp_path / "rel_runs" / "trainer-rel-dir"
+    assert expected.exists()
+    assert trainer.last_result.path == expected

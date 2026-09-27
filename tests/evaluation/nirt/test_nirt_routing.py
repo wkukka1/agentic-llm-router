@@ -73,6 +73,20 @@ def test_classical_irt_main_effects_rejects_bad_args():
 # --------------------------------------------------------------------------- #
 # routing report + lambda trade-off                                            #
 # --------------------------------------------------------------------------- #
+def test_train_quality_rejects_an_unrecognized_metric():
+    """MOD-001 (evaluation.nirt.routing): a metric that isn't "quality" or
+    "accuracy" must raise, not silently fall back to the "quality" branch --
+    a capitalization slip like "Accuracy" must not compare the wrong quantity
+    with no signal that anything was wrong."""
+    from evaluation.nirt.routing import train_quality
+
+    d = FakeTrainingData(make_split_obs(seed=11))
+    model_ids = sorted(d.observations["model_id"].unique())
+
+    with pytest.raises(ValueError, match="metric"):
+        train_quality(d, model_ids, metric="Accuracy")
+
+
 def test_routing_report_and_lambda_tradeoff():
     from evaluation.nirt.routing import eval_matrices, pareto, routing_report, train_quality
 
@@ -313,3 +327,25 @@ def test_ood_split_real():
     assert "math" not in set(train_obs["family"]) and "code" not in set(train_obs["family"])
     assert set(train_obs["split"]) <= {"train", "validation"}
     assert len(ood_obs) > 0 and len(train_obs) > 0
+
+
+def test_holdout_query_ids_are_the_queries_of_the_held_out_families():
+    """The ids a leakage-safe bank / taxonomy must drop, and the family names."""
+    from types import SimpleNamespace
+
+    import pandas as pd
+
+    from evaluation.nirt.ood import holdout_query_ids
+    from router.config import Config
+
+    cfg = Config({"profiles": {"task_families": {"math": ["gsm8k"], "code": ["mbpp"],
+                                                 "knowledge": ["mmlu"]}}})
+    responses = pd.DataFrame({"query_id": ["q1", "q1", "q2", "q3", "q4"],
+                              "dataset": ["gsm8k", "gsm8k", "mbpp", "mmlu", "unmapped"]})
+    data = SimpleNamespace(cfg=cfg, responses=responses)
+
+    ids, fams = holdout_query_ids(data, {"evaluation": {"ood_holdout_families": ["math", "code"]}})
+    assert sorted(ids) == ["q1", "q2"] and fams == ["math", "code"]
+
+    ids, fams = holdout_query_ids(data, None)          # default holdout: math + code
+    assert sorted(ids) == ["q1", "q2"] and fams == ["math", "code"]

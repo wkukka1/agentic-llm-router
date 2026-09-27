@@ -91,6 +91,9 @@ class ClientRegistry:
 
     def register(self, model_id: str, client: LLMClient) -> None:
         self._clients[str(model_id)] = client
+        # a client added directly is exactly the "real client" case the
+        # echo-fallback warning below exists to protect (CLIENTREGISTRY-001)
+        self._has_real_clients = True
 
     def get(self, model_id: str) -> LLMClient:
         mid = str(model_id)

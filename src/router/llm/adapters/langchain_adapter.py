@@ -34,12 +34,15 @@ _PROVIDER_HINTS = [
 
 def guess_provider(model_id: str) -> Optional[str]:
     """Best-effort LangChain ``model_provider`` from a bare model id -- a last
-    resort. Each hint must start a token (``o1-mini`` matches ``o1``,
-    ``yolo1`` does not). Prefer an explicit ``provider=``/``model=`` per pool
-    id: a substring can't tell which host actually serves a given model."""
+    resort. Each hint must start its own token and end on a boundary; a hint
+    may be followed by a version number such as ``llama3`` / ``qwen2.5`` /
+    ``gemini15``, but not by more letters (``o1-mini`` matches ``o1``,
+    ``yolo1`` does not, ``gpt4all-13b-snoozy`` does not).
+    Prefer an explicit ``provider=``/``model=`` per pool id: a substring
+    can't tell which host actually serves a given model."""
     low = str(model_id).lower()
     for needle, provider in _PROVIDER_HINTS:
-        if re.search(rf"(?:^|[^a-z0-9]){re.escape(needle)}", low):
+        if re.search(rf"(?:^|[^a-z0-9]){re.escape(needle)}(?:\d+(?:\.\d+)*)?(?:$|[^a-z0-9])", low):
             return provider
     return None
 
@@ -95,6 +98,8 @@ class LangChainAdapter(ProviderAdapter):
             from langchain.chat_models import init_chat_model  # optional dep
 
             name, provider, kw = self._spec
+            if self.api_key is not None:
+                kw = {**kw, "api_key": self.api_key}
             self._chat = init_chat_model(name, model_provider=provider, **kw)
         return self._chat
 
@@ -120,7 +125,12 @@ class LangChainAdapter(ProviderAdapter):
         return get("input_tokens"), get("output_tokens")
 
     def _cost(self, in_tok: Optional[int], out_tok: Optional[int]) -> Optional[float]:
+        """``None`` (unknown) when there are no token counts at all, or when a
+        side with a nonzero token count has no configured price -- an unpriced
+        side must not be silently treated as free (LANGCHAINADAPTER-002)."""
         in_price, out_price = self._prices
-        if (in_tok is None and out_tok is None) or (in_price is None and out_price is None):
+        if in_tok is None and out_tok is None:
+            return None
+        if (in_tok and in_price is None) or (out_tok and out_price is None):
             return None
         return float((in_tok or 0) * (in_price or 0.0) + (out_tok or 0) * (out_price or 0.0))

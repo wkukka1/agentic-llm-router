@@ -122,16 +122,27 @@ def cluster_embeddings(embeddings, config: ClusterConfig, *, ids=None) -> Cluste
 # --------------------------------------------------------------------------- #
 # build / persist                                                             #
 # --------------------------------------------------------------------------- #
-def _nirt_query_ids(cfg: Config) -> list:
+def _nirt_query_ids(cfg: Config, *, split: Optional[str] = None) -> list:
     """Query ids carrying a NIRT correctness observation -- the observation
     table is built on demand (in memory) if it doesn't exist yet, rather than
     silently widening to every query in ``queries.parquet`` (including
     pairwise-only prompts with no correctness label) and making the taxonomy
-    depend on build order (XD-05 / XA-11)."""
+    depend on build order (XD-05 / XA-11).
+
+    ``split`` limits the ids to one split (``"train"``); ``None`` returns every
+    split -- what ``r_q`` needs, since it is computed for all queries."""
     from ..data.nirt import observations
 
     obs = observations(cfg, build=True)
+    if split is not None:
+        obs = obs[obs["split"] == split]
     return sorted(obs["query_id"].unique())
+
+
+def ood_taxonomy_dir(cfg: Config) -> Path:
+    """Where the held-out-family taxonomy goes: beside the main one, never over it."""
+    d = cfg.path("taxonomy")
+    return d.with_name(d.name + "__ood")
 
 
 def centroids_fingerprint(centroids: np.ndarray) -> str:
@@ -142,7 +153,17 @@ def centroids_fingerprint(centroids: np.ndarray) -> str:
 
 
 def build_clusters(cfg: Config, *, pathway=None, query_ids=None, config: Optional[ClusterConfig] = None,
-                   save: bool = True) -> ClusterResult:
+                   save: bool = True, split: Optional[str] = "train",
+                   exclude_query_ids=None, out_dir: Optional[Path] = None) -> ClusterResult:
+    """UMAP + HDBSCAN over the query embeddings of ``split`` (default: train).
+
+    Fitting on train only keeps the centroids -- and so every query's ``r_q`` --
+    from depending on validation, test or held-out OOD queries. ``split=None``
+    fits on every NIRT query (the old behaviour; leaks the test manifold).
+
+    ``exclude_query_ids`` are dropped before clustering -- pass the held-out OOD
+    families' ids for a leakage-safe variant (as ``build_query_bank`` does), and
+    ``out_dir`` to write it beside, not over, the main taxonomy."""
     from router.embeddings import EmbeddingStore, default_store_dir
 
     config = config or ClusterConfig.from_config(cfg, pathway=pathway)
@@ -151,23 +172,27 @@ def build_clusters(cfg: Config, *, pathway=None, query_ids=None, config: Optiona
         raise FileNotFoundError(
             f"query embeddings for pathway '{config.pathway}' not built ({store_dir})")
     store = EmbeddingStore.load(store_dir)
-    source = "explicit" if query_ids else "nirt_observations"
-    ids = [q for q in (query_ids or _nirt_query_ids(cfg)) if q in store]
+    source = ("explicit" if query_ids
+              else f"nirt_observations:{split}" if split else "nirt_observations")
+    drop = set(map(str, exclude_query_ids or ()))
+    ids = [q for q in (query_ids or _nirt_query_ids(cfg, split=split))
+           if q in store and str(q) not in drop]
     if not ids:
         raise ValueError("no query ids present in the embedding store")
 
     result = cluster_embeddings(store.gather(ids), config, ids=ids)
     if save:
         write_clusters(result, cfg, store_fingerprint=store.manifest.get("ids_fingerprint"),
-                       query_source=source)
+                       query_source=source, out_dir=out_dir, excluded_count=len(drop))
     return result
 
 
 def write_clusters(result: ClusterResult, cfg: Config, *, store_fingerprint=None,
-                   query_source: Optional[str] = None) -> Path:
+                   query_source: Optional[str] = None, out_dir: Optional[Path] = None,
+                   excluded_count: int = 0) -> Path:
     import pandas as pd
 
-    out = cfg.path("taxonomy")
+    out = Path(out_dir) if out_dir is not None else cfg.path("taxonomy")
     out.mkdir(parents=True, exist_ok=True)
     ids = result.ids if result.ids is not None else list(range(len(result.labels)))
     pd.DataFrame({"query_id": ids, "cluster_id": result.labels.astype(int),
@@ -177,7 +202,7 @@ def write_clusters(result: ClusterResult, cfg: Config, *, store_fingerprint=None
     (out / META_FILE).write_text(json.dumps({
         "method": "umap_hdbscan", "pathway": result.config.pathway,
         "config": result.config.to_dict(), "query_embeddings_fingerprint": store_fingerprint,
-        "query_source": query_source,
+        "query_source": query_source, "excluded_count": int(excluded_count),
         "centroids_fingerprint": centroids_fingerprint(result.centroids),
         "taxonomy_version": int(cfg.get("taxonomy.version", 1)),
         **result.summary(), **result.extra,
@@ -185,23 +210,23 @@ def write_clusters(result: ClusterResult, cfg: Config, *, store_fingerprint=None
     return out / META_FILE
 
 
-def _load(cfg: Config, name: str, loader):
-    p = cfg.path("taxonomy") / name
+def _load(cfg: Config, name: str, loader, directory: Optional[Path] = None):
+    p = (Path(directory) if directory is not None else cfg.path("taxonomy")) / name
     if not p.exists():
         raise FileNotFoundError(f"{p} not built; run scripts/taxonomy/cluster_queries.py")
     return loader(p)
 
 
-def load_clusters(cfg: Config):
+def load_clusters(cfg: Config, directory: Optional[Path] = None):
     import pandas as pd
 
-    return _load(cfg, CLUSTERS_FILE, pd.read_parquet)
+    return _load(cfg, CLUSTERS_FILE, pd.read_parquet, directory)
 
 
-def load_centroids(cfg: Config) -> np.ndarray:
-    return _load(cfg, CENTROIDS_FILE, np.load)
+def load_centroids(cfg: Config, directory: Optional[Path] = None) -> np.ndarray:
+    return _load(cfg, CENTROIDS_FILE, np.load, directory)
 
 
-def load_meta(cfg: Config) -> dict:
-    p = cfg.path("taxonomy") / META_FILE
+def load_meta(cfg: Config, directory: Optional[Path] = None) -> dict:
+    p = (Path(directory) if directory is not None else cfg.path("taxonomy")) / META_FILE
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}

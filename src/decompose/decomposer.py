@@ -81,7 +81,7 @@ def default_prompt_decomposer(
         )
     classifiers: list[Classifier] = [SurfaceClassifier()]
     if "domain" in paths:
-        classifiers.append(DomainClassifier(paths["domain"]))
+        classifiers.append(DomainClassifier(paths["domain"], merge_domains=True))
     if "task" in paths:
         classifiers.append(TaskClassifier(paths["task"]))
     if "length" in paths:

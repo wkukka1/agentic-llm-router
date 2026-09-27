@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import copy
 import pickle
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -391,3 +392,53 @@ def test_client_prices_tokens_from_its_profile():
     prof = LLMProfile(name="m", provider="openai", model_id="m",
                       input_cost_per_token=0.001, output_cost_per_token=0.002)
     assert LLMClient(adapter=None, profile=prof).price(100, 50) == pytest.approx(0.2)
+
+
+def test_commit_past_total_warns_and_reports_overspent():
+    """BUDGETLEDGER-001: commit() must not push spent past total in silence."""
+    ledger = BudgetLedger("root", 10.0)
+    ledger.reserve("t", 4.0)
+    with pytest.warns(UserWarning, match="exceeds total"):
+        ledger.commit("t", 15.0)
+    assert ledger.spent == 15.0
+    assert ledger.overspent == pytest.approx(5.0)
+
+
+def test_commit_within_total_does_not_warn_and_reports_no_overspend():
+    """BUDGETLEDGER-001: the new warning must not fire on ordinary commits."""
+    ledger = BudgetLedger("root", 10.0)
+    ledger.reserve("t", 4.0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        ledger.commit("t", 3.0)
+    assert ledger.overspent == 0.0
+
+
+def test_register_then_unknown_id_still_warns():
+    """CLIENTREGISTRY-001: the echo-fallback warning must fire whether real
+    clients arrived via the constructor or via register()."""
+    reg = ClientRegistry()
+    reg.register("real-model", LLMClient(CallableAdapter("real-model", lambda p: p)))
+    with pytest.warns(UserWarning, match="echo"):
+        reg.get("unregistered-model")
+
+
+def test_default_factory_domain_head_uses_merged_taxonomy(monkeypatch):
+    """DOMAINCLASSIFIER-001: default_prompt_decomposer must build the domain
+    head with merge_domains=True, not the unmerged 10-class default."""
+    from decompose.decomposer import default_prompt_decomposer
+
+    calls = []
+
+    class _SpyDomainClassifier:
+        name = "domain"
+
+        def __init__(self, run_dir, **kwargs):
+            calls.append(kwargs)
+
+        def classify(self, input):
+            return []
+
+    monkeypatch.setattr("decompose.classifiers.prompt_heads.DomainClassifier", _SpyDomainClassifier)
+    default_prompt_decomposer({"domain": "unused"})
+    assert calls == [{"merge_domains": True}]

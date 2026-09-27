@@ -53,6 +53,39 @@ def test_train_persists_and_reloads_a_working_router(tmp_path):
     assert isinstance(router2, MLPRouter)
 
 
+def test_train_persists_the_pathway_hyperparameters(tmp_path):
+    """MLPROUTERTRAINER-001: pathway/query_pathway/query_features must survive
+    into the saved artifact, not just fit_mlp_router's in-memory call."""
+    d = FakeTrainingData(make_split_obs(seed=15), query_dim=16)
+    trainer = MLPRouterTrainer(runs_dir=tmp_path)
+    config = TrainingConfig(
+        run_name="mlp-run-pathway",
+        hyperparameters={"hidden": 16, "epochs": 2, "pathway": "irt", "query_features": None},
+    )
+    artifact = trainer.train(d, config)
+    assert artifact.payload.pathway == "irt"
+
+
+def test_from_artifact_restores_the_trained_pathway(tmp_path):
+    """MLPROUTER-001: from_artifact must not silently fall back to the
+    constructor's pathway="irt" default when the artifact recorded a
+    different one."""
+    d = FakeTrainingData(make_split_obs(seed=16), query_dim=16)
+    trainer = MLPRouterTrainer(runs_dir=tmp_path)
+    config = TrainingConfig(
+        run_name="mlp-run-pathway-2",
+        hyperparameters={"hidden": 16, "epochs": 2, "pathway": "bert",
+                         "query_pathway": "bert-query"},
+    )
+    artifact = trainer.train(d, config)
+    assert artifact.payload.pathway == "bert"
+
+    router = MLPRouter.from_artifact(artifact, data=d)
+    assert router._pathway == "bert"
+    assert router._query_pathway == "bert-query"
+    assert router._query_features is None
+
+
 def test_typed_config_fields_override_hyperparameters(tmp_path, monkeypatch):
     import training.trainers.mlp_router_trainer as mod
 
@@ -75,3 +108,29 @@ def test_typed_config_fields_override_hyperparameters(tmp_path, monkeypatch):
     assert captured["seed"] == 3
     assert captured["epochs"] == 2
     assert captured["hidden"] == 16
+
+
+def test_config_seed_always_wins_over_a_conflicting_hyperparameters_seed(tmp_path, monkeypatch):
+    """MLPROUTERTRAINER-003: seed precedence must match the sibling trainers
+    (NIRTTrainer/BaselineNIRTTrainer) -- TrainingConfig.seed wins even when
+    hyperparameters also sets "seed" to something else."""
+    import training.trainers.mlp_router_trainer as mod
+
+    captured = {}
+    real_fit = mod.fit_mlp_router
+
+    def spy(data, **kw):
+        captured.update(kw)
+        return real_fit(data, **kw)
+
+    monkeypatch.setattr(mod, "fit_mlp_router", spy)
+
+    d = FakeTrainingData(make_split_obs(seed=18), query_dim=16)
+    trainer = MLPRouterTrainer(runs_dir=tmp_path)
+    config = TrainingConfig(
+        run_name="mlp-run-seed", seed=123,
+        hyperparameters={"hidden": 16, "epochs": 2, "seed": 999},
+    )
+    trainer.train(d, config)
+
+    assert captured["seed"] == 123

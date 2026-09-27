@@ -127,13 +127,24 @@ class MLPArtifactPayload(ArtifactPayload):
     persisted nothing before :class:`~training.trainers.mlp_router.MLPRouterTrainer`
     -- there is no prior on-disk convention this wraps, this *is* the
     convention. Rebuild with ``build_mlp_router(in_dim, len(model_ids), hidden,
-    dropout)`` + ``load_state_dict``."""
+    dropout)`` + ``load_state_dict``.
+
+    ``pathway``/``query_pathway``/``query_features`` mirror the NIRT
+    artifact's ``config["data"]`` keys (MLPROUTERTRAINER-001) -- without them
+    ``MLPRouter.from_artifact`` can't know which embedding space the model
+    was trained on and silently serves the wrong one (MLPROUTER-001).
+    Defaulted in :meth:`from_state` so an artifact saved before this field
+    existed still loads, at the same ``pathway="irt"`` default the router
+    constructor used before either bug was fixed."""
 
     state_dict: dict[str, Any]
     model_ids: list[str]
     in_dim: int
     hidden: int
     dropout: float
+    pathway: str = "irt"
+    query_pathway: Any = None
+    query_features: Any = None
 
     def to_state(self) -> dict[str, Any]:
         return {
@@ -143,6 +154,9 @@ class MLPArtifactPayload(ArtifactPayload):
             "in_dim": self.in_dim,
             "hidden": self.hidden,
             "dropout": self.dropout,
+            "pathway": self.pathway,
+            "query_pathway": self.query_pathway,
+            "query_features": self.query_features,
         }
 
     @classmethod
@@ -153,6 +167,9 @@ class MLPArtifactPayload(ArtifactPayload):
             in_dim=state["in_dim"],
             hidden=state["hidden"],
             dropout=state["dropout"],
+            pathway=state.get("pathway", "irt"),
+            query_pathway=state.get("query_pathway"),
+            query_features=state.get("query_features"),
         )
 
 

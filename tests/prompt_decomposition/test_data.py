@@ -138,3 +138,50 @@ def test_frozen_eval_prompts_are_all_hand_labelled():
     assert len(merged) == len(frozen)
     assert (merged["domain_frozen"] == merged["domain_hand"]).all()
     assert (merged["domain_frozen"] == merged["domain_hand"]).all()
+
+
+# --- the builders, end to end on a tiny fixture pool ------------------------
+# The loaders read repo-relative paths, so each test chdirs into a tmp dir
+# holding fixture parquets at those paths.
+
+def _write(path, frame):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    frame.to_parquet(path, index=False)
+
+
+def test_build_real_only_dataset_runs_and_appends_the_frozen_set(tmp_path, monkeypatch):
+    from training.prompt_decomposition.data import dataset, sources
+
+    monkeypatch.chdir(tmp_path)
+    domains = ["science_math", "humanities", "language"]
+    hand = pd.DataFrame({
+        "arena_id": [f"a{i}" for i in range(120)],
+        "prompt": [f"hand prompt {i}" for i in range(120)],
+        "domain": [domains[i % 3] for i in range(120)],
+    })
+    _write(tmp_path / sources.HANDLABELLED_PATH, hand)
+    _write(tmp_path / dataset.FROZEN_EVAL_PATH, hand.iloc[:12][["prompt", "domain"]])
+
+    splits = dataset.build_real_only_dataset(out_dir=tmp_path / "out")
+
+    assert sum(len(v) for v in splits.values()) == 120
+    assert (splits["test"]["source"] == "handlabelled_eval").sum() == 12
+    assert (tmp_path / "out" / "real_only" / "train.parquet").exists()
+
+
+def test_build_task_dataset_runs(tmp_path, monkeypatch):
+    from training.prompt_decomposition.data import dataset, sources
+
+    monkeypatch.chdir(tmp_path)
+    tasks = ["answer", "create", "summarize"]
+    _write(tmp_path / sources.REAL_TASKS_PATH, pd.DataFrame({
+        "prompt": [f"task prompt {i}" for i in range(120)],
+        "task": [tasks[i % 3] for i in range(120)],
+        "task_detail": [""] * 120,
+    }))
+
+    splits = dataset.build_task_dataset(include_synthetic=False, out_dir=tmp_path / "out")
+
+    assert sum(len(v) for v in splits.values()) == 120
+    assert set(splits["train"]["task"]) == set(tasks)
+    assert (tmp_path / "out" / "task" / "test.parquet").exists()

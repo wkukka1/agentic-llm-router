@@ -23,13 +23,17 @@ from __future__ import annotations
 import hashlib
 import itertools
 import warnings
-from typing import Optional, Sequence
+from typing import TYPE_CHECKING, Optional, Sequence
 
 import numpy as np
 import pandas as pd
 
 from .base import RouterModel, _resolve_costs
 from .registry import register
+
+if TYPE_CHECKING:  # pragma: no cover - type hints only, not a runtime import
+    from ..llm.cost import CostModel
+    from ..models.artifacts import RouterModelArtifact
 
 __all__ = [
     "MatrixRouter",
@@ -81,9 +85,18 @@ def _mean_train_costs(data, model_ids: Sequence[str]) -> Optional[np.ndarray]:
 
 
 def _lazy_model_costs(router) -> Optional[np.ndarray]:
-    """Shared ``default_model_costs`` body for a data-backed router: lazily
-    compute and cache the train-split mean cost vector on ``router._cost_cache``
-    (set to ``_UNSET`` in ``__init__``)."""
+    """Shared ``default_model_costs`` body for a data-backed router. When the
+    router carries an injected ``cost_model`` (``RouterModel.cost_model``,
+    ROUTERMODEL-002), read one USD/query prior per pool model from its
+    ``output_token_priors`` -- the same per-model-id, USD-scale shape this
+    property already returns, so this doesn't change what any caller compares
+    it against. Falls back to the lazily-cached train-split mean cost
+    (``router._cost_cache``, set to ``_UNSET`` in ``__init__``) when there is
+    no cost_model, exactly as before."""
+    cost_model = getattr(router, "cost_model", None)
+    if cost_model is not None:
+        priors = cost_model.output_token_priors
+        return np.array([float(priors.get(m, 0.0)) for m in router._model_ids], dtype=np.float64)
     if router._cost_cache is _UNSET:
         router._cost_cache = _mean_train_costs(router._data, router._model_ids)
     return router._cost_cache
@@ -149,8 +162,10 @@ class MatrixRouter(RouterModel):
     kind = "matrix"
 
     def __init__(self, scores: pd.DataFrame, *, name: Optional[str] = None,
-                 model_costs: Optional[Sequence[float]] = None):
-        super().__init__(list(scores.columns), name=name)
+                 model_costs: Optional[Sequence[float]] = None,
+                 cost_model: Optional["CostModel"] = None,
+                 artifact: Optional["RouterModelArtifact"] = None):
+        super().__init__(list(scores.columns), name=name, cost_model=cost_model, artifact=artifact)
         # the pool is stringified by RouterModel; the frame's labels must match or
         # every reindex misses (int-labelled frames would route on all-NaN)
         scores = scores.astype(np.float64)
@@ -191,8 +206,11 @@ class NIRTRouter(RouterModel):
         query_pathway: Optional[str] = None,
         query_features: Optional[str] = None,
         name: Optional[str] = None,
+        cost_model: Optional["CostModel"] = None,
+        artifact: Optional["RouterModelArtifact"] = None,
     ):
-        super().__init__(sorted(model_index, key=model_index.get), name=name)
+        super().__init__(sorted(model_index, key=model_index.get), name=name,
+                         cost_model=cost_model, artifact=artifact)
         self._model = model
         self._model_index = dict(model_index)
         self._data = load_training_data_for_router(data)
@@ -249,7 +267,7 @@ class NIRTRouter(RouterModel):
         model.load_state_dict(payload.state_dict)
         model.eval()
         dcfg = payload.config.get("data", {}) or {}
-        router = cls(
+        return cls(
             model,
             payload.model_index,
             data=load_training_data_for_router(data, dcfg.get("phase0_config")),
@@ -257,10 +275,9 @@ class NIRTRouter(RouterModel):
             query_pathway=dcfg.get("query_pathway") or None,
             query_features=dcfg.get("query_features") or None,
             name=name or f"nirt:{artifact.artifact_id}",
+            cost_model=cost_model,
+            artifact=artifact,
         )
-        router.cost_model = cost_model
-        router.artifact = artifact
-        return router
 
     @property
     def default_model_costs(self) -> Optional[np.ndarray]:
@@ -392,12 +409,15 @@ class KNNRouter(RouterModel):
         pathway: str = "retrieval",
         model_ids: Optional[Sequence[str]] = None,
         name: Optional[str] = None,
+        cost_model: Optional["CostModel"] = None,
+        artifact: Optional["RouterModelArtifact"] = None,
     ):
         d = load_training_data_for_router(data)
         if model_ids is None:
             obs = d.nirt_observations()
             model_ids = sorted(obs.loc[obs["split"] == "train", "model_id"].astype(str).unique())
-        super().__init__(model_ids, name=name or f"knn(k={k})")
+        super().__init__(model_ids, name=name or f"knn(k={k})",
+                         cost_model=cost_model, artifact=artifact)
         self._data = d
         self._k = int(k)
         self._pathway = pathway
@@ -457,11 +477,16 @@ class MLPRouter(RouterModel):
     kind = "mlp"
 
     def __init__(self, model, model_ids: Sequence[str], *, data=None,
-                 pathway: str = "irt", name: Optional[str] = None):
-        super().__init__(model_ids, name=name or "mlp")
+                 pathway: str = "irt", query_pathway: Optional[str] = None,
+                 query_features: Optional[str] = None, name: Optional[str] = None,
+                 cost_model: Optional["CostModel"] = None,
+                 artifact: Optional["RouterModelArtifact"] = None):
+        super().__init__(model_ids, name=name or "mlp", cost_model=cost_model, artifact=artifact)
         self._model = model
         self._data = load_training_data_for_router(data)
         self._pathway = pathway
+        self._query_pathway = query_pathway or pathway
+        self._query_features = query_features
         self._cost_cache = _UNSET
 
     @classmethod
@@ -484,12 +509,12 @@ class MLPRouter(RouterModel):
         model = build_mlp_router(payload.in_dim, len(payload.model_ids), payload.hidden, payload.dropout)
         model.load_state_dict(payload.state_dict)
         model.eval()
-        router = cls(
+        return cls(
             model, payload.model_ids, data=data, name=name or f"mlp:{artifact.artifact_id}",
+            pathway=payload.pathway, query_pathway=payload.query_pathway,
+            query_features=payload.query_features,
+            cost_model=cost_model, artifact=artifact,
         )
-        router.cost_model = cost_model
-        router.artifact = artifact
-        return router
 
     @property
     def default_model_costs(self) -> Optional[np.ndarray]:
@@ -501,6 +526,7 @@ class MLPRouter(RouterModel):
         return mlp_router_matrix(
             self._model, self._model_ids, self._data,
             [str(q) for q in query_ids], pathway=self._pathway,
+            query_pathway=self._query_pathway, query_features=self._query_features,
         )
 
 
@@ -517,8 +543,10 @@ class RandomRouter(RouterModel):
 
     kind = "random"
 
-    def __init__(self, model_ids: Sequence[str], *, seed: int = 0, name: Optional[str] = None):
-        super().__init__(model_ids, name=name or "random")
+    def __init__(self, model_ids: Sequence[str], *, seed: int = 0, name: Optional[str] = None,
+                 cost_model: Optional["CostModel"] = None,
+                 artifact: Optional["RouterModelArtifact"] = None):
+        super().__init__(model_ids, name=name or "random", cost_model=cost_model, artifact=artifact)
         self._seed = int(seed)
 
     def predict_scores(self, query_ids: Sequence[str]) -> pd.DataFrame:

@@ -28,24 +28,15 @@ def test_utility_combines_all_four_terms():
 
 
 @pytest.mark.parametrize("bad", [math.nan, math.inf, -math.inf])
-def test_zero_cost_weight_ignores_a_non_finite_cost(bad):
-    score = _score(expected_quality=0.8, expected_cost=bad)
+@pytest.mark.parametrize("field, weight", [
+    ("expected_cost", "cost_weight"),
+    ("expected_latency", "latency_weight"),
+    ("confidence", "risk_weight"),
+])
+def test_a_zero_weight_ignores_a_non_finite_term(field, weight, bad):
+    score = _score(expected_quality=0.8, **{field: bad})
 
-    assert OptimizationObjective(quality_weight=1.0, cost_weight=0.0).utility(score) == pytest.approx(0.8)
-
-
-@pytest.mark.parametrize("bad", [math.nan, math.inf, -math.inf])
-def test_zero_latency_weight_ignores_a_non_finite_latency(bad):
-    score = _score(expected_quality=0.8, expected_latency=bad)
-
-    assert OptimizationObjective(quality_weight=1.0, latency_weight=0.0).utility(score) == pytest.approx(0.8)
-
-
-@pytest.mark.parametrize("bad", [math.nan, math.inf, -math.inf])
-def test_zero_risk_weight_ignores_a_non_finite_confidence(bad):
-    score = _score(expected_quality=0.8, confidence=bad)
-
-    assert OptimizationObjective(quality_weight=1.0, risk_weight=0.0).utility(score) == pytest.approx(0.8)
+    assert OptimizationObjective(quality_weight=1.0, **{weight: 0.0}).utility(score) == pytest.approx(0.8)
 
 
 def test_a_non_finite_cost_still_poisons_the_utility_when_its_weight_is_nonzero():

@@ -219,7 +219,11 @@ class RouterModel(abc.ABC):
                     continue
                 # SCORE_WITH_PRIOR: kept. RouterModel.route can't score a column outside the pool;
                 # Router.route gives it the pool-mean prediction with confidence 0.
-            if required and not required.issubset(set(getattr(c, "capabilities", []) or [])):
+            capabilities = getattr(c, "capabilities", None)
+            # None means "unknown" (e.g. a no-registry _StubProfile, ROUTER-003) --
+            # can't be checked, so it passes rather than being treated as "known,
+            # has none" (an explicit [] still filters, same as before).
+            if required and capabilities is not None and not required.issubset(set(capabilities)):
                 continue
             out.append(c)
         return out

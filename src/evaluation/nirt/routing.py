@@ -112,11 +112,18 @@ def align(matrix: pd.DataFrame, like: pd.DataFrame) -> np.ndarray:
     return matrix.reindex(index=like.index, columns=like.columns).to_numpy(np.float64)
 
 
+_TRAIN_QUALITY_METRICS = frozenset({"quality", "accuracy"})
+
+
 def train_quality(data, models: list[str], metric: str = "quality") -> dict[str, float]:
     """Per-model mean training correctness -- for the 'best fixed model' baseline.
 
     ``metric="quality"`` -> mean graded target; ``"accuracy"`` -> mean(target>=0.5).
     """
+    if metric not in _TRAIN_QUALITY_METRICS:
+        raise ValueError(
+            f"train_quality: metric must be one of {sorted(_TRAIN_QUALITY_METRICS)}, got {metric!r}"
+        )
     obs = data.nirt_observations()
     obs = obs[(obs["split"] == "train") & (obs["model_id"].isin(models))]
     y = obs["target"].to_numpy(np.float64)

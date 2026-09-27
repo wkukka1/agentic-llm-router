@@ -39,7 +39,7 @@ class MLPRouterTrainer(RouterModelTrainer):
         """``dataset`` is the ``data`` object ``fit_mlp_router`` needs (a
         ``TrainingData`` facade or equivalent)."""
         kw = dict(config.hyperparameters)
-        kw.setdefault("seed", config.seed)
+        kw["seed"] = config.seed
         if config.max_epochs is not None:
             kw["epochs"] = config.max_epochs
         if config.early_stopping_patience is not None:
@@ -54,6 +54,9 @@ class MLPRouterTrainer(RouterModelTrainer):
             in_dim=int(model[0].in_features),
             hidden=int(model[0].out_features),
             dropout=float(model[2].p),
+            pathway=kw.get("pathway", "irt"),
+            query_pathway=kw.get("query_pathway"),
+            query_features=kw.get("query_features"),
         )
         store = LocalArtifactStore(self.runs_dir)
         store.save(RouterModelArtifact(

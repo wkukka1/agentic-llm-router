@@ -19,7 +19,7 @@ from router.models.artifacts import RouterModelArtifact
 from router.models.store import LocalArtifactStore
 
 from ..trainers.base import RouterModelTrainer, TrainingConfig, translate_training_config
-from .train import RunResult, fit
+from .train import RunResult, fit, _resolve_runs_dir
 
 
 class NIRTTrainer(RouterModelTrainer):
@@ -38,12 +38,8 @@ class NIRTTrainer(RouterModelTrainer):
             nirt_cfg, datasets=dataset, name=config.run_name,
             runs_dir=self.runs_dir, save=True, verbose=False,
         )
-        # LocalArtifactStore needs a concrete path; resolve runs_dir=None the
-        # exact same way fit() itself just did (_resolve_runs_dir ->
-        # resolve_path), including honoring a nirt_cfg["runs_dir"] override.
-        runs_dir = self.runs_dir
-        if runs_dir is None:
-            from router.config import DEFAULT_NIRT_RUNS_DIR, resolve_path
-
-            runs_dir = resolve_path(nirt_cfg.get("runs_dir", DEFAULT_NIRT_RUNS_DIR))
+        # LocalArtifactStore needs a concrete path; resolve the same way fit()
+        # itself just did (_resolve_runs_dir with phase0_cfg=None), including
+        # honoring both an explicit runs_dir and a nirt_cfg["runs_dir"] override.
+        runs_dir = _resolve_runs_dir(nirt_cfg, None, self.runs_dir)
         return LocalArtifactStore(runs_dir).load(config.run_name)

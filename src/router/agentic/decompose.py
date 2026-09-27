@@ -108,6 +108,9 @@ class LLMDecomposer:
         self.max_parts = max_parts
         self.max_prompt_chars = int(max_prompt_chars)
         self._fallback = fallback or NaiveDecomposer()
+        # set by AgenticRouter.__init__ so this call counts against the run's
+        # shared ``max_calls`` budget like a routed call does (AGENTICROUTER-003)
+        self.on_call: Callable[[], None] | None = None
 
     def __call__(self, prompt: str) -> list[str]:
         if len(prompt) > self.max_prompt_chars:
@@ -117,6 +120,8 @@ class LLMDecomposer:
                 stacklevel=2,
             )
             return self._fallback(prompt)
+        if self.on_call is not None:
+            self.on_call()
         try:
             msg = self._chat.invoke(self._PROMPT.format(prompt=prompt))
         except Exception as exc:  # pragma: no cover - provider errors
@@ -167,6 +172,9 @@ class LLMSynthesizer:
         self._chat = chat_model
         self.max_body_chars = int(max_body_chars)
         self._fallback = fallback
+        # set by AgenticRouter.__init__ so this call counts against the run's
+        # shared ``max_calls`` budget like a routed call does (AGENTICROUTER-003)
+        self.on_call: Callable[[], None] | None = None
 
     def __call__(self, original: str, pairs: Sequence[tuple[str, str]]) -> str:
         body = "\n\n".join(f"[{i}] {s}\n{a}" for i, (s, a) in enumerate(pairs, 1))
@@ -177,6 +185,8 @@ class LLMSynthesizer:
                 stacklevel=2,
             )
             return self._fallback(original, pairs)
+        if self.on_call is not None:
+            self.on_call()
         try:
             msg = self._chat.invoke(self._PROMPT.format(original=original[:2000], body=body))
         except Exception as exc:  # pragma: no cover - provider errors

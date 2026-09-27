@@ -129,6 +129,13 @@ class Router:
         if self.llm_registry is None:
             # no registry at all -> the router's bare ids are the candidates. An
             # *empty* registry is a real "no candidates" and must not fall back.
+            if constraints.required_capabilities:
+                warnings.warn(
+                    "RoutingConstraints.required_capabilities is set, but no LLMRegistry "
+                    "is configured -- candidate capabilities are unknown in this mode, so "
+                    "the constraint can't be checked and is not applied (ROUTER-003)",
+                    stacklevel=2,
+                )
             context.candidates = [_StubProfile(m) for m in self.router_model.model_ids]
         filtered = self.router_model.filter_candidates(context.candidates, request.constraints)
 
@@ -162,7 +169,12 @@ class Router:
             elif off_pool_cost is not None:
                 expected_cost = off_pool_cost
             else:
+                # ``output_cost_per_token`` is ``None`` for a profile with no
+                # configured price (unknown, not free) -- fall back to 0.0
+                # rather than propagating ``None`` into ``ModelScore``.
                 expected_cost = getattr(cand, "output_cost_per_token", 0.0)
+                if expected_cost is None:
+                    expected_cost = 0.0
             scores.append(ModelScore(
                 model=cand,
                 score=value,
@@ -203,5 +215,8 @@ class _StubProfile:
 
     def __init__(self, model_id: str):
         self.model_id = model_id
-        self.capabilities: list[str] = []
+        # None (unknown), not [] (known -- has none): no-registry mode can't
+        # tell either apart, and filter_candidates must not treat "unknown"
+        # as "known-empty" (ROUTER-003).
+        self.capabilities: Optional[list[str]] = None
         self.output_cost_per_token = 0.0

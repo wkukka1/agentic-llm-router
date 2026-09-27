@@ -12,9 +12,10 @@ shape (``train(dataset, config) -> RouterModelArtifact``, wrapped into a
 ``accuracy``, ``auc``, ``spearman_r``); ``MLPRouterTrainer.last_result`` is a
 bare ``(model, model_ids)`` tuple with no metrics at all. ``TrainingMetrics``/
 ``ValidationMetrics`` below are populated from whatever keys are present and
-left at their zero defaults otherwise -- not every trainer has an equivalent
-of every field (none compute ``regret`` today; that lives in
-``evaluation.routing.oracle``, a separate, label-needing concern).
+left ``None`` otherwise -- not every trainer has an equivalent of every field
+(none compute ``regret`` today; that lives in ``evaluation.routing.oracle``,
+a separate, label-needing concern). ``None`` means "not reported by this
+trainer", never "reported as zero" (TRAININGHARNESS-003).
 
 **No separate save step here.** The diagram shows ``TrainingHarness ..>
 ArtifactStore : saves to``, but every current trainer already persists
@@ -55,23 +56,23 @@ from .trainers.base import RouterModelTrainer, TrainingConfig
 
 @dataclass
 class TrainingMetrics:
-    loss: float = 0.0
-    accuracy: float = 0.0
-    bce: float = 0.0
-    auc: float = 0.0
-    spearman: float = 0.0
-    regret: float = 0.0
+    loss: Optional[float] = None
+    accuracy: Optional[float] = None
+    bce: Optional[float] = None
+    auc: Optional[float] = None
+    spearman: Optional[float] = None
+    regret: Optional[float] = None
     training_time: float = 0.0
 
 
 @dataclass
 class ValidationMetrics:
-    loss: float = 0.0
-    accuracy: float = 0.0
-    bce: float = 0.0
-    auc: float = 0.0
-    spearman: float = 0.0
-    regret: float = 0.0
+    loss: Optional[float] = None
+    accuracy: Optional[float] = None
+    bce: Optional[float] = None
+    auc: Optional[float] = None
+    spearman: Optional[float] = None
+    regret: Optional[float] = None
     selected_parameters: dict[str, Any] = field(default_factory=dict)
 
 
@@ -116,13 +117,13 @@ def _metrics_kwargs(d: dict[str, Any]) -> dict[str, float]:
 
 def _extract_metrics(last_result: Any) -> tuple[TrainingMetrics, ValidationMetrics]:
     """Best-effort: works for anything exposing ``val_metrics``/``history``
-    dicts (``RunResult``, ``BaselineRun``); returns zero-valued defaults for
-    anything else (e.g. ``MLPRouterTrainer``'s bare tuple).
+    dicts (``RunResult``, ``BaselineRun``); leaves every field ``None``
+    ("not reported") for anything else (e.g. ``MLPRouterTrainer``'s bare tuple).
 
     ``history`` rows only ever carry ``train_loss`` (matched onto
     ``TrainingMetrics.loss``) -- neither wrapped trainer's per-epoch loop
-    computes train-split accuracy/bce/auc/spearman, so those four fields stay
-    at their ``0.0`` default regardless of trainer; only the validation split
+    computes train-split accuracy/bce/auc/spearman, so those four fields are
+    left ``None`` ("not reported") regardless of trainer; only the validation split
     (``val_metrics``) has them."""
     val_metrics = getattr(last_result, "val_metrics", None) or {}
     validation = ValidationMetrics(**_metrics_kwargs(val_metrics))

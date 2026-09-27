@@ -95,9 +95,9 @@ def test_harness_train_runs_mlp_router(tmp_path):
 
     assert run.trainer_name == "mlp"
     assert run.artifact.router_model_name == "mlp"
-    # MLPRouterTrainer.last_result has no val_metrics/history -> zero defaults,
-    # not a crash
-    assert run.validation_metrics.bce == 0.0
+    # MLPRouterTrainer.last_result has no val_metrics/history -> the metric
+    # stays unset (None), not a fake 0.0 "perfect score" (TRAININGHARNESS-003)
+    assert run.validation_metrics.bce is None
     assert run.training_metrics.training_time > 0
 
     # the artifact-driven load path this trainer exists to enable (TT-01) --
@@ -109,3 +109,23 @@ def test_harness_train_runs_mlp_router(tmp_path):
     factory.register("mlp", MLPRouter)
     router = factory.create(run.artifact, CostModel())
     assert isinstance(router, MLPRouter)
+
+
+def test_unreported_metrics_default_to_none_not_zero(tmp_path):
+    """TRAININGHARNESS-003: a trainer whose last_result has no metrics at all
+    (MLPRouterTrainer's is a bare (model, model_ids) tuple) must leave those
+    fields unset, not silently read as a perfect 0.0 score."""
+    d = FakeTrainingData(make_split_obs(seed=25), query_dim=16)
+    harness = TrainingHarness()
+    trainer = MLPRouterTrainer(runs_dir=tmp_path)
+    config = TrainingConfig(
+        run_name="harness-mlp-none", hyperparameters={"hidden": 16, "epochs": 2, "pathway": "irt"},
+    )
+    run = harness.train(trainer, d, config)
+
+    assert run.validation_metrics.bce is None
+    assert run.validation_metrics.regret is None
+    assert run.training_metrics.loss is None
+    # training_time is harness-set regardless of the trainer, so it's a real
+    # number, not part of this "unreported -> None" behaviour
+    assert run.training_metrics.training_time > 0

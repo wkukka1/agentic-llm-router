@@ -35,6 +35,7 @@ from router.config import Config, section
 from . import schemas
 from .model_registry import canonical_model_id
 from .normalize import make_query_id, render_prompt
+from .pricing import impute_missing_usage
 
 _SPLIT_TOKENS = {"dev", "test", "train", "val", "valid", "validation"}
 
@@ -474,7 +475,9 @@ def load_irt_router(cfg: Config) -> pd.DataFrame:
     (``id, question, ground_truth, completion, input_tokens, output_tokens,
     cost, performance, task, llm``) from ``sources.irt_router.local_dir/data``.
     ``performance`` is a graded [0, 1] correctness score; ``cost`` is the
-    token-weighted USD cost -- both used verbatim (no price table needed).
+    token-weighted USD cost -- both used verbatim (no price table needed),
+    except rows with 0 tokens and $0 cost, which are missing usage accounting
+    and are priced by :func:`~training.data.pricing.impute_missing_usage`.
 
     Query identity is the exact ``question`` text (matches the repo's own
     ``query_id_map[question]`` join). The origin file (train / test1 / test2) is
@@ -499,6 +502,8 @@ def load_irt_router(cfg: Config) -> pd.DataFrame:
                       if (n := _mc_choices(t, cfg)) is not None}
         frames.append(_melt_irt_router(df, origin, pool, mc_by_task))
     out = pd.concat(frames, ignore_index=True)
+    # 0 tokens + $0 on a scored row is missing usage accounting, not a free call.
+    out = impute_missing_usage(out)
     return schemas.coerce_response_frame(out)
 
 

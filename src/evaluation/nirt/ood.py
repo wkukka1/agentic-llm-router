@@ -42,6 +42,14 @@ def family_of_query(data) -> dict[str, str]:
     return out
 
 
+def holdout_query_ids(data, nirt_cfg: Optional[dict]) -> tuple[list[str], list[str]]:
+    """``(query_ids, family names)`` of the held-out OOD families -- the ids a
+    leakage-safe FAISS bank or taxonomy has to drop before it is built."""
+    fams = list(ood_families(nirt_cfg))
+    fam_of = family_of_query(data)
+    return [q for q, f in fam_of.items() if f in set(fams)], fams
+
+
 def split_observations(
     data,
     holdout: Iterable[str] = DEFAULT_HOLDOUT,

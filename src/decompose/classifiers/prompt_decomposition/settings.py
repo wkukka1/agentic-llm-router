@@ -54,7 +54,7 @@ class Settings:
     data_dir: Path = Path("data")
     artifacts_dir: Path = Path("artifacts")
     embedding_cache_dir: Path = Path("data/processed/embeddings")
-    #: Where `.env` was read from, or None. Printed by ``router describe-data``
+    #: Where `.env` was read from, or None. Printed by ``prompt-decomposition describe-data``
     #: so a surprising seed can be traced to the file that set it.
     source: Path | None = None
 

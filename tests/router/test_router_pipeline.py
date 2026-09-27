@@ -90,6 +90,19 @@ def test_required_capability_filters_out_unsupported_candidates():
     assert decision.ranked_models[0].model.model_id == "big-strong"
 
 
+def test_required_capability_with_no_registry_warns_and_keeps_candidates():
+    """ROUTER-003: no-registry mode can't know any candidate's capabilities.
+    Silently emptying every candidate (the old behaviour) must become a
+    warning plus keeping the pool, not a silent, unexplained empty result."""
+    constraints = RoutingConstraints(required_capabilities=["vision"])
+    pipeline = Router(FakeTextRouter(), llm_registry=None)
+    with pytest.warns(UserWarning, match="required_capabilities"):
+        decision = pipeline.route(
+            RoutingRequest(request_id="r4", prompt="anything", constraints=constraints)
+        )
+    assert len(decision.ranked_models) > 0
+
+
 def test_route_warns_when_max_latency_is_set_since_no_latency_signal_exists():
     """RC-01: ModelScore.expected_latency is never populated on the live path
     (no latency source exists anywhere in the package), so a non-default

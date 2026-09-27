@@ -9,7 +9,6 @@ composite that returns them as one named vector.
     heads/length        how big the job is              rho 0.582
     heads/attributes    11 gates and judged criteria    code 0.905 P@R50
     signals/surface     23 free deterministic features
-    cascade/signals     what the weak model's own answer says
     composite           all of it, as 57 named columns
 
 Difficulty is deliberately absent: four feature families failed to predict it
