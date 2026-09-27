@@ -741,7 +741,7 @@ def fit(
     )
 
     if save:
-        base = Path(runs_dir) if runs_dir is not None else _resolve_runs_dir(nirt_cfg, phase0_cfg)
+        base = _resolve_runs_dir(nirt_cfg, phase0_cfg, runs_dir)
         out = base / name
         out.mkdir(parents=True, exist_ok=True)
         # record which phase-0 config (paths, stores, pool) the run was trained
@@ -794,12 +794,17 @@ def fit(
     return result
 
 
-def _resolve_runs_dir(nirt_cfg: dict, phase0_cfg) -> Path:
+def _resolve_runs_dir(nirt_cfg: dict, phase0_cfg, runs_dir: "str | os.PathLike | None" = None) -> Path:
     """Absolute, else joined to ``phase0_cfg``'s root (if given) or
     :data:`router.config.REPO_ROOT`. Both branches ultimately delegate to
     :func:`router.config.resolve_path` (XD-11) -- ``Config.resolve`` already
-    handles the absolute-path case, so it's checked only once."""
-    rel = nirt_cfg.get("runs_dir", DEFAULT_NIRT_RUNS_DIR)
+    handles the absolute-path case, so it's checked only once. ``runs_dir``,
+    when given, overrides ``nirt_cfg["runs_dir"]`` as the value to resolve --
+    this is what makes an *explicit* relative ``runs_dir`` join against
+    ``phase0_cfg``'s root the same way the baseline trainer's explicit
+    relative ``out_dir`` does, instead of resolving against the process's CWD
+    (MOD-001, training.nirt)."""
+    rel = runs_dir if runs_dir is not None else nirt_cfg.get("runs_dir", DEFAULT_NIRT_RUNS_DIR)
     if phase0_cfg is not None and hasattr(phase0_cfg, "resolve"):
         return phase0_cfg.resolve(rel)
     from router.config import resolve_path

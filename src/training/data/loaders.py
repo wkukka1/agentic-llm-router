@@ -35,6 +35,7 @@ from router.config import Config, section
 from . import schemas
 from .model_registry import canonical_model_id
 from .normalize import make_query_id, render_prompt
+from .pricing import impute_missing_usage
 
 _SPLIT_TOKENS = {"dev", "test", "train", "val", "valid", "validation"}
 
@@ -474,7 +475,9 @@ def load_irt_router(cfg: Config) -> pd.DataFrame:
     (``id, question, ground_truth, completion, input_tokens, output_tokens,
     cost, performance, task, llm``) from ``sources.irt_router.local_dir/data``.
     ``performance`` is a graded [0, 1] correctness score; ``cost`` is the
-    token-weighted USD cost -- both used verbatim (no price table needed).
+    token-weighted USD cost -- both used verbatim (no price table needed),
+    except rows with 0 tokens and $0 cost, which are missing usage accounting
+    and are priced by :func:`~training.data.pricing.impute_missing_usage`.
 
     Query identity is the exact ``question`` text (matches the repo's own
     ``query_id_map[question]`` join). The origin file (train / test1 / test2) is
@@ -499,6 +502,8 @@ def load_irt_router(cfg: Config) -> pd.DataFrame:
                       if (n := _mc_choices(t, cfg)) is not None}
         frames.append(_melt_irt_router(df, origin, pool, mc_by_task))
     out = pd.concat(frames, ignore_index=True)
+    # 0 tokens + $0 on a scored row is missing usage accounting, not a free call.
+    out = impute_missing_usage(out)
     return schemas.coerce_response_frame(out)
 
 
@@ -657,6 +662,171 @@ def load_anchor_judge(cfg: Config) -> pd.DataFrame:
 
 
 # --------------------------------------------------------------------------- #
+# LLMRouterBench (arXiv 2601.07206, Findings of ACL 2026)                     #
+# --------------------------------------------------------------------------- #
+# dataset_name -> canonical metric_type, per evaluations/LLMRouterBench/README.md's
+# "Datasets" table (Performance-Cost Setting) and each dataset's own evaluator under
+# evaluations/LLMRouterBench/evaluation/.
+_LLMROUTERBENCH_METRIC_TYPES: dict[str, str] = {
+    "aime": schemas.MetricType.ACCURACY,
+    "livemathbench": schemas.MetricType.ACCURACY,
+    "gpqa": schemas.MetricType.MC_ACCURACY,
+    "hle": schemas.MetricType.LLM_JUDGE_SCORE,
+    "livecodebench": schemas.MetricType.PASS_AT_1,
+    "mmlupro": schemas.MetricType.MC_ACCURACY,
+    "swe-bench": schemas.MetricType.PASS_AT_1,
+    "simpleqa": schemas.MetricType.LLM_JUDGE_SCORE,
+    "tau2": schemas.MetricType.ACCURACY,
+    "arenahard": schemas.MetricType.LLM_JUDGE_SCORE,
+}
+
+
+def _llmrouterbench_latest_files(results_dir: Path) -> list[Path]:
+    """One file per ``(dataset_name, split, model_name)``, keeping the file with the
+    lexicographically-latest ``<timestamp>.json`` stem when a combination was re-run --
+    mirrors the reference framework's own dedup (``baselines/data_loader.py``'s
+    ``_find_result_files`` / ``_get_latest_file_by_timestamp``). A file whose header
+    marks ``demo: true`` is skipped outright (mirrors ``_should_skip_file``'s
+    ``skip_demo``), so a later-timestamped smoke-test run can never evict a real one."""
+    groups: dict[tuple[str, str, str], list[Path]] = {}
+    for path in sorted(results_dir.rglob("*.json")):
+        try:
+            header = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as e:
+            warnings.warn(f"LLMRouterBench: skipping unreadable {path}: {e}")
+            continue
+        if header.get("demo"):
+            continue
+        key = (header.get("dataset_name"), header.get("split"), header.get("model_name"))
+        if None in key:
+            warnings.warn(
+                f"LLMRouterBench: {path} missing dataset_name/split/model_name; skipped"
+            )
+            continue
+        groups.setdefault(key, []).append(path)
+    return [max(paths, key=lambda p: p.stem) for paths in groups.values()]
+
+
+def load_llmrouterbench(cfg: Config) -> pd.DataFrame:
+    """LLMRouterBench's performance-cost setting: 13 flagship models over 10 datasets,
+    read from the framework's own ``results/bench/<dataset>/<split>/<model>/<ts>.json``
+    layout (see ``evaluations/LLMRouterBench/README.md``, "Result File Structure").
+
+    Each file is ``{dataset_name, split, model_name, records: [...]}``; each record
+    carries ``index, origin_query, prompt, prediction, ground_truth, score,
+    prompt_tokens, completion_tokens, cost``. ``score: null`` records (a failed
+    generation) are dropped, never coerced to ``0.0`` -- see
+    ``training.data.schemas``'s "missing values are never fabricated" rule. Multiple
+    result files for the same ``(dataset, split, model)`` are deduplicated to the
+    latest by filename timestamp. A ``model_name`` outside ``sources.llmrouterbench.pool``,
+    a ``split`` outside ``sources.llmrouterbench.splits`` (when configured), and a
+    ``dataset_name`` outside :data:`_LLMROUTERBENCH_METRIC_TYPES` (e.g. the paper's own
+    excluded ``arc-agi``) are all dropped, each with a warning naming what was dropped --
+    never silently admitted or silently absorbed.
+    """
+    src = section(cfg, "sources").get("llmrouterbench", {})
+    results_dir = cfg.resolve(
+        src.get("local_dir", "evaluations/LLMRouterBench/results/bench")
+    )
+    pool = {str(m) for m in (src.get("pool") or [])}
+    allowed_splits = {str(s) for s in (src.get("splits") or [])}
+    if not results_dir.exists():
+        raise FileNotFoundError(
+            f"LLMRouterBench results dir not found: {results_dir}\n"
+            f"Run: python scripts/data/download_llmrouterbench.py --config <this config>"
+        )
+
+    dropped_missing_score = 0
+    dropped_out_of_pool: dict[str, int] = {}
+    dropped_out_of_split: dict[str, int] = {}
+    dropped_unknown_dataset: dict[str, int] = {}
+    n_files_seen = 0
+    records: list[dict] = []
+    for path in _llmrouterbench_latest_files(results_dir):
+        n_files_seen += 1
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        dataset = str(payload["dataset_name"])
+        split = payload.get("split")
+        model_native = str(payload["model_name"])
+        n_rows = len(payload.get("records", []))
+        if pool and model_native not in pool:
+            dropped_out_of_pool[model_native] = dropped_out_of_pool.get(model_native, 0) + n_rows
+            continue
+        if allowed_splits and str(split) not in allowed_splits:
+            dropped_out_of_split[str(split)] = dropped_out_of_split.get(str(split), 0) + n_rows
+            continue
+        if dataset not in _LLMROUTERBENCH_METRIC_TYPES:
+            dropped_unknown_dataset[dataset] = dropped_unknown_dataset.get(dataset, 0) + n_rows
+            continue
+        model_id = canonical_model_id(model_native)
+        metric_type = _LLMROUTERBENCH_METRIC_TYPES[dataset]
+        is_mc = metric_type == schemas.MetricType.MC_ACCURACY
+        n_choices = _mc_choices(dataset, cfg) if is_mc else None
+
+        for row in payload.get("records", []):
+            if row.get("score") is None:
+                dropped_missing_score += 1
+                continue
+            text = row.get("origin_query") or row.get("prompt") or ""
+            prompt = render_prompt(text)
+            qid = make_query_id(schemas.Source.LLMROUTERBENCH, dataset, prompt)
+            records.append({
+                "query_id": qid,
+                "model_id": model_id,
+                "query": prompt,
+                "score": float(row["score"]),
+                "metric_type": metric_type,
+                "dataset": dataset,
+                "split": split,
+                "source": schemas.Source.LLMROUTERBENCH,
+                "is_multiple_choice": is_mc,
+                "n_choices": n_choices,
+                "input_tokens": row.get("prompt_tokens"),
+                "output_tokens": row.get("completion_tokens"),
+                "latency": None,
+                "cost": row.get("cost"),
+                "metadata": {
+                    "native_model_name": model_native,
+                    "record_index": row.get("index"),
+                    "result_file": path.name,
+                },
+            })
+
+    if dropped_missing_score:
+        warnings.warn(
+            f"LLMRouterBench: dropped {dropped_missing_score} record(s) with score=null "
+            f"(a failed generation the framework itself would otherwise silently score 0.0)"
+        )
+    if dropped_out_of_pool:
+        warnings.warn(
+            f"LLMRouterBench: dropped {sum(dropped_out_of_pool.values())} record(s) for "
+            f"{len(dropped_out_of_pool)} out-of-pool model(s): {sorted(dropped_out_of_pool)}"
+        )
+    if dropped_out_of_split:
+        warnings.warn(
+            f"LLMRouterBench: dropped {sum(dropped_out_of_split.values())} record(s) for "
+            f"split(s) outside sources.llmrouterbench.splits: {sorted(dropped_out_of_split)}"
+        )
+    if dropped_unknown_dataset:
+        warnings.warn(
+            f"LLMRouterBench: dropped {sum(dropped_unknown_dataset.values())} record(s) for "
+            f"dataset(s) outside the performance-cost setting: {sorted(dropped_unknown_dataset)}"
+        )
+    if not records:
+        if n_files_seen == 0:
+            raise FileNotFoundError(
+                f"LLMRouterBench: no result files found under {results_dir}\n"
+                f"Run: python scripts/data/download_llmrouterbench.py --config <this config>"
+            )
+        raise ValueError(
+            f"LLMRouterBench: {n_files_seen} result file(s) found under {results_dir}, but "
+            f"every record was filtered out (pool/splits/dataset/score) -- check "
+            f"sources.llmrouterbench.pool and .splits against what's actually on disk"
+        )
+    return schemas.coerce_response_frame(pd.DataFrame.from_records(records))
+
+
+# --------------------------------------------------------------------------- #
 # combined                                                                    #
 # --------------------------------------------------------------------------- #
 LOADERS = {
@@ -666,6 +836,7 @@ LOADERS = {
     schemas.Source.LM_HARNESS: load_lm_harness,
     schemas.Source.IRT_ROUTER: load_irt_router,
     schemas.Source.ANCHOR_JUDGE: load_anchor_judge,
+    schemas.Source.LLMROUTERBENCH: load_llmrouterbench,
 }
 
 

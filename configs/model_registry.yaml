@@ -195,3 +195,100 @@ models:
       aliases: [ { native: "HuggingFaceTB/SmolLM2-1.7B-Instruct", confidence: high },
                  { native: "HuggingFaceTB__SmolLM2-1.7B-Instruct", confidence: high },
                  { native: "smollm2-1.7b-instruct", confidence: high } ] }
+
+  # ---- pool-expansion E4: LLMRouterBench performance-cost flagship pool (13) ----
+  # Native strings are exact provider-facing labels from
+  # evaluations/LLMRouterBench/config/baseline_config_performance_cost.yaml `filters.models`.
+  # Identity mappings (confidence: high) -- no cross-source merge decisions needed, since
+  # this pool shares no checkpoint with RouterBench/Arena/IRT-Router.
+  - canonical_id: claude-sonnet-4
+    provider: anthropic
+    family: claude-4
+    version: "sonnet"
+    aliases:
+      - { native: "claude-sonnet-4", confidence: high }
+
+  - canonical_id: deepseek-v3-0324
+    provider: deepseek
+    family: deepseek-v3
+    version: "0324"
+    aliases:
+      - { native: "deepseek-v3-0324", confidence: high }
+
+  - canonical_id: deepseek-v3.1-terminus
+    provider: deepseek
+    family: deepseek-v3.1
+    version: "terminus"
+    aliases:
+      - { native: "deepseek-v3.1-terminus", confidence: high }
+
+  - canonical_id: deepseek-r1-0528
+    provider: deepseek
+    family: deepseek-r1
+    version: "0528"
+    aliases:
+      - { native: "deepseek-r1-0528", confidence: high }
+
+  - canonical_id: gemini-2.5-flash
+    provider: google
+    family: gemini-2.5
+    version: "flash"
+    aliases:
+      - { native: "gemini-2.5-flash", confidence: high }
+
+  - canonical_id: gemini-2.5-pro
+    provider: google
+    family: gemini-2.5
+    version: "pro"
+    aliases:
+      - { native: "gemini-2.5-pro", confidence: high }
+
+  - canonical_id: gpt-5-chat
+    provider: openai
+    family: gpt-5
+    version: "chat"
+    aliases:
+      - { native: "gpt-5-chat", confidence: high }
+
+  - canonical_id: gpt-5
+    provider: openai
+    family: gpt-5
+    version: "medium"
+    notes: "LLMRouterBench's `GPT-5-medium` pool entry; native string is bare `gpt-5`."
+    aliases:
+      - { native: "gpt-5", confidence: high }
+
+  - canonical_id: qwen3-235b-a22b-2507
+    provider: alibaba
+    family: qwen3-235b-a22b
+    version: "2507"
+    aliases:
+      - { native: "qwen3-235b-a22b-2507", confidence: high }
+
+  - canonical_id: qwen3-235b-a22b-thinking-2507
+    provider: alibaba
+    family: qwen3-235b-a22b
+    version: "thinking-2507"
+    aliases:
+      - { native: "qwen3-235b-a22b-thinking-2507", confidence: high }
+
+  - canonical_id: glm-4.6
+    provider: zhipu
+    family: glm-4
+    version: "4.6"
+    aliases:
+      - { native: "glm-4.6", confidence: high }
+
+  - canonical_id: kimi-k2-0905
+    provider: moonshot
+    family: kimi-k2
+    version: "0905"
+    aliases:
+      - { native: "kimi-k2-0905", confidence: high }
+
+  - canonical_id: intern-s1
+    provider: shanghai-ai-lab
+    family: intern-s1
+    version: null
+    aliases:
+      - { native: "intern-s1", confidence: high }

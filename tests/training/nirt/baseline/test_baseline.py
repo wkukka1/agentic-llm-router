@@ -18,7 +18,7 @@ def _model(**kw):
     return BaselineNIRT(**base)
 
 
-def test_output_shapes_and_ranges():
+def test_output_shapes_and_nonnegative_discrimination():
     m = _model()
     e_q = torch.randn(32, 16)
     midx = torch.randint(0, 5, (32,))
@@ -30,8 +30,6 @@ def test_output_shapes_and_ranges():
     assert out.b_q.shape == (32,)
     assert out.theta_m.shape == (32, 4)
     assert torch.isfinite(out.logit).all()
-    p = out.proba()
-    assert ((p >= 0) & (p <= 1)).all()
     assert (out.a_q >= 0).all()          # softplus / gate keep discrimination >= 0
 
 

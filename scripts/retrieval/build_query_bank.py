@@ -27,16 +27,11 @@ from training.retrieval.query_bank import build_query_bank, query_bank_dir
 def _ood_holdout_ids(cfg, nirt_config: str) -> tuple[list[str], list[str]]:
     """(query_ids to exclude, holdout family names) from configs/nirt.yaml."""
     from training.data.facade import load_training_data
-    from evaluation.nirt.ood import family_of_query, ood_families
+    from evaluation.nirt.ood import holdout_query_ids
 
     p = Path(nirt_config)
     p = p if p.is_absolute() else Path(cfg.root) / p
-    nirt_cfg = yaml.safe_load(p.read_text(encoding="utf-8"))
-    fams = list(ood_families(nirt_cfg))
-    d = load_training_data(cfg)
-    fam_of = family_of_query(d)
-    ids = [q for q, f in fam_of.items() if f in set(fams)]
-    return ids, fams
+    return holdout_query_ids(load_training_data(cfg), yaml.safe_load(p.read_text(encoding="utf-8")))
 
 
 def main() -> int:

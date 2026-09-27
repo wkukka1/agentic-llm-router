@@ -6,7 +6,7 @@ the per-model mean cost -- the same formula and units
 :func:`router.nirt.routing_decision.routing_decision` (the served router's own
 decision rule) uses, via :func:`~router.nirt.routing_decision.cost_aware_utility`.
 ``lam`` is therefore in raw per-query cost units (USD), directly comparable to
-``Router.route(lam=...)``'s ``lam`` -- NOT a ``[0, 1]``-normalized scale. ``lam
+``RouterModel.route(lam=...)``'s ``lam`` -- NOT a ``[0, 1]``-normalized scale. ``lam
 = 0`` is quality-only routing.
 
 Everything is evaluated on the dense ``(query, model)`` matrices of a split:
@@ -47,13 +47,64 @@ def dense_matrices(obs: pd.DataFrame):
     return true.loc[keep], cost.loc[keep]
 
 
-def eval_matrices(data, split: str = "test", models: Optional[list[str]] = None):
-    """Return aligned ``(true, cost)`` DataFrames [query x model] for ``split``."""
+#: within one source, a model observed on fewer than this fraction of the source's queries is a
+#: straggler (e.g. ``moonshot_v1_search``: 1 of 3,790 IRT-Router test queries) and is left out of
+#: that source's pool -- one straggler would otherwise leave no query with every model observed.
+SOURCE_MIN_COVERAGE = 0.5
+
+
+def _restrict_to_source(obs: pd.DataFrame, source: str) -> pd.DataFrame:
+    """``obs`` rows from ``source``, minus straggler models (see :data:`SOURCE_MIN_COVERAGE`)."""
+    obs = obs[obs["source"] == source]
+    if obs.empty:
+        return obs
+    coverage = obs.groupby("model_id")["query_id"].nunique() / obs["query_id"].nunique()
+    return obs[obs["model_id"].isin(coverage.index[coverage >= SOURCE_MIN_COVERAGE])]
+
+
+def _no_dense_queries_message(obs: pd.DataFrame, split: str, source: Optional[str] = None) -> str:
+    """Why ``dense_matrices(obs)`` came back empty, for the error a caller would otherwise hit as an
+    ``IndexError`` deep in a metric. ``obs`` is already restricted to the split / pool / source."""
+    if obs.empty:
+        scope = f" from source {source!r}" if source else ""
+        return f"no {split!r} observations{scope} for the requested split / models"
+    n_models = obs["model_id"].nunique()
+    per_query = obs.groupby("query_id")["model_id"].nunique()
+    coverage = ", ".join(f"{k} models -> {v:,} queries"
+                         for k, v in per_query.value_counts().sort_index(ascending=False).head(5).items())
+    head = (f"no {split!r} query has a target and cost for every one of the {n_models} pool models: "
+            f"{len(per_query):,} queries are observed, but by at most {per_query.max()} models each "
+            f"({coverage}). ")
+    if source:
+        return head + (f"Even within source {source!r} no dense [query x model] matrix exists -- "
+                       f"pass a `models` sub-pool that co-occurs on queries.")
+    return head + ("The pool spans sources with disjoint model sets, so no dense [query x model] "
+                   "matrix exists -- evaluate one source's dense pool (`source=` / `--source <name>`), "
+                   "use a dense config (e.g. --config configs/irt_router.yaml), or pass a `models` "
+                   "sub-pool that co-occurs on queries.")
+
+
+def eval_matrices(data, split: str = "test", models: Optional[list[str]] = None,
+                  source: Optional[str] = None):
+    """Return aligned ``(true, cost)`` DataFrames [query x model] for ``split``.
+
+    ``source`` (an ``obs["source"]`` value, e.g. ``"routerbench"``) restricts to that source's
+    queries and to the models it actually covers, so a pool that spans sources with disjoint
+    model sets still yields one dense matrix per source.
+
+    Raises ``ValueError`` (rather than returning zero rows) when no query has every model
+    observed -- an empty matrix only fails later, obscurely, inside the routing metrics.
+    """
     obs = data.nirt_observations()
     obs = obs[obs["split"] == split]
     if models is not None:
         obs = obs[obs["model_id"].isin(models)]
-    return dense_matrices(obs)
+    if source is not None:
+        obs = _restrict_to_source(obs, source)
+    true, cost = dense_matrices(obs)
+    if true.empty:
+        raise ValueError(_no_dense_queries_message(obs, split, source))
+    return true, cost
 
 
 def align(matrix: pd.DataFrame, like: pd.DataFrame) -> np.ndarray:
@@ -61,11 +112,18 @@ def align(matrix: pd.DataFrame, like: pd.DataFrame) -> np.ndarray:
     return matrix.reindex(index=like.index, columns=like.columns).to_numpy(np.float64)
 
 
+_TRAIN_QUALITY_METRICS = frozenset({"quality", "accuracy"})
+
+
 def train_quality(data, models: list[str], metric: str = "quality") -> dict[str, float]:
     """Per-model mean training correctness -- for the 'best fixed model' baseline.
 
     ``metric="quality"`` -> mean graded target; ``"accuracy"`` -> mean(target>=0.5).
     """
+    if metric not in _TRAIN_QUALITY_METRICS:
+        raise ValueError(
+            f"train_quality: metric must be one of {sorted(_TRAIN_QUALITY_METRICS)}, got {metric!r}"
+        )
     obs = data.nirt_observations()
     obs = obs[(obs["split"] == "train") & (obs["model_id"].isin(models))]
     y = obs["target"].to_numpy(np.float64)
@@ -98,21 +156,22 @@ def route(pred: np.ndarray, cost: np.ndarray, lam: float = 0.0) -> np.ndarray:
     non-finite predictions/costs are masked -- both via
     :func:`router.nirt.routing_decision.routing_decision`, the served
     router's own decision rule, so an offline ``lam`` sweep here selects
-    exactly what ``Router.route(lam=lam)`` would."""
+    exactly what ``RouterModel.route(lam=lam)`` would."""
     C = np.asarray(cost, np.float64).mean(axis=0)
     return routing_decision(pred, lam=lam, model_costs=C)
 
 
 def oracle_choice(
     true: np.ndarray, cost: np.ndarray, *, tol: float = 1e-9,
-    model_ids: Optional[Sequence[str]] = None,
+    model_ids: Optional[Sequence[str]],
 ) -> np.ndarray:
     """Per-query index of the oracle model: the max observed score, ties broken by cost.
 
     Cost is **only a tie-breaker** among the models attaining the max score -- it is
     never traded off against score (that is the cost-aware utility, reported
     separately). Ties left after cost (equal score *and* equal cost) are broken by
-    one of two modes:
+    one of two modes. ``model_ids`` has no default -- every caller states its
+    choice explicitly, rather than silently landing on the legacy mode:
 
     * ``model_ids`` given -- the **canonical** rule: max score -> min cost ->
       lexicographically smallest ``model_id``. Independent of column order; new
@@ -126,10 +185,19 @@ def oracle_choice(
     overpays -- inflating the oracle cost (and deflating the oracle's cost-saving
     ceiling). Breaking the tie by cost matches RouterBench's own oracle
     (cheapest correct model) and does not change the oracle's quality.
+
+    A missing (``NaN``) cost at a query's max-scoring cell is treated as "unknown,
+    but still eligible" -- it never sorts as *cheaper* than a real cost (that would
+    let an unpriced model win a tie it may not deserve), but it also never sorts
+    as *worse* than a model that didn't even attain the max score. Residual ties
+    among only-NaN-cost max scorers fall through to the id/column tie-break.
     """
     true = np.asarray(true, np.float64)
     at_max = true >= true.max(axis=1, keepdims=True) - tol
     masked_cost = np.where(at_max, np.asarray(cost, np.float64), np.inf)
+    finite = masked_cost[np.isfinite(masked_cost)]
+    nan_sentinel = float(finite.max()) + 1.0 if finite.size else 0.0
+    masked_cost = np.where(np.isnan(masked_cost), nan_sentinel, masked_cost)
     if model_ids is None:
         return masked_cost.argmin(axis=1)
     ids = np.asarray([str(m) for m in model_ids])
@@ -161,7 +229,11 @@ def routing_report(
     rows: list[dict] = []
 
     # -- reference / bound policies --------------------------------------
-    rows.append(_policy_row("oracle (best per query)", oracle_choice(true, cost), true, cost))
+    # legacy tie-break (column order), kept explicit so historical numbers
+    # don't silently change if oracle_choice's default is ever revisited
+    rows.append(_policy_row(
+        "oracle (best per query)", oracle_choice(true, cost, model_ids=None), true, cost,
+    ))
     if train_quality:
         best_fixed = max(train_quality, key=train_quality.get)
         j = model_ids.index(best_fixed)

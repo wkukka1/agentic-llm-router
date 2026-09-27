@@ -1,9 +1,9 @@
-"""The prompt-decomposition heads, as concrete :class:`Classifier` implementations.
+"""The prompt-decomposition heads, as concrete :class:`SimpleClassifier` implementations.
 
-``PromptDecomposer``'s docstring notes that no concrete ``Classifier`` exists
-yet, so an empty decomposer produces empty ``PromptSignals``. These are those
-classifiers: five trained heads, each emitting the signals it is good for and
-nothing it is not.
+Five trained heads, each emitting the signals it is good for and nothing it
+is not -- the first real, non-scaffolding :class:`~decompose.classifiers.base.Classifier`
+implementations in the repo. See :func:`decompose.decomposer.default_prompt_decomposer`
+for the factory that wires a live set of these into a :class:`~decompose.decomposer.PromptDecomposer`.
 
 Wiring them up is ordinary::
 
@@ -37,10 +37,10 @@ from pathlib import Path
 from typing import Any
 
 from ..signals import Signal
-from .base import ClassificationInput, Classifier
+from .base import ClassificationInput, SimpleClassifier
 
 
-class _HeadClassifier(Classifier):
+class _HeadClassifier(SimpleClassifier):
     """Shared plumbing: load a run directory once, name signals consistently."""
 
     def __init__(self, run_dir: str | Path, *, name: str | None = None) -> None:
@@ -55,7 +55,7 @@ class _HeadClassifier(Classifier):
                       produced_by=f"{self.name}:{self.version}", metadata=metadata)
 
 
-class SurfaceClassifier(Classifier):
+class SurfaceClassifier(SimpleClassifier):
     """23 deterministic features read straight off the prompt string.
 
     No model and no artifact, so this one is always available and cannot drift:

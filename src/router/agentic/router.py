@@ -1,4 +1,4 @@
-"""``AgenticRouter`` -- a :class:`~router.routing.base.Router` plus an orchestrator.
+"""``AgenticRouter`` -- a :class:`~router.routing.base.RouterModel` plus an orchestrator.
 
 Flow for a live prompt:
 
@@ -28,18 +28,29 @@ Failure handling: a model call that raises inside an orchestration is recorded
 as a failed :class:`SubCall` (``error`` set, see ``AgenticResult.errors()``) so
 the sub-answers already paid for survive; a failing *root* call still raises.
 ``max_calls`` caps the model calls one :meth:`run` may make across the whole
-recursion tree (``max_depth`` alone bounds depth, not fan-out).
+recursion tree (``max_depth`` alone bounds depth, not fan-out) -- routed calls
+*and* the helper LLMs (``LLMTriage``, ``LLMDecomposer``, ``LLMSynthesizer``,
+and the ``LangChainToolOrchestrator`` tool-agent's own reasoning steps) all
+count against it. The one gap: a tool-agent's reasoning steps are counted but
+not directly enforced mid-reasoning (there's no ``SubCall`` to fail there);
+the limit still bites the next routed call once exhausted.
+
+``run()`` is safe to call concurrently on one shared ``AgenticRouter``
+instance -- each call's routing cache and call count live in a context-local
+state (thread- or asyncio-task-isolated), not on the instance.
 """
 
 from __future__ import annotations
 
+import contextvars
+from dataclasses import dataclass, field
 from typing import Callable, Optional
 
-from ..routing.base import Router, RoutingResult
+from ..routing.base import RouterModel, RoutingResult
 from .llm_clients import ClientRegistry, LLMClient
 from .decompose import NaiveDecomposer, concat_synthesizer
 from .orchestrator import RecursiveOrchestrator
-from .result import AgenticResult, SubCall
+from .result import AgenticResult, SubCall, total_cost
 from .triage import HeuristicTriage, TriageDecision, best_from_result
 
 __all__ = ["AgenticRouter"]
@@ -49,10 +60,41 @@ Synthesizer = Callable[..., str]
 Triage = Callable[..., TriageDecision]
 
 
+@dataclass
+class _RunState:
+    """One :meth:`AgenticRouter.run` call's state: routes already computed
+    (so a sub-task triage isn't repeated) and the shared call budget.
+
+    Lives in a :class:`contextvars.ContextVar`, not on the ``AgenticRouter``
+    instance (AGENTICROUTER-004) -- each ``run()`` call (its own thread,
+    asyncio task, or a re-entrant nested call) gets an isolated state, so
+    concurrent runs can no longer wipe each other's cached triage decisions
+    or share a call counter."""
+
+    decisions: dict[str, TriageDecision] = field(default_factory=dict)
+    calls: int = 0
+    max_calls: Optional[int] = None
+
+    def use_call(self, n: int = 1, *, enforce: bool = True) -> None:
+        """Count ``n`` model call(s) against the budget. Every LLM
+        invocation a run makes -- routed, triage, decompose, synthesize --
+        goes through here, not just the routed calls (AGENTICROUTER-003).
+        ``enforce=False`` counts without raising, for call sites that can't
+        safely raise mid-call (see ``LangChainToolOrchestrator``)."""
+        if enforce and self.max_calls is not None and self.calls + n > self.max_calls:
+            raise RuntimeError(f"max_calls={self.max_calls} model calls exhausted for this run")
+        self.calls += n
+
+
+_current_run: "contextvars.ContextVar[Optional[_RunState]]" = contextvars.ContextVar(
+    "agentic_router_current_run", default=None
+)
+
+
 class AgenticRouter:
     def __init__(
         self,
-        router: Router,
+        router: RouterModel,
         clients: Optional[ClientRegistry | dict[str, LLMClient]] = None,
         *,
         triage: Optional[Triage] = None,
@@ -78,9 +120,13 @@ class AgenticRouter:
         self.max_depth = int(max_depth)
         self.max_calls = None if max_calls is None else int(max_calls)
         self._resolver = query_resolver
-        # per-run state (reset by run()): routes already computed, calls made
-        self._decisions: dict[str, TriageDecision] = {}
-        self._calls = 0
+        # AGENTICROUTER-003: route each helper's own LLM call through the same
+        # per-run budget a routed call goes through (see _RunState.use_call).
+        # Harmless no-op for helpers that don't expose ``on_call`` (the
+        # heuristic/naive defaults, or a user-supplied plain callable).
+        for helper in (self.triage, self.decomposer, self.synthesizer):
+            if hasattr(helper, "on_call"):
+                helper.on_call = self._use_call
 
     # ------------------------------------------------------------------ #
     # routing a single prompt                                            #
@@ -112,7 +158,7 @@ class AgenticRouter:
         rr = self.route_decision(prompt)
         model_id, q, scores = best_from_result(rr)
         decision = self.triage(prompt, model_id=model_id, predicted_quality=q, scores=scores)
-        self._decisions[prompt] = decision
+        self._run_state().decisions[prompt] = decision
         return decision
 
     # ------------------------------------------------------------------ #
@@ -120,12 +166,12 @@ class AgenticRouter:
     # ------------------------------------------------------------------ #
     def run(self, prompt: str) -> AgenticResult:
         """Triage ``prompt`` and either answer it directly or orchestrate it."""
-        self._decisions, self._calls = {}, 0
+        token = _current_run.set(_RunState(max_calls=self.max_calls))
         try:
             decision = self.triage_prompt(prompt)
             root = self._solve(prompt, 0, decision=decision)
         finally:
-            self._decisions = {}
+            _current_run.reset(token)
 
         if root.mode == "single":
             reason = decision.reason
@@ -135,8 +181,10 @@ class AgenticRouter:
                 prompt=prompt, mode="single", answer=root.answer,
                 triage_reason=reason,
                 selected_model_id=root.model_id,
-                predicted_quality=decision.predicted_quality,
-                steps=[root], cost=root.cost or 0.0,
+                # the model that actually answered's own score, not the pool
+                # best decision.predicted_quality carries (AGENTICROUTER-001)
+                predicted_quality=root.predicted_quality,
+                steps=[root], cost=root.cost,
             )
         return AgenticResult(
             prompt=prompt, mode="orchestrated", answer=root.answer,
@@ -144,7 +192,7 @@ class AgenticRouter:
             selected_model_id=decision.selected_model_id,
             predicted_quality=decision.predicted_quality,
             steps=root.children, orchestrator=getattr(self.orchestrator, "name", "?"),
-            cost=root.cost or 0.0,
+            cost=root.cost,
         )
 
     # -- recursion unit ------------------------------------------------
@@ -173,7 +221,7 @@ class AgenticRouter:
             predicted_quality=decision.predicted_quality, answer=answer,
             mode="orchestrated", depth=depth, children=children,
             # leaves only: a branch child's cost already includes its descendants
-            cost=sum((n.cost or 0.0) for c in children for n in c.leaves()),
+            cost=total_cost(n for c in children for n in c.leaves()),
         )
 
     @staticmethod
@@ -187,7 +235,7 @@ class AgenticRouter:
     ) -> SubCall:
         """Route ``prompt`` (if the model was not already chosen) and invoke it."""
         if model_id is None:
-            known = self._decisions.get(prompt)
+            known = self._run_state().decisions.get(prompt)
             if known is not None:          # triage already routed this prompt
                 model_id, predicted_quality = known.selected_model_id, self._quality_of(known)
             else:
@@ -202,10 +250,8 @@ class AgenticRouter:
         orchestration (``depth > 0``) a failure becomes a failed ``SubCall``; at
         the root it raises."""
         try:
-            if self.max_calls is not None and self._calls >= self.max_calls:
-                raise RuntimeError(f"max_calls={self.max_calls} model calls exhausted for this run")
-            self._calls += 1
-            resp = self.clients.invoke(model_id, prompt)
+            self._use_call()
+            resp = self.clients.complete(model_id, prompt)
         except Exception as exc:
             if depth == 0:
                 raise
@@ -216,8 +262,26 @@ class AgenticRouter:
             )
         return SubCall(
             prompt=prompt, model_id=model_id, predicted_quality=float(predicted_quality),
-            answer=resp.text, mode="single", depth=depth, cost=resp.cost,
+            answer=resp.content, mode="single", depth=depth, cost=resp.cost,
         )
+
+    # -- per-run state (AGENTICROUTER-004: context-local, not instance state) --
+    def _run_state(self) -> _RunState:
+        """The active run's state. Falls back to a fresh, context-local one
+        for calls made outside :meth:`run` (e.g. driving ``_solve``/
+        ``_call_model`` directly, as the LangChain tool tests do)."""
+        rs = _current_run.get()
+        if rs is None:
+            rs = _RunState(max_calls=self.max_calls)
+            _current_run.set(rs)
+        return rs
+
+    def _use_call(self, n: int = 1, *, enforce: bool = True) -> None:
+        """Count ``n`` model call(s) against this run's shared budget. Every
+        LLM invocation -- routed (``_call_model``) and helper (triage,
+        decompose, synthesize, the LangChain tool-agent's own reasoning) --
+        goes through here (AGENTICROUTER-003)."""
+        self._run_state().use_call(n, enforce=enforce)
 
     # ------------------------------------------------------------------ #
     # convenience                                                        #
@@ -233,7 +297,6 @@ class AgenticRouter:
     def _shallow_copy(self) -> "AgenticRouter":
         c = AgenticRouter.__new__(AgenticRouter)
         c.__dict__.update(self.__dict__)
-        c._decisions, c._calls = {}, 0
         return c
 
     def __repr__(self) -> str:  # pragma: no cover - cosmetic

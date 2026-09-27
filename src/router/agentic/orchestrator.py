@@ -50,13 +50,21 @@ def build_router_tools(agent: "AgenticRouter", depth: int, steps: list[SubCall])
     """LangChain ``StructuredTool``s bound to ``agent``; every model call is
     appended to ``steps``. Returns ``[route_query, answer_with_model,
     route_and_answer]``. Tool exceptions are returned to the agent as
-    observations (``handle_tool_error``) instead of aborting the executor."""
-    from langchain_core.tools import StructuredTool
+    observations (``handle_tool_error``) instead of aborting the executor --
+    ``route_query``/``route_and_answer`` wrap the ``LookupError``/``TypeError``
+    ``agent.route_decision`` documents raising into ``ToolException``, which
+    ``handle_tool_error=True`` actually catches (LANGCHAINTOOLORCHESTRATOR-001;
+    any other exception type still propagates as a real crash, not a
+    silently-swallowed tool result)."""
+    from langchain_core.tools import StructuredTool, ToolException
 
     def route_query(query: str) -> str:
         """Ask the trained router which model should answer QUERY. Returns the
         chosen model id, its predicted quality (0-1), and the runner-up."""
-        rr = agent.route_decision(query)
+        try:
+            rr = agent.route_decision(query)
+        except (LookupError, TypeError) as exc:
+            raise ToolException(str(exc)) from exc
         ranked = sorted(zip(rr.model_ids, rr.scores[0]), key=lambda kv: -kv[1])
         top = ", ".join(f"{m}={q:.2f}" for m, q in ranked[:3])
         return (f"best={rr.selected_model_ids[0]} "
@@ -81,7 +89,10 @@ def build_router_tools(agent: "AgenticRouter", depth: int, steps: list[SubCall])
         thing bounding it is ``agent.max_depth`` (a bare depth counter). See
         ``router.tools.router_tool``/``router.context.RoutingMode.MODEL_SELECTION``
         for the (unimplemented) design intent of a stricter tool-only guard (XA-07)."""
-        sc = agent._solve(query, depth + 1)
+        try:
+            sc = agent._solve(query, depth + 1)
+        except (LookupError, TypeError) as exc:
+            raise ToolException(str(exc)) from exc
         steps.append(sc)
         return sc.answer
 
@@ -126,6 +137,7 @@ class LangChainToolOrchestrator:
         )
 
     def run(self, prompt: str, agent: "AgenticRouter", depth: int) -> tuple[str, list[SubCall]]:
+        from langchain_core.callbacks import BaseCallbackHandler
         from langchain_core.prompts import ChatPromptTemplate
 
         AgentExecutor, create_tool_calling_agent = _agent_executor_api()
@@ -141,7 +153,25 @@ class LangChainToolOrchestrator:
             tools=tools, max_iterations=self._max_iterations, verbose=self._verbose,
             return_intermediate_steps=False,
         )
-        out = executor.invoke({"input": prompt})
+
+        class _CallCounter(BaseCallbackHandler):
+            """Counts every LLM call the tool-calling agent's own reasoning
+            makes against the run's shared ``max_calls`` budget
+            (AGENTICROUTER-003), so tool calls back into the router that
+            follow (``answer_with_model``/``route_and_answer``, already
+            enforced by ``agent._call_model``) see the reduced remaining
+            budget. Doesn't raise here: LangChain's default callback-error
+            handling only logs an exception raised from a callback, and
+            there's no ``SubCall`` to attach a mid-reasoning budget failure
+            to -- enforcement stays at the routed-call boundary."""
+
+            def on_chat_model_start(self, serialized, messages, **kwargs):
+                agent._use_call(enforce=False)
+
+            def on_llm_start(self, serialized, prompts, **kwargs):
+                agent._use_call(enforce=False)
+
+        out = executor.invoke({"input": prompt}, config={"callbacks": [_CallCounter()]})
         answer = out.get("output", "") if isinstance(out, dict) else str(out)
         if not steps:  # agent answered without a tool call -> fall back to direct routing
             sc = agent._answer_directly(prompt, depth)

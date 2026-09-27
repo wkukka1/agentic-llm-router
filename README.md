@@ -19,7 +19,7 @@ single responsibility and an enforced import direction
 
 | package | role | may import |
 |---|---|---|
-| [`router`](src/router/) | **serving**: model definitions, checkpoint inference, the `Router` interface, the agentic orchestrator | — |
+| [`router`](src/router/) | **serving**: model definitions, checkpoint inference, the `RouterModel` interface, the agentic orchestrator | — |
 | [`training`](src/training/) | the data pipeline + fitting/training code | `router` |
 | [`evaluation`](src/evaluation/) | anything that needs ground truth: oracle labels, routing/regret metrics, OOD eval, the LLM-judge pipeline | `router`, `training` |
 | [`decompose`](src/decompose/) | task decomposition signals/classifiers, kept dependency-free | (embedders wrap `router.embeddings.encoder` only) |
@@ -27,7 +27,7 @@ single responsibility and an enforced import direction
 The concrete classifiers under [`decompose/classifiers/`](src/decompose/classifiers/)
 are the prompt-decomposition heads: domain, task type, expected output length,
 and eleven free-label attributes. They turn a prompt into `PromptSignals` for
-`RoutingPipeline`. Their corpora and sweeps live in
+`Router`. Their corpora and sweeps live in
 [`training/prompt_decomposition/`](src/training/prompt_decomposition/) and their
 audits in [`evaluation/prompt_decomposition/`](src/evaluation/prompt_decomposition/).
 
@@ -42,6 +42,7 @@ The README is a front door; the depth lives in `docs/`:
 
 | doc | covers |
 |---|---|
+| [RUNBOOK.md](docs/RUNBOOK.md) | Copy-paste commands to actually run every pipeline, end to end, in order |
 | [architecture.md](docs/architecture.md) | Class hierarchies across `router`/`training`/`evaluation`, the package-layering contract, intentional name collisions |
 | [workflows.md](docs/workflows.md) | Every runnable pipeline as a diagram + call-chain table (data → embeddings → training → eval → agentic serving) |
 | [data_structures.md](docs/data_structures.md) | `Config`, canonical parquet schemas, splits, the `TrainingData` facade, embedding stores |
@@ -54,7 +55,7 @@ The README is a front door; the depth lives in `docs/`:
 | [prompt_decomposition.md](docs/prompt_decomposition.md) | The five heads: taxonomies, calibration, the handoff vector, known limits |
 | [prompt_decomposition_experiments.md](docs/prompt_decomposition_experiments.md) | Every head experiment including the failures, and why each was abandoned |
 | [pool_expansion.md](docs/pool_expansion.md) / [pool_expansion_results.md](docs/pool_expansion_results.md) | Candidate-pool expansion workstream (E0–E2 done, E3 superseded by irt_router.md) and its results ledger |
-| [routing_interface.md](docs/routing_interface.md) | The `Router` ABC, `RoutingResult`, registered strategies (`matrix`/`nirt`/`knn`/`mlp`/`random`) |
+| [routing_interface.md](docs/routing_interface.md) | The `RouterModel` ABC, `RoutingResult`, registered strategies (`matrix`/`nirt`/`knn`/`mlp`/`random`) |
 | [routing_evaluation.md](docs/routing_evaluation.md) | Oracle labels, regret/hit metrics, the prediction-vs-routing distinction |
 | [agentic_router.md](docs/agentic_router.md) | `AgenticRouter`: triage → single call or recursive decompose/route/synthesize |
 | [anchor_judge.md](docs/anchor_judge.md) | The query-matched gold/preference overlap pipeline resolving whether correctness and human/judge preference are one utility or two |
@@ -98,14 +99,14 @@ outcome = agent.run("Plan a 3-day trip to Kyoto and translate the itinerary to J
 outcome.mode   # "single" or "decompose"
 ```
 
-`Router` subclasses implement only `predict_scores(query_ids)`; the ABC
+`RouterModel` subclasses implement only `predict_scores(query_ids)`; the ABC
 supplies `.route()` / `.route_text()` / `.model_ids` /
 `.default_model_costs`. Registered strategies: `matrix`, `nirt`, `knn`,
 `mlp`, `random` (`router.routing.registry.build_router`). Full contract:
 [docs/routing_interface.md](docs/routing_interface.md). Oracle-relative
 scoring (regret, hit-rate — needs ground truth) is a free function,
 `evaluation.routing.oracle.evaluate_router`, deliberately kept out of
-`Router` itself so serving code never imports `evaluation`.
+`RouterModel` itself so serving code never imports `evaluation`.
 
 ## Data pipeline (Foundation)
 
@@ -146,12 +147,12 @@ ds     = d.nirt_dataset(split="train", pathway="irt")       # -> {query_embeddin
 Current outputs from the checked-in raw data:
 
 ```
-734,469 observations   196,791 queries   69 models   88 datasets
-by metric : mc_accuracy 294,998 | judge_preference 218,202 | arena_preference 114,954 | accuracy 106,315
-by source : routerbench 401,313 | gpt4_judge 218,202 | chatbot_arena 114,954
-train / val / test queries : 157,271 / 19,672 / 19,767
-cold-start models : claude-2.0, code-llama-34b-instruct, vicuna-13b, yi-34b-chat
-NIRT observations : 328,347  (train 262,548 / val 32,706 / test 33,093; 9 warm models, 36,483 queries)
+1,904,408 observations   271,305 queries   90 models   100 datasets
+by metric : mc_accuracy 869,456 | accuracy 693,796 | judge_preference 226,202 | arena_preference 114,954
+by source : routerbench 802,626 | irt_router 760,626 | gpt4_judge 218,202 | chatbot_arena 114,954 | anchor_judge 8,000
+train / val / test queries : 216,939 / 27,072 / 27,235
+cold-start models : claude-2.0, gpt_4o_mini, mistral_7b_instruct_v02, mixtral_8x7b_instruct, vicuna-13b
+NIRT observations : 1,449,159  (train 1,159,880 / val 143,954 / test 145,325; 29 warm models, 110,997 queries)
 ```
 
 Dataset sources, schema, chance correction and split mechanics:
@@ -192,7 +193,7 @@ parallel pipeline (`configs/irt_router.yaml`) — see
 
 ## Agentic router
 
-[`src/router/agentic/`](src/router/agentic/) wraps a `Router` with an LLM
+[`src/router/agentic/`](src/router/agentic/) wraps a `RouterModel` with an LLM
 client registry and a triage step: a query is either answered with a single
 routed model call, or decomposed into sub-tasks that are each routed and
 answered independently, then synthesized. Triage is driven by the router's

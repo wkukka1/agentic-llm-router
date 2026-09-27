@@ -23,7 +23,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Callable, Optional
 
 import numpy as np
 
@@ -116,6 +116,9 @@ class LLMTriage:
     def __init__(self, chat_model, *, fallback: Optional[HeuristicTriage] = None):
         self._chat = chat_model
         self._fallback = fallback or HeuristicTriage()
+        # set by AgenticRouter.__init__ so this call counts against the run's
+        # shared ``max_calls`` budget like a routed call does (AGENTICROUTER-003)
+        self.on_call: Optional[Callable[[], None]] = None
 
     def __call__(self, prompt: str, *, model_id: str, predicted_quality: float,
                  scores: Optional[dict] = None) -> TriageDecision:
@@ -126,6 +129,10 @@ class LLMTriage:
             scores=", ".join(f"{k}={v:.2f}" for k, v in top.items()) or "n/a",
             prompt=prompt[:2000],
         )
+        if self.on_call is not None:
+            # outside the try below: a budget-exhausted error must not be
+            # swallowed as a "provider call failed, fall back to heuristic"
+            self.on_call()
         try:  # only the provider call is guarded; formatting bugs must surface
             msg = self._chat.invoke(request)
         except Exception as exc:  # pragma: no cover - network / provider errors

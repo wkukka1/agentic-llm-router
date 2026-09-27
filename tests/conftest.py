@@ -4,8 +4,23 @@ import pandas as pd
 import pytest
 from helpers import chance_cfg
 
-from router.config import Config, load_config
+from router.config import REPO_ROOT, Config, load_config
 from training.data import schemas
+
+
+@pytest.fixture(autouse=True)
+def _repo_root_cwd_and_seeds(monkeypatch):
+    """Run every test from the repo root (the source reads ``data/...`` and
+    ``experiments/...`` relative to CWD) with numpy/torch RNGs seeded."""
+    import numpy as np
+
+    monkeypatch.chdir(REPO_ROOT)
+    np.random.seed(0)
+    try:
+        import torch
+    except ImportError:
+        return
+    torch.manual_seed(0)
 
 
 @pytest.fixture

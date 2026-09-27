@@ -17,7 +17,7 @@ from typing import Optional, Sequence
 import numpy as np
 
 from router.config import Config
-from .clustering import _unit, centroids_fingerprint, load_centroids, load_clusters, load_meta
+from .clustering import _nirt_query_ids, _unit, centroids_fingerprint, load_centroids, load_meta
 
 DEFAULT_TAU = 0.1
 
@@ -41,16 +41,31 @@ def relevance_store_dir(cfg: Config, pathway: str) -> Path:
     return default_store_dir(cfg, "query_relevance", pathway)
 
 
+def ood_relevance_dir(cfg: Config, pathway: str) -> Path:
+    """Where the held-out-family ``r_q`` store goes: beside the main one."""
+    d = relevance_store_dir(cfg, pathway)
+    return d.with_name(d.name + "__ood")
+
+
 def build_relevance(cfg: Config, *, pathway: Optional[str] = None, tau: float = DEFAULT_TAU,
-                    query_ids: Optional[Sequence[str]] = None, save: bool = True):
-    """Build + save ``r_q`` for every clustered NIRT query."""
+                    query_ids: Optional[Sequence[str]] = None, save: bool = True,
+                    taxonomy_dir: Optional[Path] = None, out_dir: Optional[Path] = None):
+    """Build + save ``r_q`` for every NIRT query, whatever its split.
+
+    The centroids are fit on train queries only, but ``r_q`` is a pure function of
+    a query's embedding and the centroids, so validation / test / ood queries get
+    one too (defaulting to the clustered ids would leave them without).
+
+    ``taxonomy_dir`` reads the centroids from a variant taxonomy (e.g. one fit with
+    held-out families excluded) and ``out_dir`` writes the store beside, not over,
+    the main one."""
     from router.embeddings import EmbeddingStore, default_store_dir
 
     pw = _pathway(cfg, pathway)
-    centroids = load_centroids(cfg)
+    centroids = load_centroids(cfg, taxonomy_dir)
     store = EmbeddingStore.load(default_store_dir(cfg, "query", pw))
     ids = [q for q in (list(query_ids) if query_ids is not None
-                       else load_clusters(cfg)["query_id"].tolist()) if q in store]
+                       else _nirt_query_ids(cfg)) if q in store]
     R = relevance_from_embeddings(store.gather(ids), centroids, tau=tau)
     manifest = {"kind": "query_relevance", "pathway": pw, "dim": int(centroids.shape[0]),
                 "id_field": "query_id", "count": len(ids), "tau": float(tau), "normalized": True,
@@ -59,7 +74,7 @@ def build_relevance(cfg: Config, *, pathway: Optional[str] = None, tau: float = 
                 "taxonomy_version": int(cfg.get("taxonomy.version", 1))}
     rel = EmbeddingStore(ids, R, manifest, id_field="query_id")
     if save:
-        rel.save(relevance_store_dir(cfg, pw))
+        rel.save(Path(out_dir) if out_dir is not None else relevance_store_dir(cfg, pw))
     return rel
 
 

@@ -1,15 +1,15 @@
 # Agentic router (`router.agentic`)
 
-A trained [`Router`](routing_interface.md) decides *which model* should answer a
+A trained [`RouterModel`](routing_interface.md) decides *which model* should answer a
 query. `AgenticRouter` puts an orchestrator around it: for a live prompt it
 routes, **triages** on the router's own predicted-quality signal, and then either
 answers directly with the routed model or decomposes the request and routes each
 sub-task (recursively, with the router exposed as a tool).
 
 ```
-prompt ──▶ route_decision (encoder ▸ Router)          best model + q*
+prompt ──▶ route_decision (encoder ▸ RouterModel)     best model + q*
         │
-        ├─▶ triage(q*, prompt)  ──▶ "single"     ──▶ client(best_model).invoke(prompt)
+        ├─▶ triage(q*, prompt)  ──▶ "single"     ──▶ client(best_model).complete(prompt)
         │                        └▶ "orchestrate" ──▶ orchestrator
         │                                              ├ decompose → sub-prompts
         │                                              ├ _solve(sub) ── recurse (re-triage)
@@ -37,18 +37,20 @@ can't be split, it collapses back to a single routed call.
 
 ## LLM clients — calling the routed model
 
-`router/agentic/llm_clients.py`. A `Router` yields a `model_id`; a client turns it
-into a callable LLM.
+`router/agentic/llm_clients.py`. A `RouterModel` yields a `model_id`; a client
+(`router.llm.client.LLMClient`, wrapping a `ProviderAdapter`) turns it into a
+callable LLM.
 
-| client | use |
+| adapter (`router.llm.adapters`) | use |
 |---|---|
-| `EchoClient` | deterministic, no network — **the default**, and what tests use |
-| `CallableClient(fn)` | wrap any `str -> str` |
-| `LangChainClient(model_id, model=…, provider=…)` | a LangChain chat model (instance or `init_chat_model` spec); provider guessed from the id |
+| `EchoAdapter` | deterministic, no network — **the default**, and what tests use |
+| `CallableAdapter(model, fn)` | wrap any `str -> str` |
+| `LangChainAdapter(model, provider=…)` | a LangChain chat model (instance or `init_chat_model` spec); provider guessed from the id |
 
-`ClientRegistry` maps `model_id -> client` and synthesises a default
-(`EchoClient`) for unseen ids, so an unfamiliar pool never crashes the run.
-`ClientRegistry.langchain(pool)` serves every id through `LangChainClient`.
+`ClientRegistry` maps `model_id -> LLMClient` and synthesises a default
+(`LLMClient(EchoAdapter(...))`) for unseen ids, so an unfamiliar pool never
+crashes the run. `ClientRegistry.langchain(pool)` serves every id through
+`LangChainAdapter`.
 
 ## Orchestrators
 

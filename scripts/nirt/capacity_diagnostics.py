@@ -42,6 +42,7 @@ from router.config import load_config
 from router.nirt.baselines_infer import mlp_router_matrix
 from router.nirt.checkpoint import load_run
 from router.nirt.predict import predict_matrix, predict_matrix_from_dataset
+from training.cli import add_source_arg
 from training.data.facade import load_training_data
 from training.nirt.metrics import marginal_baselines, per_group_metrics, prediction_metrics
 from training.trainers.mlp_router import fit_mlp_router
@@ -105,7 +106,7 @@ def run_split(d, split: str, seed: int, args) -> dict:
     if is_family_ood:
         true_df, cost_df = ood_matrices(d, _OOD_FAMILIES)
     else:
-        true_df, cost_df = eval_matrices(d, split=split)
+        true_df, cost_df = eval_matrices(d, split=split, source=args.source)
     keep = [not str(q).endswith(":5shot") for q in true_df.index]
     true_df, cost_df = true_df.loc[keep], cost_df.loc[keep]
     model_ids = list(true_df.columns)
@@ -127,7 +128,9 @@ def run_split(d, split: str, seed: int, args) -> dict:
             for wd in wds:
                 r = fit_classical_irt(d, split=split, protocol="cell", dim=dim,
                                       holdout_frac=0.15, epochs=200 if args.quick else 500,
-                                      lr=0.05, weight_decay=wd, seed=seed)
+                                      lr=0.05, weight_decay=wd, seed=seed,
+                                      # with --source, fit the ceiling on that source's queries only
+                                      query_ids=list(true_df.index) if args.source else None)
                 ceil_rows.append({"dim": dim, "weight_decay": wd,
                                   "heldout_bce": r.metrics["bce"], "heldout_auc": r.metrics["auc"],
                                   "train_bce": r.train_metrics["bce"]})
@@ -186,6 +189,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", default=None, help="phase-0 config (default: RouterBench)")
     ap.add_argument("--splits", default="test", help="comma list: test[,ood]")
+    add_source_arg(ap)
     ap.add_argument("--nirt-run", default="nirt-2d-projected", help="primary NIRT run for blocks 3/4")
     ap.add_argument("--nirt-runs", default=None,
                     help="comma list for the representation ablation (default: raw + knn10w)")

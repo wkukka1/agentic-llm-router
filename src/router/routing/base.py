@@ -1,12 +1,12 @@
-"""The :class:`Router` interface -- one contract every routing strategy implements.
+"""The :class:`RouterModel` interface -- one contract every routing strategy implements.
 
-A router is a **decision layer** over a fixed candidate pool: given some queries it
+A router model is a **decision layer** over a fixed candidate pool: given some queries it
 predicts each model's quality ``E[Y | q, m]`` and then picks one model per query.
-Only :meth:`Router.predict_scores` is abstract -- the pool bookkeeping and the
+Only :meth:`RouterModel.predict_scores` is abstract -- the pool bookkeeping and the
 ``argmax`` / cost-aware selection
 (:func:`router.nirt.routing_decision.routing_decision`) are shared here so a
 new strategy is just "how do I score ``(query, model)``". Oracle-relative
-scoring needs ground truth, so it is not a method on ``Router`` -- see
+scoring needs ground truth, so it is not a method on ``RouterModel`` -- see
 :func:`evaluation.routing.oracle.evaluate_router`.
 
     from router.routing import NIRTRouter
@@ -17,10 +17,10 @@ scoring needs ground truth, so it is not a method on ``Router`` -- see
 
 Writing a new router (e.g. a bandit, an LLM-judge cascade)::
 
-    from router.routing import Router, register
+    from router.routing import RouterModel, register
 
     @register
-    class MyRouter(Router):
+    class MyRouter(RouterModel):
         kind = "my_router"
         def predict_scores(self, query_ids):
             ...  # -> DataFrame [query_id x model_id] of predicted quality
@@ -43,18 +43,19 @@ from typing import TYPE_CHECKING, ClassVar, Mapping, Optional, Sequence
 import numpy as np
 import pandas as pd
 
-from ..nirt.routing_decision import no_selectable_rows, routing_decision
+from ..nirt.routing_decision import cost_aware_utility, no_selectable_rows, routing_decision
 
 if TYPE_CHECKING:  # pragma: no cover - type hints only, not a runtime import
     from ..constraints import RoutingConstraints
+    from ..llm.cost import CostModel
     from ..models.artifacts import RouterModelArtifact
 
-__all__ = ["Router", "RoutingResult", "UnsupportedCandidatePolicy"]
+__all__ = ["RouterModel", "RoutingResult", "UnsupportedCandidatePolicy"]
 
 
 class UnsupportedCandidatePolicy(enum.Enum):
-    """What :meth:`Router.filter_candidates` does with a candidate this router
-    has no score for (not in :attr:`Router.model_ids`)."""
+    """What :meth:`RouterModel.filter_candidates` does with a candidate this router
+    has no score for (not in :attr:`RouterModel.model_ids`)."""
 
     ERROR = "error"
     DROP = "drop"
@@ -133,6 +134,8 @@ def _resolve_costs(
     which ``argmax`` would pick whenever ``lam > 0``."""
     if costs is None:
         return None
+    if isinstance(costs, pd.Series):    # labelled: align by index like a Mapping, not by position
+        costs = costs.to_dict()
     if isinstance(costs, Mapping):
         missing = [m for m in model_ids if m not in costs]
         if missing:
@@ -154,7 +157,7 @@ def _resolve_costs(
 # --------------------------------------------------------------------------- #
 # the interface                                                               #
 # --------------------------------------------------------------------------- #
-class Router(abc.ABC):
+class RouterModel(abc.ABC):
     """Abstract base class for a routing strategy over a fixed candidate pool.
 
     Subclasses implement :meth:`predict_scores`. Everything else -- selection,
@@ -171,13 +174,20 @@ class Router(abc.ABC):
     can_route_text: ClassVar[bool] = False
 
     def __init__(self, model_ids: Sequence[str], *, name: Optional[str] = None,
-                 unsupported_policy: UnsupportedCandidatePolicy = UnsupportedCandidatePolicy.DROP):
+                 unsupported_policy: UnsupportedCandidatePolicy = UnsupportedCandidatePolicy.DROP,
+                 cost_model: Optional["CostModel"] = None,
+                 artifact: Optional["RouterModelArtifact"] = None):
         ids = [str(m) for m in model_ids]   # materialise once: may be an iterator
         if not ids:
             raise ValueError("a router needs a non-empty candidate pool")
         self._model_ids = ids
         self.name = name or self.kind
         self.unsupported_policy = unsupported_policy
+        #: set by RouterModelFactory.create when this router was built from a
+        #: RouterModelArtifact; None for the many routers still built directly
+        #: (from_run, raw kwargs) with no artifact behind them.
+        self.cost_model = cost_model
+        self.artifact = artifact
 
     # -- pool ----------------------------------------------------------------
     @property
@@ -207,9 +217,13 @@ class Router(abc.ABC):
                     raise ValueError(f"{model_id!r} is not a supported candidate for {self.name!r}")
                 if self.unsupported_policy is UnsupportedCandidatePolicy.DROP:
                     continue
-                # SCORE_WITH_PRIOR: kept. Router.route can't score a column outside the pool;
-                # RoutingPipeline.route gives it the pool-mean prediction with confidence 0.
-            if required and not required.issubset(set(getattr(c, "capabilities", []) or [])):
+                # SCORE_WITH_PRIOR: kept. RouterModel.route can't score a column outside the pool;
+                # Router.route gives it the pool-mean prediction with confidence 0.
+            capabilities = getattr(c, "capabilities", None)
+            # None means "unknown" (e.g. a no-registry _StubProfile, ROUTER-003) --
+            # can't be checked, so it passes rather than being treated as "known,
+            # has none" (an explicit [] still filters, same as before).
+            if required and capabilities is not None and not required.issubset(set(capabilities)):
                 continue
             out.append(c)
         return out
@@ -299,9 +313,10 @@ class Router(abc.ABC):
 
         mat = scores.to_numpy(np.float64)
         selected = routing_decision(mat, lam=lam, model_costs=costs, eligible=elig)
-        util = np.where(np.isfinite(mat), 0.0, -np.inf)
-        if elig is not None:
-            util = np.where(np.asarray(elig, bool), util, -np.inf)
+        # the same cost-aware utility routing_decision actually selected on --
+        # not a cost-blind np.isfinite(mat) copy (RR-01), which misses a
+        # non-finite lam forcing every cell to -inf after `pred - lam*cost`
+        util = cost_aware_utility(mat, lam=lam, model_costs=costs, eligible=elig)
         return RoutingResult(
             query_ids=[str(q) for q in scores.index],
             model_ids=self.model_ids,
@@ -332,7 +347,10 @@ class Router(abc.ABC):
             lam=lam, model_costs=model_costs, eligible=eligible,
         )
 
-    __call__ = route
+    def __call__(self, *args, **kwargs) -> RoutingResult:
+        # not ``__call__ = route``: that binds the base function, so a subclass
+        # overriding route() would be bypassed by ``router(...)``
+        return self.route(*args, **kwargs)
 
     def route_text(
         self,

@@ -31,6 +31,11 @@ class LLMResponse:
     output_tokens: Optional[int] = None
     cost: Optional[float] = None
     latency: Optional[float] = None
+    #: provider-specific raw response object / metadata (finish reason,
+    #: tool-call payloads, moderation flags, ...). Nothing reads these today;
+    #: kept so an adapter can attach them without another migration.
+    raw: Optional[object] = None
+    meta: Optional[dict] = None
 
 
 class LLMClient:
@@ -57,11 +62,17 @@ class LLMClient:
 
     def price(self, input_tokens: Optional[int], output_tokens: Optional[int]) -> Optional[float]:
         """``in * input_cost_per_token + out * output_cost_per_token``, or
-        ``None`` without a profile or token counts."""
+        ``None`` without a profile or token counts, or when the price for a
+        side that was actually used (a nonzero token count) is unset -- an
+        unpriced profile must not be indistinguishable from a free one."""
         if self.profile is None or (input_tokens is None and output_tokens is None):
             return None
-        return float((input_tokens or 0) * self.profile.input_cost_per_token
-                     + (output_tokens or 0) * self.profile.output_cost_per_token)
+        in_price = self.profile.input_cost_per_token
+        out_price = self.profile.output_cost_per_token
+        if (input_tokens and in_price is None) or (output_tokens and out_price is None):
+            return None
+        return float((input_tokens or 0) * (in_price or 0.0)
+                     + (output_tokens or 0) * (out_price or 0.0))
 
 
 #: serving provider -> ``"module:Class"``; imported lazily so importing the
@@ -96,29 +107,33 @@ class LLMClientFactory:
 
     ``adapters`` extends / overrides the provider -> adapter table;
     ``fallback`` (e.g. an OpenAI-compatible endpoint adapter) serves any
-    provider not in it. Clients are cached per ``(provider, model, api_key,
-    client_kwargs)`` so SDK clients aren't rebuilt on every request.
+    provider not in it. **Adapters** (the SDK client construction) are cached
+    per ``(provider, model, api_key, client_kwargs)`` so they aren't rebuilt on
+    every request; the returned :class:`LLMClient` is always built fresh
+    around the ``profile`` passed in, so a re-priced profile (see
+    ``LLMRegistry.register(..., replace=True)``) is never served stale prices
+    from an earlier call for the same provider/model.
     """
 
     def __init__(self, adapters: Optional[Mapping[str, AdapterSpec]] = None, *,
                  fallback: Optional[AdapterSpec] = None):
         self._adapters: dict[str, AdapterSpec] = {**_ADAPTERS, **dict(adapters or {})}
         self._fallback = fallback
-        self._cache: dict[tuple, LLMClient] = {}
+        self._cache: dict[tuple, "ProviderAdapter"] = {}
 
     def client_for(self, profile: "LLMProfile", *, api_key: Optional[str] = None,
                    **client_kwargs) -> LLMClient:
         provider = (getattr(profile, "serving_provider", None) or profile.provider).lower()
         key = (provider, profile.model_id, api_key, repr(sorted(client_kwargs.items())))
-        if key in self._cache:
-            return self._cache[key]
-        spec = self._adapters.get(provider, self._fallback)
-        if spec is None:
-            raise ValueError(
-                f"no ProviderAdapter for provider={provider!r}; "
-                f"supported: {sorted(self._adapters)} (pass adapters= or fallback=)"
-            )
-        Adapter = _adapter_class(spec)
-        client = LLMClient(Adapter(profile.model_id, api_key=api_key, **client_kwargs), profile)
-        self._cache[key] = client
-        return client
+        adapter = self._cache.get(key)
+        if adapter is None:
+            spec = self._adapters.get(provider, self._fallback)
+            if spec is None:
+                raise ValueError(
+                    f"no ProviderAdapter for provider={provider!r}; "
+                    f"supported: {sorted(self._adapters)} (pass adapters= or fallback=)"
+                )
+            Adapter = _adapter_class(spec)
+            adapter = Adapter(profile.model_id, api_key=api_key, **client_kwargs)
+            self._cache[key] = adapter
+        return LLMClient(adapter, profile)

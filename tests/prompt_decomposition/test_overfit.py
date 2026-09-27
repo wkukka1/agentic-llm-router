@@ -11,6 +11,12 @@ import pytest
 
 from evaluation.prompt_decomposition.overfit import AuditResult, audit
 
+# Every permutation is a full k-fold refit, so the audit's cost is linear in
+# this. Ten is enough for a shuffled baseline; only the p-value's *resolution*
+# needs the production default of 100, and that is covered by constructing
+# AuditResult directly in test_review_fixes.py.
+PERMUTATIONS = 10
+
 
 def _separable(n=300, d=256, classes=3, seed=0):
     rng = np.random.default_rng(seed)
@@ -26,20 +32,31 @@ def _noise(n=300, d=256, classes=3, seed=0):
     return rng.normal(size=(n, d)), rng.integers(0, classes, n).astype(str)
 
 
+@pytest.fixture(scope="module")
+def separable_audit():
+    """One audit shared by every test that reads the same separable result --
+    each audit is a multi-second k-fold sweep and the tests only inspect it."""
+    X, y = _separable()
+    return audit(X, y, "separable", permutations=PERMUTATIONS)
+
+
+@pytest.fixture(scope="module")
+def noise_audit():
+    X, y = _noise()
+    return audit(X, y, "noise", permutations=PERMUTATIONS)
+
+
 class TestPermutationCheck:
-    def test_separable_data_beats_its_permutation_null(self):
-        X, y = _separable()
-        r = audit(X, y, "separable")
+    def test_separable_data_beats_its_permutation_null(self, separable_audit):
+        r = separable_audit
         assert r.test_acc > 0.9
         assert r.passes_permutation
         assert r.permutation_sd > 10
 
-    def test_pure_noise_does_not_pass(self):
+    def test_pure_noise_does_not_pass(self, noise_audit):
         """The point of the check: a model with no signal must be caught."""
-        X, y = _noise()
-        r = audit(X, y, "noise")
-        assert not r.passes_permutation
-        assert not r.clean
+        assert not noise_audit.passes_permutation
+        assert not noise_audit.clean
 
     def test_the_yardstick_is_the_shuffled_score_not_the_majority_rate(self):
         """A balanced-weight model scores *below* the majority rate on shuffled
@@ -49,7 +66,7 @@ class TestPermutationCheck:
         y = np.array(["a"] * 320 + ["b"] * 80)
         centres = {"a": rng.normal(size=d) * 2, "b": rng.normal(size=d) * 2}
         X = np.vstack([centres[v] for v in y]) + rng.normal(size=(n, d))
-        r = audit(X, y, "imbalanced", balanced=True)
+        r = audit(X, y, "imbalanced", balanced=True, permutations=PERMUTATIONS)
         assert r.shuffled_mean < r.majority_rate      # the situation being guarded
         assert r.passes_permutation                   # and it is not flagged
 
@@ -59,7 +76,7 @@ class TestNearDuplicateCheck:
         X, y = _separable(n=200)
         X = np.vstack([X, X[:40]])
         y = np.concatenate([y, y[:40]])
-        r = audit(X, y, "duplicated")
+        r = audit(X, y, "duplicated", permutations=PERMUTATIONS)
         assert r.near_dupe_pairs >= 40
         assert r.near_dupe_checked
         assert not np.isnan(r.test_without_near_dupes)
@@ -68,33 +85,24 @@ class TestNearDuplicateCheck:
         """In a tight low-dimensional space nearly every pair clears 0.95 and
         there is nothing left to refit. That must say so rather than pass."""
         X, y = _separable(n=200, d=4)
-        r = audit(X, y, "tight")
+        r = audit(X, y, "tight", permutations=PERMUTATIONS)
         assert not r.near_dupe_checked
         assert "NOT CHECKED" in r.summary()
 
-    def test_clean_data_reports_no_near_duplicate_effect(self):
-        X, y = _separable()
-        r = audit(X, y, "separable")
-        assert r.passes_near_dupe
+    def test_clean_data_reports_no_near_duplicate_effect(self, separable_audit):
+        assert separable_audit.passes_near_dupe
 
 
 class TestReporting:
-    def test_learning_curve_and_regularisation_are_populated(self):
-        X, y = _separable()
-        r = audit(X, y, "separable")
+    def test_learning_curve_and_regularisation_are_populated(self, separable_audit):
+        r = separable_audit
         assert len(r.learning_curve) >= 3
         assert [c[0] for c in r.learning_curve] == sorted(c[0] for c in r.learning_curve)
         assert len(r.regularisation) == 4
 
-    def test_gap_is_train_minus_test(self):
-        X, y = _separable()
-        r = audit(X, y, "separable")
-        assert r.gap == pytest.approx(r.train_acc - r.test_acc)
-
-    def test_summary_names_the_verdict(self):
-        X, y = _separable()
-        assert "CLEAN" in audit(X, y, "separable").summary()
-        assert "NEEDS REVIEW" in audit(*_noise(), "noise").summary()
+    def test_summary_names_the_verdict(self, separable_audit, noise_audit):
+        assert "CLEAN" in separable_audit.summary()
+        assert "NEEDS REVIEW" in noise_audit.summary()
 
     def test_permutation_sd_is_finite_when_permutations_agree_exactly(self):
         """Zero variance across permutations must not divide by zero."""

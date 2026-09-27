@@ -1,6 +1,7 @@
-"""Command line entry point: ``python -m training.cli <command>``.
+"""Command line entry point: ``prompt-decomposition <command>``.
 
-    build-data     download RouterArena, dedupe, split, write parquet
+    build-real     hand-labelled real prompts -> domain-head splits
+    build-task     hand-labelled task prompts -> task-head splits
     describe-data  split statistics
     train          run one or more experiments, write the leaderboard
     analyze        per-class precision/recall, confusion, error slices

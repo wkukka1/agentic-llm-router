@@ -116,3 +116,27 @@ def test_make_presplit_is_deterministic(irt_config):
     b = make_presplit(tables["responses"], irt_config)
     assert a["train"]["query_ids"] == b["train"]["query_ids"]
     assert a["validation"]["query_ids"] == b["validation"]["query_ids"]
+
+
+def test_zero_usage_rows_are_priced_not_ingested_as_free(tmp_path):
+    """A 0-token / $0 record with a real score is missing accounting, not a free call."""
+    rows = [f'{i},"Q {i}",A,,{100 + i},{20 + (i % 7)},{((100 + i) + 2 * (20 + (i % 7))) / 1e6},1,mmlu,gpt_4o'
+            for i in range(60)]
+    rows.append('900,"Q zero",A,,0,0,0,1,mmlu,gpt_4o')
+    root = tmp_path / "raw" / "irt_router"
+    (root / "data").mkdir(parents=True)
+    for name in ("train", "test1", "test2"):
+        (root / "data" / f"{name}.csv").write_text(_csv(rows if name == "train" else rows[:2]),
+                                                   encoding="utf-8")
+    cfg = Config({"seed": 42, "paths": {"processed": str(tmp_path / "p"), "splits": str(tmp_path / "s")},
+                  "sources": {"irt_router": {"local_dir": str(root), "pool": ["gpt_4o"]}},
+                  "multiple_choice": {"by_task": {"mmlu": 4}, "by_prefix": {}},
+                  "chance_correction": {"method": "normalized", "clip": True},
+                  "split": {"presplit": True, "train_fraction": 0.7, "validation_fraction": 0.3}},
+                 root=tmp_path)
+
+    df = load_irt_router(cfg)
+    zero = df[df["query"] == "Q zero"].iloc[0]
+    assert zero["cost"] > 0 and zero["input_tokens"] > 0
+    assert zero["metadata"]["usage_imputed"] is True
+    assert not ((df["cost"] == 0) & (df["input_tokens"] == 0)).any()

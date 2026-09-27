@@ -27,13 +27,15 @@ class OptimizationObjective:
     risk_weight: float = 0.0
 
     def utility(self, score: "ModelScore") -> float:
-        risk = 1.0 - score.confidence
-        return (
-            self.quality_weight * score.expected_quality
-            - self.cost_weight * score.expected_cost
-            - self.latency_weight * score.expected_latency
-            - self.risk_weight * risk
+        # A zero-weight term is switched off: skip it rather than multiply, since
+        # ``0 * nan`` and ``0 * inf`` are ``nan`` and would poison the whole sum.
+        terms = (
+            (self.quality_weight, score.expected_quality),
+            (-self.cost_weight, score.expected_cost),
+            (-self.latency_weight, score.expected_latency),
+            (-self.risk_weight, 1.0 - score.confidence),
         )
+        return sum((weight * value for weight, value in terms if weight), 0.0)
 
 
 @dataclass
@@ -41,9 +43,9 @@ class RoutingConstraints:
     """Hard and soft limits a candidate must clear before it's scored.
 
     ``required_capabilities`` is checked before scoring
-    (``Router.filter_candidates``). ``max_cost`` / ``max_latency`` /
+    (``RouterModel.filter_candidates``). ``max_cost`` / ``max_latency`` /
     ``min_quality`` are hard filters applied to the *scored* candidates by
-    ``RoutingPipeline.route`` (``min_quality`` needs the prediction), compared
+    ``Router.route`` (``min_quality`` needs the prediction), compared
     against ``ModelScore.expected_cost`` / ``expected_latency`` /
     ``expected_quality``. ``objective`` is the soft utility tradeoff applied to
     whatever candidates survive."""

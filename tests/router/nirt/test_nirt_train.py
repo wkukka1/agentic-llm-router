@@ -58,8 +58,9 @@ def test_fit_runs_and_saves(mode, tmp_path):
 
     model, cfg, model_index = load_run(f"t-{mode}", runs_dir=tmp_path)
     assert model.model_params == mode
-    y, p = predict_dataset(model, val_ds, model_index)
-    assert p.shape == y.shape and np.all((p >= 0) & (p <= 1))
+    _, p_loaded = predict_dataset(model, val_ds, model_index)
+    _, p_fitted = predict_dataset(res.model, val_ds, res.model_index)
+    np.testing.assert_allclose(p_loaded, p_fitted, atol=1e-6)
 
 
 def test_fit_writes_format_tag(tmp_path):
@@ -391,6 +392,7 @@ def test_zero_variance_weight_runs():
 def test_collapse_diagnostics_logged_for_query_latent():
     ds = nirt_datasets(*make_synthetic_irt(n_queries=150, seed=17))
     res = fit(nirt_cfg(model_params="free", dim=2), datasets=ds, save=False, verbose=False)
+    assert res.history
     for h in res.history:
         assert "theta_effective_rank" in h
         assert np.isfinite(h["theta_effective_rank"])
@@ -435,10 +437,11 @@ def test_fit_load_run_model_latent(tmp_path):
     train_obs, val_obs, q_store, m_store = make_synthetic_irt(n_queries=200, seed=3,
                                                               orientation="model_latent")
     ds = nirt_datasets(train_obs, val_obs, q_store, m_store)
-    fit(nirt_cfg(orientation="model_latent", model_params="projected"),
-        datasets=ds, name="irt-t", runs_dir=tmp_path, verbose=False)
+    res = fit(nirt_cfg(orientation="model_latent", model_params="projected"),
+              datasets=ds, name="irt-t", runs_dir=tmp_path, verbose=False)
 
     model, cfg, midx = load_run("irt-t", runs_dir=tmp_path)
     assert isinstance(model, IRTRouterModel)
-    y, p = predict_dataset(model, ds[1], midx)
-    assert np.all((p >= 0) & (p <= 1))
+    _, p_loaded = predict_dataset(model, ds[1], midx)
+    _, p_fitted = predict_dataset(res.model, ds[1], res.model_index)
+    np.testing.assert_allclose(p_loaded, p_fitted, atol=1e-6)
