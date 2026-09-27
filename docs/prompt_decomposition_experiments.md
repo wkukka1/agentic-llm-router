@@ -1433,3 +1433,82 @@ exactly the missing input both for the cascade and for any level-2 evaluation.
 Note the regimes differ. RoBoN spends *more* (n generations) to buy accuracy;
 the margin rule spends *less* at similar quality. Opposite directions on the
 same frontier, so the two compose rather than compete.
+
+## Correction: Will was right about agreement, and the pooled comparison lied
+
+This document claimed cosine agreement gains **more** on free-form (+0.040) than
+on multiple-choice (+0.0275), and called that "the opposite of the worry". Both
+pooled numbers are real. The conclusion drawn from them is not.
+
+Decomposed per benchmark, with the cascade threshold tuned within each:
+
+| slice | benchmarks | median gain | mean gain | worst | negative |
+|---|---|---|---|---|---|
+| free-form | 6 | +0.0106 | +0.0037 | **-0.0691** | 1/6 |
+| multiple-choice | 38 | **+0.0360** | **+0.0331** | -0.0090 | 3/38 |
+
+Multiple-choice is roughly **3x better by median, 9x by mean, and far more
+consistent** -- its worst benchmark loses 0.009, while free-form's worst
+(`chinese_zodiac`) loses 0.069. Within free-form, even the dominant
+grade-school-math slice gives only +0.0217, *below* the pooled +0.0400.
+
+The pooled free-form figure was inflated by pooling itself: mixing benchmarks
+with different base rates and cost profiles moves the mixture line, and the
+aggregate gain exceeded every large component of it. A Simpson-style artifact,
+and exactly the failure the per-benchmark controls elsewhere in this document
+exist to catch -- it was simply never applied to this claim.
+
+**Will's original objection stands**: agreement works best where there is a
+right answer to agree on. The earlier "measured" rebuttal was an artifact.
+
+## The cascade is not dead -- I was measuring the wrong thing
+
+Earlier this document concluded the cascade direction was closed, because
+cosine agreement is near-useless on hard queries (61.6% of confident agreements
+there are both-wrong). That reasoning was wrong, and the error is instructive.
+
+**The cascade is not trying to fix hard queries.** It is trying to avoid paying
+strong-model prices on easy ones. Hard queries are 18.8% of RouterBench, and on
+them the cheap model is right only 24.8% of the time -- so the correct action is
+"escalate", which is what a low judge score produces anyway. A judge that is
+blind on hard queries loses little, because it is being asked the wrong question
+there. The value lives in the easy 81%, where the cheap model is right 77.5% of
+the time and a judge only has to notice the exceptions.
+
+Measured with a simulated judge, against `always gpt-4` (0.7814 quality, $3.29
+per 1k, 36,497 queries):
+
+| judge | quality | cost/1k | gain vs mixture |
+|---|---|---|---|
+| perfect (AUC 1.00) | 0.8296 | $1.59 | +0.1217 |
+| uniform AUC 0.95 | 0.7998 | $1.69 | +0.0876 |
+| uniform AUC 0.90 | 0.7888 | $1.80 | +0.0717 |
+| **realistic: 0.95 easy / 0.60 hard** | **0.7866** | **$1.72** | **+0.0728** |
+| realistic: 0.90 easy / 0.65 hard | 0.7745 | $1.72 | +0.0610 |
+
+The realistic judge -- sharp on easy queries, near-blind on hard ones, which is
+exactly how every signal we have measured behaves -- gives **slightly better
+quality than gpt-4 at 48% of the cost**, and gives up almost nothing against the
+optimistic uniform-AUC judge (+0.0728 vs +0.0876).
+
+That makes this the **only configuration found in this whole effort that
+improves quality and cuts cost at once.** Every other result, the margin rule
+included, trades quality away to buy cost.
+
+Two caveats, neither small:
+
+* The judge is simulated by adding calibrated noise to the true label. A real
+  reward model's errors will be structured in ways this does not capture. The
+  hard/easy split above is one such structure, and the result survived it, but
+  it is not proof that every structure is survivable.
+* This is measured on the full 36,497-row pool against `always gpt-4`, while the
+  margin-rule numbers elsewhere use the 7,354-row test split. The two are **not
+  directly comparable** -- the reference costs differ ($3.29 vs $5.75 per 1k).
+  A like-for-like run on one split is required before claiming the cascade beats
+  the margin rule, and has not been done.
+
+**What it changes.** RoBoN's reward model stops being a nice-to-have for the
+hard stratum and becomes the central component: at 0.90 AUC it matches gpt-4
+quality for roughly 30% of the price. The break-even is around AUC 0.90, which
+published reward models plausibly reach on some task families -- and, per the
+correction above, most plausibly on the checkable ones.
