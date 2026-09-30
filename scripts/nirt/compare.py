@@ -2,6 +2,11 @@
 
     python scripts/nirt/compare.py --run irt-2d-projected --split test
     python scripts/nirt/compare.py --run irt-2d-ood --ood            # held-out benchmark families
+    python scripts/nirt/compare.py --run nirt-2d-projected --split test --source routerbench
+
+The routing tables need a dense [query x model] matrix. The default 29-model pool (RouterBench +
+IRT-Router) has none -- the two sources share no model -- so pass `--source` to score one source's
+dense pool (the baselines are still trained on the full pool; only the evaluation is restricted).
 
 Four tables:
   1. prediction quality  -- NIRT vs classical-IRT (transductive ceiling + theta=0 lower
@@ -23,7 +28,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from training.cli import float_table, raw_parser, resolve, write_json
+from training.cli import add_source_arg, float_table, raw_parser, resolve, write_json
 from router.config import load_config
 from router.nirt.baselines_infer import knn_router_matrix, mlp_router_matrix
 from router.nirt.checkpoint import load_run
@@ -71,11 +76,14 @@ def main() -> int:
     ap.add_argument("--run", required=True)
     ap.add_argument("--split", default="test", choices=["validation", "test"])
     ap.add_argument("--ood", action="store_true", help="evaluate on held-out benchmark families")
+    add_source_arg(ap)
     ap.add_argument("--config", default="configs/nirt.yaml")
     ap.add_argument("--phase0-config", default=None)
     ap.add_argument("--irt-dim", type=int, default=None)
     ap.add_argument("--reference", default=None)
     args = ap.parse_args()
+    if args.ood and args.source:
+        ap.error("--source applies to the standard splits; --ood evaluates held-out families")
 
     nirt_cfg = yaml.safe_load(resolve(args.config).read_text(encoding="utf-8"))
     runs_dir = resolve(nirt_cfg.get("runs_dir", "data/processed/nirt_runs"))
@@ -118,11 +126,12 @@ def main() -> int:
         true_df, cost_df = dense_matrices(ood_obs)
         cls_query_ids = list(true_df.index)
     else:
-        label = args.split
+        label = f"{args.split}[{args.source}]" if args.source else args.split
         bl_train_obs = None                      # baselines use the standard train split
         eval_ds = d.nirt_dataset(split=args.split, pathway=pathway, query_pathway=query_pathway)
-        true_df, cost_df = eval_matrices(d, split=args.split)
-        cls_query_ids = None
+        true_df, cost_df = eval_matrices(d, split=args.split, source=args.source)
+        # one source's queries only, so the classical-IRT ceiling is scored on the same rows
+        cls_query_ids = list(true_df.index) if args.source else None
 
     model_ids = list(true_df.columns)
     true = true_df.to_numpy(np.float64)

@@ -25,8 +25,14 @@ __all__ = ["load_run"]
 FORMAT = "nirt"
 
 
-def load_run(name: str, runs_dir: Optional[os.PathLike] = None):
-    """Return ``(model, config, model_index)`` for a saved run."""
+def load_run(name: str, runs_dir: Optional[os.PathLike] = None, blob: Optional[dict] = None):
+    """Return ``(model, config, model_index)`` for a saved run.
+
+    ``blob`` lets a caller that already deserialized ``model.pt`` (e.g.
+    :class:`~router.models.store.LocalArtifactStore`, which reads it once to
+    dispatch on ``format``) pass it straight through instead of paying for a
+    second ``torch.load`` of the same file.
+    """
     import torch
 
     if runs_dir is not None:
@@ -36,9 +42,11 @@ def load_run(name: str, runs_dir: Optional[os.PathLike] = None):
 
         base = REPO_ROOT / DEFAULT_NIRT_RUNS_DIR
     path = base / name / "model.pt"
-    # weights_only: the blob is tensors + plain dicts/ints, and a run directory
-    # may be shared/downloaded -- never unpickle arbitrary objects on the serving path
-    blob = torch.load(path, map_location="cpu", weights_only=True)
+    if blob is None:
+        # weights_only: the blob is tensors + plain dicts/ints, and a run
+        # directory may be shared/downloaded -- never unpickle arbitrary
+        # objects on the serving path
+        blob = torch.load(path, map_location="cpu", weights_only=True)
     fmt = blob.get("format")
     if fmt is not None and fmt != FORMAT:
         raise ValueError(

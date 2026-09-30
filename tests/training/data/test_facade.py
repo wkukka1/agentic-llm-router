@@ -102,6 +102,7 @@ def test_profile_embeddings_build_true_builds_a_loadable_store(isolated_training
 
 
 # --- real data (skips if not built) --------------------------------------- #
+@pytest.mark.real_data
 def test_load_training_data_real():
     cfg = load_config()
     try:

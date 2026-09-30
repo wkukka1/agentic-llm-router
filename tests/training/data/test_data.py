@@ -155,6 +155,7 @@ def test_metric_type_preserved_through_pipeline(toy_tables):
 # --------------------------------------------------------------------------- #
 # real RouterBench loader (skips if data absent)                              #
 # --------------------------------------------------------------------------- #
+@pytest.mark.real_data
 def test_routerbench_loader_smoke(cfg):
     try:
         df = load_routerbench(cfg)
@@ -168,6 +169,7 @@ def test_routerbench_loader_smoke(cfg):
     assert df["metric_type"].isin(schemas.MetricType.ALL).all()
 
 
+@pytest.mark.real_data
 def test_routerbench_5shot_item_identity(cfg):
     """E2 policy: 0-/5-shot are separate items (``:5shot`` suffix) that share the
     underlying question text -> the same content hash -> the same split group."""

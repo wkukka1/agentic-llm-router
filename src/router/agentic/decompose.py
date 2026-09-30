@@ -49,85 +49,60 @@ _SPLIT_RE = re.compile(
     re.IGNORECASE,
 )
 
-# "1. ", "2) ", "- ", "* " line prefixes an LLM adds despite being told not to
-_LINE_PREFIX_RE = re.compile(r"^\s*(?:[-*•]+|\d+[.)]|#+)\s*")
+# "1. ", "2) ", "- ", "* " line prefixes an LLM adds despite being told not to. A numbered
+# marker needs trailing whitespace, else it would eat the start of "3.14 times 2".
+_LINE_PREFIX_RE = re.compile(r"^\s*(?:(?:[-*•]+|#+)\s*|\d+[.)]\s+)")
 
 
-def _cap(parts: list[str], max_parts: int, who: str) -> list[str]:
-    """Apply the fan-out cap, and say so when it bites.
-
-    The cap is a real budget guard -- a 50-way decomposition is 50 paid calls --
-    but dropping the tail silently means the caller asks for twelve things, is
-    charged for eight, and is handed a synthesized answer that reads as though
-    it covered everything. Whoever set `max_parts` should hear that it was the
-    binding constraint, not discover it in a bill.
-    """
+def _fold_tail(parts: list[str], max_parts: int) -> list[str]:
+    """Cap ``parts`` at ``max_parts`` by folding the overflow into the last kept
+    part -- truncating would silently drop the later sub-tasks."""
     if len(parts) <= max_parts:
         return parts
-    warnings.warn(
-        f"{who}: decomposed into {len(parts)} sub-tasks but max_parts={max_parts}; "
-        f"dropping the last {len(parts) - max_parts} "
-        f"({[p[:40] for p in parts[max_parts:]]}). Raise max_parts to keep them.",
-        stacklevel=3,
-    )
-    return parts[:max_parts]
+    keep = max(max_parts, 1)
+    return parts[: keep - 1] + [" ".join(parts[keep - 1:])]
+
 
 
 class NaiveDecomposer:
-    """Regex split on list markers / "and then" / question boundaries. No LLM."""
+    """Regex split on list markers / "and then" / question boundaries. No LLM.
 
-    def __init__(self, *, max_parts: int = 6, min_part_words: int = 2):
+    No part of the request is dropped: a fragment shorter than ``min_part_chars``
+    is merged into its neighbour, a clause ending in ``:`` introduces the next
+    part rather than becoming a task of its own, and parts beyond ``max_parts``
+    are folded into the last one."""
+
+    def __init__(self, *, max_parts: int = 6, min_part_chars: int = 8):
         self.max_parts = max_parts
-        # Words, not characters. The guard exists to stop punctuation residue
-        # becoming a paid model call, and a character count answers a different
-        # question: "plot it" is 7 characters and an entirely real task, while
-        # "accordingly" is 11 and is not one.
-        self.min_part_words = min_part_words
-
-    def _coalesce(self, raw: list[str]) -> list[str]:
-        """Fold fragments into their neighbours rather than discarding them.
-
-        Dropping anything here loses a sub-task silently: "Do these: 1. read
-        the file 2. compute the mean 3. plot it" used to come back as three
-        parts, one of which was the lead-in "Do these:" -- billed as its own
-        model call -- while "plot it" vanished for being below a character
-        threshold. The caller asked for three things, paid for three calls, and
-        got two of them answered, with no error raised anywhere.
-
-        So: a clause ending in ``:`` introduces the next one and is prepended
-        to it, and anything with too few words to be a request of its own joins
-        the part before it. Nothing is thrown away.
-        """
-        out: list[str] = []
-        lead_in = ""
-        for part in raw:
-            if lead_in:
-                part, lead_in = f"{lead_in} {part}".strip(), ""
-            if part.endswith(":"):        # a lead-in, not a task
-                lead_in = part
-            elif len(part.split()) < self.min_part_words and out:
-                out[-1] = f"{out[-1]} {part}"
-            else:
-                out.append(part)
-        if lead_in:                       # trailing colon with nothing after it
-            if out:
-                out[-1] = f"{out[-1]} {lead_in}"
-            else:
-                out.append(lead_in)
-        return out
+        self.min_part_chars = min_part_chars
 
     def __call__(self, prompt: str) -> list[str]:
-        raw = [p.strip(" \t\n-*.") for p in _SPLIT_RE.split(prompt.strip()) if p and p.strip()]
-        parts = self._coalesce(raw)
-        # de-dupe while keeping order
         seen, out = set(), []
-        for p in parts:
-            if p.lower() not in seen:
-                seen.add(p.lower())
-                out.append(p if p.endswith(("?", ".", "!")) else p + ".")
-        if len(out) <= 1:
-            return [prompt]
-        return _cap(out, self.max_parts, type(self).__name__)
+        lead = ""          # a lead-in, or a fragment too small to stand alone
+        for frag in _SPLIT_RE.split(prompt.strip()):
+            p = frag.strip(" \t\n-*.")
+            if not p or p.lower() in seen:      # empty, or a repeat of an earlier part
+                continue
+            seen.add(p.lower())
+            if p.endswith(":"):                 # "Do these:" introduces the next part;
+                lead = f"{lead} {p}".strip()    # billing it as a task of its own is waste
+                continue
+            text = p if p.endswith(("?", ".", "!")) else p + "."
+            if len(p) < self.min_part_chars:
+                if out:
+                    out[-1] += " " + text
+                else:
+                    lead = f"{lead} {text}".strip()
+            else:
+                out.append(f"{lead} {text}".strip())
+                lead = ""
+        if lead:                                # a lead-in with nothing following it
+            if out:
+                out[-1] += " " + lead
+            else:
+                out.append(lead)
+        out = _fold_tail(out, self.max_parts)
+        return out if len(out) > 1 else [prompt]
 
 
 class LLMDecomposer:
@@ -148,6 +123,9 @@ class LLMDecomposer:
         self.max_parts = max_parts
         self.max_prompt_chars = int(max_prompt_chars)
         self._fallback = fallback or NaiveDecomposer()
+        # set by AgenticRouter.__init__ so this call counts against the run's
+        # shared ``max_calls`` budget like a routed call does (AGENTICROUTER-003)
+        self.on_call: Callable[[], None] | None = None
 
     def __call__(self, prompt: str) -> list[str]:
         if len(prompt) > self.max_prompt_chars:
@@ -157,6 +135,8 @@ class LLMDecomposer:
                 stacklevel=2,
             )
             return self._fallback(prompt)
+        if self.on_call is not None:
+            self.on_call()
         try:
             msg = self._chat.invoke(self._PROMPT.format(prompt=prompt))
         except Exception as exc:  # pragma: no cover - provider errors
@@ -173,7 +153,7 @@ class LLMDecomposer:
             if len(ln) < 4 or ln.endswith(":"):
                 continue
             parts.append(ln)
-        return _cap(parts, self.max_parts, type(self).__name__)
+        return _fold_tail(parts, self.max_parts)
 
 
 def concat_synthesizer(original: str, pairs: Sequence[tuple[str, str]]) -> str:
@@ -207,6 +187,9 @@ class LLMSynthesizer:
         self._chat = chat_model
         self.max_body_chars = int(max_body_chars)
         self._fallback = fallback
+        # set by AgenticRouter.__init__ so this call counts against the run's
+        # shared ``max_calls`` budget like a routed call does (AGENTICROUTER-003)
+        self.on_call: Callable[[], None] | None = None
 
     def __call__(self, original: str, pairs: Sequence[tuple[str, str]]) -> str:
         body = "\n\n".join(f"[{i}] {s}\n{a}" for i, (s, a) in enumerate(pairs, 1))
@@ -217,6 +200,8 @@ class LLMSynthesizer:
                 stacklevel=2,
             )
             return self._fallback(original, pairs)
+        if self.on_call is not None:
+            self.on_call()
         try:
             msg = self._chat.invoke(self._PROMPT.format(original=original[:2000], body=body))
         except Exception as exc:  # pragma: no cover - provider errors

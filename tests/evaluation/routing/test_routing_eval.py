@@ -314,7 +314,7 @@ def test_per_query_table_columns():
     from evaluation.nirt.routing import oracle_choice
 
     sel = np.array([1, 0, 2])
-    o = oracle_choice(true, cost)
+    o = oracle_choice(true, cost, model_ids=None)
     t = per_query_table(true.copy(), true, cost, M, list(true_df.index), sel, o)
     for c in ("query_id", "selected_model_id", "selected_predicted_score",
               "selected_actual_score", "oracle_model_id", "oracle_score",
@@ -337,7 +337,7 @@ def test_oracle_choice_tie_break_levels():
 
 
 def test_oracle_choice_legacy_mode_keeps_column_order():
-    assert oracle_choice(np.array([[0.9, 0.9]]), np.array([[0.1, 0.1]]))[0] == 0
+    assert oracle_choice(np.array([[0.9, 0.9]]), np.array([[0.1, 0.1]]), model_ids=None)[0] == 0
 
 
 def test_oracle_choice_is_column_permutation_invariant():
@@ -351,6 +351,48 @@ def test_oracle_choice_is_column_permutation_invariant():
         p_ids = [ids[k] for k in perm]
         got = [p_ids[k] for k in oracle_choice(true[:, perm], cost[:, perm], model_ids=p_ids)]
         assert got == base
+
+
+def test_hard_oracle_row_matches_canonical_oracle_choice_on_a_residual_cost_tie():
+    """ER-01: the 'hard oracle (upper bound)' row must use the same tie-break
+    rule as oracle_choice, not a hand-rolled cost perturbation that reverts to
+    column order once two tied-max models also tie on cost (here: equal cost
+    for both, so the perturbation's (c - c.min())/ptp(c) term is 0/0 -> no
+    perturbation at all, and the old argmax-based selection landed on column
+    order ("Z") instead of the canonical smallest-model_id pick ("A"))."""
+    ids = ["Z", "A"]
+    true = np.array([[0.9, 0.9]])
+    cost = np.array([[0.05, 0.05]])
+    preds = {"noop": true.copy()}
+
+    summary, detail = compare_routing_strategies(
+        preds, true, cost, ids, lam=0.0, include_random=False,
+    )
+
+    hard = summary[summary.strategy == "hard oracle (upper bound)"].iloc[0]
+    assert hard["oracle_hit_rate"] == pytest.approx(1.0)
+
+    canonical_idx = int(oracle_choice(true, cost, model_ids=ids)[0])
+    assert detail["hard oracle (upper bound)"]["selected_model_mix"] == {ids[canonical_idx]: 1}
+    assert ids[canonical_idx] == "A"
+
+
+def test_oracle_labels_raises_on_missing_cost_at_a_tied_max_cell():
+    """ER-02: a NaN cost at a tied-max cell must be a clear error, not a
+    silent input to oracle_choice's EN-01 NaN-safe fallback tie-break."""
+    true_df = pd.DataFrame([[0.9, 0.9, 0.5]], index=["q1"], columns=M)
+    cost_df = pd.DataFrame([[np.nan, np.nan, 0.01]], index=["q1"], columns=M)
+    with pytest.raises(ValueError, match="cost"):
+        oracle_labels(true_df, cost_df)
+
+
+def test_routing_evaluation_raises_on_missing_cost_at_a_tied_max_cell():
+    """ER-02, routing_evaluation's own o_idx computation."""
+    true = np.array([[0.9, 0.9, 0.5]])
+    cost = np.array([[np.nan, np.nan, 0.01]])
+    pred = true.copy()
+    with pytest.raises(ValueError, match="cost"):
+        routing_evaluation(pred, true, cost, M)
 
 
 def test_oracle_labels_and_routing_evaluation_agree_on_oracle_model():

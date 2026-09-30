@@ -1,12 +1,12 @@
 """The output of a ranking pass (:class:`ModelScore`) and of a full routing
 decision (:class:`RoutingDecision`) -- the production-shaped counterparts to
 :class:`router.routing.base.RoutingResult`, which is what's actually returned
-by ``Router.route()`` today. ``RoutingResult`` carries a whole batch's scores
+by ``RouterModel.route()`` today. ``RoutingResult`` carries a whole batch's scores
 as one dense matrix (efficient for offline evaluation over many queries);
 these carry one request's decision as a richer, per-field record (a
 ``reason``, ``confidence``, ``destination``). ``RoutingDecision`` is live: it
 is produced by :class:`~router.policy.DefaultRoutingPolicy` and returned from
-:class:`~router.router.RoutingPipeline`'s ``route`` method."""
+:class:`~router.router.Router`'s ``route`` method."""
 
 from __future__ import annotations
 

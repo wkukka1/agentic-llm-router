@@ -152,7 +152,7 @@ def load_splits(variant: str = "domain_v3", out_dir: Path = PROCESSED_DIR) -> di
     target = out_dir / variant
     missing = [n for n in SPLIT_NAMES if not (target / f"{n}.parquet").exists()]
     if missing:
-        raise FileNotFoundError(f"missing splits {missing} under {target}; run `router build-data`")
+        raise FileNotFoundError(f"missing splits {missing} under {target}; run `prompt-decomposition build-real` or `build-task`")
     return {name: pd.read_parquet(target / f"{name}.parquet") for name in SPLIT_NAMES}
 
 
@@ -214,7 +214,7 @@ def build_task_dataset(
     by default: measured against the random sample they move macro-F1 +0.025 and
     top-1 -0.013, neither of which clears a paired bootstrap at n=1,000.
     """
-    from decompose.classifiers.prompt_decomposition import sources
+    from training.prompt_decomposition.data import sources
 
     # `to_frame` writes the label into `domain` (the canonical field on
     # Example); copy it to `task` so a split file carries an unambiguous name
@@ -265,7 +265,7 @@ def build_real_only_dataset(
     The evaluation rows are the frozen set, matched by prompt text, so results
     stay comparable across runs and across changes to the label pool.
     """
-    from decompose.classifiers.prompt_decomposition import sources
+    from training.prompt_decomposition.data import sources
 
     hand = dedupe(to_frame(sources.load_handlabelled()))
     if merge_domains:

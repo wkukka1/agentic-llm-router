@@ -151,7 +151,9 @@ def evaluate_checkpoint(
     # train arrays only feed the marginal baselines (y, model_ids): skip the joins
     tr = build_arrays(cfg, split="train", use_relevance=False, use_warmup=False, **common)
     ev = build_arrays(cfg, split=split, use_relevance=model.use_relevance,
-                      use_warmup=model.use_warmup, **common)
+                      use_warmup=model.use_warmup,
+                      relevance_dim=model.relevance_dim if model.use_relevance else None,
+                      **common)
 
     fwd = batched_forward(model, ev, fields=("proba", "a_q", "b_q"))
     p, a_all, b_all = fwd["proba"], fwd["a_q"], fwd["b_q"]

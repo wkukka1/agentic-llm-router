@@ -50,7 +50,7 @@ Verified against the tree. Paths are under `src/`.
 
 | UML class | file | status |
 |---|---|---|
-| `Router` (the pipeline) | `router/router.py` | **built, and named `RoutingPipeline`** -- see the name clash below |
+| `Router` (the pipeline) | `router/router.py` | built |
 | `RoutingRequest`, `RoutingContext`, `Conversation`, `Message` | `router/context.py` | built |
 | `RoutingConstraints`, `OptimizationObjective`, `RoutingMode` | `router/constraints.py` | built |
 | `RoutingPolicy` | `router/policy.py` | built |
@@ -69,7 +69,7 @@ Verified against the tree. Paths are under `src/`.
 | `ExecutionResult` | `router/execution/results.py` | built (stub by design) |
 | `ExecutionTrace` | `router/tracing/traces.py` | built |
 | `Tool`, `MCPTool`, `RouterTool` | `router/tools/` | built |
-| `RouterModel` (abstract ranker) | `router/models/` | **not built** |
+| `RouterModel` (per-(query, model) scorer) | `router/routing/base.py` | built |
 | `RouterModelFactory` | `router/models/registry.py` | **not built** |
 | `ArtifactStore`, `LocalArtifactStore` | `router/models/artifacts.py` | **not built** |
 | `CostModel` | `router/llm/cost.py` | **not built** |
@@ -87,12 +87,12 @@ Build it there, under that name.
 Two places where the repo is right and the diagram reads wrong. Do not
 "fix" the code to match.
 
-1. **`Router` is two different things.** The diagram's top-level pipeline class
-   is called `Router`, but `router.routing.base.Router` already exists and is
-   the per-`(query, model)` scorer. The pipeline is therefore
-   `router.router.RoutingPipeline`. When the diagram says `Router`, read
-   `RoutingPipeline` -- unless you are in `router/routing/`, where `Router`
-   means the scorer.
+1. ~~**`Router` is two different things.**~~ **RESOLVED** by the
+   `refactor-architecture` merge. The code now matches the diagram: the
+   top-level pipeline is `router.router.Router`, and the per-`(query, model)`
+   scorer it was colliding with has been renamed to
+   `router.routing.base.RouterModel`. `RoutingPipeline` no longer exists; read
+   `Router` as the diagram intends. The class map below has been updated.
 2. **`decompose` is top-level, not `router/decompose/`.** It is a standalone
    package that imports nothing from `router`, `training` or `evaluation`
    (one exception: the embedders wrap `router.embeddings.encoder`, listed in

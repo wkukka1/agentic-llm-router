@@ -151,15 +151,16 @@ class TestModel:
         assert p == sorted(p, reverse=True)
         assert all(0.0 <= x <= 1.0 for x in p)
 
-    def test_calibrating_on_held_out_rows_widens_the_spread(self, learnable):
+    def test_calibrating_sets_the_spread_to_the_held_out_residual_std(self, learnable):
         """Training residuals are optimistically small by construction; a
-        `P(tokens > T)` built on them would be over-confident."""
+        `P(tokens > T)` built on them would be over-confident. (It does not
+        always *widen* -- on easy held-out rows it can shrink -- so the contract
+        is the source of the number, not its direction.)"""
         prompts, y = learnable
         X = build_features(prompts, "surface")
         model = LengthModel(alpha=1.0).fit(X[:300], y[:300])
-        train_sigma = model.sigma
         model.calibrate(X[300:], y[300:])
-        assert model.sigma >= train_sigma * 0.9
+        assert model.sigma == pytest.approx(np.std(y[300:] - model.predict(X[300:])))
 
     def test_save_and_load_round_trip(self, learnable, tmp_path):
         prompts, y = learnable

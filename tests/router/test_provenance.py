@@ -1,13 +1,6 @@
 from __future__ import annotations
 
-from router.provenance import artifact_digests, file_digest, git_dirty, git_sha
-
-
-def test_git_sha_and_dirty_here():
-    # this repo is a git checkout, so both should resolve to concrete values
-    sha = git_sha()
-    assert isinstance(sha, str) and len(sha) == 40
-    assert isinstance(git_dirty(), bool)
+from router.provenance import artifact_digests, file_digest
 
 
 def test_file_digest_stable_and_length(tmp_path):

@@ -128,7 +128,8 @@ def evaluate_continuous(directory: str | Path, *, phase0_cfg: Optional[Config] =
     ev = build_arrays(cfg, split=split, data=data, pathway=s["pathway"],
                       binary_threshold=s["binary_threshold"], score_kind=s["score_kind"],
                       use_relevance=model.use_relevance, use_warmup=model.use_warmup,
-                      model_index=mi)
+                      model_index=mi,
+                      relevance_dim=model.relevance_dim if model.use_relevance else None)
 
     # ONE pass for every field + both interval levels (one Monte Carlo draw per batch)
     fields = ["mean", "proba", "nll", "lower", "upper", "std", "a_q", "b_q",

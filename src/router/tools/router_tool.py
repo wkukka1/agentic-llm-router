@@ -1,4 +1,4 @@
-"""``RouterTool``: intended to expose a :class:`~router.routing.base.Router`
+"""``RouterTool``: intended to expose a :class:`~router.routing.base.RouterModel`
 as a :class:`Tool` so an orchestrator can call routing recursively without
 ever re-entering full agentic dispatch -- design scaffolding, not a working
 guard today (XA-07).
@@ -24,14 +24,14 @@ from .base import Tool
 
 if TYPE_CHECKING:  # pragma: no cover - type hints only, not a runtime import
     from ..decision import RoutingDecision
-    from ..routing.base import Router
+    from ..routing.base import RouterModel
 
 
 class RouterTool(Tool):
     name = "router"
     version = "0"
 
-    def __init__(self, router: "Router"):
+    def __init__(self, router: "RouterModel"):
         self.router = router
 
     def execute(self, input: RoutingRequest) -> "RoutingDecision":
@@ -39,7 +39,7 @@ class RouterTool(Tool):
 
     def route_for_model_selection(self, request: RoutingRequest) -> "RoutingDecision":
         """Route ``request`` for model selection only: a plain pick, never a
-        hand-off. Real ranking (:meth:`Router.route`/``route_text``) works
+        hand-off. Real ranking (:meth:`RouterModel.route`/``route_text``) works
         today, and :class:`~router.policy.DefaultRoutingPolicy` can turn scores
         into a :class:`~router.decision.RoutingDecision` -- but this method
         itself, and the ``MODEL_SELECTION`` mode/recursion-guard story this

@@ -115,3 +115,68 @@ def fill_costs(df: pd.DataFrame, cfg: Optional[Config] = None, *,
 
 def priced_model_ids(cfg: Optional[Config] = None, *, path: Optional[str] = None) -> set[str]:
     return {k for k in load_prices(cfg, path=path)}
+
+
+def impute_missing_usage(df: pd.DataFrame, *, min_priced_rows: int = 30) -> pd.DataFrame:
+    """Price rows whose usage accounting is missing: 0 input tokens, 0 output
+    tokens and ``cost == 0`` on a row that carries a real score.
+
+    A prompt cannot have zero input tokens, so these are answered calls whose
+    usage was not recorded, not free ones. Ingesting them as $0 understates the
+    model's cost and lets it win cost tie-breaks (KNOWN BUG: training.data.loaders
+    MOD-001). A genuinely free model is unaffected: its rows carry real token
+    counts, so they never match.
+
+    For each affected model the per-token rates are recovered by least squares
+    from that model's own priced rows (``cost = in * r_in + out * r_out``) --
+    the source's own pricing, not an external table. Tokens are then estimated:
+
+    * input: the median input count for the same query on other models, else
+      the model's mean for that dataset;
+    * output: the model's mean for that dataset (else its overall mean).
+
+    A model with fewer than ``min_priced_rows`` priced rows, or a non-positive
+    fitted rate, has no trustworthy price: its affected rows get NaN tokens and
+    NaN cost (the schema's "unknown", never 0) and ``metadata["usage_missing"]``.
+    Every imputed row is marked ``metadata["usage_imputed"] = True``; rows with
+    real usage are not touched.
+    """
+    out = df.copy()
+    # float, not the schema's nullable Int64, so the masks below never hold <NA>
+    tok_in = pd.to_numeric(out["input_tokens"], errors="coerce").astype(float)
+    tok_out = pd.to_numeric(out["output_tokens"], errors="coerce").astype(float)
+    cost = pd.to_numeric(out["cost"], errors="coerce").astype(float)
+    missing = (tok_in == 0) & (tok_out == 0) & (cost == 0)
+    if not missing.any():
+        return out
+
+    priced = (tok_in > 0) & (cost > 0)
+    for model in out.loc[missing, "model_id"].unique():
+        rows = missing & (out["model_id"] == model)
+        own = priced & (out["model_id"] == model)
+        rate = None
+        if own.sum() >= min_priced_rows:
+            coef, *_ = np.linalg.lstsq(
+                np.column_stack([tok_in[own], tok_out[own]]).astype(float),
+                cost[own].to_numpy(float), rcond=None)
+            if (coef > 0).all():
+                rate = coef
+        flag = "usage_imputed"
+        if rate is None:
+            out.loc[rows, ["input_tokens", "output_tokens", "cost"]] = np.nan
+            flag = "usage_missing"
+        else:
+            elsewhere = priced & (out["model_id"] != model)
+            by_query = tok_in[elsewhere].groupby(out.loc[elsewhere, "query_id"]).median()
+            own_in = tok_in[own].groupby(out.loc[own, "dataset"]).mean()
+            own_out = tok_out[own].groupby(out.loc[own, "dataset"]).mean()
+            ds = out.loc[rows, "dataset"]
+            est_in = out.loc[rows, "query_id"].map(by_query).fillna(ds.map(own_in)).fillna(tok_in[own].mean())
+            est_out = ds.map(own_out).fillna(tok_out[own].mean())
+            est_in, est_out = est_in.round(), est_out.round()
+            out.loc[rows, "input_tokens"] = est_in
+            out.loc[rows, "output_tokens"] = est_out
+            out.loc[rows, "cost"] = (est_in * rate[0] + est_out * rate[1]).to_numpy()
+        out.loc[rows, "metadata"] = out.loc[rows, "metadata"].map(
+            lambda m: {**(m or {}), flag: True})
+    return out

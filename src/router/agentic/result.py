@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Iterable, Optional
 
-__all__ = ["SubCall", "AgenticResult"]
+__all__ = ["SubCall", "AgenticResult", "total_cost"]
 
 
 @dataclass
@@ -35,6 +35,25 @@ class SubCall:
         return (n for n in self.walk() if not n.children)
 
 
+def total_cost(nodes: Iterable[SubCall]) -> Optional[float]:
+    """Sum ``nodes``' costs (pass ``.leaves()`` -- a branch's own ``cost``
+    already includes its descendants, so summing branches double-counts).
+
+    A failed node (``error`` set) contributes ``0`` -- it didn't complete, so
+    nothing was billed. A *successful* node with ``cost is None`` (a real
+    call whose client couldn't price it, e.g. no profile configured) makes
+    the total ``None`` -- unresolved, not free (AGENTICROUTER-002: `None`
+    must not collapse to `0.0`, or an unpriced run silently reports as
+    free)."""
+    total = 0.0
+    for n in nodes:
+        if n.cost is not None:
+            total += n.cost
+        elif n.error is None:
+            return None
+    return total
+
+
 @dataclass
 class AgenticResult:
     prompt: str
@@ -45,7 +64,7 @@ class AgenticResult:
     predicted_quality: Optional[float] = None
     steps: list[SubCall] = field(default_factory=list)
     orchestrator: Optional[str] = None
-    cost: float = 0.0
+    cost: Optional[float] = None
 
     def models_used(self) -> list[str]:
         """Models actually invoked. In orchestrated mode ``selected_model_id``

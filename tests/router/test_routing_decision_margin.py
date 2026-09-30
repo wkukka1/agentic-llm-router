@@ -216,8 +216,14 @@ class TestPerRequestOnTheLivePath:
         with pytest.raises(ValueError, match="margin must be >= 0"):
             self._router().with_margin(-0.1)
 
-    def test_the_copy_starts_with_clean_per_run_state(self):
-        """`_shallow_copy` resets the decision cache; a budget change must not
-        inherit routes decided under the old one."""
+    def test_a_copy_cannot_inherit_another_run_state(self):
+        """A budget change must not inherit routes decided under the old budget.
+
+        That used to need `_shallow_copy` to clear `_decisions`/`_calls`. Per-run
+        state now lives in a `contextvars.ContextVar` rather than on the router
+        (see `router.agentic.router._RunState`), so the property holds by
+        construction -- this pins that it stays off the instance.
+        """
         wide = self._router(0.0).with_margin(0.2)
-        assert wide._decisions == {} and wide._calls == 0
+        assert not hasattr(wide, "_decisions"), "per-run state is back on the instance"
+        assert not hasattr(wide, "_calls")

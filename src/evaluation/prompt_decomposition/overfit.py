@@ -7,7 +7,7 @@ only a problem if they carry the score. What makes the set useful is that the
 failure modes they catch are different, and the one that matters most --
 permutation -- is the one most often skipped.
 
-Run with ``router overfit``. **The accuracies below are not the shipped
+Run with ``prompt-decomposition overfit``. **The accuracies below are not the shipped
 numbers.** This deliberately runs one encoder with a plain logistic head -- no
 ensemble, no calibration, no domain merge -- because what is being measured is
 the train/test gap and the shape of the learning curve, and a simpler model

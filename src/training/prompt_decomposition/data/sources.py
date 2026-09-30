@@ -38,6 +38,21 @@ GENERATED_TASKS_PATH = "data/synthetic/generated_tasks.parquet"
 SYNTHETIC_DIR = "data/synthetic"
 
 
+def load_handlabelled(path: str = HANDLABELLED_PATH) -> list[Example]:
+    """Real prompts read and labelled by hand -- the anchor of the whole set.
+
+    Small but irreplaceable: it is the only source that pairs genuine user
+    traffic with a label from every domain, including `personal_life` and
+    `meta_other`, which no benchmark contains at all.
+    """
+    frame = pd.read_parquet(path)
+    return [
+        Example(prompt=r.prompt, source="handlabelled", subset="lmarena",
+                capability=r.domain, meta={"arena_id": r.arena_id})
+        for r in frame.itertuples()
+    ]
+
+
 def load_real_tasks(path: str = REAL_TASKS_PATH) -> list[Example]:
     """1,000 real prompts hand-labelled with task type.
 

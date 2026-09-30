@@ -1,4 +1,4 @@
-# The `Router` interface (`router.routing`)
+# The `RouterModel` interface (`router.routing`)
 
 One contract for every routing strategy, so NIRT, k-NN, an MLP head, a bandit, or
 an LLM-judge cascade are interchangeable at the call site and a new strategy is
@@ -14,7 +14,7 @@ predict_scores(query_ids)  ->  [query_id × model_id]  E[Y | q, m]
 
 `router.routing` is the **decision layer** — no ground truth involved. It reuses
 the selection policy in `router.nirt.routing_decision` (`routing_decision`).
-Oracle-relative scoring needs labels, so it isn't a method on `Router`: it's
+Oracle-relative scoring needs labels, so it isn't a method on `RouterModel`: it's
 `evaluation.routing.oracle.evaluate_router`, which delegates to
 `routing_evaluation`. This is the boundary the package split enforces — a
 serving router must be usable with no `evaluation` (or `training`) import at
@@ -23,10 +23,10 @@ all.
 ## The contract
 
 ```python
-from router.routing import Router, register
+from router.routing import RouterModel, register
 
 @register
-class MyRouter(Router):
+class MyRouter(RouterModel):
     kind = "my_router"                      # distinct, stable; how the registry finds it
 
     def predict_scores(self, query_ids):

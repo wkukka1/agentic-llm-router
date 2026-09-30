@@ -1,7 +1,7 @@
-"""Modular routing layer: one :class:`Router` interface, many strategies.
+"""Modular routing layer: one :class:`RouterModel` interface, many strategies.
 
 A **router** turns per-``(query, model)`` quality predictions into a model choice
-per query. This package fixes the contract (:class:`Router`) and the shared
+per query. This package fixes the contract (:class:`RouterModel`) and the shared
 selection machinery so a new strategy -- NIRT, k-NN, an MLP head, a bandit, an
 LLM-judge cascade -- only has to answer "how good is model ``m`` for query
 ``q``". Comparing routers against oracle ground truth needs labels, so it
@@ -27,10 +27,10 @@ lives in :func:`evaluation.routing.oracle.compare_routers`, not here.
 
 Register a new strategy so it is reachable by name::
 
-    from router.routing import Router, register
+    from router.routing import RouterModel, register
 
     @register
-    class BanditRouter(Router):
+    class BanditRouter(RouterModel):
         kind = "bandit"
         def predict_scores(self, query_ids):
             ...
@@ -40,7 +40,7 @@ Register a new strategy so it is reachable by name::
 
 from __future__ import annotations
 
-from .base import Router, RoutingResult, UnsupportedCandidatePolicy
+from .base import RouterModel, RoutingResult, UnsupportedCandidatePolicy
 from .registry import REGISTRY, build_router, register
 from .routers import (
     KNNRouter,
@@ -51,7 +51,7 @@ from .routers import (
 )
 
 __all__ = [
-    "Router",
+    "RouterModel",
     "RoutingResult",
     "UnsupportedCandidatePolicy",
     "REGISTRY",

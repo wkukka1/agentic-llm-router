@@ -115,6 +115,7 @@ def build_arrays(
     use_relevance: bool = True,
     use_warmup: bool = True,
     model_index: Optional[dict] = None,
+    relevance_dim: Optional[int] = None,
 ) -> BaselineArrays:
     """``score_kind="effective"`` uses the observation table's ``target`` (built
     with the effective score); ``raw`` / ``corrected`` re-derive the score from
@@ -162,6 +163,18 @@ def build_arrays(
 
         rel = load_relevance(cfg)
         if rel is not None:
+            if relevance_dim is not None and rel.dim != relevance_dim:
+                # The checkpoint was trained against an earlier taxonomy (a different
+                # cluster count); its w_r layer is a fixed relevance_dim -> theta_dim
+                # matrix and cannot consume today's re-clustered r_q. Fail here with a
+                # clear message instead of a bare matmul shape error deep in the model.
+                raise ValueError(
+                    f"relevance store at dim {rel.dim} does not match this checkpoint's "
+                    f"trained relevance_dim ({relevance_dim}) -- the taxonomy was "
+                    "re-clustered after this checkpoint was trained; retrain the "
+                    "checkpoint against the current taxonomy/relevance store, or point "
+                    "cfg at the taxonomy artifacts it was originally trained with"
+                )
             r_q = _join(rel, query_ids, fill=1.0 / rel.dim)   # uniform for unclustered queries
     if use_warmup:
         from training.retrieval import load_warmup
@@ -295,6 +308,7 @@ def checkpoint_matrix(ckpt, cfg: Config, split: str, field: str = "proba", *,
         cfg, split=split, pathway=s["pathway"], binary_threshold=s["binary_threshold"],
         score_kind=s["score_kind"], use_relevance=model.use_relevance,
         use_warmup=model.use_warmup, model_index=blob["model_index"],
+        relevance_dim=model.relevance_dim if model.use_relevance else None,
     )
     v = batched_forward(model, ev, fields=(field,), level=level)[field]
     return pivot_qm(

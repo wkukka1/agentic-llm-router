@@ -4,7 +4,7 @@ arXiv 2506.01048) vs "just always use the best model".
 
 Turns each per-(query, model) predictor into a policy `argmax_m U(q, m)`
 (`U = pred - lam * C(m)`, `C(m)` the per-model mean cost, `lam` in raw USD
-units -- the same rule and scale `Router.route(lam=...)` uses) on the
+units -- the same rule and scale `RouterModel.route(lam=...)` uses) on the
 evaluation split(s), and reports achieved accuracy / graded quality / cost and
 the savings vs a fixed reference model.
 Analysis only -- the routing orchestrator itself is Phase 4.

@@ -1,4 +1,4 @@
-"""A tiny name -> :class:`~router.routing.base.Router` subclass registry.
+"""A tiny name -> :class:`~router.routing.base.RouterModel` subclass registry.
 
 The extension point for new strategies: decorate a subclass with :func:`register`
 and it becomes reachable by its ``kind`` string via :func:`build_router` /
@@ -10,18 +10,18 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .base import Router
+    from .base import RouterModel
 
 __all__ = ["REGISTRY", "register", "build_router"]
 
-REGISTRY: dict[str, type["Router"]] = {}
+REGISTRY: dict[str, type["RouterModel"]] = {}
 
 
 def _qualname(cls: type) -> str:
     return f"{cls.__module__}.{cls.__qualname__}"
 
 
-def register(cls: type["Router"]) -> type["Router"]:
+def register(cls: type["RouterModel"]) -> type["RouterModel"]:
     """Class decorator: index ``cls`` under its ``kind``. Returns ``cls`` unchanged."""
     kind = getattr(cls, "kind", None)
     if not kind or kind == "router":
@@ -37,7 +37,7 @@ def register(cls: type["Router"]) -> type["Router"]:
     return cls
 
 
-def build_router(kind: str, /, **kwargs) -> "Router":
+def build_router(kind: str, /, **kwargs) -> "RouterModel":
     """Construct a registered router by ``kind``.
 
     Passes ``**kwargs`` straight through to the class. If ``run=`` is given and

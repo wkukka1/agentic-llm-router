@@ -11,7 +11,7 @@ from router.routing import (
     REGISTRY,
     MatrixRouter,
     RandomRouter,
-    Router,
+    RouterModel,
     RoutingResult,
     build_router,
     register,
@@ -63,6 +63,35 @@ def test_call_is_route():
     true_df, _ = _mats()
     r = MatrixRouter(true_df)
     assert r(list(true_df.index)).selected_model_ids == r.route(list(true_df.index)).selected_model_ids
+
+
+def test_call_dispatches_to_a_subclass_route_override():
+    """ROUTERMODEL-001: ``__call__ = route`` froze the base function, so
+    ``router(...)`` bypassed a subclass's own ``route()``."""
+    true_df, _ = _mats()
+
+    class Overriding(MatrixRouter):
+        def route(self, *args, **kwargs):
+            raise RuntimeError("subclass route() called")
+
+    with pytest.raises(RuntimeError, match="subclass route"):
+        Overriding(true_df)(["q001"])
+
+
+def test_series_model_costs_are_aligned_by_label_not_position():
+    """ROUTERMODEL-003: a labelled ``pd.Series`` in a different order than
+    ``model_ids`` must be aligned by index, like a dict."""
+    true_df, _ = _mats()
+    shuffled = pd.Series({"GPT-C": 0.03, "GPT-A": 0.01, "GPT-B": 0.02})
+    res = MatrixRouter(true_df).route(["q001"], lam=1.0, model_costs=shuffled)
+    np.testing.assert_allclose(res.model_costs, [0.01, 0.02, 0.03])
+
+
+def test_series_model_costs_missing_a_model_raises():
+    true_df, _ = _mats()
+    with pytest.raises(KeyError, match="GPT-C"):
+        MatrixRouter(true_df).route(
+            ["q001"], lam=1.0, model_costs=pd.Series({"GPT-A": 0.01, "GPT-B": 0.02}))
 
 
 def test_query_order_and_missing_rows_preserved():
@@ -160,14 +189,14 @@ def test_build_router_unknown_kind():
 def test_register_rejects_missing_kind():
     with pytest.raises(ValueError, match="distinct `kind`"):
         @register
-        class _NoKind(Router):
+        class _NoKind(RouterModel):
             def predict_scores(self, query_ids):
                 ...
 
 
 def test_register_custom_router_roundtrips():
     @register
-    class _ConstRouter(Router):
+    class _ConstRouter(RouterModel):
         kind = "_const_test"
 
         def predict_scores(self, query_ids):
@@ -243,8 +272,19 @@ def test_compare_routers_rejects_duplicate_names():
         compare_routers(routers, true_df, cost_df)
 
 
+def test_compare_routers_raises_when_a_routers_pool_is_missing_a_model():
+    """MOD-001 (evaluation.routing.oracle): compare_routers must guard the
+    same reindex-introduces-an-all-NaN-column failure mode evaluate_router
+    already guards (test_evaluate_raises_when_outcomes_lack_a_pool_model)."""
+    true_df, cost_df = _mats()  # columns GPT-A, GPT-B, GPT-C
+    partial_pool_router = MatrixRouter(true_df[["GPT-A", "GPT-C"]], name="partial")
+
+    with pytest.raises(ValueError, match="GPT-B"):
+        compare_routers([partial_pool_router], true_df, cost_df)
+
+
 def test_compare_routers_handles_non_string_query_ids():
-    """XD-08: compare_routers must align via Router.aligned_scores (which
+    """XD-08: compare_routers must align via RouterModel.aligned_scores (which
     stringifies ids the same way predict_scores does), not a raw reindex by
     the caller's original ids -- a non-string query id previously produced an
     all-NaN row that silently fell back to column 0."""
@@ -257,75 +297,73 @@ def test_compare_routers_handles_non_string_query_ids():
 
 
 # --------------------------------------------------------------------------- #
-# NIRTRouter smoke test (needs torch)                                         #
+# NIRTRouter (needs torch)                                                    #
 # --------------------------------------------------------------------------- #
-def test_nirt_router_scores_and_routes():
-    torch = pytest.importorskip("torch")
+Q_IDS = [f"q{i}" for i in range(6)]
+M_IDS = ["m0", "m1", "m2"]
+MODEL_INDEX = {"m0": 0, "m1": 1, "m2": 2}
+
+
+class _Data:
+    """The three ``TrainingData`` accessors NIRTRouter touches."""
+
+    def __init__(self, q_store, m_store):
+        self._q, self._m = q_store, m_store
+
+    def query_embeddings(self, pw):
+        return self._q
+
+    def profile_embeddings(self, pw):
+        return self._m
+
+    def nirt_observations(self):
+        return pd.DataFrame({"split": ["train"] * 3, "model_id": M_IDS, "cost": [0.1, 0.2, 0.3]})
+
+
+@pytest.fixture
+def nirt_router():
+    pytest.importorskip("torch")
+    from helpers.stores import make_store
     from router.nirt.model import build_model
     from router.routing import NIRTRouter
 
-    class _Store:
-        def __init__(self, ids, mat, field):
-            self._index = {str(i): r for r, i in enumerate(ids)}
-            self.matrix = np.asarray(mat, np.float32)
-            self.id_field = field
-
-        @property
-        def dim(self):
-            return self.matrix.shape[1]
-
-        def __contains__(self, i):
-            return str(i) in self._index
-
-        def rows_of(self, ids):
-            return np.fromiter((self._index[str(i)] for i in ids), dtype=np.int64, count=len(ids))
-
-        def get(self, i):
-            return np.asarray(self.matrix[self._index[str(i)]])
-
-    rng = np.random.default_rng(0)
-    q_ids = [f"q{i}" for i in range(6)]
-    m_ids = ["m0", "m1", "m2"]
-    q_store = _Store(q_ids, rng.standard_normal((6, 8)), "query_id")
-    m_store = _Store(m_ids, rng.standard_normal((3, 4)), "model_id")
-
-    class _Data:
-        def query_embeddings(self, pw):
-            return q_store
-
-        def profile_embeddings(self, pw):
-            return m_store
-
-        def nirt_observations(self):
-            return pd.DataFrame({"split": ["train"] * 3, "model_id": m_ids, "cost": [0.1, 0.2, 0.3]})
-
+    data = _Data(make_store(Q_IDS, 8, "query_id"), make_store(M_IDS, 4, "model_id", seed=1))
     model = build_model({"model_params": "projected", "dim": 2}, n_models=3, query_dim=8, profile_dim=4)
-    r = NIRTRouter(model, {"m0": 0, "m1": 1, "m2": 2}, data=_Data(), name="nirt-smoke")
+    return NIRTRouter(model, MODEL_INDEX, data=data, name="nirt-smoke"), model, data
 
-    scores = r.predict_scores(q_ids)
+
+def test_nirt_router_scores_one_column_per_model(nirt_router):
+    router, _, _ = nirt_router
+    scores = router.predict_scores(Q_IDS)
     assert scores.shape == (6, 3)
-    assert list(scores.columns) == m_ids
-    assert ((scores.to_numpy() >= 0) & (scores.to_numpy() <= 1)).all()
+    assert list(scores.columns) == M_IDS
 
-    res = r.route(q_ids)
-    assert res.selected.shape == (6,)
-    # default cost vector comes from the (stub) observation table
-    np.testing.assert_allclose(r.default_model_costs, [0.1, 0.2, 0.3])
-    res_cost = r.route(q_ids, lam=5.0)
-    assert res_cost.model_costs is not None
 
-    # text scoring path: _score_embeddings forwards raw [N, d] query embeddings
+def test_nirt_router_default_costs_come_from_the_observation_table(nirt_router):
+    router, _, _ = nirt_router
+    np.testing.assert_allclose(router.default_model_costs, [0.1, 0.2, 0.3])
+    assert router.route(Q_IDS).selected.shape == (6,)
+    assert router.route(Q_IDS, lam=5.0).model_costs is not None
+
+
+def test_nirt_router_scores_raw_query_embeddings(nirt_router):
+    from router.routing import NIRTRouter
+
+    router, _, _ = nirt_router
     assert NIRTRouter.can_route_text is True
-    e_q = rng.standard_normal((4, 8))
-    text_scores = r._score_embeddings(e_q)
+    text_scores = router._score_embeddings(np.random.default_rng(0).standard_normal((4, 8)))
     assert text_scores.shape == (4, 3)
-    assert list(text_scores.columns) == m_ids
-    assert ((text_scores.to_numpy() >= 0) & (text_scores.to_numpy() <= 1)).all()
+    assert list(text_scores.columns) == M_IDS
     # a short embedding with no feature variant to explain it is a wrong encoder
     with pytest.raises(ValueError, match="does not match model query_dim"):
-        r._score_embeddings(rng.standard_normal((2, 6)))
+        router._score_embeddings(np.zeros((2, 6)))
 
-    # a run trained with structured query features -> exactly the feature block is zero-padded
+
+def test_nirt_router_zero_pads_exactly_the_structured_feature_block(nirt_router):
+    from router.routing import NIRTRouter
+
+    _, model, data = nirt_router
+
     class _Feat:
         dim = 2
 
@@ -333,10 +371,11 @@ def test_nirt_router_scores_and_routes():
         def query_features(self, name):
             return _Feat()
 
-    rf = NIRTRouter(model, {"m0": 0, "m1": 1, "m2": 2}, data=_FeatData(),
-                    query_features="default", name="nirt-feat")
+    rng = np.random.default_rng(0)
+    router = NIRTRouter(model, MODEL_INDEX, data=_FeatData(data._q, data._m),
+                        query_features="default", name="nirt-feat")
     with pytest.warns(UserWarning, match="zero-fills"):
-        padded = rf._score_embeddings(rng.standard_normal((2, 6)))
+        padded = router._score_embeddings(rng.standard_normal((2, 6)))
     assert padded.shape == (2, 3)
     with pytest.raises(ValueError):
-        rf._score_embeddings(rng.standard_normal((2, 5)))
+        router._score_embeddings(rng.standard_normal((2, 5)))

@@ -5,12 +5,13 @@ from __future__ import annotations
 
 import copy
 import pickle
+import warnings
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from router.agentic import AgenticRouter, CallableClient, ClientRegistry, HeuristicTriage, NaiveDecomposer
+from router.agentic import AgenticRouter, ClientRegistry, HeuristicTriage, NaiveDecomposer
 from router.agentic.llm_clients import LLMResponse, guess_provider, message_text
 from router.agentic.result import AgenticResult
 from router.agentic.triage import TriageDecision
@@ -23,14 +24,15 @@ from router.embeddings.encoder import EmbeddingStore
 from router.execution.budget import BudgetLedger
 from router.execution.results import ExecutionResult
 from router.execution.task import AgentTask, TaskStatus
+from router.llm.adapters.fakes import CallableAdapter
 from router.llm.client import LLMClient
 from router.llm.profile import LLMProfile
 from router.llm.registry import LLMRegistry
 from router.nirt.routing_decision import routing_decision
 from router.nirt.shrinkage import novelty_weight
 from router.policy import DefaultRoutingPolicy
-from router.router import RoutingPipeline
-from router.routing import MatrixRouter, RandomRouter, Router
+from router.router import Router
+from router.routing import MatrixRouter, RandomRouter, RouterModel
 from router.routing.registry import REGISTRY, register
 
 POOL = ["a", "b", "c"]
@@ -41,7 +43,7 @@ def _store(ids, dim, field="query_id", seed=0):
     return EmbeddingStore(ids, mat, {"id_field": field}, field)
 
 
-class _TextRouter(Router):
+class _TextRouter(RouterModel):
     kind = "review_text"
     can_route_text = True
 
@@ -61,7 +63,7 @@ class _TextRouter(Router):
 # --------------------------------------------------------------------------- #
 def test_empty_registry_means_no_candidates():
     """RT-01"""
-    decision = RoutingPipeline(_TextRouter([0.1, 0.9, 0.5]), llm_registry=LLMRegistry()).route(
+    decision = Router(_TextRouter([0.1, 0.9, 0.5]), llm_registry=LLMRegistry()).route(
         RoutingRequest(request_id="r", prompt="x"))
     assert decision.ranked_models == []
 
@@ -74,13 +76,13 @@ def test_nan_score_never_ranks_first():
     ranked = DefaultRoutingPolicy().decide(ctx, scores).ranked_models
     assert [s.model for s in ranked][:2] == ["c", "b"]
     # and the pipeline drops non-finite scores altogether
-    d = RoutingPipeline(_TextRouter([float("nan"), 0.2, 0.9])).route(RoutingRequest(request_id="r", prompt="x"))
+    d = Router(_TextRouter([float("nan"), 0.2, 0.9])).route(RoutingRequest(request_id="r", prompt="x"))
     assert [s.model.model_id for s in d.ranked_models] == ["c", "b"]
 
 
 def test_min_quality_is_enforced():
     """RR-05"""
-    d = RoutingPipeline(_TextRouter([0.1, 0.9, 0.5])).route(
+    d = Router(_TextRouter([0.1, 0.9, 0.5])).route(
         RoutingRequest(request_id="r", prompt="x", constraints=RoutingConstraints(min_quality=0.4)))
     assert {s.model.model_id for s in d.ranked_models} == {"b", "c"}
 
@@ -122,10 +124,28 @@ def test_fallback_rows_are_flagged():
     assert res.fallback.tolist() == [False, True] and res.any_fallback
 
 
-def test_nan_cost_is_rejected_and_never_selected():
+def test_fallback_reflects_a_non_finite_lam_forcing_a_meaningless_selection():
+    """RR-01 (2026-09-16 delta review): fallback was computed from a
+    cost-blind copy of the utility matrix (just np.isfinite(mat)), separate
+    from the cost-aware utility routing_decision actually selects on. A
+    non-finite lam makes cost_aware_utility mask every cell to -inf (NaN
+    utility after `pred - lam*cost`), forcing routing_decision to the
+    meaningless column-0 fallback -- but the old cost-blind `util` still saw
+    the raw, finite scores and reported no_selectable_rows() == False."""
+    res = _matrix().route(["q1"], lam=float("nan"), model_costs=[0.1, 0.2, 0.3])
+    assert res.selected_model_ids[0] == POOL[0]
+    assert res.fallback.tolist() == [True]
+    assert res.any_fallback
+
+
+def test_nan_cost_is_rejected():
     """RR-04"""
     with pytest.raises(ValueError, match="finite"):
         _matrix().route(["q1"], lam=0.1, model_costs=[0.0, float("nan"), 0.0])
+
+
+def test_nan_cost_is_never_selected():
+    """RR-04"""
     sel = routing_decision(np.array([[0.9, 0.5, 0.1]]), lam=0.1, model_costs=np.array([0.0, np.nan, 0.0]))
     assert sel.tolist() == [0]
 
@@ -161,7 +181,7 @@ def test_random_router_depends_on_query_not_position():
 def test_reregistering_same_qualname_is_allowed():
     """RR-16"""
     def make():
-        class ReloadProbe(Router):
+        class ReloadProbe(RouterModel):
             kind = "reload_probe"
 
             def predict_scores(self, query_ids):  # pragma: no cover
@@ -170,7 +190,8 @@ def test_reregistering_same_qualname_is_allowed():
 
     try:
         register(make())
-        register(make())          # a reload: same module + qualname
+        second = register(make())          # a reload: same module + qualname
+        assert REGISTRY["reload_probe"] is second
     finally:
         REGISTRY.pop("reload_probe", None)
 
@@ -236,7 +257,8 @@ def test_int_ids_match_str_stores():
 # router.agentic                                                              #
 # --------------------------------------------------------------------------- #
 def _costed(model_ids):
-    return ClientRegistry({m: CallableClient(m, lambda p, m=m, **kw: LLMResponse(f"{m}:{p}", m, cost=1.0))
+    return ClientRegistry({m: LLMClient(CallableAdapter(
+        m, lambda p, m=m, **kw: LLMResponse(f"{m}:{p}", cost=1.0)))
                            for m in model_ids})
 
 
@@ -286,9 +308,9 @@ def test_failed_subcall_keeps_paid_siblings():
     def boom(p, **kw):
         if "second" in p:
             raise TimeoutError("provider timeout")
-        return LLMResponse("ok", "a", cost=1.0)
+        return LLMResponse("ok", cost=1.0)
 
-    reg = ClientRegistry({m: CallableClient(m, boom) for m in POOL})
+    reg = ClientRegistry({m: LLMClient(CallableAdapter(m, boom)) for m in POOL})
     res = AgenticRouter(_TextRouter([0.9, 0.9, 0.9]), reg).run("first part here and then second part here")
     assert res.mode == "orchestrated" and len(res.errors()) == 1
     assert res.cost == pytest.approx(1.0)
@@ -301,19 +323,27 @@ def test_max_calls_caps_fanout():
     assert len(res.errors()) == 2
 
 
-def test_models_used_and_summary_edge_cases():
-    """RA-16 / RA-20"""
+def test_models_used_is_empty_for_an_orchestrated_result_with_no_steps():
+    """RA-16"""
     res = AgenticResult(prompt="p", mode="orchestrated", answer="", triage_reason="r", selected_model_id="z")
     assert res.models_used() == []
+
+
+def test_summary_tolerates_a_missing_predicted_quality():
+    """RA-20"""
     assert "q~?" in AgenticResult(prompt="p", mode="single", answer="", triage_reason="r").summary()
 
 
-def test_block_content_and_provider_boundaries():
-    """RA-11 / RA-19"""
+def test_message_text_skips_thinking_blocks():
+    """RA-11"""
     class Msg:
         content = [{"type": "thinking", "thinking": "hmm"}, {"type": "text", "text": "hi"}]
 
     assert message_text(Msg()) == "hi"
+
+
+def test_guess_provider_matches_whole_prefixes_only():
+    """RA-19"""
     assert guess_provider("o1-mini") == "openai" and guess_provider("yolo1") is None
 
 
@@ -329,24 +359,86 @@ def test_ledger_rejects_nan_and_negative():
     assert ledger.remaining() == 5.0
 
 
-def test_aggregate_children_reports_failures():
-    """RX-03 / RX-09 / RX-14"""
+def test_aggregate_children_fails_when_a_child_failed():
+    """RX-03 / RX-09"""
     ok = AgentTask("c1", "p", "root", "x", status=TaskStatus.COMPLETED,
                    result=ExecutionResult(output="a", actual_latency=2.0))
     crashed = AgentTask("c2", "p", "root", "y", status=TaskStatus.FAILED)
-    parent = AgentTask("p", None, "root", "z", children=[ok, crashed])
-    agg = parent.aggregate_children()
+    agg = AgentTask("p", None, "root", "z", children=[ok, crashed]).aggregate_children()
     assert agg.success is False and agg.error_code == "child_failed"
+
+
+def test_aggregate_children_of_a_childless_task_is_not_a_success():
+    """RX-14"""
     assert AgentTask("e", None, "root", "z").aggregate_children().success is False
+
+
+def test_an_execution_result_with_an_error_code_is_not_a_success():
+    """RX-03"""
     assert ExecutionResult(error_code="timeout").success is False
 
 
-def test_duplicate_profile_raises_and_client_prices_tokens():
-    """RL-06 / RL-01"""
+def test_duplicate_profile_registration_raises():
+    """RL-06"""
     reg = LLMRegistry()
-    prof = LLMProfile(name="m", provider="openai", model_id="m",
-                      input_cost_per_token=0.001, output_cost_per_token=0.002)
+    prof = LLMProfile(name="m", provider="openai", model_id="m")
     reg.register(prof)
     with pytest.raises(ValueError):
         reg.register(prof)
+
+
+def test_client_prices_tokens_from_its_profile():
+    """RL-01"""
+    prof = LLMProfile(name="m", provider="openai", model_id="m",
+                      input_cost_per_token=0.001, output_cost_per_token=0.002)
     assert LLMClient(adapter=None, profile=prof).price(100, 50) == pytest.approx(0.2)
+
+
+def test_commit_past_total_warns_and_reports_overspent():
+    """BUDGETLEDGER-001: commit() must not push spent past total in silence."""
+    ledger = BudgetLedger("root", 10.0)
+    ledger.reserve("t", 4.0)
+    with pytest.warns(UserWarning, match="exceeds total"):
+        ledger.commit("t", 15.0)
+    assert ledger.spent == 15.0
+    assert ledger.overspent == pytest.approx(5.0)
+
+
+def test_commit_within_total_does_not_warn_and_reports_no_overspend():
+    """BUDGETLEDGER-001: the new warning must not fire on ordinary commits."""
+    ledger = BudgetLedger("root", 10.0)
+    ledger.reserve("t", 4.0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        ledger.commit("t", 3.0)
+    assert ledger.overspent == 0.0
+
+
+def test_register_then_unknown_id_still_warns():
+    """CLIENTREGISTRY-001: the echo-fallback warning must fire whether real
+    clients arrived via the constructor or via register()."""
+    reg = ClientRegistry()
+    reg.register("real-model", LLMClient(CallableAdapter("real-model", lambda p: p)))
+    with pytest.warns(UserWarning, match="echo"):
+        reg.get("unregistered-model")
+
+
+def test_default_factory_domain_head_uses_merged_taxonomy(monkeypatch):
+    """DOMAINCLASSIFIER-001: default_prompt_decomposer must build the domain
+    head with merge_domains=True, not the unmerged 10-class default."""
+    from decompose.decomposer import default_prompt_decomposer
+
+    calls = []
+
+    class _SpyDomainClassifier:
+        name = "domain"
+
+        def __init__(self, run_dir, **kwargs):
+            calls.append(kwargs)
+
+        def classify(self, input):
+            return []
+
+    monkeypatch.setattr("decompose.classifiers.prompt_heads.DomainClassifier", _SpyDomainClassifier)
+    default_prompt_decomposer({"domain": "unused"})
+    assert calls == [{"merge_domains": True}]

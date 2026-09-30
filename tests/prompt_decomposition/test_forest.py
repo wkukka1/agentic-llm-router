@@ -20,7 +20,7 @@ from training.prompt_decomposition.heads.forest import (
 )
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def decisive_narrow_vs_wide_noise():
     """8 informative domain columns, 120 columns of pure noise as `embedding`."""
     rng = np.random.default_rng(0)
@@ -36,6 +36,13 @@ def decisive_narrow_vs_wide_noise():
             ForestFeatures(features.X[cut:], features.names, features.families), y[cut:])
 
 
+@pytest.fixture(scope="module")
+def report(decisive_narrow_vs_wide_noise):
+    """One forest fit shared by the tests that only read the report."""
+    train, y_train, test, y_test = decisive_narrow_vs_wide_noise
+    return build_report(train, y_train, test, y_test, permutation_repeats=1)
+
+
 class TestFeatureAssembly:
     def test_width_names_and_families_must_agree(self):
         with pytest.raises(ValueError, match="must agree"):
@@ -45,7 +52,6 @@ class TestFeatureAssembly:
         f = build_features(domain_proba=np.zeros((2, 3)), domain_labels=["a", "b", "c"],
                            task_proba=np.zeros((2, 2)), task_labels=["x", "y"],
                            embeddings=np.zeros((2, 5)))
-        assert f.columns_per_family if False else True
         assert len(f.columns_for("domain")) == 3
         assert len(f.columns_for("task")) == 2
         assert len(f.columns_for("embedding")) == 5
@@ -80,29 +86,24 @@ class TestReport:
         assert r.without["embedding"] >= r.auc - 0.05  # dropping it costs nothing
         assert r.permutation_drop["domain"] > r.permutation_drop["embedding"]
 
-    def test_information_gain_is_reported_per_family_with_column_counts(
-            self, decisive_narrow_vs_wide_noise):
+    def test_information_gain_is_reported_per_family_with_column_counts(self, report):
         """Counts travel with the gains so a reader can see the bias rather
         than having to know about it."""
-        train, y_train, test, y_test = decisive_narrow_vs_wide_noise
-        r = build_report(train, y_train, test, y_test, permutation_repeats=1)
+        r = report
         assert set(r.information_gain) == {"domain", "embedding"}
         assert r.columns_per_family == {"domain": 8, "embedding": 120}
         assert sum(r.information_gain.values()) == pytest.approx(1.0, abs=1e-6)
 
-    def test_gain_per_column_undoes_the_width_bias(self, decisive_narrow_vs_wide_noise):
+    def test_gain_per_column_undoes_the_width_bias(self, report):
         """Summed gain says the 120 noise columns dominate; per column it is the
         8 real ones that are worth more. Both are in the report because the
         contradiction is the finding, not a wrinkle to smooth over."""
-        train, y_train, test, y_test = decisive_narrow_vs_wide_noise
-        r = build_report(train, y_train, test, y_test, permutation_repeats=1)
+        r = report
         assert r.information_gain["embedding"] > r.information_gain["domain"]
         assert r.gain_per_column["domain"] > r.gain_per_column["embedding"]
 
-    def test_the_summary_warns_about_the_metric_it_leads_with(
-            self, decisive_narrow_vs_wide_noise):
-        train, y_train, test, y_test = decisive_narrow_vs_wide_noise
-        text = build_report(train, y_train, test, y_test, permutation_repeats=1).summary()
+    def test_the_summary_warns_about_the_metric_it_leads_with(self, report):
+        text = report.summary()
         assert "rewards wide families" in text
         assert "AUC" in text
 
@@ -128,9 +129,7 @@ class TestForestFit:
 
 
 class TestPlot:
-    def test_it_writes_a_figure_for_any_report(self, decisive_narrow_vs_wide_noise, tmp_path):
+    def test_it_writes_a_figure_for_any_report(self, report, tmp_path):
         """Reusable means reusable: no argument is specific to one experiment."""
-        train, y_train, test, y_test = decisive_narrow_vs_wide_noise
-        r = build_report(train, y_train, test, y_test, permutation_repeats=1)
-        path = plot_report(r, tmp_path / "nested" / "forest.png", title="synthetic")
+        path = plot_report(report, tmp_path / "nested" / "forest.png", title="synthetic")
         assert path.exists() and path.stat().st_size > 5_000

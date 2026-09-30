@@ -12,7 +12,7 @@ torch = pytest.importorskip("torch")
 
 from training.nirt.baseline.train import fit
 from training.nirt.baseline.continuous_normal import NormalResponseHead
-from training.nirt.baseline.continuous_synthetic import make_synthetic_continuous, recovery_report, to_arrays
+from training.nirt.baseline.synthetic import make_synthetic_continuous, recovery_report, to_arrays
 
 
 def _head():

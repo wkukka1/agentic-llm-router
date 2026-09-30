@@ -1,5 +1,5 @@
 """``LLMRegistry``: the pool of :class:`~router.llm.profile.LLMProfile`\\ s a
-:class:`~router.router.RoutingPipeline` builds a request's candidate list
+:class:`~router.router.Router` builds a request's candidate list
 from.
 
 Named ``registry.py`` like :mod:`router.routing.registry` on purpose --

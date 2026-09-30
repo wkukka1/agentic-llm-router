@@ -8,11 +8,11 @@ import ``training`` (offline data pipeline + fitting) or ``evaluation``
 * ``router.embeddings`` -- deterministic text-encoder pathways + on-disk store.
 * ``router.nirt`` -- the NIRT / IRT-Router response model, checkpoint loading,
   and label-free inference (:mod:`router.nirt.predict`).
-* ``router.routing`` -- the modular :class:`~router.routing.base.Router`
+* ``router.routing`` -- the modular :class:`~router.routing.base.RouterModel`
   interface: one contract (``predict_scores`` -> ``route``) that NIRT, k-NN,
   MLP and future strategies all implement. See ``docs/routing_interface.md``.
 * ``router.agentic`` -- the live triage/decompose/orchestrate layer that
-  wraps a ``Router`` plus model backends to actually answer a prompt.
+  wraps a ``RouterModel`` plus model backends to actually answer a prompt.
 """
 
 __version__ = "0.1.0"

@@ -1,0 +1,89 @@
+# LLMRouterBench (arXiv 2601.07206, Findings of ACL 2026) -- performance-cost setting only.
+#
+# A fully ISOLATED parallel pipeline, same pattern as configs/irt_router.yaml: 13 flagship
+# proprietary models (Claude-4, Gemini-2.5, GPT-5, DeepSeek-V3/R1, Qwen3-235B, GLM-4.6,
+# Kimi-K2, Intern-S1) over the 10-dataset performance-cost split (real $/token cost). The
+# performance-only setting (20 lightweight open-weight models, no cost) is NOT integrated --
+# see docs/pool_expansion.md's E4 entry for why. Nothing here shares state with
+# configs/phase0.yaml or configs/irt_router.yaml: separate processed dir, taxonomy, splits,
+# indexes. Zero model overlap with either of those pools.
+#
+# Data provenance: github.com/ynulihao/LLMRouterBench (framework, vendored read-only at
+# evaluations/LLMRouterBench/), results tarball from
+# huggingface.co/datasets/NPULH/LLMRouterBench, fetched by
+# scripts/data/download_llmrouterbench.py into
+# evaluations/LLMRouterBench/results/bench/ -- the framework's own expected location (see
+# evaluations/LLMRouterBench/results/download.md).
+#
+# Pipeline:
+#   scripts/data/download_llmrouterbench.py       --config configs/llmrouterbench.yaml
+#   scripts/data/build_response_matrix.py          --config configs/llmrouterbench.yaml
+#   scripts/data/build_splits.py                   --config configs/llmrouterbench.yaml
+#   (embeddings / NIRT training -- see docs/llmrouterbench.md)
+
+seed: 42
+
+source_order: [llmrouterbench]
+
+paths:
+  raw: evaluations/LLMRouterBench/results
+  processed: data/processed/llmrouterbench
+  taxonomy: data/taxonomy/llmrouterbench
+  splits: data/splits/llmrouterbench
+  indexes: indexes/llmrouterbench
+
+sources:
+  llmrouterbench:
+    # The framework's own on-disk convention: results/bench/<dataset>/<split>/<model>/<ts>.json
+    local_dir: evaluations/LLMRouterBench/results/bench
+    # The 13-model performance-cost pool (baseline_config_performance_cost.yaml
+    # `filters.models`). A result file for any other `model_name` is dropped at load time --
+    # in particular this excludes the framework's own "openrouter" reference-model rows,
+    # which its config explicitly marks as excluded from aggregation.
+    pool:
+      - claude-sonnet-4
+      - deepseek-v3-0324
+      - deepseek-v3.1-terminus
+      - deepseek-r1-0528
+      - gemini-2.5-flash
+      - gemini-2.5-pro
+      - gpt-5-chat
+      - gpt-5
+      - qwen3-235b-a22b-2507
+      - qwen3-235b-a22b-thinking-2507
+      - glm-4.6
+      - kimi-k2-0905
+      - intern-s1
+    # baseline_config_performance_cost.yaml `filters.splits` -- the framework's own
+    # whitelist of non-demo split names actually used for this setting. A result file
+    # under any other split (e.g. a dev/scratch run) is dropped at load time rather than
+    # silently averaged into one of these via query_id collision.
+    splits:
+      - test
+      - hybrid
+      - v1
+      - test_3000
+      - verified
+
+# Deliberately its OWN block, not an addition to phase0.yaml's -- gpqa/mmlupro must not
+# inherit RouterBench's `mmlu*` -> 4 prefix rule (MMLU-Pro is 10-choice, not 4).
+multiple_choice:
+  by_task:
+    gpqa: 4        # evaluation/GPQA/gpqa.py: ANSWER_PATTERN allows [A-D]
+    mmlupro: 10    # evaluation/MMLUPro/mmlupro.py: ANSWER_PATTERN allows [A-J]
+  by_prefix: {}
+
+chance_correction:
+  method: normalized
+  clip: true
+  warn_on_missing_choices: true
+
+# presplit=false: unlike RouterBench/IRT-Router, LLMRouterBench's own result files carry
+# no train/test partition of their own (every file's `split` is a run identifier --
+# test/hybrid/v1/test_3000/verified -- not a data-split label), so there is no
+# metadata['origin'] for make_presplit to honour. Content-hash group splitting instead.
+split:
+  presplit: false
+  train_fraction: 0.7
+  validation_fraction: 0.15
+  test_fraction: 0.15

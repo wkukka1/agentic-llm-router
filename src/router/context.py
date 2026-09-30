@@ -1,5 +1,5 @@
 """The request/context split: :class:`RoutingRequest` is raw caller input,
-:class:`RoutingContext` is what :class:`~router.router.RoutingPipeline`
+:class:`RoutingContext` is what :class:`~router.router.Router`
 builds from it (decomposed signals + filtered candidates) before ranking.
 
 ``Conversation``/``Message``/``MessageRole`` and ``PromptSignals`` live in

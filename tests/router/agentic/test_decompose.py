@@ -24,10 +24,18 @@ class TestNothingIsSilentlyDropped:
         for task in ("read the file", "compute the mean", "plot it"):
             assert task in joined, f"{task!r} was dropped"
 
-    def test_a_short_task_is_still_its_own_task(self):
-        """'plot it' is 7 characters and a real request; the guard counts
-        words for exactly this reason."""
-        assert "plot it." in NaiveDecomposer()(self.PROMPT)
+    def test_a_short_task_is_merged_not_dropped(self):
+        """'plot it' is 7 characters, under `min_part_chars`, and a real request.
+
+        It is carried into its neighbour rather than kept as a part of its own.
+        That is deliberate (NAIVEDECOMPOSER-001): the guard counts characters,
+        so a 2-word task joins the one before it. Splitting on a word count
+        instead would make each of these standalone, at the cost of a more
+        split-happy decomposer and one paid call per fragment. What matters
+        here, and what this pins, is that the text survives somewhere.
+        """
+        parts = NaiveDecomposer()(self.PROMPT)
+        assert "plot it" in " ".join(parts).lower()
 
     def test_the_lead_in_is_not_billed_as_a_task(self):
         parts = NaiveDecomposer()(self.PROMPT)
@@ -95,22 +103,24 @@ class TestLLMDecomposer:
         """The bug this class exists to prevent: ask for twelve things, get
         charged for eight, and be handed an answer that reads complete."""
 
-        def test_exceeding_max_parts_warns_and_names_what_was_dropped(self):
+        def test_the_overflow_is_folded_in_rather_than_cut_off(self):
+            """Twelve sub-tasks against max_parts=8 must still contain all twelve;
+            the cap bounds the number of CALLS, not the amount of work carried."""
             chat = _Stub("\n".join(f"step number {i}" for i in range(1, 13)))
-            with pytest.warns(UserWarning, match="dropping the last 4"):
-                out = LLMDecomposer(chat, max_parts=8)("x")
+            out = LLMDecomposer(chat, max_parts=8)("x")
             assert len(out) == 8
+            joined = " ".join(out)
+            for i in range(1, 13):
+                assert f"step number {i}" in joined, f"step {i} was lost"
 
-        def test_within_the_cap_there_is_no_warning(self):
-            import warnings as _w
+        def test_within_the_cap_nothing_is_merged(self):
+            assert LLMDecomposer(_Stub("a task\nb task"), max_parts=8)("x") == [
+                "a task", "b task"]
 
-            with _w.catch_warnings():
-                _w.simplefilter("error")
-                assert len(LLMDecomposer(_Stub("a task\nb task"), max_parts=8)("x")) == 2
-
-        def test_the_naive_decomposer_warns_too(self):
-            with pytest.warns(UserWarning, match="dropping the last 2"):
-                NaiveDecomposer(max_parts=3)("do a. Then do b. Then do c. Then do d. Then do e.")
+        def test_the_naive_decomposer_folds_its_overflow_too(self):
+            out = NaiveDecomposer(max_parts=3)("do a. Then do b. Then do c. Then do d. Then do e.")
+            assert len(out) == 3
+            assert "do e" in " ".join(out).lower(), "the tail was cut off"
 
     class TestItFailsSafe:
         def test_a_provider_error_falls_back_instead_of_raising(self):
