@@ -1512,3 +1512,74 @@ hard stratum and becomes the central component: at 0.90 AUC it matches gpt-4
 quality for roughly 30% of the price. The break-even is around AUC 0.90, which
 published reward models plausibly reach on some task families -- and, per the
 correction above, most plausibly on the checkable ones.
+
+## All four routers trained and compared -- and a correction about the lever
+
+Until now every number here used `nirt-2d-projected`, the only trained run that
+existed on this machine. Phase 1 (Bernoulli), Phase 2 (ZOIB, beta) and the
+IRT-Router `model_latent` baseline have now been trained, so the comparison
+Will's `scripts/route_compare.py` was written for can actually run.
+
+### The collapse is universal, not a NIRT quirk
+
+Test split, 7,354 queries x 11 models, argmax selection, against
+`always gpt-4` (quality 0.7883, $5.75/1k):
+
+| router | quality | cost/1k | saving | gpt-4 share | vs mixture |
+|---|---|---|---|---|---|
+| Bernoulli (phase 1) | 0.7889 | 5.74 | 0.3% | **99.5%** | +0.002 |
+| NIRT (query_latent 2d) | 0.7875 | 5.69 | 1.1% | **98.6%** | +0.004 |
+| ZOIB E[Y] (phase 2) | 0.7908 | 5.51 | 4.3% | 89.0% | +0.019 |
+| IRT-Router (model_latent 25d) | 0.7901 | 5.29 | 8.1% | 89.0% | +0.034 |
+| beta E[Y] (phase 2) | 0.7558 | 5.17 | 10.1% | 69.1% | +0.008 |
+
+Four different likelihoods -- Bernoulli, zero-one-inflated beta, query-latent
+and model-latent IRT -- and every one of them lands on the `always gpt-4` point.
+The best buys 8% of the cost. The oracle, for reference, reaches 0.913 quality
+at $0.38/1k. Argmax collapse is a property of the decision rule, not of any one
+predictor.
+
+**Also worth noting: NIRT is the weakest of the four at argmax.** Every number
+elsewhere in this document was measured on it. IRT-Router and ZOIB both beat
+gpt-4 slightly on quality *and* cost at argmax, which NIRT does not.
+
+### CORRECTION: lambda is the better lever, and it always existed
+
+This document says the margin rule is the lever that works and that `lam` is
+nearly inert. **That is wrong, and the error came from a mis-scaled sweep.**
+
+`route_compare.py` sweeps `lam` from 0 to 5. But `lam` multiplies a *per-query
+dollar* cost, and gpt-4 costs $0.00575/query against $0.00009 for the cheapest
+model -- a difference of $0.0057. To outvote a typical predicted-quality gap of
+~0.3, `lam` must exceed **~53**. The existing sweep covers 9% of the distance to
+the point where the knob can do anything, which is why its frontier looked flat
+(cost moved 3.20 -> 3.10 across the whole range).
+
+Swept over the range that can actually bite, on one metric, same split:
+
+| router | best lam-only | best margin-only | best combined |
+|---|---|---|---|
+| NIRT | **+0.2789** (lam=50) | +0.2449 (margin=0.15) | +0.2674 |
+| IRT-Router | **+0.2862** (lam=75) | +0.2480 (margin=0.2) | +0.2700 |
+
+`lam` wins on both routers, and combining the two is *worse* than `lam` alone --
+so the margin rule adds nothing on top of a correctly-scaled `lam`.
+
+Why: `lam` prices cost continuously, so it can express "ten times cheaper for
+slightly less quality" smoothly. The margin is a hard tolerance band -- inside
+it, the cheapest candidate wins regardless of how much cheaper; outside it,
+nothing does. Coarser control, slightly worse frontier.
+
+**What survives.** The headline finding is unchanged and now much better
+supported: the predictors are fine, argmax is the problem, and changing the
+selection rule is worth far more than changing the predictor. What changes is
+the remedy. The lever was already in the codebase -- `Router.route(lam=...)`
+has always been there. It looked useless because it was being swept over a
+range where it cannot act.
+
+The margin rule is not useless, but its case is now about ergonomics rather
+than performance: it is bounded and in quality units ("I accept an answer 0.05
+worse"), where `lam`'s usable value depends on the pool's price scale and is
+~53 here, ~0.5 elsewhere. That scale-dependence is exactly the footgun that hid
+the lever for this long. A correctly-calibrated `lam` is the better default;
+`quality_margin` remains the better thing to expose to a caller.
