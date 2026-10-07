@@ -97,6 +97,8 @@ class RoutedOrchestrator(Orchestrator):
         self._scores: dict[str, dict[str, float]] = {}  # step_id -> model_id -> quality
         self._planned: dict[str, str] = {}             # step_id -> plan-time model
         self._pinned: set[str] = set()                 # escalated this round: keep the model
+        self._tried: dict[str, list[str]] = {}          # step_id -> models run, in order
+        self._escalation_note: dict[str, str] = {}      # step_id -> "escalated" / "exhausted"
         cost_model = getattr(plan_forecaster, "cost_model", None)
         if cost_model is None:
             from ..llm.cost import CostModel
@@ -228,6 +230,7 @@ class RoutedOrchestrator(Orchestrator):
                 results = []
             for step, sc in zip(todo, results):
                 self._calls[step.step_id] = sc
+                self._pinned.discard(step.step_id)
                 fresh.append(sc)
         self.subcalls = [self._calls[s.step_id] for s in plan.steps if s.step_id in self._calls]
         failed = [sc for sc in self.subcalls if sc.error is not None]
@@ -297,29 +300,59 @@ class RoutedOrchestrator(Orchestrator):
 
     def _run_step(self, step: PlanStep) -> SubCall:
         prompt, _ = self._contextual_prompt(step)
+        tried = self._tried.setdefault(step.step_id, [])
+        tried.append(step.model.model_id)
         sc = self.agent._call_model(prompt, step.model.model_id, self.task.depth + 1,
                                     predicted_quality=step.predicted_quality)
         sc.prompt = step.prompt
         sc.meta = {**sc.meta, "step_id": step.step_id,
                    "planned_model": self._planned.get(step.step_id, step.model.model_id),
-                   "routed_model": step.model.model_id}
+                   "routed_model": step.model.model_id, "tried_models": list(tried)}
+        if step.step_id in self._escalation_note:
+            sc.meta["escalation"] = self._escalation_note[step.step_id]
         return sc
 
     # -- replan ------------------------------------------------------------
     def replan(self, plan: Plan) -> Plan:
-        steps = []
-        for s in plan.steps:
-            if self._succeeded(s.step_id) or not s.alternatives:
-                steps.append(s)                  # keep: done, or nothing left to try (retry as is)
-                continue
-            nxt, rest = s.alternatives[0], s.alternatives[1:]
-            profile = self._profile(nxt)
-            steps.append(replace(
-                s, model=profile, alternatives=list(rest),
-                predicted_quality=self._scores.get(s.step_id, {}).get(nxt, float("nan")),
-                estimated_output_tokens=self._cost_model.predict_output_tokens(
-                    profile, s.estimated_input_tokens),
-            ))
+        """The next round: every step that didn't succeed is escalated
+        (:meth:`_escalation_pick`) and pinned to its new model; steps that
+        succeeded keep their output and are not re-run."""
+        failed = {s.step_id for s in plan.steps if not self._succeeded(s.step_id)}
+        steps = [self._escalate(s) if s.step_id in failed else s for s in plan.steps]
+        return self._next_plan(plan, steps)
+
+    def _escalation_pick(self, step: PlanStep) -> tuple[str, str]:
+        """The model a re-run of ``step`` moves to. Never one already tried
+        for it: the cheapest model scoring above the last one (the closest step
+        up on equal cost), else the best untried one. ``"exhausted"`` when every
+        scored model has been tried -- the step keeps its model."""
+        scores = self._scores.get(step.step_id, {})
+        current = step.model.model_id
+        tried = set(self._tried.get(step.step_id, [])) | {current}
+        untried = {m: q for m, q in scores.items() if m not in tried and math.isfinite(q)}
+        if not untried:
+            return current, "exhausted"
+        base = scores.get(current, float("nan"))
+        base = base if math.isfinite(base) else -math.inf
+        stronger = [m for m, q in untried.items() if q > base]
+        if stronger:
+            costs = self.agent.router.cost_by_model()
+            return min(stronger, key=lambda m: (costs.get(m, math.inf), untried[m])), "escalated"
+        return max(untried, key=untried.get), "escalated"
+
+    def _escalate(self, step: PlanStep) -> PlanStep:
+        model_id, outcome = self._escalation_pick(step)
+        self._escalation_note[step.step_id] = outcome
+        self._pinned.add(step.step_id)
+        profile = self._profile(model_id)
+        return replace(
+            step, model=profile,
+            predicted_quality=self._scores.get(step.step_id, {}).get(model_id, float("nan")),
+            estimated_output_tokens=self._cost_model.predict_output_tokens(
+                profile, step.estimated_input_tokens),
+        )
+
+    def _next_plan(self, plan: Plan, steps: list[PlanStep]) -> Plan:
         new = Plan(plan_id=f"{plan.task_id}/plan{plan.revision + 1}", task_id=plan.task_id,
                    steps=steps, revision=plan.revision + 1)
         self._score(new)

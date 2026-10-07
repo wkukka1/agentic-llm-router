@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import threading
 import time
+from dataclasses import replace
 
 import numpy as np
 import pandas as pd
@@ -374,3 +375,53 @@ def test_without_late_routing_steps_keep_their_plan_time_model():
 def test_route_late_setting_reaches_the_orchestrator():
     agent = AgenticRouter.from_settings(_plan_settings(plan={"route_late": True}), router=TextRouter())
     assert agent.orchestrator.route_late is True
+
+
+def test_escalation_never_retries_a_tried_model_and_takes_the_closest_step_up():
+    orch = _orchestrator(AgenticRouter(TextRouter(), _clients(), decomposer=_decomposer(["a", "b"])))
+    orch.task = _task()
+    step = replace(orch.plan(orch.task).steps[0], model=orch._profile("small"))
+    orch._scores[step.step_id] = {"small": 0.7, "big": 0.9, "coder": 0.8}
+    assert orch._escalation_pick(step) == ("coder", "escalated")   # .8 is the closest step up
+    orch._tried[step.step_id] = ["small", "coder"]
+    assert orch._escalation_pick(step) == ("big", "escalated")
+    orch._tried[step.step_id] = ["small", "coder", "big"]
+    assert orch._escalation_pick(step) == ("small", "exhausted")
+
+
+def test_escalation_prefers_the_cheapest_stronger_model():
+    router = TextRouter(costs=[0.001, 0.001, 0.01])               # small, big, coder
+    orch = _orchestrator(AgenticRouter(router, _clients(), decomposer=_decomposer(["a", "b"])))
+    orch.task = _task()
+    step = replace(orch.plan(orch.task).steps[0], model=orch._profile("small"))
+    orch._scores[step.step_id] = {"small": 0.7, "big": 0.9, "coder": 0.8}
+    assert orch._escalation_pick(step) == ("big", "escalated")
+
+
+def test_step_failing_on_every_model_is_marked_exhausted():
+    agent = AgenticRouter(TextRouter(), _clients(fail=set(POOL)), decomposer=_decomposer(["a", "b"]))
+    orch = _orchestrator(agent, max_workers=1)
+    orch.limits = ExecutionLimits(max_replans=3)
+    assert not orch.run(_task()).success
+    assert orch.subcalls[0].meta["tried_models"] == ["big", "coder", "small", "small"]
+    assert orch.subcalls[0].meta["escalation"] == "exhausted"
+
+
+def _fail_dependent_on_big():
+    """'big' fails only for steps that carry dependency context."""
+    def make(m):
+        def fn(prompt, **kw):
+            if m == "big" and "Now:" in str(prompt):
+                raise RuntimeError("big is down for dependent steps")
+            return LLMResponse(f"{m} answers", cost=0.01, input_tokens=5, output_tokens=2)
+        return LLMClient(CallableAdapter(m, fn))
+    return ClientRegistry({m: make(m) for m in POOL})
+
+
+def test_late_routing_does_not_undo_an_escalation():
+    orch = _orchestrator(_planning_agent(DEP_PLAN, clients=_fail_dependent_on_big()),
+                         route_late=True, max_workers=1)
+    orch.limits = ExecutionLimits(max_replans=1)
+    assert orch.run(_task()).success
+    assert orch.subcalls[1].model_id == "coder"
+    assert orch.subcalls[1].meta["escalation"] == "escalated"
