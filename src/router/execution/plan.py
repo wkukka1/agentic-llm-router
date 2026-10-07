@@ -1,9 +1,9 @@
 """A ``Plan`` is a sequence of ``PlanStep``\\ s an orchestrator commits to
-before executing -- not built by anything yet. The live
+before executing -- built by `RoutedOrchestrator` (:mod:`router.execution.routed`). The
 :class:`router.agentic.orchestrator.RecursiveOrchestrator` decomposes and
 dispatches directly, with no intermediate plan object to forecast or approve
 first; that's the gap this module (and :mod:`router.execution.forecast`)
-scaffolds."""
+fills."""
 
 from __future__ import annotations
 
@@ -33,6 +33,12 @@ class PlanStep:
     estimated_output_tokens: int = 0
     estimated_cost: float = 0.0
     dependencies: list[str] = field(default_factory=list)
+    #: the router's predicted quality for ``model`` on ``prompt`` (NaN: unknown)
+    #: -- what a forecaster aggregates into the plan's quality
+    predicted_quality: float = float("nan")
+    #: fallback model ids, best first, for ``Orchestrator.replan`` to move a
+    #: failed step to without re-routing it
+    alternatives: list[str] = field(default_factory=list)
 
 
 @dataclass

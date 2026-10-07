@@ -22,7 +22,9 @@ from torch import nn
 
 from router.config import coerce_auto_bool, coerce_hidden, require_choice
 from router.nirt.components import (
+    CostHead,
     DifficultyHead,
+    OutputLengthHead,
     DiscriminationHead,
     InteractionLayer,
     LengthHead,
@@ -32,6 +34,7 @@ from router.nirt.components import (
 from .response_head import ResponseOutput, build_response_head
 
 MODEL_PARAM_MODES = ("free", "projected")
+COST_MODES = ("log_cost", "length")
 
 
 @dataclass
@@ -45,6 +48,9 @@ class Output:
     length_pred: Optional[torch.Tensor] = None
     response: Optional[ResponseOutput] = None    # response-head distribution params
     response_head: Optional[nn.Module] = None     # the head that produced `response`
+    cost_mu: Optional[torch.Tensor] = None        # (B,)  expected-cost probe, log-USD location
+    cost_log_sigma: Optional[torch.Tensor] = None  # (B,)  its log scale
+    length_logits: Optional[torch.Tensor] = None  # (B, n_buckets)  output-length classifier
 
     def proba(self) -> torch.Tensor:
         """The response head's probability (``sigmoid(logit)`` for Bernoulli; for a
@@ -65,7 +71,10 @@ class BaselineNIRT(nn.Module):
         use_relevance: bool = True, use_interaction: bool = True, use_warmup: bool = False,
         warmup_alpha: float = 0.5, warmup_learnable: bool = False, use_length_head: bool = True,
         interaction_hidden: int = 32, response_model: str = "bernoulli",
-        response_cfg: Optional[dict] = None,
+        response_cfg: Optional[dict] = None, use_cost_head: bool = False,
+        cost_hidden: Optional[int] = 64, cost_init_mu: Optional[float] = None,
+        cost_price_dim: int = 0, cost_residual: bool = False, cost_mode: str = "log_cost",
+        length_bucket_values=None,
     ):
         super().__init__()
         require_choice(model_params, MODEL_PARAM_MODES, field="model_params")
@@ -97,6 +106,33 @@ class BaselineNIRT(nn.Module):
         else:
             self.theta_proj = nn.Linear(self.profile_dim, self.dim)
 
+        # built LAST: constructing it earlier would shift the RNG stream every
+        # quality layer is initialised from, breaking quality-path bit identity
+        self.use_cost_head = bool(use_cost_head)
+        self.cost_price_dim = int(cost_price_dim)
+        # residual mode: cost_mu = log C(m) (train per-model offset, passed per row
+        # as `cost_offset`) + head output, so the head learns only the query-level
+        # deviation from each model's typical cost
+        self.cost_residual = bool(cost_residual)
+        # cost_mode "log_cost": regress log USD directly (CostHead).
+        # cost_mode "length": classify output length into token buckets
+        # (OutputLengthHead); expected cost = p_in * L_in + p_out * E[L_out].
+        require_choice(cost_mode, COST_MODES, field="cost_mode")
+        self.cost_mode = cost_mode
+        self.cost_head: Optional[nn.Module] = None
+        if self.use_cost_head and cost_mode == "length":
+            if length_bucket_values is None:
+                raise ValueError("cost_mode='length' needs length_bucket_values (train-split "
+                                 "mean output length per bucket); the training harness supplies it")
+            self.cost_head = OutputLengthHead(self.query_dim + self.dim + self.cost_price_dim,
+                                              cost_hidden, length_bucket_values)
+        elif self.use_cost_head:
+            if cost_init_mu is None:
+                raise ValueError("use_cost_head=True needs cost_init_mu (the train-split mean "
+                                 "log cost); the training harness supplies it")
+            self.cost_head = CostHead(self.query_dim + self.dim + self.cost_price_dim, cost_hidden,
+                                      init_mu=float(cost_init_mu))
+
     @classmethod
     def from_config(cls, model_cfg: dict, *, n_models: int, query_dim: int = 768,
                     profile_dim: int = 768, relevance_dim: int = 0) -> "BaselineNIRT":
@@ -123,7 +159,22 @@ class BaselineNIRT(nn.Module):
             interaction_hidden=int(m.get("interaction_hidden", 32)),
             response_model=m.get("response_model", "bernoulli"),
             response_cfg=m.get("response_cfg", {}),
+            use_cost_head=bool(m.get("use_cost_head", False)),
+            cost_hidden=coerce_hidden(m.get("cost_hidden", 64)),
+            cost_init_mu=m.get("cost_init_mu"),
+            cost_price_dim=int(m.get("cost_price_dim", 0) or 0),
+            cost_residual=bool(m.get("cost_residual", False)),
+            cost_mode=m.get("cost_mode", "log_cost") or "log_cost",
+            length_bucket_values=(m.get("length_buckets") or {}).get("values"),
         )
+
+    def cost_parameters(self) -> list:
+        return list(self.cost_head.parameters()) if self.cost_head is not None else []
+
+    def quality_parameters(self) -> list:
+        """Every parameter except the cost probe's, matched by identity."""
+        cost = {id(p) for p in self.cost_parameters()}
+        return [p for p in self.parameters() if id(p) not in cost]
 
     def latent_ability(self, model_ref) -> torch.Tensor:
         if not torch.is_tensor(model_ref):
@@ -142,7 +193,8 @@ class BaselineNIRT(nn.Module):
         with torch.no_grad():
             return self.latent_ability(profile_matrix)
 
-    def forward(self, e_q, model_ref, r_q=None, neighbor_mean=None) -> Output:
+    def forward(self, e_q, model_ref, r_q=None, neighbor_mean=None, price_feats=None,
+                cost_offset=None, length_prior=None) -> Output:
         e = self.warmup(e_q, neighbor_mean)
         if self.use_relevance and r_q is None:
             # same fill the data path uses for an unclustered query: uniform 1/C
@@ -154,12 +206,56 @@ class BaselineNIRT(nn.Module):
         features = torch.cat([e, theta_m], dim=-1) if self.response_model != "bernoulli" else None
         # the length head feeds no loss (no length labels) -- not run on every
         # forward; call predict_length() explicitly
-        return Output(logit=logit, base_irt=base, a_q=a_q, b_q=b_q, theta_m=theta_m,
-                      relevance_gate=gate, response=self.response_head(logit, features),
-                      response_head=self.response_head)
+        out = Output(logit=logit, base_irt=base, a_q=a_q, b_q=b_q, theta_m=theta_m,
+                     relevance_gate=gate, response=self.response_head(logit, features),
+                     response_head=self.response_head)
+        if self.cost_head is not None and self.cost_mode == "length":
+            if length_prior is None:
+                raise ValueError("length cost head needs length_prior (per-row log bucket prior; "
+                                 "see training.nirt.baseline.length.attach_length_inputs)")
+            out.length_logits = self.cost_head(self._cost_input(e, theta_m, price_feats),
+                                               length_prior)
+        elif self.cost_head is not None:
+            out.cost_mu, out.cost_log_sigma = self.cost_head(
+                self._cost_input(e, theta_m, price_feats))
+            if self.cost_residual:
+                if cost_offset is None:
+                    raise ValueError("residual cost head needs cost_offset (per-row log C(m); "
+                                     "see training.nirt.baseline.data.attach_cost_offset)")
+                out.cost_mu = out.cost_mu + cost_offset.to(out.cost_mu.dtype)
+        return out
+
+    def _cost_input(self, e, theta_m, price_feats=None) -> torch.Tensor:
+        """The probe's input: the quality representation, DETACHED (no gradient
+        path back into the trunk), plus optional fixed model-price features."""
+        feats = [e.detach(), theta_m.detach()]
+        if self.cost_price_dim:
+            if price_feats is None:
+                raise ValueError("this cost head was trained with model price features; "
+                                 "pass price_feats")
+            feats.append(price_feats.to(e.dtype))
+        return torch.cat(feats, dim=-1)
+
+    @torch.no_grad()
+    def cost_features(self, e_q, model_ref, neighbor_mean=None, price_feats=None) -> torch.Tensor:
+        """The frozen probe input for a batch, without running the quality heads."""
+        return self._cost_input(self.warmup(e_q, neighbor_mean), self.latent_ability(model_ref),
+                                price_feats)
 
     def predict_length(self, e_q, neighbor_mean=None) -> Optional[torch.Tensor]:
         return self.length_head(self.warmup(e_q, neighbor_mean)) if self.use_length_head else None
+
+    @torch.no_grad()
+    def predict_cost(self, e_q, model_ref, r_q=None, neighbor_mean=None, price_feats=None,
+                     cost_offset=None):
+        """Expected USD cost ``E[C | q, m]`` -> ``(B,)``."""
+        if self.cost_head is None:
+            raise ValueError("model has no cost head (train with cost.enabled: true)")
+        if self.cost_mode == "length":
+            raise ValueError("a length-mode head predicts tokens, not USD: use "
+                             "batched_forward(fields=('cost',)) with in_tokens / token_price")
+        out = self.forward(e_q, model_ref, r_q, neighbor_mean, price_feats, cost_offset)
+        return CostHead.expected_cost(out.cost_mu, out.cost_log_sigma)
 
     @torch.no_grad()
     def predict_proba(self, e_q, model_ref, r_q=None, neighbor_mean=None) -> torch.Tensor:

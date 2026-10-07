@@ -63,15 +63,20 @@ class HeuristicTriage:
         self.quality_threshold = float(quality_threshold)
         self.max_chars_single = int(max_chars_single)
 
-    def __call__(self, prompt: str, *, model_id: str, predicted_quality: float,
-                 scores: Optional[dict] = None) -> TriageDecision:
+    def is_multipart(self, prompt: str) -> bool:
+        """The lexical multi-part check: many questions, very long, a sequencing
+        marker, or an enumerated list."""
         low = prompt.lower()
-        multipart = (
+        return (
             prompt.count("?") >= 3
             or len(prompt) > self.max_chars_single
             or any(m in low for m in _MULTIPART_MARKERS)
             or len(_ENUMERATION_RE.findall(prompt)) >= 2
         )
+
+    def __call__(self, prompt: str, *, model_id: str, predicted_quality: float,
+                 scores: Optional[dict] = None) -> TriageDecision:
+        multipart = self.is_multipart(prompt)
         q = float(predicted_quality)
         known = math.isfinite(q)
         # an unscorable prompt (NaN) is not evidence of a strong model
@@ -102,29 +107,50 @@ class LLMTriage:
     """Ask a LangChain chat model for a yes/no on decomposition; fall back to the
     heuristic on any call failure or unparseable verdict. The router's scores
     are given to the model as context so its judgement is grounded in the same
-    difficulty signal."""
+    difficulty signal.
 
-    _PROMPT = (
-        "You triage user requests for an LLM router.\n"
-        "Routed model: {model_id}; best predicted quality in the pool: {q} (0-1 scale).\n"
-        "Per-model predicted quality: {scores}\n\n"
-        "Request:\n\"\"\"\n{prompt}\n\"\"\"\n\n"
-        "Answer with exactly one word: SINGLE if one model call can handle it well, "
-        "or DECOMPOSE if it should be split into sub-tasks."
-    )
+    ``margin`` gates the LLM call, which otherwise sits in front of every
+    answer as a full extra round-trip. With a finite ``margin`` the heuristic
+    decides alone -- no LLM call, nothing counted against ``max_calls`` --
+    when it is clear-cut: the prompt is lexically multi-part, or the router's
+    best predicted quality is more than ``margin`` from the heuristic's
+    ``quality_threshold``. The LLM is asked only in the ambiguous band (or
+    when there is no usable score). The default ``margin=inf`` always asks."""
 
-    def __init__(self, chat_model, *, fallback: Optional[HeuristicTriage] = None):
+    def __init__(self, chat_model, *, fallback: Optional[HeuristicTriage] = None,
+                 margin: float = math.inf, prompt: Optional[str] = None):
+        from .schemas import default_prompts
+
         self._chat = chat_model
         self._fallback = fallback or HeuristicTriage()
+        self.margin = float(margin)
+        #: ``str.format`` template; the ``triage`` prompt in ``configs/agentic.yaml`` unless given
+        self.prompt = prompt or default_prompts()["triage"]
         # set by AgenticRouter.__init__ so this call counts against the run's
         # shared ``max_calls`` budget like a routed call does (AGENTICROUTER-003)
         self.on_call: Optional[Callable[[], None]] = None
 
+    def _clear_cut(self, prompt: str, q: float) -> bool:
+        """True when the heuristic fallback can decide alone (see ``margin``)."""
+        if math.isinf(self.margin):
+            return False
+        fb = self._fallback
+        is_multipart = getattr(fb, "is_multipart", None)
+        if is_multipart is not None and is_multipart(prompt):
+            return True
+        threshold = getattr(fb, "quality_threshold", None)
+        return threshold is not None and math.isfinite(q) and abs(q - threshold) > self.margin
+
     def __call__(self, prompt: str, *, model_id: str, predicted_quality: float,
                  scores: Optional[dict] = None) -> TriageDecision:
+        if self._clear_cut(prompt, float(predicted_quality)):
+            d = self._fallback(prompt, model_id=model_id,
+                               predicted_quality=predicted_quality, scores=scores)
+            d.reason = f"LLM triage skipped (clear-cut): {d.reason}"
+            return d
         finite = {k: v for k, v in (scores or {}).items() if math.isfinite(v)}
         top = dict(sorted(finite.items(), key=lambda kv: -kv[1])[:5])
-        request = self._PROMPT.format(
+        request = self.prompt.format(
             model_id=model_id, q=_fmt_q(float(predicted_quality)),
             scores=", ".join(f"{k}={v:.2f}" for k, v in top.items()) or "n/a",
             prompt=prompt[:2000],
@@ -162,7 +188,7 @@ def best_from_result(routing_result) -> tuple[str, float, dict]:
     not the score of the -- possibly cost-selected -- model. It is NaN when the
     router had nothing selectable for the row (``RoutingResult.fallback``)."""
     row = np.asarray(routing_result.scores, dtype=np.float64)[0]
-    scores = dict(zip(routing_result.model_ids, (float(x) for x in row)))
+    scores = routing_result.row_scores(0)
     mid = routing_result.selected_model_ids[0]
     fallback = getattr(routing_result, "fallback", None)
     if fallback is not None and bool(np.asarray(fallback)[0]):

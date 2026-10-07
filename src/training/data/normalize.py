@@ -63,3 +63,22 @@ def make_query_id(source: str, dataset: str, text: str) -> str:
     h = content_hash(text)[:16]
     ds = re.sub(r"[^a-z0-9]+", "_", dataset.lower()).strip("_")
     return f"{source}:{ds}:{h}"
+
+
+def render_response(raw: object) -> str:
+    """Unwrap RouterBench's ``str(list[str])`` model-response storage.
+
+    Unlike ``render_prompt``, only a list whose elements are all ``str`` is
+    unwrapped, so an answer that is itself a list literal (``"[1, 2, 3]"``) is
+    kept verbatim; any parse failure (including deep nesting) falls back to the
+    raw text.
+    """
+    s = str(raw)
+    if len(s) >= 2 and s[0] == "[" and s[-1] == "]":
+        try:
+            parsed = ast.literal_eval(s)
+        except Exception:
+            parsed = None
+        if isinstance(parsed, (list, tuple)) and all(isinstance(t, str) for t in parsed):
+            return sanitize_text("\n\n".join(parsed))
+    return sanitize_text(s)

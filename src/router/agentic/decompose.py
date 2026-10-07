@@ -25,6 +25,7 @@ __all__ = [
     "LLMDecomposer",
     "concat_synthesizer",
     "LLMSynthesizer",
+    "looks_atomic",
 ]
 
 # common abbreviations whose trailing "." is not a sentence end
@@ -47,6 +48,23 @@ _SPLIT_RE = re.compile(
 # "1. ", "2) ", "- ", "* " line prefixes an LLM adds despite being told not to. A numbered
 # marker needs trailing whitespace, else it would eat the start of "3.14 times 2".
 _LINE_PREFIX_RE = re.compile(r"^\s*(?:(?:[-*•]+|#+)\s*|\d+[.)]\s+)")
+
+
+# a sentence end followed by more text: "Do X. Then Y" (not a trailing "?" / ".")
+_INNER_SENTENCE_END_RE = re.compile(r"[.?!]\s+\S")
+
+
+def looks_atomic(prompt: str) -> bool:
+    """One sentence with no comma, semicolon or line break -- nothing an LLM
+    decomposer could split. Deliberately broader than triage's lexical
+    multi-part markers, which miss comma lists ("explain why, fix it, and
+    test it")."""
+    text = prompt.strip()
+    return not (_INNER_SENTENCE_END_RE.search(text) or any(c in text for c in ",;\n"))
+
+
+def _dedupe_key(task: str) -> str:
+    return " ".join(task.lower().split()).rstrip(".?! ")
 
 
 def _fold_tail(parts: list[str], max_parts: int) -> list[str]:
@@ -93,18 +111,25 @@ class NaiveDecomposer:
 class LLMDecomposer:
     """Ask a LangChain chat model for a newline-separated task list.
 
+    ``chat_for`` (instead of ``chat_model``) picks the model per request:
+    ``request -> (text -> message)`` -- e.g. :meth:`AgenticRouter.helper_call`,
+    which routes the decomposition onto a pool model.
+
     A request longer than ``max_prompt_chars`` goes to ``fallback`` instead of
     being truncated (a cut-off request silently loses its later sub-tasks)."""
 
-    _PROMPT = (
-        "Break the request below into a minimal ordered list of self-contained "
-        "sub-tasks, one per line, no numbering or commentary. If it is already a "
-        "single task, return it unchanged on one line.\n\nRequest:\n{prompt}"
-    )
+    def __init__(self, chat_model=None, *, max_parts: int = 8, max_prompt_chars: int = 4000,
+                 fallback: Callable[[str], list[str]] | None = None,
+                 prompt: str | None = None,
+                 chat_for: Callable[[str], Callable[[str], object]] | None = None):
+        from .schemas import default_prompts
 
-    def __init__(self, chat_model, *, max_parts: int = 8, max_prompt_chars: int = 4000,
-                 fallback: Callable[[str], list[str]] | None = None):
+        if (chat_model is None) == (chat_for is None):
+            raise ValueError("LLMDecomposer needs exactly one of chat_model / chat_for")
         self._chat = chat_model
+        self._chat_for = chat_for
+        #: ``str.format`` template; the ``decompose`` prompt in ``configs/agentic.yaml`` unless given
+        self.prompt = prompt or default_prompts()["decompose"]
         self.max_parts = max_parts
         self.max_prompt_chars = int(max_prompt_chars)
         self._fallback = fallback or NaiveDecomposer()
@@ -123,7 +148,8 @@ class LLMDecomposer:
         if self.on_call is not None:
             self.on_call()
         try:
-            msg = self._chat.invoke(self._PROMPT.format(prompt=prompt))
+            call = self._chat_for(prompt) if self._chat_for is not None else self._chat.invoke
+            msg = call(self.prompt.format(prompt=prompt))
         except Exception as exc:  # pragma: no cover - provider errors
             warnings.warn(f"LLMDecomposer call failed ({exc!r}); using the fallback decomposer",
                           stacklevel=2)
@@ -131,12 +157,18 @@ class LLMDecomposer:
         return self._parse(message_text(msg)) or [prompt]
 
     def _parse(self, text: str) -> list[str]:
-        parts = []
+        parts, seen = [], set()
         for ln in text.splitlines():
             ln = _LINE_PREFIX_RE.sub("", ln).strip()
             # a preamble such as "Here are the sub-tasks:" is not a task
             if len(ln) < 4 or ln.endswith(":"):
                 continue
+            # a repeated task (case / spacing / end punctuation aside) is dropped
+            # before the max_parts fold, so repeats can't crowd out real tasks
+            key = _dedupe_key(ln)
+            if key in seen:
+                continue
+            seen.add(key)
             parts.append(ln)
         return _fold_tail(parts, self.max_parts)
 
@@ -160,16 +192,19 @@ class LLMSynthesizer:
     (concatenation) rather than being truncated -- a cut body drops the later
     sub-answers from the final answer."""
 
-    _PROMPT = (
-        "Original request:\n{original}\n\n"
-        "Sub-answers:\n{body}\n\n"
-        "Write a single, coherent final answer to the original request using the "
-        "sub-answers above. Do not mention that the work was split up."
-    )
+    def __init__(self, chat_model=None, *, max_body_chars: int = 8000,
+                 fallback: Callable[..., str] = concat_synthesizer,
+                 prompt: str | None = None,
+                 chat_for: Callable[[str], Callable[[str], object]] | None = None):
+        from .schemas import default_prompts
 
-    def __init__(self, chat_model, *, max_body_chars: int = 8000,
-                 fallback: Callable[..., str] = concat_synthesizer):
+        if (chat_model is None) == (chat_for is None):
+            raise ValueError("LLMSynthesizer needs exactly one of chat_model / chat_for")
         self._chat = chat_model
+        #: ``original request -> (text -> message)``, as on :class:`LLMDecomposer`
+        self._chat_for = chat_for
+        #: ``str.format`` template; the ``synthesize`` prompt in ``configs/agentic.yaml`` unless given
+        self.prompt = prompt or default_prompts()["synthesize"]
         self.max_body_chars = int(max_body_chars)
         self._fallback = fallback
         # set by AgenticRouter.__init__ so this call counts against the run's
@@ -188,7 +223,8 @@ class LLMSynthesizer:
         if self.on_call is not None:
             self.on_call()
         try:
-            msg = self._chat.invoke(self._PROMPT.format(original=original[:2000], body=body))
+            call = self._chat_for(original) if self._chat_for is not None else self._chat.invoke
+            msg = call(self.prompt.format(original=original[:2000], body=body))
         except Exception as exc:  # pragma: no cover - provider errors
             warnings.warn(f"LLMSynthesizer call failed ({exc!r}); concatenating", stacklevel=2)
             return self._fallback(original, pairs)

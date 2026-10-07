@@ -4,6 +4,8 @@ same representation + splits as Phase 1.
     python scripts/train_continuous.py --response normal
     python scripts/train_continuous.py --response beta   --epochs 40
     python scripts/train_continuous.py --response zoib
+    python scripts/train_continuous.py --response zoib --cost   # + expected-cost probe
+    python scripts/train_continuous.py --response zoib --cost-length --knn-warmup learn
 
 Writes artifacts/phase2/<response>/{model.pt, config.yaml, metrics.json,
 training_history.json, provenance.json}.
@@ -33,6 +35,18 @@ def main() -> int:
     ap.add_argument("--lr", type=float, default=None)
     ap.add_argument("--model-params", choices=["free", "projected"], default=None)
     ap.add_argument("--checkpoint", default=None)
+    ap.add_argument("--cost", action="store_true",
+                    help="enable the expected-cost probe head (config `cost:` block)")
+    ap.add_argument("--cost-residual", action="store_true",
+                    help="residual probe: log C_hat = train per-model mean log cost + learned "
+                         "per-query correction (implies --cost)")
+    ap.add_argument("--cost-length", action="store_true",
+                    help="output-length cost head: classify output tokens into buckets, price "
+                         "with train-fitted per-model token prices (implies --cost)")
+    ap.add_argument("--knn-warmup", default=None, metavar="ALPHA",
+                    help="blend e_q with the mean of its k nearest TRAIN queries: "
+                         "e_q' = (1 - ALPHA) e_q + ALPHA * neighbour_mean; ALPHA in [0, 1] "
+                         "(1 = full kNN imputation) or 'learn' (learnable, init 0.5)")
     args = ap.parse_args()
 
     root = load_config().root
@@ -51,6 +65,17 @@ def main() -> int:
         cfg.setdefault("train", {})["lr"] = args.lr
     if args.model_params is not None:
         cfg.setdefault("model", {})["model_params"] = args.model_params
+    if args.cost or args.cost_residual or args.cost_length:
+        cfg["cost"] = {**(cfg.get("cost") or {}), "enabled": True}
+    if args.cost_residual:
+        cfg["cost"]["residual"] = True
+    if args.cost_length:
+        cfg["cost"]["mode"] = "length"
+    if args.knn_warmup is not None:
+        learn = args.knn_warmup == "learn"
+        cfg.setdefault("model", {})["warmup"] = {
+            "enabled": True, "alpha": 0.5 if learn else float(args.knn_warmup), "learnable": learn}
+        cfg.setdefault("ablation", {})["use_warmup"] = True
     if args.response == "bernoulli":
         cfg.setdefault("train", {})["target"] = "binary"
 

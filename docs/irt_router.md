@@ -30,7 +30,12 @@ into `data/raw/irt_router/`.
 Row schema: `id, question, ground_truth, completion, input_tokens, output_tokens,
 cost, performance, task, llm`. `performance` ∈ [0, 1] (binary for MC tasks, graded
 F1/pass-rate for `squad` / `hotpot_qa` / `mbpp`); `cost` is the token-weighted USD
-cost. Both are used verbatim — no price table.
+cost. Both are used verbatim — no price table — with one exception: a row with 0
+input tokens, 0 output tokens and $0 cost is missing usage accounting (a prompt
+cannot have zero tokens), not a free call (10,565 rows, 21% of
+`qwen25_72b_instruct`). `impute_missing_usage` (`training.data.pricing`) prices
+them at the rate recovered from the model's own priced rows and estimates the
+tokens; such rows carry `metadata.usage_imputed`.
 
 Query identity is the exact `question` text (`make_query_id("irt_router", task,
 render_prompt(question))`), matching the repo's own `query_id_map[question]`

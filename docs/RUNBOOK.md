@@ -202,6 +202,58 @@ python scripts/nirt/baseline/evaluate.py          --checkpoint artifacts/phase2/
 python scripts/nirt/baseline/compare_response_models.py                                    # all 4 heads side by side
 ```
 
+### 5.1 Cost-aware routing benchmark (ZOIB + length cost head vs IRT-Router vs GPT-4)
+
+The current best router is ZOIB with the output-length cost head. This sequence
+trains it and the IRT-Router baseline on the same 29-model pool and splits, then
+scores both on the test queries of RouterBench and IRT-Router, separately and
+combined. They are compared against always sending to GPT-4 and against the oracle.
+Diagrams: [router_mechanism](diagrams/router_mechanism.excalidraw) (how a query is
+routed) and [router_testing](diagrams/router_testing.excalidraw) (this pipeline).
+
+```bash
+# 0. Only after raw data or pricing changes: rebuild the tables (§1 has the full pipeline)
+python scripts/data/build_response_matrix.py
+python scripts/data/build_nirt_dataset.py
+
+# 1. ZOIB + length cost head (~25 min on CPU, peaks ~10 GB RAM)
+PYTHONUNBUFFERED=1 python scripts/nirt/baseline/train_continuous.py --response zoib --cost-length \
+    --checkpoint artifacts/phase2/zoib_cost_length_v2
+#    kNN variant: add --knn-warmup 1.0 (full imputation) or --knn-warmup learn
+
+# 2. IRT-Router paper config on the same pool (~20 min)
+python scripts/nirt/train_nirt.py --name irt-25d-projected-29m --dim 25 --orientation model_latent \
+    --model-params projected --query-hidden none --lr 0.002 --batch-size 512 \
+    --weight-decay 0 --loss soft_bce
+
+# 3. Cost-probe diagnostics + routing vs oracle, one source at a time
+python scripts/nirt/baseline/cost_probe_eval.py --ckpt artifacts/phase2/zoib_cost_length_v2 --split test --source routerbench
+python scripts/nirt/baseline/cost_probe_eval.py --ckpt artifacts/phase2/zoib_cost_length_v2 --split test --source irt_router
+
+# 4. Benchmark vs always-GPT-4 and the oracle (prints markdown tables, writes JSON)
+python scripts/nirt/baseline/routing_benchmark.py --zoib-ckpt artifacts/phase2/zoib_cost_length_v2
+python scripts/nirt/baseline/routing_benchmark.py --zoib-ckpt artifacts/phase2/zoib_cost_length_v2 \
+    --irt-run irt-25d-projected-29m --out artifacts/phase2/zoib_vs_irt_router_test.json
+```
+
+Notes:
+
+- `routing_benchmark.py` routes each query only among its own source's models (a
+  RouterBench query has no scores for IRT-Router models), then averages over all
+  test queries for the combined table. The reference is `gpt-4-1106-preview` for
+  RouterBench and `gpt_4o` for IRT-Router. λ multiplies USD per query; change the
+  grid with `--lams`.
+- With `--irt-run` it also reports `IRT-Router + C_hat` and `ZOIB + C(m)`, which swap
+  the cost models so you can tell quality-prediction gains from cost-model gains.
+- The oracle rows read the true scores and only grade the routers. The logic lives
+  in `evaluation.nirt.routing_benchmark` (tested in
+  `tests/evaluation/nirt/test_routing_benchmark.py`).
+- Rows with `$0` cost are genuinely free models (e.g. `glm_4_flash`). The log-cost
+  probe floors them at `FREE_COST_FLOOR` (`training/nirt/baseline/data.py`).
+- Regenerate the diagrams after changing the code they annotate:
+  `python scripts/diagrams/build_router_diagrams.py` (add `--export <excalidraw plugin export.mjs>`
+  for `.svg`/`.png`).
+
 ---
 
 ## 6. IRT-Router paper replication (isolated track)

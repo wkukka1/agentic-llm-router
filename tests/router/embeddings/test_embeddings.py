@@ -179,3 +179,40 @@ def test_store_load_is_memmapped(tmp_path, encoder):
     store = EmbeddingStore.load(tmp_path, mmap=True)
     assert isinstance(store.matrix, np.memmap)
     store.close()
+
+
+class _StubBertEncoder(TextEncoder):
+    """No model download: a fixed-width zero vector per text, plus a fake
+    model load that consumes global RNG draws the way a real init would."""
+
+    def _load_bert(self):
+        import random
+
+        import torch
+
+        random.random(), np.random.rand(), torch.rand(1)
+        return object()
+
+    def _encode_bert_batch(self, batch):
+        _ = self.model
+        return np.zeros((len(batch), 3), np.float32)
+
+
+def test_encode_leaves_caller_rngs_untouched():
+    """TEXTENCODER-001: encoding (serving path) must not reseed the
+    process-global ``random`` / numpy / torch generators -- neither per call
+    nor via the one-time lazy model load."""
+    import random
+
+    import torch
+
+    enc = _StubBertEncoder(EncoderConfig(backend="bert"))
+    random.seed(1234), np.random.seed(1234), torch.manual_seed(1234)
+    expected = [(random.random(), float(np.random.rand()), float(torch.rand(1))) for _ in range(3)]
+
+    random.seed(1234), np.random.seed(1234), torch.manual_seed(1234)
+    draws = []
+    for _ in range(3):
+        draws.append((random.random(), float(np.random.rand()), float(torch.rand(1))))
+        enc.encode(["a request"])
+    assert draws == expected

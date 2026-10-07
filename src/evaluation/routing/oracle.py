@@ -88,10 +88,12 @@ def evaluate_router(
     selected vs oracle quality / cost, and (with ``cost_df``) the cost-aware
     oracle block.
 
-    Defaults ``model_costs`` to ``router.default_model_costs`` -- the same
-    per-model cost vector ``router.route(lam=lam)`` would select with -- so
-    the reported cost-aware selection matches what the served router actually
-    does. Pass ``model_costs=`` explicitly (via ``**kwargs``) to override.
+    Defaults ``model_costs`` to ``router.decision_costs(...)`` -- the same
+    (per-model, or predicted per-cell) cost ``router.route(lam=lam)`` would
+    select with -- so the reported cost-aware selection matches what the served
+    router actually does. Pass ``model_costs=`` explicitly (via ``**kwargs``) to
+    override. That cost only drives the SELECTION; utilities and the oracle are
+    scored on the true per-cell ``cost_df``.
     """
     model_ids = list(router.model_ids)
     for name, frame in (("true_df", true_df), ("cost_df", cost_df)):
@@ -107,7 +109,9 @@ def evaluate_router(
         if cost_df is not None
         else None
     )
-    kwargs.setdefault("model_costs", router.default_model_costs)
+    if "model_costs" not in kwargs:
+        kwargs["model_costs"] = (router.decision_costs(list(true_df.index)) if lam
+                                 else router.default_model_costs)
     return routing_evaluation(
         scores.to_numpy(np.float64),
         true,
@@ -242,7 +246,9 @@ def soft_oracle_targets(true_df: pd.DataFrame, tau: float = 0.1) -> pd.DataFrame
 
 
 def _cost_aware_oracle(true: np.ndarray, C, lam: float, eligible: Optional[np.ndarray]):
-    """``U(q, m) = y(q, m) - lam * C(m)`` over the eligible cells (others ``-inf``).
+    """``U(q, m) = y(q, m) - lam * C`` over the eligible cells (others ``-inf``).
+    Callers pass the TRUE per-cell cost as ``C`` -- never a router's predicted
+    or per-model decision cost (that would grade the router on its own guess).
 
     Returns ``(util, ca_idx, valid)``: ``valid`` marks rows with at least one finite
     eligible utility -- the only rows a cost-aware oracle is defined on. Shared by
@@ -284,8 +290,13 @@ def routing_evaluation(
     """Score one predicted ``[Q, M]`` matrix as a router against the oracle.
 
     Quality routing uses ``argmax_m pred``. If ``lam > 0`` the selection is
-    cost-aware (``argmax_m [pred - lam * C(m)]``). Regardless of ``lam``, the
+    cost-aware (``argmax_m [pred - lam * C]``, ``C`` = ``model_costs``: per-model
+    ``[M]`` or predicted per-cell ``[Q, M]``). Regardless of ``lam``, the
     cost-aware **oracle** block is reported whenever ``cost`` is available.
+
+    Cost roles: ``model_costs`` is the router's DECISION cost only. The oracle and
+    every reported utility use the realized ``y(q, m) - lam * cost(q, m)`` with
+    the TRUE per-cell ``cost``, so a router is never scored on its own estimate.
 
     ``oracle_hit_rate`` (exact: selected == the deterministic cost-broken oracle)
     and ``mean_regret`` are *different* -- with near-tied models you can miss the
@@ -355,7 +366,7 @@ def routing_evaluation(
         # --- cost-aware oracle: U(q, m) = y(q, m) - lam * C(m) ----------------
         # rows with no eligible candidate have no cost-aware oracle: excluded from
         # every mean (they would be -inf / NaN) and counted instead
-        util, ca_idx, valid = _cost_aware_oracle(true, C, lam, eligible)
+        util, ca_idx, valid = _cost_aware_oracle(true, cost, lam, eligible)
         n_valid = int(valid.sum())
 
         def _mean(x):
@@ -389,7 +400,7 @@ def routing_evaluation(
     if query_ids is not None:
         out["_per_query"] = per_query_table(
             pred, true, cost, model_ids, list(query_ids), selected, o_idx,
-            lam=lam, model_costs=C, eligible=eligible,
+            lam=lam, eligible=eligible,
         )
     return out
 
@@ -404,7 +415,6 @@ def per_query_table(
     oracle_idx: np.ndarray,
     *,
     lam: float = 0.0,
-    model_costs: Optional[np.ndarray] = None,
     eligible: Optional[np.ndarray] = None,
 ) -> pd.DataFrame:
     """One row per query: what the router picked, what the oracle picked, the gap.
@@ -431,14 +441,13 @@ def per_query_table(
     if cost is not None:
         cost = np.asarray(cost, np.float64)
         rows["selected_cost"] = cost[qi, selected]
-        if model_costs is not None:
-            util, ca_idx, valid = _cost_aware_oracle(true, model_costs, lam, eligible)
-            rows["has_eligible_candidate"] = valid.astype(int)
-            rows["cost_aware_oracle_model_id"] = [
-                model_ids[k] if ok else None for k, ok in zip(ca_idx, valid)
-            ]
-            rows["selected_utility"] = np.where(valid, util[qi, selected], np.nan)
-            rows["cost_aware_oracle_utility"] = np.where(valid, util[qi, ca_idx], np.nan)
+        util, ca_idx, valid = _cost_aware_oracle(true, cost, lam, eligible)
+        rows["has_eligible_candidate"] = valid.astype(int)
+        rows["cost_aware_oracle_model_id"] = [
+            model_ids[k] if ok else None for k, ok in zip(ca_idx, valid)
+        ]
+        rows["selected_utility"] = np.where(valid, util[qi, selected], np.nan)
+        rows["cost_aware_oracle_utility"] = np.where(valid, util[qi, ca_idx], np.nan)
     return pd.DataFrame(rows)
 
 

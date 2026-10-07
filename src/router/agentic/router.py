@@ -24,6 +24,11 @@ Flow for a live prompt:
 For real model calls pass ``clients=ClientRegistry.langchain(pool)`` and an
 LLM-driven orchestrator / triage (see ``docs/agentic_router.md``).
 
+Multi-turn: ``run`` also takes a chat message list or a ``Conversation``. The
+router scores all user turns joined (its training rendering), triage and
+decomposition look at the latest turn only, and every routed call is sent the
+earlier messages as history (:mod:`router.agentic.conversation`).
+
 Failure handling: a model call that raises inside an orchestration is recorded
 as a failed :class:`SubCall` (``error`` set, see ``AgenticResult.errors()``) so
 the sub-answers already paid for survive; a failing *root* call still raises.
@@ -43,17 +48,37 @@ state (thread- or asyncio-task-isolated), not on the instance.
 from __future__ import annotations
 
 import contextvars
+import logging
+import math
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Callable, Generator, Optional
 
 from ..routing.base import RouterModel, RoutingResult
-from .llm_clients import ClientRegistry, LLMClient
-from .decompose import NaiveDecomposer, concat_synthesizer
+from .conversation import (
+    AgenticInput,
+    as_messages,
+    history_before_latest,
+    history_chars,
+    latest_user_turn,
+    routing_text,
+    with_history,
+)
+from .llm_clients import ClientRegistry, LLMClient, LLMResponse
+from .decompose import (
+    LLMDecomposer,
+    LLMSynthesizer,
+    NaiveDecomposer,
+    concat_synthesizer,
+    looks_atomic,
+)
 from .orchestrator import RecursiveOrchestrator
 from .result import AgenticResult, SubCall, total_cost
-from .triage import HeuristicTriage, TriageDecision, best_from_result
+from .triage import HeuristicTriage, LLMTriage, TriageDecision, best_from_result
 
-__all__ = ["AgenticRouter"]
+__all__ = ["AgenticRouter", "flush_bookkeeping"]
 
 Decomposer = Callable[[str], list]
 Synthesizer = Callable[..., str]
@@ -74,16 +99,80 @@ class _RunState:
     decisions: dict[str, TriageDecision] = field(default_factory=dict)
     calls: int = 0
     max_calls: Optional[int] = None
+    #: messages before the latest user turn; every routed call is sent this
+    #: history ahead of its own prompt (see ``conversation.with_history``)
+    history: tuple = ()
+    #: this call's IRT-Router-style reward blend override (``run(..., alpha=)``),
+    #: in (0, 1] -- ``None`` keeps the agent's static ``lam``. Set once at the
+    #: root and read by every sub-task's re-triage too (AgenticRouter.route_decision),
+    #: so one request's cost preference holds through the whole recursion.
+    alpha: Optional[float] = None
+    #: seconds per stage of the root request (``route``/``triage``/``dispatch``/``total``)
+    timings: dict[str, float] = field(default_factory=dict)
+    #: one summary dict per plan an orchestrator ran (``router.execution.routed``)
+    plans: list = field(default_factory=list)
+    #: one dict per routed helper call (decompose / synthesize), see AgenticRouter.helper_call
+    helper_calls: list = field(default_factory=list)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def use_call(self, n: int = 1, *, enforce: bool = True) -> None:
         """Count ``n`` model call(s) against the budget. Every LLM
         invocation a run makes -- routed, triage, decompose, synthesize --
         goes through here, not just the routed calls (AGENTICROUTER-003).
         ``enforce=False`` counts without raising, for call sites that can't
-        safely raise mid-call (see ``LangChainToolOrchestrator``)."""
-        if enforce and self.max_calls is not None and self.calls + n > self.max_calls:
-            raise RuntimeError(f"max_calls={self.max_calls} model calls exhausted for this run")
-        self.calls += n
+        safely raise mid-call (see ``LangChainToolOrchestrator``). Locked:
+        an orchestrator may run sub-calls on worker threads sharing this state."""
+        with self._lock:
+            if enforce and self.max_calls is not None and self.calls + n > self.max_calls:
+                raise RuntimeError(f"max_calls={self.max_calls} model calls exhausted for this run")
+            self.calls += n
+
+
+def _call_meta(resp, expected: Optional[dict] = None) -> dict:
+    """A routed call's ``LLMResponse`` (+ its pre-call cost estimate) -> ``SubCall.meta``."""
+    return {**(resp.meta or {}), **(expected or {}), "latency": resp.latency,
+            "input_tokens": resp.input_tokens, "output_tokens": resp.output_tokens}
+
+
+def _run_sink(sink: Callable[[AgenticResult], None], result: AgenticResult) -> None:
+    """Call a result sink on the bookkeeping thread; a failing sink is logged,
+    never raised into (or silently lost from) the request path."""
+    try:
+        sink(result)
+    except Exception:  # pragma: no cover - exercised via the logging test
+        logging.getLogger(__name__).exception("AgenticRouter result sink failed")
+
+
+@dataclass
+class _Request:
+    """One request, normalized: its messages, the latest user turn, and the
+    per-run state it will execute under."""
+
+    messages: list
+    latest: str
+    conversation_id: Optional[str]
+    state: _RunState
+
+
+_BOOKKEEPING: Optional[ThreadPoolExecutor] = None
+_BOOKKEEPING_LOCK = threading.Lock()
+
+
+def flush_bookkeeping(timeout: Optional[float] = None) -> None:
+    """Block until all post-response work submitted so far (result sinks,
+    ``stream(on_result=)`` callbacks) has run -- e.g. before reading the run
+    database in a test or at the end of a batch script."""
+    _bookkeeping_executor().submit(lambda: None).result(timeout=timeout)
+
+
+def _bookkeeping_executor() -> ThreadPoolExecutor:
+    """One background thread for post-response work (``stream(on_result=)``),
+    created on first use -- off the token path, in submission order."""
+    global _BOOKKEEPING
+    with _BOOKKEEPING_LOCK:
+        if _BOOKKEEPING is None:
+            _BOOKKEEPING = ThreadPoolExecutor(max_workers=1, thread_name_prefix="agentic-bookkeeping")
+        return _BOOKKEEPING
 
 
 _current_run: "contextvars.ContextVar[Optional[_RunState]]" = contextvars.ContextVar(
@@ -106,6 +195,7 @@ class AgenticRouter:
         max_depth: int = 2,
         max_calls: Optional[int] = None,
         query_resolver: Optional[Callable[[str], str]] = None,
+        result_sink: Optional[Callable[[AgenticResult], None]] = None,
     ):
         self.router = router
         if not isinstance(clients, ClientRegistry):
@@ -120,6 +210,10 @@ class AgenticRouter:
         self.max_depth = int(max_depth)
         self.max_calls = None if max_calls is None else int(max_calls)
         self._resolver = query_resolver
+        #: called with every finished ``AgenticResult`` (``run`` and ``stream``)
+        #: on the background bookkeeping thread -- e.g.
+        #: ``router.tracing.run_store.sqlite_sink("data/runs/agentic_runs.sqlite")``
+        self.result_sink = result_sink
         # AGENTICROUTER-003: route each helper's own LLM call through the same
         # per-run budget a routed call goes through (see _RunState.use_call).
         # Harmless no-op for helpers that don't expose ``on_call`` (the
@@ -128,6 +222,106 @@ class AgenticRouter:
             if hasattr(helper, "on_call"):
                 helper.on_call = self._use_call
 
+    @classmethod
+    def from_settings(cls, settings=None, *, router: Optional[RouterModel] = None) -> "AgenticRouter":
+        """Build a router from :class:`~router.agentic.schemas.AgenticRouterSettings`
+        -- an instance, a path to a settings YAML, or ``None`` for
+        ``configs/agentic.yaml``. Loads the router run, the clients, every
+        helper (with its prompt from the settings' ``prompts``) and the
+        orchestrator, and warms up when ``settings.warmup`` is set.
+
+        ``router`` reuses an already-loaded (and warmed) ``RouterModel``
+        instead of loading ``settings.run`` again -- e.g. several agent
+        configurations sharing one encoder in a service or a test."""
+        import yaml
+
+        from ..config import resolve_path
+        from ..routing import NIRTRouter
+        from .schemas import AgenticRouterSettings, load_settings
+
+        s = settings if isinstance(settings, AgenticRouterSettings) else load_settings(settings)
+        if router is None:
+            router = NIRTRouter.from_run(s.run, runs_dir=s.runs_dir)
+
+        clients = None
+        if s.clients == "anthropic":
+            with open(resolve_path(s.serve_map), encoding="utf-8") as fh:
+                clients = ClientRegistry.anthropic(yaml.safe_load(fh), pool=router.model_ids)
+        elif s.clients == "langchain":
+            clients = ClientRegistry.langchain(router.model_ids)
+
+        def chat(model_id):
+            from ..llm.adapters.langchain_adapter import chat_model
+            return chat_model(model_id)
+
+        prompts = s.prompts
+        t = s.triage
+        heuristic = HeuristicTriage(quality_threshold=t.quality_threshold,
+                                    max_chars_single=t.max_chars_single)
+        triage = heuristic if t.kind == "heuristic" else LLMTriage(
+            chat(t.model), fallback=heuristic, prompt=prompts[t.prompt],
+            margin=math.inf if t.margin is None else t.margin)
+
+        # "routed" helpers pick their pool model per request through the agent
+        # built at the end of this method (late-bound: called only once it exists)
+        def helper_kw(h, role: str) -> dict:
+            if h.kind == "routed":
+                return {"chat_for": lambda request: agent.helper_call(role, request, h.min_quality)}
+            return {"chat_model": chat(h.model)}
+
+        d = s.decomposer
+        naive = NaiveDecomposer(max_parts=d.max_parts, min_part_chars=d.min_part_chars)
+        decomposer = naive if d.kind == "naive" else LLMDecomposer(
+            max_parts=d.max_parts, max_prompt_chars=d.max_prompt_chars,
+            fallback=naive, prompt=prompts[d.prompt], **helper_kw(d, "decompose"))
+
+        y = s.synthesizer
+        synthesizer = concat_synthesizer if y.kind == "concat" else LLMSynthesizer(
+            max_body_chars=y.max_body_chars, prompt=prompts[y.prompt],
+            **helper_kw(y, "synthesize"))
+
+        if s.orchestrator == "plan":
+            from ..execution.budget import ExecutionLimits
+            from ..execution.routed import plan_orchestrator
+
+            budget = math.inf if s.plan.budget is None else s.plan.budget
+            orchestrator = plan_orchestrator(
+                budget=budget, max_workers=s.plan.max_workers, sequential=s.plan.sequential,
+                limits=ExecutionLimits(max_cost=budget, max_depth=s.max_depth,
+                                       max_replans=s.plan.max_replans))
+        elif s.orchestrator == "tool_agent":
+            from .orchestrator import LangChainToolOrchestrator
+
+            orchestrator = LangChainToolOrchestrator(
+                chat(s.tool_agent.model), max_iterations=s.tool_agent.max_iterations,
+                system_prompt=prompts[s.tool_agent.prompt])
+        else:
+            orchestrator = RecursiveOrchestrator()
+
+        sink = None
+        if s.result_sink:
+            from ..tracing.run_store import sqlite_sink
+            sink = sqlite_sink(resolve_path(s.result_sink), router=s.run)
+
+        agent = cls(router, clients, triage=triage, orchestrator=orchestrator,
+                    decomposer=decomposer, synthesizer=synthesizer, lam=s.lam,
+                    max_depth=s.max_depth, max_calls=s.max_calls, result_sink=sink)
+        if s.warmup:
+            agent.warmup()
+        return agent
+
+    def warmup(self) -> dict[str, float]:
+        """Load everything a first request would otherwise pay for -- the
+        router's encoder, stores and cost vector (:meth:`RouterModel.warmup`)
+        -- so request latency is steady from the first prompt. Call once at
+        startup. Returns seconds per stage plus ``total``."""
+        import time
+
+        t0 = time.perf_counter()
+        timings = dict(self.router.warmup())
+        timings["total"] = time.perf_counter() - t0
+        return timings
+
     # ------------------------------------------------------------------ #
     # routing a single prompt                                            #
     # ------------------------------------------------------------------ #
@@ -135,18 +329,26 @@ class AgenticRouter:
         """One-row :class:`RoutingResult` for ``prompt`` (encoder-backed, or via a
         ``query_resolver`` that maps text -> an existing ``query_id``).
 
+        Uses this run's ``alpha`` override (``run(prompt, alpha=...)``) when
+        one was given, else the agent's static ``lam``. Reads it from the
+        current run's context-local state, so every sub-task's re-triage in
+        one orchestrated request shares the same cost preference without it
+        being threaded through every recursive call explicitly.
+
         Raises ``LookupError`` when the router has nothing selectable for the
         prompt (e.g. the resolved ``query_id`` has no scores) -- otherwise the
         pool's first model would silently answer."""
+        alpha = self._run_state().alpha
+        lam = 0.0 if alpha is not None else self.lam
         if self._resolver is not None:
-            rr = self.router.route([self._resolver(prompt)], lam=self.lam)
+            rr = self.router.route([self._resolver(prompt)], lam=lam, alpha=alpha)
         elif not getattr(self.router, "can_route_text", False):
             raise TypeError(
                 f"{type(self.router).__name__} cannot score raw text; pass "
                 "query_resolver= or use NIRTRouter / KNNRouter"
             )
         else:
-            rr = self.router.route_text([prompt], encoder=self.encoder, lam=self.lam)
+            rr = self.router.route_text([prompt], encoder=self.encoder, lam=lam, alpha=alpha)
         if rr.any_fallback:
             raise LookupError(
                 f"{self.router.name}: no usable score for this prompt "
@@ -154,45 +356,234 @@ class AgenticRouter:
             )
         return rr
 
-    def triage_prompt(self, prompt: str) -> TriageDecision:
-        rr = self.route_decision(prompt)
+    def decompose(self, prompt: str, depth: int) -> list[str]:
+        """Split ``prompt`` into sub-tasks -- the one path every orchestrator
+        decomposes through, so the policy for *whether* to spend an LLM call
+        on it lives here, not in the decomposer.
+
+        For an :class:`LLMDecomposer` the call is skipped (``[prompt]``, which
+        orchestrators answer directly) when there is nothing to split:
+
+        * ``depth == 0``: the request :func:`looks_atomic` (one sentence, no
+          comma list) *and* has no lexical multi-part marker ("... and then ...").
+        * ``depth > 0``: the sub-task is not lexically multi-part. It came from
+          a decomposer told to make sub-tasks atomic, so a low router score
+          alone is no reason to split it again.
+
+        Any other decomposer (``NaiveDecomposer``, a plain callable) is called
+        unchanged."""
+        if isinstance(self.decomposer, LLMDecomposer):
+            atomic = not self._is_multipart(prompt)
+            if depth == 0:
+                atomic = atomic and looks_atomic(prompt)
+            if atomic:
+                return [prompt]
+        return self.decomposer(prompt)
+
+    def _is_multipart(self, prompt: str) -> bool:
+        """The triage heuristic's lexical multi-part check (an ``LLMTriage``'s
+        fallback heuristic, or default ``HeuristicTriage`` settings)."""
+        heuristic = getattr(self.triage, "_fallback", self.triage)
+        check = getattr(heuristic, "is_multipart", None) or HeuristicTriage().is_multipart
+        return check(prompt)
+
+    def pick_helper_model(self, request: str, min_quality: float) -> tuple[str, float]:
+        """The pool model an LLM helper (decomposer / synthesizer) runs on for
+        ``request``: the cheapest model whose predicted quality is at least
+        ``min_quality`` (ties -> higher score), else the top-scored model.
+
+        Scores are the router's quality prediction for *answering* ``request``
+        -- a proxy for model strength, not a measured decomposition skill. They
+        come from this run's triage of ``request`` when there is one, so a
+        helper costs no extra routing call."""
+        known = self._run_state().decisions.get(request)
+        scores = (known.scores if known is not None and known.scores
+                  else self.route_decision(request).row_scores(0))
+        scores = {m: float(q) for m, q in scores.items() if math.isfinite(float(q))}
+        if not scores:
+            raise LookupError(f"{self.router.name}: no usable score to pick a helper model")
+        above = [m for m, q in scores.items() if q >= min_quality]
+        if not above:
+            best = max(scores, key=scores.get)
+            return best, scores[best]
+        costs = self.router.cost_by_model()
+        pick = min(above, key=lambda m: (costs.get(m, math.inf), -scores[m]))
+        return pick, scores[pick]
+
+    def helper_call(self, role: str, request: str, min_quality: float) -> Callable[[str], LLMResponse]:
+        """A ``text -> response`` call on the pool model :meth:`pick_helper_model`
+        chose for ``request`` -- the ``chat_for`` an LLM helper uses when it is
+        ``kind: routed``. Each call is recorded in the run's ``helper_calls``
+        (the helper itself counts it against ``max_calls`` via ``on_call``)."""
+        model_id, q = self.pick_helper_model(request, min_quality)
+
+        def call(text: str) -> LLMResponse:
+            resp = self.clients.complete(model_id, text)
+            self._run_state().helper_calls.append({
+                "role": role, "request": request, "model_id": model_id,
+                "predicted_quality": q, "min_quality": min_quality,
+                "cost": resp.cost, "latency": resp.latency, "output": resp.content,
+            })
+            return resp
+
+        return call
+
+    def triage_prompt(self, prompt: str, *, routing_text: Optional[str] = None) -> TriageDecision:
+        """Route ``routing_text`` (default: ``prompt``) and triage ``prompt``.
+
+        The two differ for a conversation: the router scores every user turn
+        (its training rendering), triage judges only the latest one. The first
+        call in a run records the ``route``/``triage`` timings."""
+        rs = self._run_state()
+        t0 = time.perf_counter()
+        rr = self.route_decision(routing_text if routing_text is not None else prompt)
+        t1 = time.perf_counter()
         model_id, q, scores = best_from_result(rr)
         decision = self.triage(prompt, model_id=model_id, predicted_quality=q, scores=scores)
-        self._run_state().decisions[prompt] = decision
+        rs.timings.setdefault("route", t1 - t0)
+        rs.timings.setdefault("triage", time.perf_counter() - t1)
+        rs.decisions[prompt] = decision
         return decision
 
     # ------------------------------------------------------------------ #
     # execution                                                          #
     # ------------------------------------------------------------------ #
-    def run(self, prompt: str) -> AgenticResult:
-        """Triage ``prompt`` and either answer it directly or orchestrate it."""
-        token = _current_run.set(_RunState(max_calls=self.max_calls))
+    def run(self, prompt: AgenticInput, *, conversation_id: Optional[str] = None,
+            alpha: Optional[float] = None) -> AgenticResult:
+        """Triage the request and either answer it directly or orchestrate it.
+
+        ``prompt`` is a bare string, a chat message list or a
+        :class:`~decompose.conversation.Conversation` whose last message is the
+        user turn to answer. The router scores every user turn; triage and
+        decomposition see only the latest turn; each routed model call is sent
+        the earlier messages as history (:mod:`router.agentic.conversation`).
+        A bare string behaves exactly as a one-turn conversation with no history.
+
+        ``alpha`` overrides this agent's static ``lam`` for just this call with
+        an IRT-Router-style reward blend in ``(0, 1]`` (``1.0`` quality-only,
+        near ``0`` cost-averse) -- e.g. different end users' cost preferences
+        routed through one shared ``AgenticRouter``. Held for the whole call,
+        including every sub-task's re-triage inside an orchestrated run. See
+        :meth:`route_decision`."""
+        t_start = time.perf_counter()
+        req = self._begin(prompt, conversation_id, alpha)
+        token = _current_run.set(req.state)
         try:
-            decision = self.triage_prompt(prompt)
-            root = self._solve(prompt, 0, decision=decision)
+            decision = self.triage_prompt(req.latest, routing_text=routing_text(req.messages))
+            t0 = time.perf_counter()
+            root = self._solve(req.latest, 0, decision=decision)
+            req.state.timings["dispatch"] = time.perf_counter() - t0
         finally:
             _current_run.reset(token)
+        req.state.timings["total"] = time.perf_counter() - t_start
+        result = self._result(req, decision, root)
+        self._emit(result)
+        return result
 
+    def stream(self, prompt: AgenticInput, *, conversation_id: Optional[str] = None,
+               on_result: Optional[Callable[[AgenticResult], None]] = None,
+               alpha: Optional[float] = None,
+               ) -> Generator[str, None, AgenticResult]:
+        """:meth:`run`, streaming the answer: yields text chunks as the routed
+        model produces them; the generator's return value
+        (``StopIteration.value``) is the :class:`AgenticResult`.
+
+        Routing and triage happen before the first chunk (they pick the model);
+        everything else waits for the stream to end -- pricing from the final
+        usage (:meth:`LLMClient.stream`), building the ``SubCall`` /
+        ``AgenticResult``, and ``on_result``, which runs on a background
+        bookkeeping thread so a slow sink (tracing, logging, a ledger) never
+        delays the caller. ``timings["ttft"]`` is request -> first chunk.
+
+        An orchestrated request is solved first (sub-calls, synthesis) and its
+        synthesized answer is yielded as one chunk. The per-run state lives in
+        a context private to this generator, so interleaved streams on one
+        agent stay independent. ``alpha`` is as in :meth:`run`."""
+        t_start = time.perf_counter()
+        req = self._begin(prompt, conversation_id, alpha)
+        ctx = contextvars.copy_context()
+
+        def setup() -> TriageDecision:
+            _current_run.set(req.state)
+            return self.triage_prompt(req.latest, routing_text=routing_text(req.messages))
+
+        decision = ctx.run(setup)
+        timings = req.state.timings
+        t0 = time.perf_counter()
+        if decision.mode == "single" or self.max_depth <= 0:
+            model_id = decision.selected_model_id
+            ctx.run(self._use_call)
+            expected = self._expected_cost(model_id, req.latest, req.state.history)
+            inner = self.clients.stream(model_id, with_history(req.state.history, req.latest))
+            while True:
+                try:
+                    chunk = ctx.run(next, inner)
+                except StopIteration as stop:
+                    resp = stop.value
+                    break
+                timings.setdefault("ttft", time.perf_counter() - t_start)
+                yield chunk
+            timings.setdefault("ttft", time.perf_counter() - t_start)
+            root = self._leaf(req.latest, model_id, 0, self._quality_of(decision), resp, expected)
+            timings["dispatch"] = time.perf_counter() - t0
+        else:
+            root = ctx.run(self._solve, req.latest, 0, decision=decision)
+            timings["dispatch"] = time.perf_counter() - t0
+            timings["ttft"] = time.perf_counter() - t_start
+            yield root.answer
+        timings["total"] = time.perf_counter() - t_start
+        result = self._result(req, decision, root)
+        if on_result is not None:
+            _bookkeeping_executor().submit(on_result, result)
+        self._emit(result)
+        return result
+
+    def _emit(self, result: AgenticResult) -> None:
+        if self.result_sink is not None:
+            _bookkeeping_executor().submit(_run_sink, self.result_sink, result)
+
+    # -- request setup / result assembly shared by run() and stream() --
+    def _begin(self, prompt: AgenticInput, conversation_id: Optional[str],
+               alpha: Optional[float] = None) -> "_Request":
+        messages = as_messages(prompt)
+        if conversation_id is None:
+            conversation_id = getattr(prompt, "conversation_id", None)
+        return _Request(
+            messages=messages, latest=latest_user_turn(messages),
+            conversation_id=conversation_id,
+            state=_RunState(max_calls=self.max_calls, history=history_before_latest(messages),
+                            alpha=alpha),
+        )
+
+    def _result(self, req: "_Request", decision: TriageDecision, root: SubCall) -> AgenticResult:
+        context = dict(
+            conversation_id=req.conversation_id,
+            turn_index=sum(1 for m in req.messages if m["role"] == "user"),
+            timings=dict(req.state.timings),
+            history=[dict(m) for m in req.state.history],
+            plans=list(req.state.plans),
+            helper_calls=list(req.state.helper_calls),
+        )
         if root.mode == "single":
             reason = decision.reason
             if decision.orchestrate:
                 reason += " -- nothing to decompose, answered directly"
             return AgenticResult(
-                prompt=prompt, mode="single", answer=root.answer,
+                prompt=req.latest, mode="single", answer=root.answer,
                 triage_reason=reason,
                 selected_model_id=root.model_id,
                 # the model that actually answered's own score, not the pool
                 # best decision.predicted_quality carries (AGENTICROUTER-001)
                 predicted_quality=root.predicted_quality,
-                steps=[root], cost=root.cost,
+                steps=[root], cost=root.cost, **context,
             )
         return AgenticResult(
-            prompt=prompt, mode="orchestrated", answer=root.answer,
+            prompt=req.latest, mode="orchestrated", answer=root.answer,
             triage_reason=decision.reason,
             selected_model_id=decision.selected_model_id,
             predicted_quality=decision.predicted_quality,
             steps=root.children, orchestrator=getattr(self.orchestrator, "name", "?"),
-            cost=root.cost,
+            cost=root.cost, **context,
         )
 
     # -- recursion unit ------------------------------------------------
@@ -211,6 +602,7 @@ class AgenticRouter:
 
         answer, children = self.orchestrator.run(prompt, self, depth)
         if (len(children) == 1 and children[0].prompt == prompt and not children[0].children
+                and children[0].error is None
                 and answer == children[0].answer):
             # nothing to decompose (and no synthesized answer of the orchestrator's
             # own) -> it collapses back to a single routed call at this depth
@@ -249,21 +641,64 @@ class AgenticRouter:
         """Invoke ``model_id`` once, counting it against ``max_calls``. Inside an
         orchestration (``depth > 0``) a failure becomes a failed ``SubCall``; at
         the root it raises."""
+        history = self._run_state().history
+        expected: dict = {}
         try:
             self._use_call()
-            resp = self.clients.complete(model_id, prompt)
+            expected = self._expected_cost(model_id, prompt, history)
+            resp = self.clients.complete(model_id, with_history(history, prompt))
         except Exception as exc:
             if depth == 0:
                 raise
             return SubCall(
                 prompt=prompt, model_id=model_id, predicted_quality=float(predicted_quality),
                 answer=f"[error: {type(exc).__name__}: {exc}]", mode="single", depth=depth,
-                cost=None, error=repr(exc),
+                cost=None, error=repr(exc), meta={**expected, "cost_source": "failed"},
             )
+        return self._leaf(prompt, model_id, depth, predicted_quality, resp, expected)
+
+    @staticmethod
+    def _leaf(prompt: str, model_id: str, depth: int, predicted_quality: float,
+              resp, expected: dict) -> SubCall:
+        """The ``SubCall`` for one completed model call -- the single builder
+        ``_call_model`` and ``stream`` share.
+
+        ``cost`` is the call's actual cost when the client could price it
+        (``meta["cost_source"] == "actual"``). A real call whose cost the
+        client couldn't price (no profile prices, or no usage from the
+        provider) is charged its pre-call estimate instead (``"estimate"``) --
+        never silently ``0.0`` (AGENTICROUTER-002) -- and stays ``None`` only
+        when there is no estimate either (``"unknown"``)."""
+        cost, source = resp.cost, "actual"
+        if cost is None:
+            cost = expected.get("expected_cost")
+            source = "estimate" if cost is not None else "unknown"
         return SubCall(
             prompt=prompt, model_id=model_id, predicted_quality=float(predicted_quality),
-            answer=resp.content, mode="single", depth=depth, cost=resp.cost,
+            answer=resp.content, mode="single", depth=depth, cost=cost,
+            meta={**_call_meta(resp, expected), "cost_source": source},
         )
+
+    def _expected_cost(self, model_id: str, prompt: str, history) -> dict:
+        """The pre-call estimate recorded next to a call's actual cost:
+        ``expected_cost`` (USD or ``None``), ``expected_cost_source``
+        (``profile`` / ``router_prior`` / ``unknown``, see
+        :func:`router.llm.cost.estimate_call_cost`) and ``provider_model`` --
+        the model that actually serves ``model_id`` (e.g. a Claude tier)."""
+        from ..llm.cost import estimate_call_cost
+
+        client = self.clients.get(model_id)
+        chars = len(prompt) + history_chars(history)
+        cost, source = estimate_call_cost(getattr(client, "profile", None), chars,
+                                          fallback=self._router_cost(model_id))
+        adapter = getattr(client, "_adapter", None)
+        return {"expected_cost": cost, "expected_cost_source": source,
+                "provider_model": getattr(adapter, "model", None)}
+
+    def _router_cost(self, model_id: str) -> Optional[float]:
+        """The router's own per-query cost for ``model_id`` (training-data
+        mean, USD), or ``None``."""
+        return self.router.cost_by_model().get(str(model_id))
 
     # -- per-run state (AGENTICROUTER-004: context-local, not instance state) --
     def _run_state(self) -> _RunState:

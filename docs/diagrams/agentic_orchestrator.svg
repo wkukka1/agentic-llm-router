@@ -1,0 +1,206 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-30 0 2590 2288" width="2590" height="2288">
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#1e1e1e" />
+    </marker>
+  </defs>
+  <rect x="-30" y="0" width="2590" height="2288" fill="#ffffff" />
+  <rect x="1420" y="924" width="380" height="434" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="390" y="1348" width="1780" height="506" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="10" y="1596" width="1090" height="246" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="1480" y="1620" width="760" height="198" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="1900" y="40" width="320" height="132" rx="8" ry="8" fill="#dee2e6" stroke="#495057" stroke-width="2" opacity="1" />
+  <rect x="1900" y="252" width="320" height="180" rx="8" ry="8" fill="#a5d8ff" stroke="#1971c2" stroke-width="2" opacity="1" />
+  <rect x="1905" y="512" width="310" height="180" rx="8" ry="8" fill="#a5d8ff" stroke="#1971c2" stroke-width="2" opacity="1" />
+  <rect x="1450" y="772" width="320" height="132" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="1490" y="984" width="240" height="132" rx="8" ry="8" fill="#ffec99" stroke="#f08c00" stroke-width="2" opacity="1" />
+  <rect x="1450" y="1196" width="320" height="132" rx="8" ry="8" fill="#ffec99" stroke="#f08c00" stroke-width="2" opacity="1" />
+  <rect x="2200" y="1408" width="320" height="156" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="1820" y="1408" width="320" height="156" rx="8" ry="8" fill="#d0bfff" stroke="#7048e8" stroke-width="2" opacity="1" />
+  <rect x="1130" y="1644" width="320" height="180" rx="8" ry="8" fill="#d0bfff" stroke="#7048e8" stroke-width="2" opacity="1" />
+  <rect x="420" y="1408" width="320" height="156" rx="8" ry="8" fill="#d0bfff" stroke="#7048e8" stroke-width="2" opacity="1" />
+  <rect x="420" y="1668" width="320" height="132" rx="8" ry="8" fill="#ffd8a8" stroke="#e8590c" stroke-width="2" opacity="1" />
+  <rect x="800" y="1668" width="270" height="132" rx="8" ry="8" fill="#ffd8a8" stroke="#e8590c" stroke-width="2" opacity="1" />
+  <rect x="40" y="1656" width="320" height="156" rx="8" ry="8" fill="#ffd8a8" stroke="#e8590c" stroke-width="2" opacity="1" />
+  <rect x="1510" y="1680" width="320" height="108" rx="8" ry="8" fill="#ffec99" stroke="#f08c00" stroke-width="2" opacity="1" />
+  <rect x="1890" y="1680" width="320" height="108" rx="8" ry="8" fill="#ffec99" stroke="#f08c00" stroke-width="2" opacity="1" />
+  <rect x="1590" y="1904" width="160" height="108" rx="8" ry="8" fill="#dee2e6" stroke="#495057" stroke-width="2" opacity="1" />
+  <rect x="1510" y="2092" width="320" height="156" rx="8" ry="8" fill="#ffc9c9" stroke="#e03131" stroke-width="2" opacity="1" />
+  <polyline points="2060,172 2060,252" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="2060,432 2060,512" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="2060,692 1610,772" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1610,904 1610,984" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1610,1116 1610,1196" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1610,1328 2360,1408" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1610,1328 1980,1408" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1610,1328 1290,1644" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1610,1328 580,1408" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="2060,692 2360,1408" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="2360,1564 1670,1904" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1980,1564 1670,1680" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1980,1564 2050,1680" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1980,1564 1670,1904" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1980,1564 1610,1196" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1290,1824 1670,1904" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="580,1564 580,1668" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="580,1564 935,1668" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="580,1564 200,1656" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="200,1812 1670,1904" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1670,2012 1670,2092" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <text x="1428" y="946" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#495057" text-anchor="start">
+    <tspan x="1428" dy="0">Triage (src/router/agentic/triage.py)</tspan>
+  </text>
+  <text x="398" y="1370" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#495057" text-anchor="start">
+    <tspan x="398" dy="0">Orchestrate branch — 3 implementations</tspan>
+  </text>
+  <text x="18" y="1618" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#495057" text-anchor="start">
+    <tspan x="18" dy="0">Plan orchestrator internals (src/router/execution)</tspan>
+  </text>
+  <text x="1488" y="1642" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#495057" text-anchor="start">
+    <tspan x="1488" dy="0">Shared decompose/synthesize helpers</tspan>
+  </text>
+  <text x="2060" y="92" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#495057" text-anchor="middle">
+    <tspan x="2060" dy="0">configs/agentic.yaml</tspan>
+    <tspan x="2060" dy="20">schemas.py:109 AgenticRouterSettings</tspan>
+    <tspan x="2060" dy="20">schemas.py:163 load_settings()</tspan>
+  </text>
+  <text x="2060" y="308" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#1971c2" text-anchor="middle">
+    <tspan x="2060" dy="0">AgenticRouter.from_settings()</tspan>
+    <tspan x="2060" dy="20">router.py:213</tspan>
+    <tspan x="2060" dy="20"></tspan>
+    <tspan x="2060" dy="20">AgenticRouter.run() / .stream()</tspan>
+    <tspan x="2060" dy="20">router.py:350 / :374</tspan>
+  </text>
+  <text x="2060" y="568" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#1971c2" text-anchor="middle">
+    <tspan x="2060" dy="0">conversation.py</tspan>
+    <tspan x="2060" dy="20">as_messages() :45</tspan>
+    <tspan x="2060" dy="20">routing_text() :64</tspan>
+    <tspan x="2060" dy="20">latest_user_turn() :69</tspan>
+    <tspan x="2060" dy="20">history_before_latest() :73</tspan>
+  </text>
+  <text x="1610" y="824" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="1610" dy="0">AgenticRouter.route_decision()</tspan>
+    <tspan x="1610" dy="20">router.py:307</tspan>
+    <tspan x="1610" dy="20">→ RouterModel (NIRT/kNN/...)</tspan>
+  </text>
+  <text x="1610" y="1036" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#f08c00" text-anchor="middle">
+    <tspan x="1610" dy="0">best_from_result()</tspan>
+    <tspan x="1610" dy="20">triage.py:183</tspan>
+    <tspan x="1610" dy="20">(model_id, q*, meta)</tspan>
+  </text>
+  <text x="1610" y="1248" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#f08c00" text-anchor="middle">
+    <tspan x="1610" dy="0">HeuristicTriage triage.py:59</tspan>
+    <tspan x="1610" dy="20">LLMTriage triage.py:106</tspan>
+    <tspan x="1610" dy="20">→ TriageDecision triage.py:43</tspan>
+  </text>
+  <text x="2360" y="1462" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="2360" dy="0">ClientRegistry llm_clients.py:54</tspan>
+    <tspan x="2360" dy="20">→ LLMClient → ProviderAdapter</tspan>
+    <tspan x="2360" dy="20">(Echo/Callable/LangChain/Anthropic</tspan>
+    <tspan x="2360" dy="20">src/router/llm/adapters/)</tspan>
+  </text>
+  <text x="1980" y="1462" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#7048e8" text-anchor="middle">
+    <tspan x="1980" dy="0">RecursiveOrchestrator (default)</tspan>
+    <tspan x="1980" dy="20">orchestrator.py:32</tspan>
+    <tspan x="1980" dy="20">AgenticRouter._solve()</tspan>
+    <tspan x="1980" dy="20">router.py:477</tspan>
+  </text>
+  <text x="1290" y="1700" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#7048e8" text-anchor="middle">
+    <tspan x="1290" dy="0">LangChainToolOrchestrator</tspan>
+    <tspan x="1290" dy="20">orchestrator.py:123</tspan>
+    <tspan x="1290" dy="20">build_router_tools() :49</tspan>
+    <tspan x="1290" dy="20">(route_query/answer_with_model/</tspan>
+    <tspan x="1290" dy="20">route_and_answer)</tspan>
+  </text>
+  <text x="580" y="1462" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#7048e8" text-anchor="middle">
+    <tspan x="580" dy="0">plan_orchestrator()</tspan>
+    <tspan x="580" dy="20">routed.py:383</tspan>
+    <tspan x="580" dy="20">PlanOrchestratorBridge routed.py:304</tspan>
+    <tspan x="580" dy="20">over RoutedOrchestrator routed.py:70</tspan>
+  </text>
+  <text x="580" y="1720" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e8590c" text-anchor="middle">
+    <tspan x="580" dy="0">RouterPlanForecaster</tspan>
+    <tspan x="580" dy="20">forecast.py:106</tspan>
+    <tspan x="580" dy="20">cost/quality/latency forecast</tspan>
+  </text>
+  <text x="935" y="1720" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e8590c" text-anchor="middle">
+    <tspan x="935" dy="0">BudgetLedger</tspan>
+    <tspan x="935" dy="20">budget.py:45</tspan>
+    <tspan x="935" dy="20">reserve cost before run</tspan>
+  </text>
+  <text x="200" y="1710" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e8590c" text-anchor="middle">
+    <tspan x="200" dy="0">Plan / PlanStep</tspan>
+    <tspan x="200" dy="20">plan.py:45 / :28</tspan>
+    <tspan x="200" dy="20">parallel exec + replan</tspan>
+    <tspan x="200" dy="20">failed step → next-best model</tspan>
+  </text>
+  <text x="1670" y="1730" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#f08c00" text-anchor="middle">
+    <tspan x="1670" dy="0">NaiveDecomposer decompose.py:61</tspan>
+    <tspan x="1670" dy="20">LLMDecomposer decompose.py:93</tspan>
+  </text>
+  <text x="2050" y="1730" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#f08c00" text-anchor="middle">
+    <tspan x="2050" dy="0">concat_synthesizer decompose.py:143</tspan>
+    <tspan x="2050" dy="20">LLMSynthesizer decompose.py:155</tspan>
+  </text>
+  <text x="1670" y="1954" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#495057" text-anchor="middle">
+    <tspan x="1670" dy="0">SubCall</tspan>
+    <tspan x="1670" dy="20">result.py:12</tspan>
+  </text>
+  <text x="1670" y="2146" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e03131" text-anchor="middle">
+    <tspan x="1670" dy="0">AgenticResult</tspan>
+    <tspan x="1670" dy="20">result.py:62</tspan>
+    <tspan x="1670" dy="20">mode, answer, steps, models_used</tspan>
+    <tspan x="1670" dy="20">total_cost() :41</tspan>
+  </text>
+  <text x="2060" y="217.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="2060" dy="0">load_settings()</tspan>
+  </text>
+  <text x="2060" y="477.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="2060" dy="0">AgenticInput</tspan>
+  </text>
+  <text x="1835" y="737.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1835" dy="0">routing_text()</tspan>
+  </text>
+  <text x="1610" y="949.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1610" dy="0">RoutingResult</tspan>
+  </text>
+  <text x="1985" y="1373.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1985" dy="0">SINGLE (q* high)</tspan>
+  </text>
+  <text x="1795" y="1373.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1795" dy="0">DECOMPOSE — recursive (default)</tspan>
+  </text>
+  <text x="1450" y="1491.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1450" dy="0">DECOMPOSE — tool_agent</tspan>
+  </text>
+  <text x="1095" y="1373.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1095" dy="0">DECOMPOSE — plan</tspan>
+  </text>
+  <text x="2210" y="1055.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="2210" dy="0">history_before_latest()</tspan>
+  </text>
+  <text x="1825" y="1627.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1825" dy="0">decompose()</tspan>
+  </text>
+  <text x="2015" y="1627.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="2015" dy="0">synthesize()</tspan>
+  </text>
+  <text x="1825" y="1739.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1825" dy="0">_solve() per sub-task</tspan>
+  </text>
+  <text x="1795" y="1385.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1795" dy="0">_solve() re-triage (max_depth)</tspan>
+  </text>
+  <text x="1480" y="1869.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1480" dy="0">tool call results</tspan>
+  </text>
+  <text x="757.5" y="1621.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="757.5" dy="0">reserve()</tspan>
+  </text>
+  <text x="390" y="1615.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="390" dy="0">execute in parallel</tspan>
+  </text>
+  <text x="1670" y="2057.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1670" dy="0">steps: list[SubCall]</tspan>
+  </text>
+</svg>

@@ -33,7 +33,7 @@ class RecursiveOrchestrator:
     name = "recursive"
 
     def run(self, prompt: str, agent: "AgenticRouter", depth: int) -> tuple[str, list[SubCall]]:
-        subs = agent.decomposer(prompt)
+        subs = agent.decompose(prompt, depth)
         if len(subs) <= 1:
             # reuses the route triage already computed for this prompt
             sc = agent._answer_directly(prompt, depth)
@@ -65,7 +65,7 @@ def build_router_tools(agent: "AgenticRouter", depth: int, steps: list[SubCall])
             rr = agent.route_decision(query)
         except (LookupError, TypeError) as exc:
             raise ToolException(str(exc)) from exc
-        ranked = sorted(zip(rr.model_ids, rr.scores[0]), key=lambda kv: -kv[1])
+        ranked = sorted(rr.row_scores().items(), key=lambda kv: -kv[1])
         top = ", ".join(f"{m}={q:.2f}" for m, q in ranked[:3])
         return (f"best={rr.selected_model_ids[0]} "
                 f"predicted_quality={float(rr.selected_scores[0]):.2f} | top: {top}")
@@ -125,16 +125,13 @@ class LangChainToolOrchestrator:
 
     def __init__(self, llm, *, system_prompt: str | None = None, max_iterations: int = 8,
                  verbose: bool = False):
+        """``system_prompt`` defaults to ``tool_agent_system`` in ``configs/agentic.yaml``."""
+        from .schemas import default_prompts
+
         self._llm = llm
         self._max_iterations = max_iterations
         self._verbose = verbose
-        self._system = system_prompt or (
-            "You are an orchestrator for an LLM router. Break the user's request "
-            "into sub-tasks and solve each with the tools. Prefer `route_and_answer` "
-            "so the router picks the model for each sub-task; use `route_query` first "
-            "if you want to inspect the choice. Combine the results into one final "
-            "answer. Do not answer from your own knowledge."
-        )
+        self._system = system_prompt or default_prompts()["tool_agent_system"]
 
     def run(self, prompt: str, agent: "AgenticRouter", depth: int) -> tuple[str, list[SubCall]]:
         from langchain_core.callbacks import BaseCallbackHandler

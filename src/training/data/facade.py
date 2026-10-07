@@ -47,11 +47,19 @@ ScoreKind = Literal["effective", "raw", "corrected"]
 
 @dataclass
 class TrainingData:
+    """The training tables plus ``cfg``-driven accessors.
+
+    A *serving* instance (``load_training_data(cfg, serving=True)``, what a
+    live router lazily loads) carries ``None`` for ``responses`` / ``queries``
+    / ``models`` / ``splits`` / ``profiles``: routing only needs ``cfg``, the
+    embedding / feature stores and ``nirt_observations.parquet``. Any table
+    accessor then fails loudly on ``None`` rather than silently serving."""
+
     cfg: Config
-    responses: pd.DataFrame
-    queries: pd.DataFrame
-    models: pd.DataFrame
-    splits: dict
+    responses: Optional[pd.DataFrame]
+    queries: Optional[pd.DataFrame]
+    models: Optional[pd.DataFrame]
+    splits: Optional[dict]
     profiles: Optional[pd.DataFrame] = None
 
     # ------------------------------------------------------------------ #
@@ -318,6 +326,12 @@ class TrainingData:
         path = self.cfg.path("processed") / "nirt_observations.parquet"
         if path.exists() and not build_kw:
             return read_nirt_observations(self.cfg)
+        if self.responses is None:
+            raise FileNotFoundError(
+                f"{path} not found, and this is a serving-mode TrainingData "
+                "(load_training_data(cfg, serving=True)) with no responses to build "
+                "it from; run scripts/data/build_nirt_dataset.py"
+            )
         if not build_kw:
             # default build: cache it so repeated calls don't rebuild from responses
             if "_nirt_obs_default" not in self.__dict__:
@@ -381,7 +395,12 @@ def _pathways(cfg: Config) -> list[str]:
     return available_pathways(cfg)
 
 
-def load_training_data(cfg: Config) -> TrainingData:
+def load_training_data(cfg: Config, *, serving: bool = False) -> TrainingData:
+    """All training tables for ``cfg``. ``serving=True`` skips them (``None``)
+    and returns a ``cfg``-only view -- see :class:`TrainingData`. That is the
+    live router's load: the full read is ~650 MB of parquet it never uses."""
+    if serving:
+        return TrainingData(cfg, None, None, None, None)
     responses = read_responses(cfg)
     processed = cfg.path("processed")
     queries = pd.read_parquet(processed / "queries.parquet")

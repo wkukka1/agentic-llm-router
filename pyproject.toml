@@ -13,6 +13,7 @@ dependencies = [
     "pandas",
     "pyarrow",
     "pyyaml",
+    "pydantic>=2",                 # router.agentic.schemas: prompt / agent settings
     "python-dotenv",
     "tqdm",
     "datasets",
@@ -35,9 +36,15 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest", "langchain-core>=0.3", "import-linter"]
 labeling = ["openai", "anthropic"]
+# router.llm.adapters.anthropic: serve routed calls through Claude (AnthropicAdapter,
+# ClientRegistry.anthropic + configs/serve_anthropic.yaml).
+anthropic = ["anthropic>=1.0", "pyyaml"]
 # router.agentic: LLM-driven orchestrator. Core install (echo backends,
 # RecursiveOrchestrator, HeuristicTriage) needs none of this.
 agentic = ["langchain>=0.3", "langchain-core>=0.3"]
+# router.llm.adapters.ollama: serve routed calls through a local `ollama serve`
+# (OllamaAdapter, ClientRegistry.ollama). No API key, no LangChain.
+ollama = ["ollama>=0.4"]
 
 [project.scripts]
 router-phase0 = "training.phase0:main"

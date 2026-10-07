@@ -1,0 +1,180 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-40 -40 1492 1280" width="1492" height="1280">
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#1e1e1e" />
+    </marker>
+  </defs>
+  <rect x="-40" y="-40" width="1492" height="1280" fill="#ffffff" />
+  <rect x="710" y="260" width="660" height="940" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="0" y="260" width="680" height="790" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="0" y="0" width="1370" height="210" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="20" y="40" width="250" height="150" rx="8" ry="8" fill="#dee2e6" stroke="#495057" stroke-width="2" opacity="1" />
+  <rect x="290" y="40" width="250" height="150" rx="8" ry="8" fill="#a5d8ff" stroke="#1971c2" stroke-width="2" opacity="1" />
+  <rect x="560" y="40" width="250" height="150" rx="8" ry="8" fill="#ffd8a8" stroke="#e8590c" stroke-width="2" opacity="1" />
+  <rect x="830" y="40" width="250" height="150" rx="8" ry="8" fill="#ffd8a8" stroke="#e8590c" stroke-width="2" opacity="1" />
+  <rect x="1100" y="40" width="250" height="150" rx="8" ry="8" fill="#ffec99" stroke="#f08c00" stroke-width="2" opacity="1" />
+  <rect x="20" y="330" width="310" height="148" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="20" y="560" width="310" height="88" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="20" y="720" width="310" height="128" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="350" y="330" width="310" height="148" rx="8" ry="8" fill="#d0bfff" stroke="#7048e8" stroke-width="2" opacity="1" />
+  <rect x="20" y="940" width="640" height="88" rx="8" ry="8" fill="#ffd8a8" stroke="#e8590c" stroke-width="2" opacity="1" />
+  <rect x="730" y="330" width="620" height="128" rx="8" ry="8" fill="#a5d8ff" stroke="#1971c2" stroke-width="2" opacity="1" />
+  <rect x="730" y="518" width="620" height="88" rx="8" ry="8" fill="#a5d8ff" stroke="#1971c2" stroke-width="2" opacity="1" />
+  <rect x="730" y="666" width="620" height="128" rx="8" ry="8" fill="#ffec99" stroke="#f08c00" stroke-width="2" opacity="1" />
+  <rect x="730" y="854" width="620" height="168" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="730" y="1082" width="620" height="88" rx="8" ry="8" fill="#ffd8a8" stroke="#e8590c" stroke-width="2" opacity="1" />
+  <polyline points="270,115 288,115" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="540,115 558,115" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="810,115 828,115" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1080,115 1098,115" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1150,190 1150,240 175,240 175,328" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1170,190 1170,250 505,250 505,328" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="175,478 175,558" fill="none" stroke="#2f9e44" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="175,648 175,718" fill="none" stroke="#2f9e44" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="175,848 175,938" fill="none" stroke="#2f9e44" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="505,478 505,938" fill="none" stroke="#7048e8" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1250,190 1250,328" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1040,458 1040,516" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1040,606 1040,664" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1040,794 1040,852" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1040,1022 1040,1080" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="660,984 695,984 695,562 728,562" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <text x="722" y="283" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="15" fill="#343a40" text-anchor="start">
+    <tspan x="722" dy="0">Testing (test queries only)</tspan>
+  </text>
+  <text x="12" y="283" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="15" fill="#343a40" text-anchor="start">
+    <tspan x="12" dy="0">Training (train + val queries)</tspan>
+  </text>
+  <text x="12" y="23" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="15" fill="#343a40" text-anchor="start">
+    <tspan x="12" dy="0">Data prep</tspan>
+  </text>
+  <text x="145" y="91" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#495057" text-anchor="middle">
+    <tspan x="145" dy="0">Raw sources</tspan>
+    <tspan x="145" dy="20">RouterBench pickles</tspan>
+    <tspan x="145" dy="20">IRT-Router csv</tspan>
+    <tspan x="145" dy="20">scripts/data/download_*.py</tspan>
+  </text>
+  <text x="415" y="81" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#1971c2" text-anchor="middle">
+    <tspan x="415" dy="0">Normalize + price</tspan>
+    <tspan x="415" dy="20">loaders.load_routerbench /</tspan>
+    <tspan x="415" dy="20">load_irt_router</tspan>
+    <tspan x="415" dy="20">pricing.impute_missing_usage</tspan>
+    <tspan x="415" dy="20">cost = p_in·L_in + p_out·L_out</tspan>
+  </text>
+  <text x="685" y="101" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e8590c" text-anchor="middle">
+    <tspan x="685" dy="0">responses.parquet</tspan>
+    <tspan x="685" dy="20">1.90M rows, all sources</tspan>
+    <tspan x="685" dy="20">build_response_matrix.py</tspan>
+  </text>
+  <text x="955" y="91" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e8590c" text-anchor="middle">
+    <tspan x="955" dy="0">nirt_observations.parquet</tspan>
+    <tspan x="955" dy="20">1,449,159 (q, m) cells</tspan>
+    <tspan x="955" dy="20">29 LLMs · y ∈ [0,1] · USD cost</tspan>
+    <tspan x="955" dy="20">nirt.build_nirt_observations</tspan>
+  </text>
+  <text x="1225" y="91" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#f08c00" text-anchor="middle">
+    <tspan x="1225" dy="0">Split by query hash</tspan>
+    <tspan x="1225" dy="20">train 80% · val 10%</tspan>
+    <tspan x="1225" dy="20">test 10%</tspan>
+    <tspan x="1225" dy="20">splits.make_splits</tspan>
+  </text>
+  <text x="175" y="360" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="175" dy="0">Fit ZOIB</tspan>
+    <tspan x="175" dy="20">L = mean −log p_ZOIB(y | q, m)</tspan>
+    <tspan x="175" dy="20">   + λ_θ‖θ‖² + λ_c‖mean θ‖²</tspan>
+    <tspan x="175" dy="20">   + λ_b‖b‖²</tspan>
+    <tspan x="175" dy="20">Adam 1e-3 · batch 4096</tspan>
+    <tspan x="175" dy="20">baseline/train.py · fit</tspan>
+  </text>
+  <text x="175" y="590" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="175" dy="0">Early stop on val ZOIB NLL</tspan>
+    <tspan x="175" dy="20">patience 8 → best epoch 15</tspan>
+    <tspan x="175" dy="20">baseline/train.py · _mean_nll</tspan>
+  </text>
+  <text x="175" y="750" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="175" dy="0">Refit length cost probe</tspan>
+    <tspan x="175" dy="20">on frozen quality weights</tspan>
+    <tspan x="175" dy="20">CE over 14 token buckets</tspan>
+    <tspan x="175" dy="20">prices: NNLS on train cells</tspan>
+    <tspan x="175" dy="20">train.py · _fit_cost_probe</tspan>
+  </text>
+  <text x="505" y="360" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#7048e8" text-anchor="middle">
+    <tspan x="505" dy="0">Fit IRT-Router (K = 25)</tspan>
+    <tspan x="505" dy="20">soft-BCE</tspan>
+    <tspan x="505" dy="20">−[y log p + (1−y) log(1−p)]</tspan>
+    <tspan x="505" dy="20">lr 2e-3 · batch 512</tspan>
+    <tspan x="505" dy="20">stop on val BCE</tspan>
+    <tspan x="505" dy="20">scripts/nirt/train_nirt.py</tspan>
+  </text>
+  <text x="340" y="970" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e8590c" text-anchor="middle">
+    <tspan x="340" dy="0">Frozen checkpoints</tspan>
+    <tspan x="340" dy="20">artifacts/phase2/zoib_cost_length_v2</tspan>
+    <tspan x="340" dy="20">data/processed/nirt_runs/irt-25d-projected-29m</tspan>
+  </text>
+  <text x="185" y="230" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="start">
+    <tspan x="185" dy="0">train 1.16M cells · val 144k (early stop only)</tspan>
+  </text>
+  <text x="513" y="290" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="start">
+    <tspan x="513" dy="0">train / val</tspan>
+  </text>
+  <text x="183" y="514" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#2f9e44" text-anchor="start">
+    <tspan x="183" dy="0">each epoch</tspan>
+  </text>
+  <text x="183" y="684" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#2f9e44" text-anchor="start">
+    <tspan x="183" dy="0">best state</tspan>
+  </text>
+  <text x="513" y="714" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#7048e8" text-anchor="start">
+    <tspan x="513" dy="0">best val epoch</tspan>
+  </text>
+  <text x="1040" y="360" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#1971c2" text-anchor="middle">
+    <tspan x="1040" dy="0">Dense test matrices Y[q, m], C[q, m]</tspan>
+    <tspan x="1040" dy="20">RouterBench 7,354 × 11</tspan>
+    <tspan x="1040" dy="20">IRT-Router 3,790 × 17</tspan>
+    <tspan x="1040" dy="20">routing.eval_matrices, align</tspan>
+    <tspan x="1040" dy="20">(evaluation/nirt/routing.py)</tspan>
+  </text>
+  <text x="1040" y="548" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#1971c2" text-anchor="middle">
+    <tspan x="1040" dy="0">Predict every test cell</tspan>
+    <tspan x="1040" dy="20">ZOIB: Ŷ, Ĉ   (routing_benchmark.baseline_cell_predictions)</tspan>
+    <tspan x="1040" dy="20">IRT-Router: p   (predict.predict_matrix)</tspan>
+  </text>
+  <text x="1040" y="696" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#f08c00" text-anchor="middle">
+    <tspan x="1040" dy="0">Policies for each λ ∈ {0, 10, 20, 50, 100, 200, 1000}</tspan>
+    <tspan x="1040" dy="20">router:   argmax_m (Ŷ − λ·Ĉ)</tspan>
+    <tspan x="1040" dy="20">GPT-4:   fixed column (gpt-4-1106 / gpt_4o)</tspan>
+    <tspan x="1040" dy="20">oracle@λ:   argmax_m (Y − λ·C)</tspan>
+    <tspan x="1040" dy="20">match-GPT-4 oracle:  min C  s.t.  Y ≥ Y_gpt4</tspan>
+  </text>
+  <text x="1040" y="884" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="1040" dy="0">Score on realized outcomes</tspan>
+    <tspan x="1040" dy="20">quality = mean_q Y[q, m̂]</tspan>
+    <tspan x="1040" dy="20">cost per 1k = 1000 · mean_q C[q, m̂]</tspan>
+    <tspan x="1040" dy="20">Δ vs GPT-4 · share sent to GPT-4</tspan>
+    <tspan x="1040" dy="20">combined = concat RouterBench + IRT-Router</tspan>
+    <tspan x="1040" dy="20">routing_benchmark.source_picks, summarize</tspan>
+    <tspan x="1040" dy="20">scripts/nirt/baseline/routing_benchmark.py</tspan>
+  </text>
+  <text x="1040" y="1112" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e8590c" text-anchor="middle">
+    <tspan x="1040" dy="0">Results JSON</tspan>
+    <tspan x="1040" dy="20">&lt;ckpt&gt;/routing_benchmark_test.json</tspan>
+    <tspan x="1040" dy="20">artifacts/phase2/zoib_vs_irt_router_test.json</tspan>
+  </text>
+  <text x="1258" y="290" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="start">
+    <tspan x="1258" dy="0">test 145k cells only</tspan>
+  </text>
+  <text x="1048" y="492" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="start">
+    <tspan x="1048" dy="0">query × model grid</tspan>
+  </text>
+  <text x="1048" y="828" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="start">
+    <tspan x="1048" dy="0">m̂ per query</tspan>
+  </text>
+  <text x="688" y="777" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="end">
+    <tspan x="688" dy="0">frozen weights</tspan>
+  </text>
+  <text x="20" y="1094" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#495057" text-anchor="start">
+    <tspan x="20" dy="0">Leakage guards: splits are by query, so no test prompt is</tspan>
+    <tspan x="20" dy="17.5">seen in training. The kNN warm-up bank, token prices and</tspan>
+    <tspan x="20" dy="17.5">per-model costs C(m) come from train cells only; val only</tspan>
+    <tspan x="20" dy="17.5">picks the epoch.</tspan>
+  </text>
+</svg>

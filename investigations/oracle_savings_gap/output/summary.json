@@ -1,0 +1,77 @@
+{
+  "config": null,
+  "split": "test",
+  "source": "routerbench",
+  "pool": [
+    "claude-instant-v1",
+    "claude-v1",
+    "claude-v2",
+    "code-llama-34b-instruct",
+    "gpt-3.5-turbo-1106",
+    "gpt-4-1106-preview",
+    "llama-2-70b-chat",
+    "mistral-7b-instruct",
+    "mixtral-8x7b-instruct",
+    "wizardlm-13b-v1.2",
+    "yi-34b-chat"
+  ],
+  "nirt_run": "nirt-2d-projected",
+  "zoib": "artifacts/phase2/zoib_retrained",
+  "lam": 0.0,
+  "tol": 0.02,
+  "min_savings": 0.25,
+  "include_multishot": false,
+  "n_queries": 3677,
+  "n_flagged": 3583,
+  "oracle": {
+    "mean_quality": 0.9130269241229263,
+    "mean_cost_per_1k": 0.25627488496056566,
+    "model_mix": {
+      "mistral-7b-instruct": 1109,
+      "wizardlm-13b-v1.2": 863,
+      "mixtral-8x7b-instruct": 638,
+      "yi-34b-chat": 520,
+      "claude-instant-v1": 166,
+      "gpt-3.5-turbo-1106": 112,
+      "gpt-4-1106-preview": 77,
+      "llama-2-70b-chat": 71,
+      "code-llama-34b-instruct": 44,
+      "claude-v2": 39,
+      "claude-v1": 38
+    }
+  },
+  "routers": {
+    "nirt": {
+      "mean_quality": 0.7707370138700027,
+      "mean_cost_per_1k": 3.185765134620614,
+      "failures": {
+        "overspend": 2860,
+        "quality_loss": 707,
+        "ok": 110
+      },
+      "model_mix": {
+        "gpt-4-1106-preview": 3529,
+        "claude-instant-v1": 105,
+        "yi-34b-chat": 28,
+        "claude-v1": 15
+      },
+      "total_savings_gap": 10.817249248
+    },
+    "zoib": {
+      "mean_quality": 0.7737285830840359,
+      "mean_cost_per_1k": 3.04545137340223,
+      "failures": {
+        "overspend": 2907,
+        "quality_loss": 663,
+        "ok": 107
+      },
+      "model_mix": {
+        "gpt-4-1106-preview": 3042,
+        "claude-v2": 618,
+        "mixtral-8x7b-instruct": 16,
+        "llama-2-70b-chat": 1
+      },
+      "total_savings_gap": 10.298499172
+    }
+  }
+}

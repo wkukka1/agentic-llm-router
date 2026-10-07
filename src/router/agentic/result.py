@@ -23,6 +23,9 @@ class SubCall:
     cost: Optional[float] = None
     children: list["SubCall"] = field(default_factory=list)
     error: Optional[str] = None
+    #: the call's ``LLMResponse.meta`` plus ``latency`` / ``input_tokens`` /
+    #: ``output_tokens`` (leaves only) -- stop reason, cache reads, ttft ...
+    meta: dict = field(default_factory=dict)
 
     def walk(self):
         yield self
@@ -40,11 +43,12 @@ def total_cost(nodes: Iterable[SubCall]) -> Optional[float]:
     already includes its descendants, so summing branches double-counts).
 
     A failed node (``error`` set) contributes ``0`` -- it didn't complete, so
-    nothing was billed. A *successful* node with ``cost is None`` (a real
-    call whose client couldn't price it, e.g. no profile configured) makes
-    the total ``None`` -- unresolved, not free (AGENTICROUTER-002: `None`
-    must not collapse to `0.0`, or an unpriced run silently reports as
-    free)."""
+    nothing was billed. A real call the client couldn't price already carries
+    its pre-call *estimate* as ``cost`` (``meta["cost_source"] ==
+    "estimate"``, see ``AgenticRouter._leaf``); a *successful* node with
+    ``cost is None`` -- no actual cost and no estimate either -- makes the
+    total ``None``: unresolved, not free (AGENTICROUTER-002: ``None`` must
+    not collapse to ``0.0``, or an unpriced run silently reports as free)."""
     total = 0.0
     for n in nodes:
         if n.cost is not None:
@@ -65,6 +69,20 @@ class AgenticResult:
     steps: list[SubCall] = field(default_factory=list)
     orchestrator: Optional[str] = None
     cost: Optional[float] = None
+    #: set when the request was a conversation (``run(messages, conversation_id=...)``)
+    conversation_id: Optional[str] = None
+    #: number of user turns in the request (1 for a bare prompt)
+    turn_index: Optional[int] = None
+    #: seconds per stage: ``route``, ``triage``, ``dispatch``, ``total``
+    timings: dict = field(default_factory=dict)
+    #: the conversation messages before ``prompt`` (empty for a bare prompt)
+    history: list = field(default_factory=list)
+    #: one dict per plan the plan orchestrator ran: estimates vs. what was spent
+    plans: list = field(default_factory=list)
+    #: one dict per ``kind: routed`` helper call (decompose / synthesize): role,
+    #: chosen pool model, its predicted quality vs. the threshold, cost, output.
+    #: Not included in ``cost``, which sums the answering leaves only.
+    helper_calls: list = field(default_factory=list)
 
     def models_used(self) -> list[str]:
         """Models actually invoked. In orchestrated mode ``selected_model_id``

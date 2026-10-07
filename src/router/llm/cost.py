@@ -14,7 +14,7 @@ named methods here -- :meth:`predict_cost` and :meth:`predict_cost_for_context`
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Mapping
+from typing import TYPE_CHECKING, Mapping, Optional
 
 if TYPE_CHECKING:  # pragma: no cover - type hints only, not a runtime import
     from ..context import RoutingContext
@@ -48,6 +48,59 @@ class CostModel:
     def predict_cost_for_context(self, model: "LLMProfile", context: "RoutingContext") -> float:
         """Estimates ``input_tokens`` from the raw prompt length (no tokenizer
         call), then delegates to :meth:`predict_output_tokens`/:meth:`predict_cost`."""
-        input_tokens = max(1, len(context.request.prompt) // _CHARS_PER_TOKEN)
+        input_tokens = estimate_tokens(len(context.request.prompt))
         output_tokens = self.predict_output_tokens(model, input_tokens)
         return self.predict_cost(model, input_tokens, output_tokens)
+
+
+def estimate_tokens(chars: int) -> int:
+    """Rough token count for ``chars`` characters of text (no tokenizer call;
+    ``_CHARS_PER_TOKEN`` characters per token, at least 1)."""
+    return max(1, int(chars) // _CHARS_PER_TOKEN)
+
+
+def price_tokens(input_tokens: Optional[int], output_tokens: Optional[int],
+                 input_price: Optional[float], output_price: Optional[float]) -> Optional[float]:
+    """``in * input_price + out * output_price`` (USD), or ``None`` when it
+    can't be known: no token counts at all, or a side that was actually used
+    (nonzero tokens) has no price -- an unpriced side is unknown, never free."""
+    if input_tokens is None and output_tokens is None:
+        return None
+    if (input_tokens and input_price is None) or (output_tokens and output_price is None):
+        return None
+    return float((input_tokens or 0) * (input_price or 0.0)
+                 + (output_tokens or 0) * (output_price or 0.0))
+
+
+def estimate_call_cost(
+    model: Optional["LLMProfile"],
+    input_chars: Optional[int] = None,
+    *,
+    input_tokens: Optional[int] = None,
+    output_tokens: Optional[int] = None,
+    cost_model: Optional[CostModel] = None,
+    fallback: Optional[float] = None,
+) -> tuple[Optional[float], str]:
+    """Expected USD cost of one call *before* it runs, and where the number
+    came from -- the "expected" side of an expected-vs-actual comparison, and
+    the one estimate both a single call and a plan step are priced with.
+
+    * ``"profile"``: ``model`` has both per-token prices -> priced at
+      ``input_tokens`` (else estimated from ``input_chars``) and
+      ``output_tokens`` (else ``cost_model``'s per-model prior,
+      ``_DEFAULT_OUTPUT_TOKENS`` when it has none).
+    * ``"router_prior"``: no prices, but ``fallback`` is given -- typically the
+      router's per-query cost for that pool model from its training data
+      (``RouterModel.cost_by_model()``), a different (and coarser) basis.
+    * ``"unknown"``: neither -> ``None``.
+    """
+    in_price = getattr(model, "input_cost_per_token", None)
+    out_price = getattr(model, "output_cost_per_token", None)
+    if model is not None and in_price is not None and out_price is not None:
+        cm = cost_model or CostModel()
+        in_tok = input_tokens if input_tokens is not None else estimate_tokens(input_chars or 0)
+        out_tok = output_tokens if output_tokens is not None else cm.predict_output_tokens(model, in_tok)
+        return price_tokens(in_tok, out_tok, in_price, out_price), "profile"
+    if fallback is not None:
+        return float(fallback), "router_prior"
+    return None, "unknown"

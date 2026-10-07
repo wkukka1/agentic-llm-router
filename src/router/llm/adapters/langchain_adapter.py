@@ -16,6 +16,7 @@ import re
 from typing import Iterator, Mapping, Optional
 
 from ..client import LLMResponse
+from ..cost import price_tokens
 from .base import Prompt, ProviderAdapter
 
 #: LangChain `model_provider` names, for `init_chat_model`. A different,
@@ -67,6 +68,16 @@ def message_text(msg: object) -> str:
     return str(content)
 
 
+def chat_model(model: str, *, provider: Optional[str] = None, **kwargs):
+    """A LangChain chat model for ``model`` (``init_chat_model``; provider
+    guessed from the id unless given) -- what the LLM helpers
+    (``LLMTriage``/``LLMDecomposer``/``LLMSynthesizer``) and the tool-agent
+    orchestrator take. Needs the ``agentic`` extra."""
+    from langchain.chat_models import init_chat_model  # optional dep
+
+    return init_chat_model(model, model_provider=provider or guess_provider(model), **kwargs)
+
+
 class LangChainAdapter(ProviderAdapter):
     """``model`` is the provider's API model name (or a pool id ``guess_provider``
     can read a provider hint off of). ``input_cost_per_token``/
@@ -95,12 +106,10 @@ class LangChainAdapter(ProviderAdapter):
 
     def _model(self):
         if self._chat is None:
-            from langchain.chat_models import init_chat_model  # optional dep
-
             name, provider, kw = self._spec
             if self.api_key is not None:
                 kw = {**kw, "api_key": self.api_key}
-            self._chat = init_chat_model(name, model_provider=provider, **kw)
+            self._chat = chat_model(name, provider=provider, **kw)
         return self._chat
 
     def complete(self, prompt: Prompt, **generation_kwargs) -> LLMResponse:
@@ -128,9 +137,4 @@ class LangChainAdapter(ProviderAdapter):
         """``None`` (unknown) when there are no token counts at all, or when a
         side with a nonzero token count has no configured price -- an unpriced
         side must not be silently treated as free (LANGCHAINADAPTER-002)."""
-        in_price, out_price = self._prices
-        if in_tok is None and out_tok is None:
-            return None
-        if (in_tok and in_price is None) or (out_tok and out_price is None):
-            return None
-        return float((in_tok or 0) * (in_price or 0.0) + (out_tok or 0) * (out_price or 0.0))
+        return price_tokens(in_tok, out_tok, *self._prices)

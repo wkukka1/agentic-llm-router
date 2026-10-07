@@ -1,0 +1,103 @@
+# AgenticRouter: prompt templates + agent settings, validated at load time by
+# the Pydantic models in src/router/agentic/schemas.py (AgenticRouterSettings).
+#
+#   from router.agentic import AgenticRouter
+#   agent = AgenticRouter.from_settings("configs/agentic.yaml")
+#
+# The `prompts` section is the single copy of every LLM prompt the agentic
+# layer sends: `name: template`, a Python str.format template. The {placeholders}
+# each prompt is rendered with:
+#   triage            {model_id} {q} {scores} {prompt}
+#   decompose         {prompt}
+#   synthesize        {original} {body}
+#   tool_agent_system (none -- write literal braces as {{ }})
+
+prompts:
+  triage: |-
+    You triage user requests for an LLM router.
+    Routed model: {model_id}; best predicted quality in the pool: {q} (0-1 scale).
+    Per-model predicted quality: {scores}
+
+    Request:
+    """
+    {prompt}
+    """
+
+    Answer with exactly one word: SINGLE if one model call can handle it well, or DECOMPOSE if it should be split into sub-tasks.
+
+  decompose: |-
+    Break the request below into a minimal ordered list of sub-tasks. Each sub-task is sent on its own to a separate model that will NOT see the original request or any other sub-task, so each one must contain exactly the context needed to complete it -- nothing missing, nothing extra:
+    - Replace pronouns and references ("it", "this", "the above", "that code") with what they refer to.
+    - Carry over every detail from the request that this sub-task needs: its subject, inputs, data, constraints, language, format or audience.
+    - Leave out everything this sub-task does not need: the other sub-tasks, their requirements, and background that would not change its answer.
+    - Do not answer anything, and do not add requirements the request did not ask for.
+
+    Write each sub-task as one complete instruction on a single line, and list each sub-task exactly once. Output only the sub-task lines: no numbering, bullets, headings, notes or explanations. If the request is already a single task, return it unchanged on one line.
+
+    The example below shows only the format; never reuse its wording or constraints.
+    Example request: "Translate 'The meeting moved to Friday.' into French and then into German."
+    Example sub-tasks:
+    Translate 'The meeting moved to Friday.' into French.
+    Translate 'The meeting moved to Friday.' into German.
+
+    Request:
+    {prompt}
+
+  synthesize: |-
+    Original request:
+    {original}
+
+    Sub-answers:
+    {body}
+
+    Write a single, coherent final answer to the original request using the sub-answers above. Do not mention that the work was split up.
+
+  tool_agent_system: |-
+    You are an orchestrator for an LLM router. Break the user's request into sub-tasks and solve each with the tools. Prefer `route_and_answer` so the router picks the model for each sub-task; use `route_query` first if you want to inspect the choice. Combine the results into one final answer. Do not answer from your own knowledge.
+
+router:
+  run: nirt-2d-projected          # data/processed/nirt_runs/<run>
+  clients: echo                   # echo (no network) | anthropic (serve_map) | langchain
+  serve_map: configs/serve_anthropic.yaml
+  lam: 0.0                        # cost weight in routing (0 = quality only)
+  max_depth: 2
+  max_calls: null                 # cap on all LLM calls per request (null = none)
+  warmup: true                    # load encoder / stores / costs at construction
+  result_sink: null               # SQLite path to record runs, e.g. data/runs/agentic_runs.sqlite
+
+  triage:
+    kind: heuristic               # heuristic | llm
+    quality_threshold: 0.55
+    max_chars_single: 600
+    margin: null                  # llm only: ask the LLM only within this band of the threshold (null = always ask)
+    prompt: triage
+    model: null                   # llm only: chat model id, e.g. claude-haiku-4-5
+
+  decomposer:
+    kind: naive                   # naive | llm (fixed model) | routed (pool model, see min_quality)
+    max_parts: 6
+    min_part_chars: 8
+    max_prompt_chars: 4000
+    prompt: decompose
+    model: null                   # llm only
+    min_quality: 0.75             # routed only: cheapest pool model predicted >= this; else the top-scored
+
+  synthesizer:
+    kind: concat                  # concat | llm (fixed model) | routed (pool model, see min_quality)
+    max_body_chars: 8000
+    prompt: synthesize
+    model: null                   # llm only
+    min_quality: 0.75             # routed only, as above
+
+  orchestrator: recursive         # recursive | plan | tool_agent
+
+  plan:                           # used when orchestrator: plan
+    budget: null                  # USD per request (null = unlimited)
+    max_workers: 4
+    sequential: false
+    max_replans: 1
+
+  tool_agent:                     # used when orchestrator: tool_agent
+    model: null                   # chat model id driving the agent (required)
+    max_iterations: 8
+    prompt: tool_agent_system

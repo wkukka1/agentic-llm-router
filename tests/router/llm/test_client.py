@@ -51,3 +51,41 @@ def test_llm_response_carries_raw_and_meta():
     assert resp.meta == {"provider": "echo"}
     assert LLMResponse(content="ok").raw is None
     assert LLMResponse(content="ok").meta is None
+
+
+def _drain(gen):
+    chunks = []
+    try:
+        while True:
+            chunks.append(next(gen))
+    except StopIteration as stop:
+        return chunks, stop.value
+
+
+def test_stream_returns_a_timed_priced_response_and_calls_on_done():
+    """Adapters whose ``stream`` returns nothing (echo, LangChain) still get a
+    final response built from the chunks, with time-to-first-token."""
+    done = []
+    client = LLMClient(EchoAdapter("m"))
+    chunks, resp = _drain(client.stream("hi", on_done=done.append))
+    assert chunks and resp.content == "".join(chunks)
+    assert resp.latency is not None and resp.meta["ttft"] <= resp.latency
+    assert done == [resp]
+
+
+def test_stream_prices_the_adapters_final_usage_from_the_profile():
+    from router.llm.adapters.base import ProviderAdapter
+
+    class _Adapter(ProviderAdapter):
+        def complete(self, prompt, **kw):  # pragma: no cover - unused
+            raise NotImplementedError
+
+        def stream(self, prompt, **kw):
+            yield "a"
+            yield "b"
+            return LLMResponse(content="ab", input_tokens=10, output_tokens=2)
+
+    profile = LLMProfile(name="m", provider="x", model_id="m",
+                         input_cost_per_token=1.0, output_cost_per_token=10.0)
+    chunks, resp = _drain(LLMClient(_Adapter("m"), profile).stream("hi"))
+    assert chunks == ["a", "b"] and resp.cost == 30.0 and "ttft" in resp.meta

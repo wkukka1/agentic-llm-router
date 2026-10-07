@@ -119,3 +119,35 @@ def test_load_training_data_real():
     assert d.correctness(split="train").pipe(
         lambda x: x["metric_type"].isin(schemas.MetricType.CORRECTNESS).all()
     )
+
+
+def test_serving_load_reads_no_tables(monkeypatch):
+    """``serving=True`` (the live router's lazy load) needs only ``cfg`` +
+    the embedding stores + ``nirt_observations.parquet`` -- it must not read
+    the ~600 MB responses / queries tables that dominated the first routed
+    request's latency."""
+    import training.data.facade as facade
+
+    def boom(*a, **k):
+        raise AssertionError("serving load read a training table")
+
+    monkeypatch.setattr(facade, "read_responses", boom)
+    monkeypatch.setattr(facade, "load_splits", boom)
+    monkeypatch.setattr(facade.pd, "read_parquet", boom)
+
+    d = load_training_data(load_config(), serving=True)
+    assert d.cfg is not None
+    assert d.responses is None and d.queries is None and d.splits is None
+
+
+def test_serving_data_without_observation_file_raises(tmp_path):
+    """A serving-mode ``TrainingData`` has no responses to rebuild the
+    observation table from -- say so instead of crashing on ``None``."""
+    from types import SimpleNamespace
+
+    from training.data.facade import TrainingData
+
+    cfg = SimpleNamespace(path=lambda key: tmp_path)       # no nirt_observations.parquet here
+    d = TrainingData(cfg, None, None, None, None)
+    with pytest.raises(FileNotFoundError, match="serving"):
+        d.nirt_observations()

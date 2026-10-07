@@ -7,8 +7,9 @@ Distinct from the working
 decompose and dispatch directly with no intermediate :class:`~router.execution.plan.Plan`
 to forecast, approve, or replan -- recursion there is a bare depth counter,
 not :meth:`spawn`/:meth:`can_spawn` checked against a shared
-:class:`~router.execution.budget.BudgetLedger`. Nothing constructs this
-``Orchestrator`` yet.
+:class:`~router.execution.budget.BudgetLedger`. The concrete subclass is
+:class:`~router.execution.routed.RoutedOrchestrator`, reachable from the live
+flow as ``AgenticRouter(orchestrator=plan_orchestrator())``.
 
 :meth:`can_spawn`'s ``max_depth`` convention (deepest node allowed to exist,
 not deepest child allowed to be spawned) is deliberately kept aligned with
@@ -103,8 +104,11 @@ class Orchestrator(abc.ABC):
             replans = 0
             while True:
                 plan.validate()
-                self.ledger.release(key)       # drop any spawn-time allocation hold
-                if not self.ledger.reserve(key, plan.budget_estimate()):
+                # swap any spawn-time allocation hold for the plan's estimate in
+                # one locked step -- release-then-reserve let a sibling take the
+                # allocation in between (ORCHESTRATOR-001)
+                if not self.ledger.resize(key, plan.budget_estimate()):
+                    self.ledger.release(key)
                     return self._finish(task, TaskStatus.TERMINATED,
                                         ExecutionResult(error_code="over_budget"))
                 task.status, plan.status = TaskStatus.RUNNING, PlanStatus.EXECUTING

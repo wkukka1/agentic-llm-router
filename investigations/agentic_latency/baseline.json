@@ -1,0 +1,803 @@
+{
+  "summary": {
+    "stages_s": {
+      "construct": 1.9339067998807877,
+      "first_route": 37.31606539990753
+    },
+    "conversations": 30,
+    "turns": 96,
+    "input": "joined-user-turns",
+    "route_only": {
+      "n": 96,
+      "p50_ms": 16.313300002366304,
+      "p95_ms": 28.407900128513575,
+      "mean_ms": 18.1104968796717
+    },
+    "total": {
+      "n": 96,
+      "p50_ms": 18.48310010973364,
+      "p95_ms": 136.30779995582998,
+      "mean_ms": 46.48482499518044
+    },
+    "route_only_p50_ms_by_turn": {
+      "1": 15.634050010703504,
+      "2": 15.402249991893768,
+      "3": 15.850699972361326,
+      "4": 18.39850004762411
+    },
+    "modes": {
+      "single": 63,
+      "orchestrated": 33
+    }
+  },
+  "rows": [
+    {
+      "conversation_id": "arena55k:1034076809",
+      "turn": 1,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.043189699994400144,
+      "total": 0.016866999911144376
+    },
+    {
+      "conversation_id": "arena55k:1034076809",
+      "turn": 2,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.017269999952986836,
+      "total": 0.01737480005249381
+    },
+    {
+      "conversation_id": "arena55k:1050090590",
+      "turn": 1,
+      "mode": "single",
+      "model": "deepseek_coder",
+      "route_only": 0.024473499972373247,
+      "total": 0.016937399981543422
+    },
+    {
+      "conversation_id": "arena55k:1050090590",
+      "turn": 2,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.017099100165069103,
+      "total": 0.01659460016526282
+    },
+    {
+      "conversation_id": "arena55k:1062299564",
+      "turn": 1,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.017017100006341934,
+      "total": 0.023423299891874194
+    },
+    {
+      "conversation_id": "arena55k:1062299564",
+      "turn": 2,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.020804099971428514,
+      "total": 0.018696100218221545
+    },
+    {
+      "conversation_id": "arena55k:1069327317",
+      "turn": 1,
+      "mode": "orchestrated",
+      "model": "deepseek_coder",
+      "route_only": 0.019719500094652176,
+      "total": 0.13630779995582998
+    },
+    {
+      "conversation_id": "arena55k:1069327317",
+      "turn": 2,
+      "mode": "orchestrated",
+      "model": "deepseek_coder",
+      "route_only": 0.028407900128513575,
+      "total": 0.11270519997924566
+    },
+    {
+      "conversation_id": "arena55k:1112350870",
+      "turn": 1,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.015316999983042479,
+      "total": 0.01626609987579286
+    },
+    {
+      "conversation_id": "arena55k:1112350870",
+      "turn": 2,
+      "mode": "single",
+      "model": "deepseek_coder",
+      "route_only": 0.014681399799883366,
+      "total": 0.01489019999280572
+    },
+    {
+      "conversation_id": "arena55k:1112350870",
+      "turn": 3,
+      "mode": "single",
+      "model": "qwen25_32b_int4",
+      "route_only": 0.01509899995289743,
+      "total": 0.020935500040650368
+    },
+    {
+      "conversation_id": "arena55k:1112350870",
+      "turn": 4,
+      "mode": "orchestrated",
+      "model": "qwen25_32b_int4",
+      "route_only": 0.015596299897879362,
+      "total": 0.0853762999176979
+    },
+    {
+      "conversation_id": "arena55k:1112350870",
+      "turn": 5,
+      "mode": "orchestrated",
+      "model": "qwen25_32b_int4",
+      "route_only": 0.017689599888399243,
+      "total": 0.08552270010113716
+    },
+    {
+      "conversation_id": "arena55k:1112350870",
+      "turn": 6,
+      "mode": "orchestrated",
+      "model": "qwen25_32b_int4",
+      "route_only": 0.024274999974295497,
+      "total": 0.08203009981662035
+    },
+    {
+      "conversation_id": "arena55k:1112350870",
+      "turn": 7,
+      "mode": "orchestrated",
+      "model": "qwen25_32b_int4",
+      "route_only": 0.017554299905896187,
+      "total": 0.09298419998958707
+    },
+    {
+      "conversation_id": "arena55k:1112625993",
+      "turn": 1,
+      "mode": "orchestrated",
+      "model": "deepseek_coder",
+      "route_only": 0.023077999940142035,
+      "total": 0.07346009998582304
+    },
+    {
+      "conversation_id": "arena55k:1112625993",
+      "turn": 2,
+      "mode": "orchestrated",
+      "model": "deepseek_coder",
+      "route_only": 0.026576499920338392,
+      "total": 0.062059400137513876
+    },
+    {
+      "conversation_id": "arena55k:1113117159",
+      "turn": 1,
+      "mode": "single",
+      "model": "qwen25_32b_int4",
+      "route_only": 0.01581009989604354,
+      "total": 0.018456000136211514
+    },
+    {
+      "conversation_id": "arena55k:1113117159",
+      "turn": 2,
+      "mode": "single",
+      "model": "qwen25_32b_int4",
+      "route_only": 0.014392599929124117,
+      "total": 0.01377449999563396
+    },
+    {
+      "conversation_id": "arena55k:1113117159",
+      "turn": 3,
+      "mode": "orchestrated",
+      "model": "qwen25_32b_int4",
+      "route_only": 0.014109599869698286,
+      "total": 0.1003511999733746
+    },
+    {
+      "conversation_id": "arena55k:1190878607",
+      "turn": 1,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.015458000125363469,
+      "total": 0.015296899946406484
+    },
+    {
+      "conversation_id": "arena55k:1190878607",
+      "turn": 2,
+      "mode": "single",
+      "model": "deepseek_coder",
+      "route_only": 0.01720739994198084,
+      "total": 0.014509399887174368
+    },
+    {
+      "conversation_id": "arena55k:1190878607",
+      "turn": 3,
+      "mode": "single",
+      "model": "deepseek_coder",
+      "route_only": 0.015850699972361326,
+      "total": 0.014754600124433637
+    },
+    {
+      "conversation_id": "arena55k:1200780918",
+      "turn": 1,
+      "mode": "single",
+      "model": "qwen25_32b_int4",
+      "route_only": 0.013811299810186028,
+      "total": 0.013926000101491809
+    },
+    {
+      "conversation_id": "arena55k:1200780918",
+      "turn": 2,
+      "mode": "single",
+      "model": "qwen25_32b_int4",
+      "route_only": 0.017065400024876,
+      "total": 0.014906900003552437
+    },
+    {
+      "conversation_id": "arena55k:1200780918",
+      "turn": 3,
+      "mode": "orchestrated",
+      "model": "qwen25_32b_int4",
+      "route_only": 0.01486670016311109,
+      "total": 0.11035670014098287
+    },
+    {
+      "conversation_id": "arena55k:1200780918",
+      "turn": 4,
+      "mode": "orchestrated",
+      "model": "qwen25_32b_int4",
+      "route_only": 0.016252300003543496,
+      "total": 0.1110259999986738
+    },
+    {
+      "conversation_id": "arena55k:1215426410",
+      "turn": 1,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.013774600112810731,
+      "total": 0.014083300018683076
+    },
+    {
+      "conversation_id": "arena55k:1215426410",
+      "turn": 2,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.015520500019192696,
+      "total": 0.020764500135555863
+    },
+    {
+      "conversation_id": "arena55k:1221917460",
+      "turn": 1,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.014535699971020222,
+      "total": 0.01774799986742437
+    },
+    {
+      "conversation_id": "arena55k:1221917460",
+      "turn": 2,
+      "mode": "single",
+      "model": "glm_4_plus",
+      "route_only": 0.014920300105586648,
+      "total": 0.014442000072449446
+    },
+    {
+      "conversation_id": "arena55k:1221917460",
+      "turn": 3,
+      "mode": "single",
+      "model": "glm_4_plus",
+      "route_only": 0.015067000174894929,
+      "total": 0.01814369997009635
+    },
+    {
+      "conversation_id": "arena55k:1232644370",
+      "turn": 1,
+      "mode": "single",
+      "model": "qwen25_32b_int4",
+      "route_only": 0.019704099977388978,
+      "total": 0.015313099836930633
+    },
+    {
+      "conversation_id": "arena55k:1232644370",
+      "turn": 2,
+      "mode": "single",
+      "model": "qwen25_32b_int4",
+      "route_only": 0.014082999899983406,
+      "total": 0.013907300075516105
+    },
+    {
+      "conversation_id": "arena55k:1242549452",
+      "turn": 1,
+      "mode": "single",
+      "model": "qwen25_32b_int4",
+      "route_only": 0.014028599951416254,
+      "total": 0.015832000179216266
+    },
+    {
+      "conversation_id": "arena55k:1242549452",
+      "turn": 2,
+      "mode": "single",
+      "model": "deepseek_coder",
+      "route_only": 0.015003500040620565,
+      "total": 0.014850899809971452
+    },
+    {
+      "conversation_id": "arena55k:1302499580",
+      "turn": 1,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.019834399921819568,
+      "total": 0.015460599912330508
+    },
+    {
+      "conversation_id": "arena55k:1302499580",
+      "turn": 2,
+      "mode": "single",
+      "model": "deepseek_coder",
+      "route_only": 0.014391999924555421,
+      "total": 0.014664800139144063
+    },
+    {
+      "conversation_id": "arena55k:1302499580",
+      "turn": 3,
+      "mode": "single",
+      "model": "qwen25_32b_int4",
+      "route_only": 0.022216100012883544,
+      "total": 0.01500969985499978
+    },
+    {
+      "conversation_id": "arena55k:1309904801",
+      "turn": 1,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.014983200002461672,
+      "total": 0.0145431999117136
+    },
+    {
+      "conversation_id": "arena55k:1309904801",
+      "turn": 2,
+      "mode": "single",
+      "model": "deepseek_coder",
+      "route_only": 0.01561630005016923,
+      "total": 0.01577159995213151
+    },
+    {
+      "conversation_id": "arena55k:1309904801",
+      "turn": 3,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.02943530003540218,
+      "total": 0.018575699999928474
+    },
+    {
+      "conversation_id": "arena55k:1309904801",
+      "turn": 4,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.017498400062322617,
+      "total": 0.018250799970701337
+    },
+    {
+      "conversation_id": "arena55k:1309904801",
+      "turn": 5,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.0225186999887228,
+      "total": 0.03385329991579056
+    },
+    {
+      "conversation_id": "arena55k:1313311010",
+      "turn": 1,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.01533009996637702,
+      "total": 0.019582799868658185
+    },
+    {
+      "conversation_id": "arena55k:1313311010",
+      "turn": 2,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.014271700056269765,
+      "total": 0.01427819998934865
+    },
+    {
+      "conversation_id": "arena55k:1313311010",
+      "turn": 3,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.029075599974021316,
+      "total": 0.016339899972081184
+    },
+    {
+      "conversation_id": "arena55k:1313311010",
+      "turn": 4,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.015923300059512258,
+      "total": 0.01598210004158318
+    },
+    {
+      "conversation_id": "arena55k:131454540",
+      "turn": 1,
+      "mode": "orchestrated",
+      "model": "deepseek_chat",
+      "route_only": 0.02242679987102747,
+      "total": 0.25222819996997714
+    },
+    {
+      "conversation_id": "arena55k:131454540",
+      "turn": 2,
+      "mode": "orchestrated",
+      "model": "deepseek_chat",
+      "route_only": 0.026396599831059575,
+      "total": 0.2300927999895066
+    },
+    {
+      "conversation_id": "arena55k:131454540",
+      "turn": 3,
+      "mode": "orchestrated",
+      "model": "deepseek_chat",
+      "route_only": 0.023248700192198157,
+      "total": 0.24562639999203384
+    },
+    {
+      "conversation_id": "arena55k:131454540",
+      "turn": 4,
+      "mode": "orchestrated",
+      "model": "deepseek_chat",
+      "route_only": 0.02125520003028214,
+      "total": 0.2443605000153184
+    },
+    {
+      "conversation_id": "arena55k:1317443662",
+      "turn": 1,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.016493699979037046,
+      "total": 0.017571300035342574
+    },
+    {
+      "conversation_id": "arena55k:1317443662",
+      "turn": 2,
+      "mode": "single",
+      "model": "qwen25_32b_int4",
+      "route_only": 0.014100999804213643,
+      "total": 0.014664400136098266
+    },
+    {
+      "conversation_id": "arena55k:1384301483",
+      "turn": 1,
+      "mode": "single",
+      "model": "deepseek_coder",
+      "route_only": 0.017376400064677,
+      "total": 0.014345499919727445
+    },
+    {
+      "conversation_id": "arena55k:1384301483",
+      "turn": 2,
+      "mode": "orchestrated",
+      "model": "deepseek_coder",
+      "route_only": 0.014717899961397052,
+      "total": 0.13975119986571372
+    },
+    {
+      "conversation_id": "arena55k:1398294299",
+      "turn": 1,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.014695200137794018,
+      "total": 0.016530900029465556
+    },
+    {
+      "conversation_id": "arena55k:1398294299",
+      "turn": 2,
+      "mode": "orchestrated",
+      "model": "qwen25_32b_int4",
+      "route_only": 0.01462189992889762,
+      "total": 0.09319310006685555
+    },
+    {
+      "conversation_id": "arena55k:142467940",
+      "turn": 1,
+      "mode": "single",
+      "model": "deepseek_coder",
+      "route_only": 0.013597599929198623,
+      "total": 0.019825999857857823
+    },
+    {
+      "conversation_id": "arena55k:142467940",
+      "turn": 2,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.019485800061374903,
+      "total": 0.015113299945369363
+    },
+    {
+      "conversation_id": "arena55k:142467940",
+      "turn": 3,
+      "mode": "single",
+      "model": "deepseek_coder",
+      "route_only": 0.018062899820506573,
+      "total": 0.015018200036138296
+    },
+    {
+      "conversation_id": "arena55k:1472643897",
+      "turn": 1,
+      "mode": "single",
+      "model": "gpt-4-1106-preview",
+      "route_only": 0.015311900060623884,
+      "total": 0.02084569982253015
+    },
+    {
+      "conversation_id": "arena55k:1472643897",
+      "turn": 2,
+      "mode": "orchestrated",
+      "model": "qwen25_32b_int4",
+      "route_only": 0.031131899915635586,
+      "total": 0.06791960005648434
+    },
+    {
+      "conversation_id": "arena55k:1472643897",
+      "turn": 3,
+      "mode": "orchestrated",
+      "model": "deepseek_coder",
+      "route_only": 0.01597289997152984,
+      "total": 0.0830528000369668
+    },
+    {
+      "conversation_id": "arena55k:1472643897",
+      "turn": 4,
+      "mode": "orchestrated",
+      "model": "deepseek_coder",
+      "route_only": 0.017369500128552318,
+      "total": 0.12344500003382564
+    },
+    {
+      "conversation_id": "arena55k:1472643897",
+      "turn": 5,
+      "mode": "orchestrated",
+      "model": "deepseek_coder",
+      "route_only": 0.01697500003501773,
+      "total": 0.12583760009147227
+    },
+    {
+      "conversation_id": "arena55k:1472643897",
+      "turn": 6,
+      "mode": "orchestrated",
+      "model": "deepseek_coder",
+      "route_only": 0.01839850004762411,
+      "total": 0.1152805001474917
+    },
+    {
+      "conversation_id": "arena55k:1475714846",
+      "turn": 1,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.019530400168150663,
+      "total": 0.02019569999538362
+    },
+    {
+      "conversation_id": "arena55k:1475714846",
+      "turn": 2,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.017159400042146444,
+      "total": 0.015372799942269921
+    },
+    {
+      "conversation_id": "arena55k:1475714846",
+      "turn": 3,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.01583059993572533,
+      "total": 0.01558779994957149
+    },
+    {
+      "conversation_id": "arena55k:1475714846",
+      "turn": 4,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.024131900165230036,
+      "total": 0.01873810007236898
+    },
+    {
+      "conversation_id": "arena55k:1475714846",
+      "turn": 5,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.01677040010690689,
+      "total": 0.015893000178039074
+    },
+    {
+      "conversation_id": "arena55k:1515085544",
+      "turn": 1,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.015280599938705564,
+      "total": 0.015121199889108539
+    },
+    {
+      "conversation_id": "arena55k:1515085544",
+      "turn": 2,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.015067900065332651,
+      "total": 0.017927399836480618
+    },
+    {
+      "conversation_id": "arena55k:1515085544",
+      "turn": 3,
+      "mode": "orchestrated",
+      "model": "deepseek_chat",
+      "route_only": 0.02003450016491115,
+      "total": 0.046819099923595786
+    },
+    {
+      "conversation_id": "arena55k:1523100513",
+      "turn": 1,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.01487260009162128,
+      "total": 0.024078499991446733
+    },
+    {
+      "conversation_id": "arena55k:1523100513",
+      "turn": 2,
+      "mode": "orchestrated",
+      "model": "deepseek_chat",
+      "route_only": 0.015756199834868312,
+      "total": 0.04611769993789494
+    },
+    {
+      "conversation_id": "arena55k:1523100513",
+      "turn": 3,
+      "mode": "orchestrated",
+      "model": "deepseek_coder",
+      "route_only": 0.015300299972295761,
+      "total": 0.04862040001899004
+    },
+    {
+      "conversation_id": "arena55k:1523100513",
+      "turn": 4,
+      "mode": "orchestrated",
+      "model": "deepseek_chat",
+      "route_only": 0.019202600000426173,
+      "total": 0.04678340000100434
+    },
+    {
+      "conversation_id": "arena55k:1523100513",
+      "turn": 5,
+      "mode": "orchestrated",
+      "model": "deepseek_chat",
+      "route_only": 0.02974490006454289,
+      "total": 0.06104509998112917
+    },
+    {
+      "conversation_id": "arena55k:1523100513",
+      "turn": 6,
+      "mode": "orchestrated",
+      "model": "deepseek_chat",
+      "route_only": 0.019251300022006035,
+      "total": 0.06907199998386204
+    },
+    {
+      "conversation_id": "arena55k:1523100513",
+      "turn": 7,
+      "mode": "orchestrated",
+      "model": "deepseek_chat",
+      "route_only": 0.02172309998422861,
+      "total": 0.06757629988715053
+    },
+    {
+      "conversation_id": "arena55k:1523100513",
+      "turn": 8,
+      "mode": "orchestrated",
+      "model": "deepseek_chat",
+      "route_only": 0.022118400083854795,
+      "total": 0.07143869996070862
+    },
+    {
+      "conversation_id": "arena55k:1526906748",
+      "turn": 1,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.01516549987718463,
+      "total": 0.015505400020629168
+    },
+    {
+      "conversation_id": "arena55k:1526906748",
+      "turn": 2,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.015580900013446808,
+      "total": 0.024312600027769804
+    },
+    {
+      "conversation_id": "arena55k:1526906748",
+      "turn": 3,
+      "mode": "orchestrated",
+      "model": "qwen25_32b_int4",
+      "route_only": 0.015514600090682507,
+      "total": 0.06246890011243522
+    },
+    {
+      "conversation_id": "arena55k:1541054416",
+      "turn": 1,
+      "mode": "single",
+      "model": "llama31_405b_instruct",
+      "route_only": 0.016374300001189113,
+      "total": 0.018510200083255768
+    },
+    {
+      "conversation_id": "arena55k:1541054416",
+      "turn": 2,
+      "mode": "orchestrated",
+      "model": "llama31_405b_instruct",
+      "route_only": 0.015283999964594841,
+      "total": 0.04444599989801645
+    },
+    {
+      "conversation_id": "arena55k:1541054416",
+      "turn": 3,
+      "mode": "orchestrated",
+      "model": "llama31_405b_instruct",
+      "route_only": 0.014507800107821822,
+      "total": 0.05561790009960532
+    },
+    {
+      "conversation_id": "arena55k:1541938405",
+      "turn": 1,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.01418639998883009,
+      "total": 0.014018800109624863
+    },
+    {
+      "conversation_id": "arena55k:1541938405",
+      "turn": 2,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.014499800046905875,
+      "total": 0.01526169991120696
+    },
+    {
+      "conversation_id": "arena55k:1541938405",
+      "turn": 3,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.018853200133889914,
+      "total": 0.01561599993146956
+    },
+    {
+      "conversation_id": "arena55k:1551084385",
+      "turn": 1,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.018092300044372678,
+      "total": 0.014796399977058172
+    },
+    {
+      "conversation_id": "arena55k:1551084385",
+      "turn": 2,
+      "mode": "single",
+      "model": "qwen25_32b_int4",
+      "route_only": 0.014268300030380487,
+      "total": 0.015199000015854836
+    },
+    {
+      "conversation_id": "arena55k:1557357677",
+      "turn": 1,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.018220500089228153,
+      "total": 0.0148543999530375
+    },
+    {
+      "conversation_id": "arena55k:1557357677",
+      "turn": 2,
+      "mode": "single",
+      "model": "deepseek_chat",
+      "route_only": 0.014241100056096911,
+      "total": 0.01965919998474419
+    }
+  ]
+}
