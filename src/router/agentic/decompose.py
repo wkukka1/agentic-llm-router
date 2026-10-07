@@ -16,7 +16,8 @@ from __future__ import annotations
 
 import re
 import warnings
-from typing import Callable, Sequence
+from dataclasses import dataclass
+from typing import Callable, Optional, Sequence
 
 from .llm_clients import message_text
 
@@ -26,6 +27,8 @@ __all__ = [
     "concat_synthesizer",
     "LLMSynthesizer",
     "looks_atomic",
+    "SubTask",
+    "parse_plan_lines",
 ]
 
 # common abbreviations whose trailing "." is not a sentence end
@@ -74,6 +77,82 @@ def _fold_tail(parts: list[str], max_parts: int) -> list[str]:
         return parts
     keep = max(max_parts, 1)
     return parts[: keep - 1] + [" ".join(parts[keep - 1:])]
+
+
+# "[after 2]" / "[after 1, 3]" / "[after 1 and 2]" at the start of a planner line
+_AFTER_RE = re.compile(r"^\[after\s+([^\]]*)\]\s*", re.IGNORECASE)
+# a planner line's own number: "3. ..." / "3) ..."
+_LINE_NUMBER_RE = re.compile(r"^\s*(\d+)[.)]\s+")
+_NONE_LINES = {"none", "n/a", "na", "-"}
+
+
+@dataclass(frozen=True)
+class SubTask:
+    """One planned sub-task: self-contained ``text`` plus the 1-based positions
+    of the earlier sub-tasks whose results it needs (``depends_on``)."""
+
+    text: str
+    depends_on: tuple[int, ...] = ()
+
+
+def parse_plan_lines(text: str, *, max_parts: int = 8,
+                     ref_limit: Optional[int] = None) -> list[SubTask]:
+    """Planner lines -> :class:`SubTask`\\ s.
+
+    A line may start with ``[after N]`` (or ``[after 1, 3]``) naming the
+    earlier lines whose results it needs. ``N`` is the number the model gave
+    that line (``"2. ..."``), else its position among the kept lines.
+    Malformed references never invalidate the plan: a reference to an unknown,
+    later or the same line is dropped, and one to a dropped repeat points at
+    the line it repeated.
+
+    ``ref_limit`` switches to *external* references: they name existing steps
+    ``1..ref_limit`` (the quality checker's follow-ups refer to the steps it
+    reviewed), so only that range is checked."""
+    kept: list[tuple[str, list[int]]] = []
+    label_to_pos: dict[int, int] = {}
+    key_to_pos: dict[str, int] = {}
+    for ln in text.splitlines():
+        m = _LINE_NUMBER_RE.match(ln)
+        label = int(m.group(1)) if m else None
+        ln = _LINE_PREFIX_RE.sub("", ln).strip()
+        refs: list[int] = []
+        after = _AFTER_RE.match(ln)
+        if after:
+            refs = [int(x) for x in re.findall(r"\d+", after.group(1))]
+            ln = ln[after.end():].strip()
+        key = _dedupe_key(ln)
+        if len(ln) < 4 or ln.endswith(":") or key in _NONE_LINES:
+            continue
+        if key in key_to_pos:
+            if label is not None:
+                label_to_pos.setdefault(label, key_to_pos[key])
+            continue
+        pos = len(kept) + 1
+        key_to_pos[key] = pos
+        label_to_pos.setdefault(label if label is not None else pos, pos)
+        kept.append((ln, refs))
+
+    out = []
+    for pos, (ln, refs) in enumerate(kept, 1):
+        if ref_limit is not None:
+            deps = {r for r in refs if 1 <= r <= ref_limit}
+        else:
+            deps = {label_to_pos[r] for r in refs if r in label_to_pos and label_to_pos[r] < pos}
+        out.append(SubTask(ln, tuple(sorted(deps))))
+    return _fold_subtasks(out, max_parts, external=ref_limit is not None)
+
+
+def _fold_subtasks(tasks: list[SubTask], max_parts: int, *, external: bool = False) -> list[SubTask]:
+    """:func:`_fold_tail` for sub-tasks: the overflow folds into the last kept
+    one, which keeps the folded tasks' dependencies on earlier lines (all of
+    them, for ``external`` references)."""
+    if len(tasks) <= max_parts:
+        return tasks
+    keep = max(max_parts, 1)
+    tail = tasks[keep - 1:]
+    deps = {d for t in tail for d in t.depends_on if external or d < keep}
+    return tasks[: keep - 1] + [SubTask(" ".join(t.text for t in tail), tuple(sorted(deps)))]
 
 
 class NaiveDecomposer:
