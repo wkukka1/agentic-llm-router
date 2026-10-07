@@ -65,6 +65,30 @@ prompts:
     Request:
     {prompt}
 
+  verify: |-
+    You are the final quality check for an answer that several models produced together.
+
+    Original request:
+    """
+    {original}
+    """
+
+    The request was split into steps. Each step's task and answer (long answers are cut and marked [truncated]):
+    {steps}
+
+    Final answer given to the user:
+    """
+    {answer}
+    """
+
+    Check the final answer against the request: is every part answered, correct, consistent between steps, and (for code) plausible to compile and run? Then reply in exactly this format and nothing else:
+    VERDICT: PASS or FAIL
+    SCORE: a number from 0 to 10
+    WEAK_STEPS: the numbers of the steps whose answers are wrong or incomplete, comma-separated, or none
+    FOLLOW_UPS:
+    one new self-contained task per line for anything missing or wrong that re-running a step would not fix; start it with [after N] if it needs step N's result; write none if there are none
+    ISSUES: one line summarising the problems, or none
+
   synthesize: |-
     Original request:
     {original}

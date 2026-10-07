@@ -50,7 +50,7 @@ def _settings(**router):
 # --------------------------------------------------------------------------- #
 def test_shipped_settings_file_validates():
     s = load_settings()
-    assert set(s.prompts) == {"triage", "decompose", "plan", "synthesize", "tool_agent_system"}
+    assert set(s.prompts) == {"triage", "decompose", "plan", "verify", "synthesize", "tool_agent_system"}
     assert s.run == "nirt-2d-projected" and s.orchestrator == "recursive"
     assert default_prompts() == s.prompts
 
