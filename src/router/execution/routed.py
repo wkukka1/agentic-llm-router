@@ -61,6 +61,7 @@ from .results import ExecutionResult
 from .task import AgentTask, TaskStatus
 
 if TYPE_CHECKING:  # pragma: no cover - type hints only, not a runtime import
+    from ..agentic.quality import QualityVerdict
     from ..agentic.router import AgenticRouter
     from ..constraints import OptimizationObjective
     from ..llm.registry import LLMRegistry
@@ -78,7 +79,7 @@ class RoutedOrchestrator(Orchestrator):
                  objective: Optional["OptimizationObjective"] = None,
                  registry: Optional["LLMRegistry"] = None,
                  max_workers: int = 4, sequential: bool = False,
-                 route_late: bool = False, router_tool=None):
+                 route_late: bool = False, router_tool=None, checker=None):
         super().__init__(config, router_tool=router_tool, plan_forecaster=plan_forecaster)
         from ..constraints import OptimizationObjective
 
@@ -88,6 +89,13 @@ class RoutedOrchestrator(Orchestrator):
         self.max_workers = max(1, int(max_workers))
         self.sequential = bool(sequential)
         self.route_late = bool(route_late)
+        #: final-answer judge: ``(original, [(task, answer)], answer) -> QualityVerdict``
+        self.checker = checker
+        #: one dict per checked round: ``plan_id``, ``answer``, ``verdict``
+        self.rounds: list[dict] = []
+        #: the best checked round so far (a passed round beats any failed one)
+        self.best: Optional[dict] = None
+        self._round_changes: dict[str, dict] = {}       # new plan_id -> what the repair changed
         self.subcalls: list[SubCall] = []
         #: every plan this orchestrator made (the first, then each replan)
         self.plan_history: list[Plan] = []
@@ -235,12 +243,15 @@ class RoutedOrchestrator(Orchestrator):
         self.subcalls = [self._calls[s.step_id] for s in plan.steps if s.step_id in self._calls]
         failed = [sc for sc in self.subcalls if sc.error is not None]
         output = ""
+        error_code = "step_failed" if failed else None
         if not failed:
             if len(self.subcalls) == 1:
                 output = self.subcalls[0].answer
             else:
                 output = self.agent.synthesizer(self.task.prompt,
                                                 [(sc.prompt, sc.answer) for sc in self.subcalls])
+            if self.checker is not None:
+                error_code = self._check(plan, output)
         spent = total_cost(fresh)
         if spent is None:
             # a successful call with neither an actual cost nor an estimate:
@@ -257,10 +268,24 @@ class RoutedOrchestrator(Orchestrator):
             actual_latency=time.perf_counter() - t0,
             input_tokens=int(sum(sc.meta.get("input_tokens") or 0 for sc in fresh)),
             output_tokens=int(sum(sc.meta.get("output_tokens") or 0 for sc in fresh)),
-            error_code="step_failed" if failed else None,
+            error_code=error_code,
         )
         self.attempts.append((plan.plan_id, result))
         return result
+
+    def _check(self, plan: Plan, output: str) -> Optional[str]:
+        """Check this round's answer, record the round and the best answer so
+        far. ``"quality_check_failed"`` for a parsed failing verdict; an
+        unparseable or failed check never triggers a repair round -- the
+        answer is returned flagged instead."""
+        verdict = self.checker(self.task.prompt, [(sc.prompt, sc.answer) for sc in self.subcalls],
+                               output)
+        self.rounds.append({"plan_id": plan.plan_id, "answer": output, "verdict": verdict})
+        key = (verdict.passed, verdict.score if math.isfinite(verdict.score) else -math.inf)
+        if self.best is None or key >= self.best["key"]:
+            self.best = {"key": key, "answer": output, "round": len(self.rounds) - 1,
+                         "verdict": verdict}
+        return "quality_check_failed" if verdict.status == "ok" and not verdict.passed else None
 
     def _assign_models(self, plan: Plan, steps: list[PlanStep]) -> list[PlanStep]:
         """Late routing (``route_late``): re-route, in one batched router call,
@@ -314,12 +339,32 @@ class RoutedOrchestrator(Orchestrator):
 
     # -- replan ------------------------------------------------------------
     def replan(self, plan: Plan) -> Plan:
-        """The next round: every step that didn't succeed is escalated
-        (:meth:`_escalation_pick`) and pinned to its new model; steps that
-        succeeded keep their output and are not re-run."""
+        """The repair round (merge rule: previous plan + repair instructions).
+        Re-run, escalated (:meth:`_escalate`): every step that failed and
+        every step the last quality check named weak. Their dependents,
+        transitively, lose their stored output and re-run with the new context.
+        Every other step keeps its output and is not re-run."""
+        verdict = self._last_failed_verdict(plan)
+        weak = set()
+        if verdict is not None:
+            weak = {plan.steps[k - 1].step_id for k in verdict.weak_steps
+                    if 1 <= k <= len(plan.steps)}
         failed = {s.step_id for s in plan.steps if not self._succeeded(s.step_id)}
-        steps = [self._escalate(s) if s.step_id in failed else s for s in plan.steps]
-        return self._next_plan(plan, steps)
+        escalate = weak | failed
+        for sid in weak | _dependents(plan, escalate):
+            self._calls.pop(sid, None)
+        steps = [self._escalate(s) if s.step_id in escalate else s for s in plan.steps]
+        new = self._next_plan(plan, steps)
+        self._round_changes[new.plan_id] = {"escalated": sorted(escalate)}
+        return new
+
+    def _last_failed_verdict(self, plan: Plan) -> Optional["QualityVerdict"]:
+        """The verdict that failed ``plan``'s round, if a check failed it."""
+        if self.rounds and self.rounds[-1]["plan_id"] == plan.plan_id:
+            verdict = self.rounds[-1]["verdict"]
+            if verdict.status == "ok" and not verdict.passed:
+                return verdict
+        return None
 
     def _escalation_pick(self, step: PlanStep) -> tuple[str, str]:
         """The model a re-run of ``step`` moves to. Never one already tried
@@ -363,7 +408,8 @@ class RoutedOrchestrator(Orchestrator):
     def _child_kwargs(self) -> dict:
         return {**super()._child_kwargs(), "agent": self.agent, "objective": self.objective,
                 "registry": self.registry, "max_workers": self.max_workers,
-                "sequential": self.sequential, "route_late": self.route_late}
+                "sequential": self.sequential, "route_late": self.route_late,
+                "checker": self.checker}
 
 
 def _levels(plan: Plan) -> list[list[PlanStep]]:
@@ -379,6 +425,26 @@ def _levels(plan: Plan) -> list[list[PlanStep]]:
             done.add(s.step_id)
             del remaining[s.step_id]
     return levels
+
+
+def _dependents(plan: Plan, roots: set[str]) -> set[str]:
+    """Every step depending on one of ``roots``, directly or through other
+    steps (``roots`` themselves excluded)."""
+    out: set[str] = set()
+    frontier = set(roots)
+    while frontier:
+        frontier = {s.step_id for s in plan.steps if frontier & set(s.dependencies)} - out - roots
+        out |= frontier
+    return out
+
+
+def _quality_record(orch: RoutedOrchestrator) -> dict:
+    """``AgenticResult.quality_check``: the best round's verdict, which round
+    it was, and every round with what its repair changed."""
+    best = orch.best
+    return {**best["verdict"].as_dict(), "best_round": best["round"],
+            "rounds": [{"plan_id": r["plan_id"], **r["verdict"].as_dict(),
+                        **orch._round_changes.get(r["plan_id"], {})} for r in orch.rounds]}
 
 
 class PlanOrchestratorBridge:
@@ -401,7 +467,7 @@ class PlanOrchestratorBridge:
                  objective: Optional["OptimizationObjective"] = None,
                  registry: Optional["LLMRegistry"] = None,
                  max_workers: int = 4, sequential: bool = False,
-                 route_late: bool = False):
+                 route_late: bool = False, checker=None):
         self.budget = float(budget)
         self.limits = limits
         self.forecaster = forecaster or (lambda agent: RouterPlanForecaster(agent.router))
@@ -410,6 +476,7 @@ class PlanOrchestratorBridge:
         self.max_workers = max_workers
         self.sequential = sequential
         self.route_late = route_late
+        self.checker = checker
 
     def run(self, prompt: str, agent: "AgenticRouter", depth: int) -> tuple[str, list[SubCall]]:
         root_id = f"plan-{uuid.uuid4().hex[:12]}"
@@ -419,12 +486,18 @@ class PlanOrchestratorBridge:
                                ledger=BudgetLedger(root_id, self.budget), limits=limits),
             agent=agent, plan_forecaster=self.forecaster(agent), objective=self.objective,
             registry=self.registry, max_workers=self.max_workers, sequential=self.sequential,
-            route_late=self.route_late,
+            route_late=self.route_late, checker=self.checker,
         )
+        if self.checker is not None and hasattr(self.checker, "on_call"):
+            self.checker.on_call = agent._use_call
         task = AgentTask(task_id=root_id, parent_task_id=None, root_task_id=root_id,
                          prompt=prompt, depth=depth)
         result = orch.run(task)
         agent._run_state().plans.extend(_plan_records(orch, self.budget))
+        if orch.best is not None:
+            # a checked answer wins over an over-budget or failed later round
+            agent._run_state().quality_check = _quality_record(orch)
+            return orch.best["answer"], list(orch.subcalls)
         if task.status is TaskStatus.TERMINATED:
             est = task.plan.budget_estimate() if task.plan is not None else float("nan")
             msg = f"plan over budget: needs ~{est:.6g}, budget {self.budget:.6g}"
@@ -444,6 +517,7 @@ def _plan_records(orch: RoutedOrchestrator, budget: float) -> list[dict]:
     remaining steps to cost / score / take, and what executing it actually
     spent (``None`` for a plan that never ran, e.g. refused over budget)."""
     spent = dict(orch.attempts)
+    checks = {r["plan_id"]: r["verdict"] for r in orch.rounds}
     rows = []
     for plan in orch.plan_history:
         res = spent.get(plan.plan_id)
@@ -459,6 +533,8 @@ def _plan_records(orch: RoutedOrchestrator, budget: float) -> list[dict]:
             "actual_cost": None if res is None else res.actual_cost,
             "actual_latency": None if res is None else res.actual_latency,
             "outcome": outcome,
+            "quality_score": checks[plan.plan_id].score if plan.plan_id in checks else None,
+            "quality_passed": checks[plan.plan_id].passed if plan.plan_id in checks else None,
         })
     return rows
 
@@ -467,5 +543,5 @@ def plan_orchestrator(**kwargs) -> PlanOrchestratorBridge:
     """The plan orchestrator, ready to pass as ``AgenticRouter(orchestrator=...)``.
     Keyword arguments are :class:`PlanOrchestratorBridge`'s (``budget``,
     ``limits``, ``forecaster``, ``objective``, ``registry``, ``max_workers``,
-    ``sequential``, ``route_late``)."""
+    ``sequential``, ``route_late``, ``checker``)."""
     return PlanOrchestratorBridge(**kwargs)

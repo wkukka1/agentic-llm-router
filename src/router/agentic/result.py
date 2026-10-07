@@ -83,6 +83,10 @@ class AgenticResult:
     #: chosen pool model, its predicted quality vs. the threshold, cost, output.
     #: Not included in ``cost``, which sums the answering leaves only.
     helper_calls: list = field(default_factory=list)
+    #: the plan orchestrator's final quality check, when one ran: the best
+    #: round's verdict (passed, score, weak_steps, issues, follow_ups, status),
+    #: best_round, and every round with its escalations / follow-ups
+    quality_check: Optional[dict] = None
 
     def models_used(self) -> list[str]:
         """Models actually invoked. In orchestrated mode ``selected_model_id``

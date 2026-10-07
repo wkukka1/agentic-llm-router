@@ -19,6 +19,7 @@ from router.execution.orchestrator import OrchestratorConfig
 from router.execution.plan import Plan, PlanStep
 from router.execution.routed import PlanOrchestratorBridge, RoutedOrchestrator, plan_orchestrator
 from router.execution.task import AgentTask, TaskStatus
+from router.agentic.quality import QualityVerdict
 from router.llm.adapters.fakes import CallableAdapter
 from router.llm.profile import LLMProfile
 from router.routing import RouterModel
@@ -425,3 +426,104 @@ def test_late_routing_does_not_undo_an_escalation():
     assert orch.run(_task()).success
     assert orch.subcalls[1].model_id == "coder"
     assert orch.subcalls[1].meta["escalation"] == "escalated"
+
+
+# --------------------------------------------------------------------------- #
+# quality check rounds                                                        #
+# --------------------------------------------------------------------------- #
+class _ScriptedChecker:
+    """Returns the next verdict per call (the last one repeats); records what it saw."""
+
+    def __init__(self, *verdicts):
+        self.verdicts, self.seen, self.on_call = list(verdicts), [], None
+
+    def __call__(self, original, steps, answer):
+        self.seen.append((original, list(steps), answer))
+        return self.verdicts[min(len(self.seen), len(self.verdicts)) - 1]
+
+
+def _fail(score, weak=(), follow_ups=()):
+    return QualityVerdict(False, float(score), list(weak), "bad", list(follow_ups))
+
+
+def _pass(score=9.0):
+    return QualityVerdict(True, float(score))
+
+
+THREE_STEP = ("1. Implement quicksort in Rust.\n"
+              "2. [after 1] Analyse the Rust quicksort from step 1.\n"
+              "3. Explain mergesort.")
+
+
+def test_failed_check_escalates_the_weak_step_and_reruns_only_it_and_its_dependents():
+    sent = []
+    checker = _ScriptedChecker(_fail(4, weak=[1]), _pass())
+    orch = _orchestrator(_planning_agent(THREE_STEP, clients=_clients(sent=sent)),
+                         checker=checker, max_workers=1)
+    orch.limits = ExecutionLimits(max_replans=2)
+    assert orch.run(_task()).success and len(orch.rounds) == 2
+    prompts = [str(p) for _, p in sent]
+    assert sum(p == "Implement quicksort in Rust." for p in prompts) == 2       # step 1 re-ran
+    assert sum("Analyse the Rust quicksort" in p for p in prompts) == 2         # its dependent re-ran
+    assert sum("Explain mergesort" in p for p in prompts) == 1                  # untouched
+    assert orch.subcalls[0].model_id == "coder"
+    assert orch.subcalls[0].meta["escalation"] == "escalated"
+
+
+def test_failing_check_runs_max_replans_plus_one_rounds_and_returns_the_best():
+    checker = _ScriptedChecker(_fail(6.1, weak=[3]), _fail(7.4, weak=[3]), _fail(6.8, weak=[3]))
+    agent = _planning_agent(THREE_STEP, orchestrator=plan_orchestrator(
+        checker=checker, limits=ExecutionLimits(max_replans=2)))
+    res = agent.run(COMPOUND)
+    qc = res.quality_check
+    assert qc["passed"] is False and qc["best_round"] == 1 and len(qc["rounds"]) == 3
+    assert res.answer == checker.seen[1][2]
+
+
+def test_a_passing_round_beats_a_higher_scoring_failing_round():
+    checker = _ScriptedChecker(_fail(8, weak=[3]), _pass(7.5))
+    agent = _planning_agent(THREE_STEP, orchestrator=plan_orchestrator(
+        checker=checker, limits=ExecutionLimits(max_replans=2)))
+    res = agent.run(COMPOUND)
+    assert res.quality_check["passed"] is True and res.quality_check["best_round"] == 1
+    assert res.answer == checker.seen[1][2]
+
+
+def test_unparsed_check_returns_the_answer_flagged_without_a_repair_round():
+    checker = _ScriptedChecker(QualityVerdict(False, status="unparsed"))
+    agent = _planning_agent(THREE_STEP, orchestrator=plan_orchestrator(
+        checker=checker, limits=ExecutionLimits(max_replans=2)))
+    qc = agent.run(COMPOUND).quality_check
+    assert len(qc["rounds"]) == 1 and qc["status"] == "unparsed" and qc["passed"] is False
+
+
+def test_out_of_range_weak_steps_are_ignored():
+    sent = []
+    checker = _ScriptedChecker(_fail(4, weak=[0, 99]), _pass())
+    agent = _planning_agent(THREE_STEP, clients=_clients(sent=sent), orchestrator=plan_orchestrator(
+        checker=checker, limits=ExecutionLimits(max_replans=2)))
+    assert agent.run(COMPOUND).quality_check["passed"] is True
+    assert len(sent) == 3                                       # nothing re-ran
+
+
+def test_over_budget_repair_round_returns_the_best_answer_not_an_error():
+    checker = _ScriptedChecker(_fail(5, weak=[1, 3]))
+    agent = _planning_agent(
+        THREE_STEP, router=TextRouter(costs=[0.001, 0.01, 0.005]),
+        orchestrator=plan_orchestrator(budget=0.04, checker=checker,
+                                       limits=ExecutionLimits(max_cost=0.04, max_replans=2)))
+    res = agent.run(COMPOUND)                                   # round 1 spends 0.03; repair needs 0.02
+    assert "over budget" not in res.answer and res.answer == checker.seen[0][2]
+    assert res.quality_check["best_round"] == 0
+
+
+def test_quality_check_setting_builds_a_routed_checker():
+    from router.agentic.quality import QualityChecker
+    agent = AgenticRouter.from_settings(
+        _plan_settings(plan={"quality_check": {"enabled": True, "min_quality": 0.5}}), router=TextRouter())
+    assert isinstance(agent.orchestrator.checker, QualityChecker)
+
+
+def test_unknown_verify_prompt_is_rejected():
+    with pytest.raises(ValueError, match="quality_check.prompt"):
+        _plan_settings(plan={"quality_check": {"enabled": True, "prompt": "nope"}})

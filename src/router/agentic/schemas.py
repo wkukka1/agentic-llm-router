@@ -89,6 +89,19 @@ class SynthesizerSettings(BaseModel):
     min_quality: float = Field(0.75, ge=0.0, le=1.0)
 
 
+class QualityCheckSettings(BaseModel):
+    """The plan orchestrator's final quality check (``router.agentic.quality``)."""
+
+    model_config = _STRICT
+
+    enabled: bool = False
+    #: the judge = cheapest pool model predicted >= this for the request
+    min_quality: float = Field(0.8, ge=0.0, le=1.0)
+    #: a PASS verdict also needs SCORE >= this (0-10)
+    pass_score: float = Field(7.0, ge=0.0, le=10.0)
+    prompt: str = "verify"
+
+
 class PlanSettings(BaseModel):
     """The plan orchestrator (``router.execution.routed.plan_orchestrator``)."""
 
@@ -102,6 +115,7 @@ class PlanSettings(BaseModel):
     planner_prompt: str = "plan"
     #: route each step just before it runs, on its prompt plus dependency results
     route_late: bool = False
+    quality_check: QualityCheckSettings = Field(default_factory=QualityCheckSettings)
 
 
 class ToolAgentSettings(BaseModel):
@@ -160,6 +174,10 @@ class AgenticRouterSettings(BaseModel):
             raise ValueError("orchestrator is 'tool_agent' but tool_agent.model is not set")
         if self.orchestrator == "plan" and self.plan.planner_prompt not in self.prompts:
             raise ValueError(f"plan.planner_prompt: no prompt {self.plan.planner_prompt!r}; "
+                             f"known: {sorted(self.prompts)}")
+        q = self.plan.quality_check
+        if self.orchestrator == "plan" and q.enabled and q.prompt not in self.prompts:
+            raise ValueError(f"plan.quality_check.prompt: no prompt {q.prompt!r}; "
                              f"known: {sorted(self.prompts)}")
         return self
 

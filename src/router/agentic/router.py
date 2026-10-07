@@ -114,6 +114,8 @@ class _RunState:
     plans: list = field(default_factory=list)
     #: one dict per routed helper call (decompose / synthesize), see AgenticRouter.helper_call
     helper_calls: list = field(default_factory=list)
+    #: the plan orchestrator's final quality check (see AgenticResult.quality_check)
+    quality_check: Optional[dict] = None
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def use_call(self, n: int = 1, *, enforce: bool = True) -> None:
@@ -287,9 +289,17 @@ class AgenticRouter:
             from ..execution.routed import plan_orchestrator
 
             budget = math.inf if s.plan.budget is None else s.plan.budget
+            q = s.plan.quality_check
+            checker = None
+            if q.enabled:
+                from .quality import QualityChecker
+                # late-bound like the routed helpers: called only once `agent` exists
+                checker = QualityChecker(
+                    chat_for=lambda request: agent.helper_call("verify", request, q.min_quality),
+                    prompt=prompts[q.prompt], pass_score=q.pass_score)
             orchestrator = plan_orchestrator(
                 budget=budget, max_workers=s.plan.max_workers, sequential=s.plan.sequential,
-                route_late=s.plan.route_late,
+                route_late=s.plan.route_late, checker=checker,
                 limits=ExecutionLimits(max_cost=budget, max_depth=s.max_depth,
                                        max_replans=s.plan.max_replans))
         elif s.orchestrator == "tool_agent":
@@ -583,6 +593,7 @@ class AgenticRouter:
             history=[dict(m) for m in req.state.history],
             plans=list(req.state.plans),
             helper_calls=list(req.state.helper_calls),
+            quality_check=req.state.quality_check,
         )
         if root.mode == "single":
             reason = decision.reason
