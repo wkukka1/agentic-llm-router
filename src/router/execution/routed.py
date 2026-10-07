@@ -95,6 +95,8 @@ class RoutedOrchestrator(Orchestrator):
         self.rounds: list[dict] = []
         #: the best checked round so far (a passed round beats any failed one)
         self.best: Optional[dict] = None
+        #: every model call this orchestrator made, every round, in order
+        self.executed: list[SubCall] = []
         self._round_changes: dict[str, dict] = {}       # new plan_id -> what the repair changed
         self.subcalls: list[SubCall] = []
         #: every plan this orchestrator made (the first, then each replan)
@@ -240,6 +242,7 @@ class RoutedOrchestrator(Orchestrator):
                 self._calls[step.step_id] = sc
                 self._pinned.discard(step.step_id)
                 fresh.append(sc)
+        self.executed.extend(fresh)
         self.subcalls = [self._calls[s.step_id] for s in plan.steps if s.step_id in self._calls]
         failed = [sc for sc in self.subcalls if sc.error is not None]
         output = ""
@@ -284,7 +287,7 @@ class RoutedOrchestrator(Orchestrator):
         key = (verdict.passed, verdict.score if math.isfinite(verdict.score) else -math.inf)
         if self.best is None or key >= self.best["key"]:
             self.best = {"key": key, "answer": output, "round": len(self.rounds) - 1,
-                         "verdict": verdict}
+                         "verdict": verdict, "subcalls": list(self.subcalls)}
         return "quality_check_failed" if verdict.status == "ok" and not verdict.passed else None
 
     def _assign_models(self, plan: Plan, steps: list[PlanStep]) -> list[PlanStep]:
@@ -438,6 +441,19 @@ def _dependents(plan: Plan, roots: set[str]) -> set[str]:
     return out
 
 
+def _all_steps(orch: RoutedOrchestrator) -> list[SubCall]:
+    """The answer-producing steps (the best checked round's, else the latest
+    attempt of each), then every other call made, marked ``meta["superseded"]``,
+    so cost and ``models_used()`` count all spend."""
+    steps = list(orch.best["subcalls"]) if orch.best is not None else list(orch.subcalls)
+    kept = {id(sc) for sc in steps}
+    for sc in orch.executed:
+        if id(sc) not in kept:
+            sc.meta = {**sc.meta, "superseded": True}
+            steps.append(sc)
+    return steps
+
+
 def _quality_record(orch: RoutedOrchestrator) -> dict:
     """``AgenticResult.quality_check``: the best round's verdict, which round
     it was, and every round with what its repair changed."""
@@ -457,7 +473,8 @@ class PlanOrchestratorBridge:
 
     A plan refused as over budget comes back as one failed ``SubCall``; a plan
     that still has failed steps after its replans comes back with those
-    failures recorded and the rest of the answers synthesized -- the same
+    failures recorded (calls replaced by a repair round are returned too,
+    marked ``meta["superseded"]``) and the rest of the answers synthesized -- the same
     "keep what was paid for" rule ``AgenticRouter`` applies to sub-calls."""
 
     name = "plan"
@@ -497,7 +514,7 @@ class PlanOrchestratorBridge:
         if orch.best is not None:
             # a checked answer wins over an over-budget or failed later round
             agent._run_state().quality_check = _quality_record(orch)
-            return orch.best["answer"], list(orch.subcalls)
+            return orch.best["answer"], _all_steps(orch)
         if task.status is TaskStatus.TERMINATED:
             est = task.plan.budget_estimate() if task.plan is not None else float("nan")
             msg = f"plan over budget: needs ~{est:.6g}, budget {self.budget:.6g}"
@@ -505,7 +522,7 @@ class PlanOrchestratorBridge:
                 prompt=prompt, model_id="(none)", predicted_quality=float("nan"),
                 answer=f"[error: {msg}]", depth=depth + 1, error=result.error_code or "over_budget",
             )]
-        steps = list(orch.subcalls)
+        steps = _all_steps(orch)
         if result.success:
             return result.output, steps
         answer = agent.synthesizer(prompt, [(sc.prompt, sc.answer) for sc in steps])

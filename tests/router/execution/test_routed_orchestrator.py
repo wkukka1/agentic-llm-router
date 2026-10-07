@@ -527,3 +527,16 @@ def test_quality_check_setting_builds_a_routed_checker():
 def test_unknown_verify_prompt_is_rejected():
     with pytest.raises(ValueError, match="quality_check.prompt"):
         _plan_settings(plan={"quality_check": {"enabled": True, "prompt": "nope"}})
+
+
+def test_best_round_answer_comes_with_that_rounds_steps_and_all_spend_is_counted():
+    checker = _ScriptedChecker(_fail(5, weak=[1]))
+    agent = _planning_agent(THREE_STEP, clients=_clients(fail={"coder"}), orchestrator=plan_orchestrator(
+        checker=checker, limits=ExecutionLimits(max_replans=1)))
+    res = agent.run(COMPOUND)
+    answer_steps = [s for s in res.steps if not s.meta.get("superseded")]
+    assert res.answer == checker.seen[0][2]
+    assert [s.model_id for s in answer_steps] == ["big", "big", "big"]
+    assert not any(s.error for s in answer_steps)
+    assert any(s.meta.get("superseded") and s.error for s in res.steps)   # the failed escalation is still reported
+    assert res.cost == pytest.approx(sum(p["actual_cost"] for p in res.plans if p["actual_cost"] is not None))
