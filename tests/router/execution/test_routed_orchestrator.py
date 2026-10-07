@@ -320,3 +320,57 @@ def test_failed_dependency_output_is_not_passed_on():
     orch.run(_task())
     step2 = [p for _, p in sent if "Analyse the time complexity" in p]
     assert step2 and all("[error" not in p and "Results of earlier steps" not in p for p in step2)
+
+
+class ContextRouter(TextRouter):
+    """Like TextRouter, but 'coder' tops any text containing code ('fn ')."""
+
+    def predict_scores_text(self, texts, *, encoder=None):
+        self.text_calls.append(list(texts))
+        rows = [[0.7, 0.9, 0.95] if "fn " in t else [0.7, 0.9, 0.8] for t in texts]
+        return pd.DataFrame(rows, index=range(len(texts)), columns=POOL)
+
+
+def _scripted_clients(answer, sent=None):
+    """Every model replies ``answer(model_id, prompt)``."""
+    def make(m):
+        def fn(prompt, **kw):
+            if sent is not None:
+                sent.append((m, prompt))
+            return LLMResponse(answer(m, str(prompt)), cost=0.01, input_tokens=5, output_tokens=2)
+        return LLMClient(CallableAdapter(m, fn))
+    return ClientRegistry({m: make(m) for m in POOL})
+
+
+def _code_answers(m, p):
+    return "fn quicksort() {}" if p.startswith("Implement") else f"{m} answers"
+
+
+def _plan_settings(**kw):
+    from router.agentic.schemas import AgenticRouterSettings, load_settings
+    return AgenticRouterSettings.model_validate(
+        {**load_settings().model_dump(), "orchestrator": "plan", "warmup": False, **kw})
+
+
+def test_late_routing_routes_a_dependent_step_on_its_context():
+    router = ContextRouter()
+    agent = _planning_agent(DEP_PLAN, router=router, clients=_scripted_clients(_code_answers))
+    orch = _orchestrator(agent, route_late=True)
+    assert orch.run(_task()).success
+    step1, step2 = orch.subcalls
+    assert step1.meta["planned_model"] == step1.meta["routed_model"] == "big"
+    assert step2.model_id == "coder"
+    assert step2.meta["planned_model"] == "big" and step2.meta["routed_model"] == "coder"
+    assert router.text_calls[-1][0].startswith("Analyse the time complexity")   # task first
+
+
+def test_without_late_routing_steps_keep_their_plan_time_model():
+    agent = _planning_agent(DEP_PLAN, router=ContextRouter(), clients=_scripted_clients(_code_answers))
+    orch = _orchestrator(agent)
+    assert orch.run(_task()).success
+    assert orch.subcalls[1].model_id == "big"
+
+
+def test_route_late_setting_reaches_the_orchestrator():
+    agent = AgenticRouter.from_settings(_plan_settings(plan={"route_late": True}), router=TextRouter())
+    assert agent.orchestrator.route_late is True

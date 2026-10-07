@@ -289,6 +289,7 @@ class AgenticRouter:
             budget = math.inf if s.plan.budget is None else s.plan.budget
             orchestrator = plan_orchestrator(
                 budget=budget, max_workers=s.plan.max_workers, sequential=s.plan.sequential,
+                route_late=s.plan.route_late,
                 limits=ExecutionLimits(max_cost=budget, max_depth=s.max_depth,
                                        max_replans=s.plan.max_replans))
         elif s.orchestrator == "tool_agent":

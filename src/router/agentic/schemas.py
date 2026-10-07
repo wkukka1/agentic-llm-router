@@ -100,6 +100,8 @@ class PlanSettings(BaseModel):
     max_replans: int = Field(1, ge=0)
     #: the prompt the plan orchestrator's planner uses (numbered steps with [after N])
     planner_prompt: str = "plan"
+    #: route each step just before it runs, on its prompt plus dependency results
+    route_late: bool = False
 
 
 class ToolAgentSettings(BaseModel):

@@ -78,7 +78,7 @@ class RoutedOrchestrator(Orchestrator):
                  objective: Optional["OptimizationObjective"] = None,
                  registry: Optional["LLMRegistry"] = None,
                  max_workers: int = 4, sequential: bool = False,
-                 router_tool=None):
+                 route_late: bool = False, router_tool=None):
         super().__init__(config, router_tool=router_tool, plan_forecaster=plan_forecaster)
         from ..constraints import OptimizationObjective
 
@@ -87,6 +87,7 @@ class RoutedOrchestrator(Orchestrator):
         self.registry = registry
         self.max_workers = max(1, int(max_workers))
         self.sequential = bool(sequential)
+        self.route_late = bool(route_late)
         self.subcalls: list[SubCall] = []
         #: every plan this orchestrator made (the first, then each replan)
         self.plan_history: list[Plan] = []
@@ -94,6 +95,8 @@ class RoutedOrchestrator(Orchestrator):
         self.attempts: list[tuple[str, ExecutionResult]] = []
         self._calls: dict[str, SubCall] = {}            # step_id -> latest attempt
         self._scores: dict[str, dict[str, float]] = {}  # step_id -> model_id -> quality
+        self._planned: dict[str, str] = {}             # step_id -> plan-time model
+        self._pinned: set[str] = set()                 # escalated this round: keep the model
         cost_model = getattr(plan_forecaster, "cost_model", None)
         if cost_model is None:
             from ..llm.cost import CostModel
@@ -111,6 +114,7 @@ class RoutedOrchestrator(Orchestrator):
         for i, (sub, (model_id, scores)) in enumerate(zip(subs, routes)):
             step_id = f"{task.task_id}.{i}"
             self._scores[step_id] = scores
+            self._planned[step_id] = model_id
             steps.append(self._new_step(step_id, sub.text, model_id, scores,
                                         [f"{task.task_id}.{d - 1}" for d in sub.depends_on],
                                         context_chars))
@@ -212,6 +216,7 @@ class RoutedOrchestrator(Orchestrator):
         fresh: list[SubCall] = []
         for level in _levels(plan):
             todo = [s for s in level if not self._succeeded(s.step_id)]
+            todo = self._assign_models(plan, todo)
             if len(todo) == 1:
                 results = [self._run_step(todo[0])]
             elif todo:
@@ -254,6 +259,30 @@ class RoutedOrchestrator(Orchestrator):
         self.attempts.append((plan.plan_id, result))
         return result
 
+    def _assign_models(self, plan: Plan, steps: list[PlanStep]) -> list[PlanStep]:
+        """Late routing (``route_late``): re-route, in one batched router call,
+        every step whose routing text now carries dependency results, and write
+        the pick into ``plan``. A step pinned by escalation keeps its model; a
+        step with no context yet keeps its plan-time route (same text -- no
+        second encoder pass). A step the router can't score keeps its model."""
+        if not self.route_late:
+            return steps
+        due = [s for s in steps if s.step_id not in self._pinned
+               and self._contextual_prompt(s)[1] != s.prompt]
+        if not due:
+            return steps
+        try:
+            routes = self._route_batch([self._contextual_prompt(s)[1] for s in due])
+        except LookupError:
+            return steps
+        changed = {}
+        for s, (model_id, scores) in zip(due, routes):
+            self._scores[s.step_id] = scores
+            changed[s.step_id] = replace(s, model=self._profile(model_id),
+                                         predicted_quality=scores.get(model_id, float("nan")))
+        plan.steps = [changed.get(s.step_id, s) for s in plan.steps]
+        return [changed.get(s.step_id, s) for s in steps]
+
     def _contextual_prompt(self, step: PlanStep) -> tuple[str, str]:
         """``(call prompt, routing text)`` for ``step``. Only dependencies that
         *succeeded* contribute -- a failed one's ``[error: ...]`` placeholder
@@ -271,7 +300,9 @@ class RoutedOrchestrator(Orchestrator):
         sc = self.agent._call_model(prompt, step.model.model_id, self.task.depth + 1,
                                     predicted_quality=step.predicted_quality)
         sc.prompt = step.prompt
-        sc.meta = {**sc.meta, "step_id": step.step_id}
+        sc.meta = {**sc.meta, "step_id": step.step_id,
+                   "planned_model": self._planned.get(step.step_id, step.model.model_id),
+                   "routed_model": step.model.model_id}
         return sc
 
     # -- replan ------------------------------------------------------------
@@ -299,7 +330,7 @@ class RoutedOrchestrator(Orchestrator):
     def _child_kwargs(self) -> dict:
         return {**super()._child_kwargs(), "agent": self.agent, "objective": self.objective,
                 "registry": self.registry, "max_workers": self.max_workers,
-                "sequential": self.sequential}
+                "sequential": self.sequential, "route_late": self.route_late}
 
 
 def _levels(plan: Plan) -> list[list[PlanStep]]:
@@ -336,7 +367,8 @@ class PlanOrchestratorBridge:
                  forecaster: Optional[Callable[["AgenticRouter"], PlanForecaster]] = None,
                  objective: Optional["OptimizationObjective"] = None,
                  registry: Optional["LLMRegistry"] = None,
-                 max_workers: int = 4, sequential: bool = False):
+                 max_workers: int = 4, sequential: bool = False,
+                 route_late: bool = False):
         self.budget = float(budget)
         self.limits = limits
         self.forecaster = forecaster or (lambda agent: RouterPlanForecaster(agent.router))
@@ -344,6 +376,7 @@ class PlanOrchestratorBridge:
         self.registry = registry
         self.max_workers = max_workers
         self.sequential = sequential
+        self.route_late = route_late
 
     def run(self, prompt: str, agent: "AgenticRouter", depth: int) -> tuple[str, list[SubCall]]:
         root_id = f"plan-{uuid.uuid4().hex[:12]}"
@@ -353,6 +386,7 @@ class PlanOrchestratorBridge:
                                ledger=BudgetLedger(root_id, self.budget), limits=limits),
             agent=agent, plan_forecaster=self.forecaster(agent), objective=self.objective,
             registry=self.registry, max_workers=self.max_workers, sequential=self.sequential,
+            route_late=self.route_late,
         )
         task = AgentTask(task_id=root_id, parent_task_id=None, root_task_id=root_id,
                          prompt=prompt, depth=depth)
@@ -400,5 +434,5 @@ def plan_orchestrator(**kwargs) -> PlanOrchestratorBridge:
     """The plan orchestrator, ready to pass as ``AgenticRouter(orchestrator=...)``.
     Keyword arguments are :class:`PlanOrchestratorBridge`'s (``budget``,
     ``limits``, ``forecaster``, ``objective``, ``registry``, ``max_workers``,
-    ``sequential``)."""
+    ``sequential``, ``route_late``)."""
     return PlanOrchestratorBridge(**kwargs)
