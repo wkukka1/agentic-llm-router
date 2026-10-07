@@ -103,31 +103,35 @@ class RoutedOrchestrator(Orchestrator):
     # -- plan --------------------------------------------------------------
     def plan(self, task: AgentTask) -> Plan:
         agent = self.agent
-        subs = [s for s in (agent.decompose(task.prompt, task.depth) or []) if str(s).strip()] or [task.prompt]
-        if len(subs) == 1:
-            routes = [self._route_known(subs[0])]
-        else:
-            routes = self._route_batch(subs)
+        subs = agent.decompose_plan(task.prompt, task.depth, sequential=self.sequential)
+        texts = [s.text for s in subs]
+        routes = [self._route_known(texts[0])] if len(texts) == 1 else self._route_batch(texts)
         context_chars = history_chars(agent._run_state().history)
         steps = []
         for i, (sub, (model_id, scores)) in enumerate(zip(subs, routes)):
             step_id = f"{task.task_id}.{i}"
             self._scores[step_id] = scores
-            profile = self._profile(model_id)
-            in_tok = estimate_tokens(len(sub) + context_chars)
-            steps.append(PlanStep(
-                step_id=step_id, prompt=sub, model=profile,
-                estimated_input_tokens=in_tok,
-                estimated_output_tokens=self._cost_model.predict_output_tokens(profile, in_tok),
-                dependencies=[f"{task.task_id}.{i - 1}"] if (self.sequential and i) else [],
-                predicted_quality=scores.get(model_id, float("nan")),
-                alternatives=self._alternatives(scores, exclude=model_id),
-            ))
+            steps.append(self._new_step(step_id, sub.text, model_id, scores,
+                                        [f"{task.task_id}.{d - 1}" for d in sub.depends_on],
+                                        context_chars))
         plan = Plan(plan_id=f"{task.task_id}/plan0", task_id=task.task_id, steps=steps)
         self._score(plan)
         task.plan = plan
         self.plan_history.append(plan)
         return plan
+
+    def _new_step(self, step_id: str, prompt: str, model_id: str, scores: dict[str, float],
+                  dependencies: list[str], context_chars: int) -> PlanStep:
+        profile = self._profile(model_id)
+        in_tok = estimate_tokens(len(prompt) + context_chars)
+        return PlanStep(
+            step_id=step_id, prompt=prompt, model=profile,
+            estimated_input_tokens=in_tok,
+            estimated_output_tokens=self._cost_model.predict_output_tokens(profile, in_tok),
+            dependencies=list(dependencies),
+            predicted_quality=scores.get(model_id, float("nan")),
+            alternatives=self._alternatives(scores, exclude=model_id),
+        )
 
     def _route_known(self, prompt: str) -> tuple[str, dict[str, float]]:
         """A request that doesn't decompose: reuse the route triage already
@@ -250,13 +254,20 @@ class RoutedOrchestrator(Orchestrator):
         self.attempts.append((plan.plan_id, result))
         return result
 
+    def _contextual_prompt(self, step: PlanStep) -> tuple[str, str]:
+        """``(call prompt, routing text)`` for ``step``. Only dependencies that
+        *succeeded* contribute -- a failed one's ``[error: ...]`` placeholder
+        is not a result. The routing text puts the task first, so encoder
+        truncation drops context, not the task."""
+        earlier = [self._calls[d] for d in step.dependencies if self._succeeded(d)]
+        if not earlier:
+            return step.prompt, step.prompt
+        context = "\n\n".join(f"[{sc.prompt}]\n{sc.answer}" for sc in earlier)
+        return (f"Results of earlier steps:\n{context}\n\nNow: {step.prompt}",
+                f"{step.prompt}\n\nContext from earlier steps:\n{context}")
+
     def _run_step(self, step: PlanStep) -> SubCall:
-        prompt = step.prompt
-        if step.dependencies:
-            earlier = "\n\n".join(
-                f"[{self._calls[d].prompt}]\n{self._calls[d].answer}" for d in step.dependencies
-                if d in self._calls)
-            prompt = f"Results of earlier steps:\n{earlier}\n\nNow: {step.prompt}"
+        prompt, _ = self._contextual_prompt(step)
         sc = self.agent._call_model(prompt, step.model.model_id, self.task.depth + 1,
                                     predicted_quality=step.predicted_quality)
         sc.prompt = step.prompt

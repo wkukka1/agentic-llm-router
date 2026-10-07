@@ -261,3 +261,62 @@ def test_bridge_over_budget_returns_a_failed_subcall():
     res = agent.run(COMPOUND)
     assert res.mode == "orchestrated" and "over budget" in res.answer
     assert res.errors() and res.errors()[0].error == "over_budget"
+
+
+# --------------------------------------------------------------------------- #
+# adaptive plan orchestrator                                                  #
+# --------------------------------------------------------------------------- #
+class _PlanChat:
+    """Planner stand-in: replies ``reply`` to every plan request."""
+
+    def __init__(self, reply):
+        self.reply, self.calls = reply, 0
+
+    def invoke(self, text):
+        self.calls += 1
+        return self.reply
+
+
+def _planning_agent(reply, *, clients=None, router=None, **kw):
+    from router.agentic import LLMDecomposer
+    return AgenticRouter(router or TextRouter(), clients or _clients(),
+                         decomposer=LLMDecomposer(_PlanChat(reply)), **kw)
+
+
+DEP_PLAN = ("1. Implement quicksort in Rust.\n"
+            "2. [after 1] Analyse the time complexity of the Rust quicksort from step 1.")
+
+
+def test_planner_dependencies_become_plan_dependencies():
+    orch = _orchestrator(_planning_agent(DEP_PLAN))
+    orch.task = _task()
+    plan = orch.plan(orch.task)
+    assert [s.dependencies for s in plan.steps] == [[], ["root.0"]]
+
+
+def test_malformed_planner_dependencies_still_give_a_valid_plan():
+    orch = _orchestrator(_planning_agent(
+        "1. [after 2] First task here.\n2. [after 1, 2] Second task here."))
+    orch.task = _task()
+    plan = orch.plan(orch.task)
+    plan.validate()
+    assert [s.dependencies for s in plan.steps] == [[], ["root.0"]]
+
+
+def test_dependent_step_receives_its_dependency_output():
+    sent = []
+    agent = _planning_agent(DEP_PLAN, clients=_clients(sent=sent))
+    assert _orchestrator(agent).run(_task()).success
+    assert sent[0][1] == "Implement quicksort in Rust."
+    assert "big answers" in sent[1][1]
+    assert sent[1][1].endswith("Now: Analyse the time complexity of the Rust quicksort from step 1.")
+
+
+def test_failed_dependency_output_is_not_passed_on():
+    sent = []
+    agent = _planning_agent(DEP_PLAN, clients=_clients(sent=sent, fail={"big"}))
+    orch = _orchestrator(agent, max_workers=1)
+    orch.limits = ExecutionLimits(max_replans=0)
+    orch.run(_task())
+    step2 = [p for _, p in sent if "Analyse the time complexity" in p]
+    assert step2 and all("[error" not in p and "Results of earlier steps" not in p for p in step2)
