@@ -102,8 +102,10 @@ class AgenticResult:
         return seen
 
     def errors(self) -> list[SubCall]:
-        """Sub-calls that failed (their answers are placeholders)."""
-        return [n for s in self.steps for n in s.walk() if n.error is not None]
+        """Sub-calls that failed (their answers are placeholders); superseded
+        attempts, which no longer feed the answer, are not listed."""
+        return [n for s in self.steps for n in s.walk()
+                if n.error is not None and not n.meta.get("superseded")]
 
     def summary(self) -> str:
         if self.mode == "single":

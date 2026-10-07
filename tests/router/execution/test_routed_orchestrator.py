@@ -540,3 +540,4 @@ def test_best_round_answer_comes_with_that_rounds_steps_and_all_spend_is_counted
     assert not any(s.error for s in answer_steps)
     assert any(s.meta.get("superseded") and s.error for s in res.steps)   # the failed escalation is still reported
     assert res.cost == pytest.approx(sum(p["actual_cost"] for p in res.plans if p["actual_cost"] is not None))
+    assert res.errors() == []
