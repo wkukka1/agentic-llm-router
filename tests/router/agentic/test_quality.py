@@ -87,3 +87,18 @@ def test_shipped_verify_prompt_formats():
     from router.agentic.schemas import default_prompts
     text = default_prompts()["verify"].format(original="o", steps="s", answer="a")
     assert "VERDICT:" in text and "WEAK_STEPS:" in text and "FOLLOW_UPS:" in text
+
+
+def test_empty_follow_ups_does_not_swallow_the_next_key_line():
+    v = parse_verdict("VERDICT: FAIL\nSCORE: 4\nWEAK_STEPS: 1\nFOLLOW_UPS:\nISSUES: bad code", n_steps=3)
+    assert v.follow_ups == [] and v.issues == "bad code" and v.weak_steps == [1]
+
+
+def test_empty_weak_steps_does_not_read_digits_from_the_next_line():
+    v = parse_verdict("VERDICT: FAIL\nSCORE: 4\nWEAK_STEPS:\nFOLLOW_UPS: none\nISSUES: step 2 is wrong", n_steps=3)
+    assert v.weak_steps == []
+
+
+def test_follow_up_on_the_same_line_as_the_key_is_kept():
+    v = parse_verdict("VERDICT: FAIL\nSCORE: 4\nWEAK_STEPS: none\nFOLLOW_UPS: Add a test for an empty array.\nISSUES: none", n_steps=3)
+    assert [t.text for t in v.follow_ups] == ["Add a test for an empty array."]

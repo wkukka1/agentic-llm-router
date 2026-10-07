@@ -20,12 +20,12 @@ from .llm_clients import message_text
 __all__ = ["QualityVerdict", "QualityChecker", "parse_verdict"]
 
 _FLAGS = re.IGNORECASE | re.MULTILINE
-_VERDICT_RE = re.compile(r"^\s*VERDICT:\s*(PASS|FAIL)\b", _FLAGS)
-_SCORE_RE = re.compile(r"^\s*SCORE:\s*(\d+(?:\.\d+)?)", _FLAGS)
-_WEAK_RE = re.compile(r"^\s*WEAK_STEPS:\s*(.*)$", _FLAGS)
-_ISSUES_RE = re.compile(r"^\s*ISSUES:\s*(.*)$", _FLAGS)
-_FOLLOW_RE = re.compile(r"^\s*FOLLOW_UPS:\s*(.*)$", _FLAGS)
-_KEY_LINE_RE = re.compile(r"^\s*(VERDICT|SCORE|WEAK_STEPS|FOLLOW_UPS|ISSUES):", re.IGNORECASE)
+_VERDICT_RE = re.compile(r"^[ \t]*VERDICT:[ \t]*(PASS|FAIL)\b", _FLAGS)
+_SCORE_RE = re.compile(r"^[ \t]*SCORE:[ \t]*(\d+(?:\.\d+)?)", _FLAGS)
+_WEAK_RE = re.compile(r"^[ \t]*WEAK_STEPS:[ \t]*(.*)$", _FLAGS)
+_ISSUES_RE = re.compile(r"^[ \t]*ISSUES:[ \t]*(.*)$", _FLAGS)
+_FOLLOW_RE = re.compile(r"^[ \t]*FOLLOW_UPS:[ \t]*(.*)$", _FLAGS)
+_KEY_LINE_RE = re.compile(r"^[ \t]*(VERDICT|SCORE|WEAK_STEPS|FOLLOW_UPS|ISSUES):", re.IGNORECASE)
 
 
 @dataclass
