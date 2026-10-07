@@ -200,7 +200,8 @@ class LLMDecomposer:
     def __init__(self, chat_model=None, *, max_parts: int = 8, max_prompt_chars: int = 4000,
                  fallback: Callable[[str], list[str]] | None = None,
                  prompt: str | None = None,
-                 chat_for: Callable[[str], Callable[[str], object]] | None = None):
+                 chat_for: Callable[[str], Callable[[str], object]] | None = None,
+                 plan_prompt: str | None = None):
         from .schemas import default_prompts
 
         if (chat_model is None) == (chat_for is None):
@@ -209,6 +210,8 @@ class LLMDecomposer:
         self._chat_for = chat_for
         #: ``str.format`` template; the ``decompose`` prompt in ``configs/agentic.yaml`` unless given
         self.prompt = prompt or default_prompts()["decompose"]
+        #: ``str.format`` template for :meth:`plan` (numbered sub-tasks with ``[after N]``)
+        self.plan_prompt = plan_prompt or default_prompts()["plan"]
         self.max_parts = max_parts
         self.max_prompt_chars = int(max_prompt_chars)
         self._fallback = fallback or NaiveDecomposer()
@@ -216,24 +219,40 @@ class LLMDecomposer:
         # shared ``max_calls`` budget like a routed call does (AGENTICROUTER-003)
         self.on_call: Callable[[], None] | None = None
 
-    def __call__(self, prompt: str) -> list[str]:
+    def _ask(self, template: str, prompt: str) -> str | None:
+        """The model's reply to ``template`` for ``prompt``, or ``None`` when
+        the request is too long or the call failed (the caller falls back)."""
         if len(prompt) > self.max_prompt_chars:
             warnings.warn(
                 f"LLMDecomposer: prompt is {len(prompt)} chars (> {self.max_prompt_chars}); "
                 "using the fallback decomposer instead of truncating",
-                stacklevel=2,
+                stacklevel=3,
             )
-            return self._fallback(prompt)
+            return None
         if self.on_call is not None:
             self.on_call()
         try:
             call = self._chat_for(prompt) if self._chat_for is not None else self._chat.invoke
-            msg = call(self.prompt.format(prompt=prompt))
+            return message_text(call(template.format(prompt=prompt)))
         except Exception as exc:  # pragma: no cover - provider errors
             warnings.warn(f"LLMDecomposer call failed ({exc!r}); using the fallback decomposer",
-                          stacklevel=2)
+                          stacklevel=3)
+            return None
+
+    def __call__(self, prompt: str) -> list[str]:
+        text = self._ask(self.prompt, prompt)
+        if text is None:
             return self._fallback(prompt)
-        return self._parse(message_text(msg)) or [prompt]
+        return self._parse(text) or [prompt]
+
+    def plan(self, prompt: str) -> list[SubTask]:
+        """:meth:`__call__` with dependencies: the ``plan`` prompt, parsed by
+        :func:`parse_plan_lines`. Falls back like :meth:`__call__`, giving
+        independent sub-tasks."""
+        text = self._ask(self.plan_prompt, prompt)
+        if text is None:
+            return [SubTask(s) for s in self._fallback(prompt)]
+        return parse_plan_lines(text, max_parts=self.max_parts) or [SubTask(prompt)]
 
     def _parse(self, text: str) -> list[str]:
         parts, seen = [], set()

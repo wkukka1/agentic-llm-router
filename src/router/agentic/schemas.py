@@ -98,6 +98,8 @@ class PlanSettings(BaseModel):
     max_workers: int = Field(4, gt=0)
     sequential: bool = False
     max_replans: int = Field(1, ge=0)
+    #: the prompt the plan orchestrator's planner uses (numbered steps with [after N])
+    planner_prompt: str = "plan"
 
 
 class ToolAgentSettings(BaseModel):
@@ -154,6 +156,9 @@ class AgenticRouterSettings(BaseModel):
                 raise ValueError(f"{section}.kind is 'llm' but {section}.model is not set")
         if self.orchestrator == "tool_agent" and not self.tool_agent.model:
             raise ValueError("orchestrator is 'tool_agent' but tool_agent.model is not set")
+        if self.orchestrator == "plan" and self.plan.planner_prompt not in self.prompts:
+            raise ValueError(f"plan.planner_prompt: no prompt {self.plan.planner_prompt!r}; "
+                             f"known: {sorted(self.prompts)}")
         return self
 
     @field_validator("run")

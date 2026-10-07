@@ -9,6 +9,8 @@
 # each prompt is rendered with:
 #   triage            {model_id} {q} {scores} {prompt}
 #   decompose         {prompt}
+#   plan              {prompt}
+#   verify            {original} {steps} {answer}
 #   synthesize        {original} {body}
 #   tool_agent_system (none -- write literal braces as {{ }})
 
@@ -39,6 +41,26 @@ prompts:
     Example sub-tasks:
     Translate 'The meeting moved to Friday.' into French.
     Translate 'The meeting moved to Friday.' into German.
+
+    Request:
+    {prompt}
+
+  plan: |-
+    Break the request below into a minimal ordered list of sub-tasks. Each sub-task is sent to a separate model that will NOT see the original request or the other sub-tasks, so each one must contain exactly the context needed to complete it -- nothing missing, nothing extra:
+    - Replace pronouns and references ("it", "this", "the above", "that code") with what they refer to.
+    - Carry over every detail from the request that this sub-task needs: its subject, inputs, data, constraints, language, format or audience.
+    - Leave out everything this sub-task does not need.
+    - Do not answer anything, and do not add requirements the request did not ask for.
+
+    When a sub-task needs the RESULT of an earlier sub-task (for example, analysing code an earlier sub-task writes), start it with [after N], where N is that earlier sub-task's number, and name what it uses ("the Rust implementation from step 1"). That result will be given to it. Use [after N] only for real dependencies.
+
+    Number the sub-tasks 1, 2, 3, ... one per line, and list each sub-task exactly once. Output only the numbered lines: no headings, notes or explanations. If the request is already a single task, return it unchanged as "1. <the request>".
+
+    The example below shows only the format; never reuse its wording or constraints.
+    Example request: "Write a haiku about rain, then translate it into Spanish."
+    Example sub-tasks:
+    1. Write a haiku about rain.
+    2. [after 1] Translate the haiku about rain from step 1 into Spanish.
 
     Request:
     {prompt}

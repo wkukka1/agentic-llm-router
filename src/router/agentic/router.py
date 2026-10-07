@@ -71,6 +71,7 @@ from .decompose import (
     LLMDecomposer,
     LLMSynthesizer,
     NaiveDecomposer,
+    SubTask,
     concat_synthesizer,
     looks_atomic,
 )
@@ -273,7 +274,8 @@ class AgenticRouter:
         naive = NaiveDecomposer(max_parts=d.max_parts, min_part_chars=d.min_part_chars)
         decomposer = naive if d.kind == "naive" else LLMDecomposer(
             max_parts=d.max_parts, max_prompt_chars=d.max_prompt_chars,
-            fallback=naive, prompt=prompts[d.prompt], **helper_kw(d, "decompose"))
+            fallback=naive, prompt=prompts[d.prompt],
+            plan_prompt=prompts.get(s.plan.planner_prompt), **helper_kw(d, "decompose"))
 
         y = s.synthesizer
         synthesizer = concat_synthesizer if y.kind == "concat" else LLMSynthesizer(
@@ -372,13 +374,30 @@ class AgenticRouter:
 
         Any other decomposer (``NaiveDecomposer``, a plain callable) is called
         unchanged."""
-        if isinstance(self.decomposer, LLMDecomposer):
-            atomic = not self._is_multipart(prompt)
-            if depth == 0:
-                atomic = atomic and looks_atomic(prompt)
-            if atomic:
-                return [prompt]
+        if isinstance(self.decomposer, LLMDecomposer) and self._skip_decomposition(prompt, depth):
+            return [prompt]
         return self.decomposer(prompt)
+
+    def _skip_decomposition(self, prompt: str, depth: int) -> bool:
+        """The gate in :meth:`decompose`: nothing for an LLM decomposer to split."""
+        atomic = not self._is_multipart(prompt)
+        if depth == 0:
+            atomic = atomic and looks_atomic(prompt)
+        return atomic
+
+    def decompose_plan(self, prompt: str, depth: int, *, sequential: bool = False) -> list[SubTask]:
+        """:meth:`decompose` with dependencies: :class:`SubTask`\\ s whose
+        ``depends_on`` name the earlier sub-tasks whose results they need. An
+        :class:`LLMDecomposer` plans them (:meth:`LLMDecomposer.plan`) behind
+        the same gate as :meth:`decompose`; any other decomposer gives
+        independent sub-tasks, each depending on the one before when
+        ``sequential``."""
+        if isinstance(self.decomposer, LLMDecomposer):
+            if self._skip_decomposition(prompt, depth):
+                return [SubTask(prompt)]
+            return self.decomposer.plan(prompt)
+        subs = [s for s in (self.decomposer(prompt) or []) if str(s).strip()] or [prompt]
+        return [SubTask(s, (i,) if sequential and i else ()) for i, s in enumerate(subs)]
 
     def _is_multipart(self, prompt: str) -> bool:
         """The triage heuristic's lexical multi-part check (an ``LLMTriage``'s
