@@ -12,6 +12,7 @@ import pandas as pd
 import pytest
 
 from router.agentic import AgenticRouter, ClientRegistry, LLMClient, LLMResponse
+from router.agentic.decompose import SubTask
 from router.constraints import OptimizationObjective
 from router.execution.budget import BudgetLedger, ExecutionLimits
 from router.execution.forecast import RouterPlanForecaster
@@ -541,3 +542,31 @@ def test_best_round_answer_comes_with_that_rounds_steps_and_all_spend_is_counted
     assert any(s.meta.get("superseded") and s.error for s in res.steps)   # the failed escalation is still reported
     assert res.cost == pytest.approx(sum(p["actual_cost"] for p in res.plans if p["actual_cost"] is not None))
     assert res.errors() == []
+
+
+def test_checker_follow_up_becomes_a_step_with_its_dependency():
+    sent = []
+    follow = SubTask("Fix the compile error in the Rust quicksort from step 1.", (1,))
+    checker = _ScriptedChecker(_fail(5, follow_ups=[follow]), _pass())
+    orch = _orchestrator(_planning_agent(THREE_STEP, clients=_clients(sent=sent)),
+                         checker=checker, max_workers=1)
+    orch.limits = ExecutionLimits(max_replans=1)
+    assert orch.run(_task()).success
+    last = orch.task.plan.steps[-1]
+    assert last.prompt == follow.text and last.dependencies == ["root.0"]
+    fix = [str(p) for _, p in sent if "Fix the compile error" in str(p)]
+    assert len(fix) == 1 and "Results of earlier steps" in fix[0]
+    assert len(sent) == 4                                       # 3 original steps once + the follow-up
+    assert len(checker.seen[1][1]) == 4                         # round 2 reviews the follow-up too
+
+
+def test_follow_ups_respect_max_fanout():
+    follows = [SubTask(f"Extra task number {i}.") for i in range(5)]
+    checker = _ScriptedChecker(_fail(5, follow_ups=follows), _pass())
+    orch = _orchestrator(_planning_agent(THREE_STEP), checker=checker)
+    orch.limits = ExecutionLimits(max_replans=1, max_fanout=4)
+    orch.run(_task())
+    assert len(orch.task.plan.steps) == 4
+    changes = orch._round_changes[orch.task.plan.plan_id]
+    assert changes["follow_ups"] == ["Extra task number 0."]
+    assert changes["dropped_follow_ups"] == [f"Extra task number {i}." for i in range(1, 5)]

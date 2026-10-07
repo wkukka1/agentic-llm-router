@@ -357,9 +357,36 @@ class RoutedOrchestrator(Orchestrator):
         for sid in weak | _dependents(plan, escalate):
             self._calls.pop(sid, None)
         steps = [self._escalate(s) if s.step_id in escalate else s for s in plan.steps]
-        new = self._next_plan(plan, steps)
-        self._round_changes[new.plan_id] = {"escalated": sorted(escalate)}
+        added, dropped = self._follow_up_steps(plan, steps, verdict)
+        new = self._next_plan(plan, steps + added)
+        self._round_changes[new.plan_id] = {"escalated": sorted(escalate),
+                                            "follow_ups": [s.prompt for s in added],
+                                            "dropped_follow_ups": dropped}
         return new
+
+    def _follow_up_steps(self, plan: Plan, steps: list[PlanStep],
+                         verdict: Optional["QualityVerdict"]) -> tuple[list[PlanStep], list[str]]:
+        """New steps for the checker's follow-ups, up to ``limits.max_fanout``
+        steps in the plan (the rest are dropped and reported). ``[after N]``
+        names the N-th step the checker reviewed (plan order); follow-ups are
+        routed at plan time like the first plan's steps."""
+        if verdict is None or not verdict.follow_ups:
+            return [], []
+        room = max(0, self.limits.max_fanout - len(steps))
+        take = verdict.follow_ups[:room]
+        dropped = [t.text for t in verdict.follow_ups[room:]]
+        if not take:
+            return [], dropped
+        routes = self._route_batch([t.text for t in take])
+        context_chars = history_chars(self.agent._run_state().history)
+        added = []
+        for i, (task, (model_id, scores)) in enumerate(zip(take, routes)):
+            step_id = f"{plan.task_id}.r{plan.revision + 1}.{i}"
+            self._scores[step_id] = scores
+            self._planned[step_id] = model_id
+            deps = [plan.steps[d - 1].step_id for d in task.depends_on if 1 <= d <= len(plan.steps)]
+            added.append(self._new_step(step_id, task.text, model_id, scores, deps, context_chars))
+        return added, dropped
 
     def _last_failed_verdict(self, plan: Plan) -> Optional["QualityVerdict"]:
         """The verdict that failed ``plan``'s round, if a check failed it."""
