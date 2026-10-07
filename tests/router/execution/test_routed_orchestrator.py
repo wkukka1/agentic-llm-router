@@ -570,3 +570,22 @@ def test_follow_ups_respect_max_fanout():
     changes = orch._round_changes[orch.task.plan.plan_id]
     assert changes["follow_ups"] == ["Extra task number 0."]
     assert changes["dropped_follow_ups"] == [f"Extra task number {i}." for i in range(1, 5)]
+
+
+class _UnscorableFollowUpRouter(TextRouter):
+    """TextRouter, but any text containing 'UNSCORABLE' gets no usable score."""
+
+    def predict_scores_text(self, texts, *, encoder=None):
+        self.text_calls.append(list(texts))
+        rows = [[float("nan")] * 3 if "UNSCORABLE" in t else [0.7, 0.9, 0.8] for t in texts]
+        return pd.DataFrame(rows, index=range(len(texts)), columns=POOL)
+
+
+def test_unscorable_follow_up_is_dropped_not_fatal():
+    checker = _ScriptedChecker(_fail(5, follow_ups=[SubTask("UNSCORABLE follow-up task.")]), _pass())
+    orch = _orchestrator(_planning_agent(THREE_STEP, router=_UnscorableFollowUpRouter()), checker=checker)
+    orch.limits = ExecutionLimits(max_replans=1)
+    assert orch.run(_task()).success
+    assert len(orch.task.plan.steps) == 3
+    changes = orch._round_changes[orch.task.plan.plan_id]
+    assert changes["follow_ups"] == [] and changes["dropped_follow_ups"] == ["UNSCORABLE follow-up task."]

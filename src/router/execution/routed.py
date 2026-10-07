@@ -369,7 +369,8 @@ class RoutedOrchestrator(Orchestrator):
         """New steps for the checker's follow-ups, up to ``limits.max_fanout``
         steps in the plan (the rest are dropped and reported). ``[after N]``
         names the N-th step the checker reviewed (plan order); follow-ups are
-        routed at plan time like the first plan's steps."""
+        routed at plan time like the first plan's steps; follow-ups the router
+        can't score are dropped and reported."""
         if verdict is None or not verdict.follow_ups:
             return [], []
         room = max(0, self.limits.max_fanout - len(steps))
@@ -377,7 +378,10 @@ class RoutedOrchestrator(Orchestrator):
         dropped = [t.text for t in verdict.follow_ups[room:]]
         if not take:
             return [], dropped
-        routes = self._route_batch([t.text for t in take])
+        try:
+            routes = self._route_batch([t.text for t in take])
+        except LookupError:
+            return [], dropped + [t.text for t in take]
         context_chars = history_chars(self.agent._run_state().history)
         added = []
         for i, (task, (model_id, scores)) in enumerate(zip(take, routes)):
