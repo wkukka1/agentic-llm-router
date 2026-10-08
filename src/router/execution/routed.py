@@ -548,11 +548,19 @@ class PlanOrchestratorBridge:
             return orch.best["answer"], _all_steps(orch)
         if task.status is TaskStatus.TERMINATED:
             est = task.plan.budget_estimate() if task.plan is not None else float("nan")
-            msg = f"plan over budget: needs ~{est:.6g}, budget {self.budget:.6g}"
-            return f"[error: {msg}]", [SubCall(
+            msg = f"plan over budget: needs ~{est:.6g}, budget remaining {orch.ledger.remaining():.6g}"
+            refusal = SubCall(
                 prompt=prompt, model_id="(none)", predicted_quality=float("nan"),
                 answer=f"[error: {msg}]", depth=depth + 1, error=result.error_code or "over_budget",
-            )]
+            )
+            if not orch.executed:
+                return refusal.answer, [refusal]
+            # a refused repair round must not discard the work already paid for
+            steps = _all_steps(orch)
+            done = [sc for sc in steps if sc.error is None and not sc.meta.get("superseded")]
+            answer = done[0].answer if len(done) == 1 else agent.synthesizer(
+                prompt, [(sc.prompt, sc.answer) for sc in done])
+            return answer, steps + [refusal]
         steps = _all_steps(orch)
         if result.success:
             return result.output, steps

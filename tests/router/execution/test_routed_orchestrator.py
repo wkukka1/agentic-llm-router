@@ -589,3 +589,40 @@ def test_unscorable_follow_up_is_dropped_not_fatal():
     assert len(orch.task.plan.steps) == 3
     changes = orch._round_changes[orch.task.plan.plan_id]
     assert changes["follow_ups"] == [] and changes["dropped_follow_ups"] == ["UNSCORABLE follow-up task."]
+
+
+# --------------------------------------------------------------------------- #
+# final-review fixes                                                          #
+# --------------------------------------------------------------------------- #
+def _clients_failing(model, needle, sent=None, cost=0.01):
+    """'model' fails on prompts containing 'needle'; everything else succeeds."""
+    def make(m):
+        def fn(prompt, **kw):
+            if sent is not None:
+                sent.append((m, prompt))
+            if m == model and needle in str(prompt):
+                raise RuntimeError(f"{m} is down")
+            return LLMResponse(f"{m} answers", cost=cost, input_tokens=5, output_tokens=2)
+        return LLMClient(CallableAdapter(m, fn))
+    return ClientRegistry({m: make(m) for m in POOL})
+
+
+def test_over_budget_repair_round_without_a_check_keeps_the_paid_work():
+    agent = _planning_agent(
+        THREE_STEP, clients=_clients_failing("big", "mergesort", cost=0.015),
+        router=TextRouter(costs=[0.001, 0.01, 0.005]),
+        orchestrator=plan_orchestrator(budget=0.031, limits=ExecutionLimits(max_cost=0.031, max_replans=1)))
+    res = agent.run(COMPOUND)                         # round 0 spends 0.03; the escalation doesn't fit
+    assert "over budget" not in res.answer
+    assert len(res.steps) == 4
+    refusal = res.steps[-1]
+    assert refusal.error == "over_budget" and refusal.cost is None
+    assert "budget remaining" in refusal.answer
+    assert res.cost == pytest.approx(sum(p["actual_cost"] for p in res.plans if p["actual_cost"] is not None))
+    assert res.cost == pytest.approx(0.03)
+
+
+def test_over_budget_message_reports_the_remaining_budget():
+    agent = AgenticRouter(TextRouter(costs=[0.001, 0.01, 0.005]), _clients(),
+                          orchestrator=plan_orchestrator(budget=0.001))
+    assert "budget remaining 0.001" in agent.run(COMPOUND).answer
