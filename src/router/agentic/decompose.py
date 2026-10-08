@@ -251,7 +251,7 @@ class LLMDecomposer:
         independent sub-tasks."""
         text = self._ask(self.plan_prompt, prompt)
         if text is None:
-            return [SubTask(s) for s in self._fallback(prompt)]
+            return [SubTask(s) for s in self._fallback(prompt)] or [SubTask(prompt)]
         return parse_plan_lines(text, max_parts=self.max_parts) or [SubTask(prompt)]
 
     def _parse(self, text: str) -> list[str]:

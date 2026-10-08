@@ -151,3 +151,13 @@ def test_unknown_planner_prompt_is_rejected_for_the_plan_orchestrator():
         AgenticRouterSettings.model_validate({
             **load_settings().model_dump(), "orchestrator": "plan",
             "plan": {"planner_prompt": "nope"}})
+
+
+def test_llm_decomposer_plan_with_an_empty_fallback_keeps_the_prompt():
+    class Broken:
+        def invoke(self, text):
+            raise RuntimeError("down")
+
+    dec = LLMDecomposer(Broken(), fallback=lambda p: [])
+    with pytest.warns(UserWarning, match="call failed"):
+        assert dec.plan("x") == [SubTask("x")]

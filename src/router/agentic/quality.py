@@ -119,7 +119,7 @@ class QualityChecker:
     def __call__(self, original: str, steps: Sequence[tuple[str, str]], answer: str) -> QualityVerdict:
         body = "\n\n".join(f"Step {i}: {task}\nAnswer: {_cut(ans, self.max_step_chars)}"
                            for i, (task, ans) in enumerate(steps, 1))
-        request = self.prompt.format(original=original[:2000], steps=body,
+        request = self.prompt.format(original=_cut(original, 2000), steps=body,
                                      answer=_cut(answer, self.max_answer_chars))
         if self.on_call is not None:
             # outside the try: an exhausted call budget must not read as a failed check

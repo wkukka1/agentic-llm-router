@@ -102,3 +102,10 @@ def test_empty_weak_steps_does_not_read_digits_from_the_next_line():
 def test_follow_up_on_the_same_line_as_the_key_is_kept():
     v = parse_verdict("VERDICT: FAIL\nSCORE: 4\nWEAK_STEPS: none\nFOLLOW_UPS: Add a test for an empty array.\nISSUES: none", n_steps=3)
     assert [t.text for t in v.follow_ups] == ["Add a test for an empty array."]
+
+
+def test_long_original_request_carries_the_truncated_marker():
+    chat = _Chat(PASS)
+    checker = QualityChecker(chat, prompt="{original}|{steps}|{answer}")
+    checker("x" * 2500, [("t", "a")], "ans")
+    assert chat.requests[0].startswith("x" * 2000 + " …[truncated]|")

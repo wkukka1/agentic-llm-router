@@ -154,10 +154,10 @@ def test_replanned_and_refused_plans_are_recorded(db):
     assert [(p["revision"], p["outcome"]) for p in plans] == [(0, "step_failed"), (1, "completed"),
                                                               (0, "over_budget")]
     assert plans[-1]["actual_cost"] is None
-    errors = _rows(db, "SELECT error FROM calls WHERE error IS NOT NULL")
-    # the replanned run's failed attempts were replaced by their retries; only
-    # the refused run's over-budget marker is an error
-    assert [e["error"] for e in errors] == ["over_budget"]
+    # the replanned run's failed attempts were replaced by their retries: they stay
+    # in `calls` (all spend is reported) but are not counted as run errors; only
+    # the refused run's over-budget marker is
+    assert [r["n_errors"] for r in _rows(db, "SELECT n_errors FROM runs ORDER BY rowid")] == [0, 1]
 
 
 def test_recursive_orchestration_stores_the_call_tree(db):
@@ -266,3 +266,14 @@ def test_connect_adds_new_columns_to_an_older_file(tmp_path):
     res = AgenticRouter(TextRouter(), _priced_clients()).run("What is 2+2?")
     record_result(conn, res)
     assert conn.execute("SELECT cost_source FROM v_call_costs").fetchone() == ("actual",)
+
+
+def test_superseded_failed_leaf_is_not_counted_as_an_error(db):
+    from router.agentic.result import SubCall
+    res = AgenticRouter(TextRouter(), _priced_clients()).run("What is 2+2?")
+    res.steps.append(SubCall(prompt="old try", model_id="coder", predicted_quality=0.8,
+                             answer="[error: x]", error="down", meta={"superseded": True}))
+    conn = connect(db)
+    record_result(conn, res, router="t")
+    run = _rows(db, "SELECT n_calls, n_errors FROM runs")[0]
+    assert run["n_calls"] == 2 and run["n_errors"] == 0
