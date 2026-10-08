@@ -115,6 +115,9 @@ class PlanSettings(BaseModel):
     planner_prompt: str = "plan"
     #: route each step just before it runs, on its prompt plus dependency results
     route_late: bool = False
+    #: give each step (and the final answer) a word budget from the planner:
+    #: a length line in the prompt plus a generous max_tokens safety cut-off
+    length_budgets: bool = False
     quality_check: QualityCheckSettings = Field(default_factory=QualityCheckSettings)
 
 

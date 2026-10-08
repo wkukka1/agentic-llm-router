@@ -54,13 +54,15 @@ prompts:
 
     When a sub-task needs the RESULT of an earlier sub-task (for example, analysing code an earlier sub-task writes), start it with [after N], where N is that earlier sub-task's number, and name what it uses ("the Rust implementation from step 1"). That result will be given to it. Use [after N] only for real dependencies.
 
+    Give every sub-task a length budget in words, written as [A-B words, max C]: A-B is the range a complete, good answer needs, C the hard upper limit. Size it to the work -- a short fact about 20-60 words, an explanation about 150-400, code with a short explanation about 200-600. Put it right after the number (and after [after N] if there is one).
+
     Number the sub-tasks 1, 2, 3, ... one per line, and list each sub-task exactly once. Output only the numbered lines: no headings, notes or explanations. If the request is already a single task, return it unchanged as "1. <the request>".
 
     The example below shows only the format; never reuse its wording or constraints.
     Example request: "Write a haiku about rain, then translate it into Spanish."
     Example sub-tasks:
-    1. Write a haiku about rain.
-    2. [after 1] Translate the haiku about rain from step 1 into Spanish.
+    1. [17-25 words, max 40] Write a haiku about rain.
+    2. [after 1] [17-25 words, max 40] Translate the haiku about rain from step 1 into Spanish.
 
     Request:
     {prompt}
@@ -143,6 +145,7 @@ router:
     sequential: false
     max_replans: 2                # repair rounds after a failed step or quality check
     route_late: true              # route each step on its prompt + dependency results
+    length_budgets: true          # per-step [A-B words, max C] from the planner -> length line + 2x max_tokens safety cap
     planner_prompt: plan          # numbered steps with [after N] dependencies (LLM decomposers)
     quality_check:
       enabled: true               # judge the synthesized answer; repair weak steps / add follow-ups

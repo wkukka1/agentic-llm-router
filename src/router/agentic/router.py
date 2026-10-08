@@ -300,6 +300,7 @@ class AgenticRouter:
             orchestrator = plan_orchestrator(
                 budget=budget, max_workers=s.plan.max_workers, sequential=s.plan.sequential,
                 route_late=s.plan.route_late, checker=checker,
+                length_budgets=s.plan.length_budgets,
                 limits=ExecutionLimits(max_cost=budget, max_depth=s.max_depth,
                                        max_replans=s.plan.max_replans))
         elif s.orchestrator == "tool_agent":
@@ -447,8 +448,8 @@ class AgenticRouter:
         (the helper itself counts it against ``max_calls`` via ``on_call``)."""
         model_id, q = self.pick_helper_model(request, min_quality)
 
-        def call(text: str) -> LLMResponse:
-            resp = self.clients.complete(model_id, text)
+        def call(text: str, **generation_kwargs) -> LLMResponse:
+            resp = self.clients.complete(model_id, text, **generation_kwargs)
             self._run_state().helper_calls.append({
                 "role": role, "request": request, "model_id": model_id,
                 "predicted_quality": q, "min_quality": min_quality,
@@ -668,16 +669,17 @@ class AgenticRouter:
         return self._call_model(prompt, model_id, depth, predicted_quality=predicted_quality)
 
     def _call_model(self, prompt: str, model_id: str, depth: int, *,
-                    predicted_quality: float = float("nan")) -> SubCall:
+                    predicted_quality: float = float("nan"), **generation_kwargs) -> SubCall:
         """Invoke ``model_id`` once, counting it against ``max_calls``. Inside an
         orchestration (``depth > 0``) a failure becomes a failed ``SubCall``; at
-        the root it raises."""
+        the root it raises. ``generation_kwargs`` (e.g. ``max_tokens``) reach
+        the model's adapter."""
         history = self._run_state().history
         expected: dict = {}
         try:
             self._use_call()
             expected = self._expected_cost(model_id, prompt, history)
-            resp = self.clients.complete(model_id, with_history(history, prompt))
+            resp = self.clients.complete(model_id, with_history(history, prompt), **generation_kwargs)
         except Exception as exc:
             if depth == 0:
                 raise

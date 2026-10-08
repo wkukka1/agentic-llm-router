@@ -981,3 +981,11 @@ def test_interleaved_streams_keep_separate_run_state():
     out_a, out_b = [next(a)], [next(b)]
     ra, rb = _drain(a), _drain(b)
     assert ra[1].mode == rb[1].mode == "single"
+
+
+def test_routed_helper_call_forwards_generation_kwargs():
+    log = []
+    reg = ClientRegistry({m: LLMClient(CallableAdapter(
+        m, lambda p, **kw: (log.append(kw), LLMResponse("ok"))[1])) for m in ["big", "mid", "small"]})
+    _helper_agent(reg).helper_call("synthesize", "anything", 0.75)("text", max_tokens=99)
+    assert log == [{"max_tokens": 99}]

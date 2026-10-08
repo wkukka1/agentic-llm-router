@@ -161,3 +161,56 @@ def test_llm_decomposer_plan_with_an_empty_fallback_keeps_the_prompt():
     dec = LLMDecomposer(Broken(), fallback=lambda p: [])
     with pytest.warns(UserWarning, match="call failed"):
         assert dec.plan("x") == [SubTask("x")]
+
+
+# --------------------------------------------------------------------------- #
+# per-step length budgets: "[A-B words, max C]" -> (low, high, limit)        #
+# --------------------------------------------------------------------------- #
+from router.agentic.decompose import (  # noqa: E402
+    budget_instruction,
+    budget_max_tokens,
+    budget_mid_tokens,
+    derive_final_budget,
+)
+
+
+def test_budget_tag_is_parsed_in_either_order_with_after():
+    text = ("1. [150-300 words, max 450] Implement quicksort in Rust.\n"
+            "2. [after 1] [100-200 words, max 300] Analyse the Rust quicksort from step 1.\n"
+            "3. [50-100 words, max 150] [after 1] Name the pivot strategy used in step 1.")
+    tasks = parse_plan_lines(text)
+    assert [(t.text, t.depends_on, t.budget) for t in tasks] == [
+        ("Implement quicksort in Rust.", (), (150, 300, 450)),
+        ("Analyse the Rust quicksort from step 1.", (1,), (100, 200, 300)),
+        ("Name the pivot strategy used in step 1.", (1,), (50, 100, 150)),
+    ]
+
+
+def test_untagged_line_has_no_budget():
+    assert parse_plan_lines("1. Explain quicksort in detail.")[0].budget is None
+
+
+def test_budget_numbers_are_sorted_and_clamped():
+    tasks = parse_plan_lines("1. [900-5-9000 words] Bad numbers here.\n"
+                             "2. [400-100 words, max 250] Out of order numbers.")
+    assert tasks[1].budget == (100, 250, 400)                      # sorted into low <= high <= limit
+    assert parse_plan_lines("1. [5-10 words, max 9000] Clamp me please.")[0].budget == (20, 20, 2000)
+
+
+def test_folded_tasks_add_their_budgets():
+    text = "1. [10-20 words, max 30] Task one here.\n2. [40-50 words, max 60] Task two here.\n" \
+           "3. [100-200 words, max 300] Task three here."
+    assert parse_plan_lines(text, max_parts=2)[1].budget == (140, 250, 360)
+
+
+def test_budget_helpers():
+    assert budget_instruction((150, 300, 450)) == (
+        "Length: aim for about 150-300 words; never exceed 450 words.")
+    assert budget_max_tokens((150, 300, 450)) == 1215              # 450 words x 1.35 tokens x 2 safety
+    assert budget_mid_tokens((150, 300, 450)) == 304               # 225 words x 1.35
+
+
+def test_final_budget_is_sixty_percent_of_the_steps_capped():
+    assert derive_final_budget([(100, 200, 300), (200, 400, 600)]) == (180, 360, 540)
+    assert derive_final_budget([(1000, 2000, 2000)] * 3) == (1800, 2000, 2000)
+    assert derive_final_budget([]) is None

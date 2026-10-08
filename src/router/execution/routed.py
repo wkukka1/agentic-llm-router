@@ -50,6 +50,14 @@ from typing import TYPE_CHECKING, Callable, Optional
 import numpy as np
 
 from ..agentic.conversation import history_chars
+from ..agentic.decompose import (
+    DEFAULT_BUDGET,
+    LLMSynthesizer,
+    budget_instruction,
+    budget_max_tokens,
+    budget_mid_tokens,
+    derive_final_budget,
+)
 from ..agentic.result import SubCall, total_cost
 from ..llm.cost import estimate_tokens
 from ..llm.profile import LLMProfile
@@ -79,7 +87,8 @@ class RoutedOrchestrator(Orchestrator):
                  objective: Optional["OptimizationObjective"] = None,
                  registry: Optional["LLMRegistry"] = None,
                  max_workers: int = 4, sequential: bool = False,
-                 route_late: bool = False, router_tool=None, checker=None):
+                 route_late: bool = False, router_tool=None, checker=None,
+                 length_budgets: bool = False):
         super().__init__(config, router_tool=router_tool, plan_forecaster=plan_forecaster)
         from ..constraints import OptimizationObjective
 
@@ -89,6 +98,9 @@ class RoutedOrchestrator(Orchestrator):
         self.max_workers = max(1, int(max_workers))
         self.sequential = bool(sequential)
         self.route_late = bool(route_late)
+        #: give every step (and the final answer) a word budget: a length line in
+        #: its prompt plus a generous max_tokens safety cut-off
+        self.length_budgets = bool(length_budgets)
         #: final-answer judge: ``(original, [(task, answer)], answer) -> QualityVerdict``
         self.checker = checker
         #: one dict per checked round: ``plan_id``, ``answer``, ``verdict``
@@ -131,7 +143,7 @@ class RoutedOrchestrator(Orchestrator):
             self._planned[step_id] = model_id
             steps.append(self._new_step(step_id, sub.text, model_id, scores,
                                         [f"{task.task_id}.{d - 1}" for d in sub.depends_on],
-                                        context_chars))
+                                        context_chars, budget=sub.budget))
         plan = Plan(plan_id=f"{task.task_id}/plan0", task_id=task.task_id, steps=steps)
         self._score(plan)
         task.plan = plan
@@ -139,16 +151,22 @@ class RoutedOrchestrator(Orchestrator):
         return plan
 
     def _new_step(self, step_id: str, prompt: str, model_id: str, scores: dict[str, float],
-                  dependencies: list[str], context_chars: int) -> PlanStep:
+                  dependencies: list[str], context_chars: int, *, budget=None) -> PlanStep:
+        """With ``length_budgets`` the step keeps the planner's ``budget`` (else
+        ``DEFAULT_BUDGET``) and is forecast at the middle of its safe range."""
         profile = self._profile(model_id)
         in_tok = estimate_tokens(len(prompt) + context_chars)
+        budget = (budget or DEFAULT_BUDGET) if self.length_budgets else None
+        out_tok = (budget_mid_tokens(budget) if budget is not None
+                   else self._cost_model.predict_output_tokens(profile, in_tok))
         return PlanStep(
             step_id=step_id, prompt=prompt, model=profile,
             estimated_input_tokens=in_tok,
-            estimated_output_tokens=self._cost_model.predict_output_tokens(profile, in_tok),
+            estimated_output_tokens=out_tok,
             dependencies=list(dependencies),
             predicted_quality=scores.get(model_id, float("nan")),
             alternatives=self._alternatives(scores, exclude=model_id),
+            budget=budget,
         )
 
     def _route_known(self, prompt: str) -> tuple[str, dict[str, float]]:
@@ -265,8 +283,7 @@ class RoutedOrchestrator(Orchestrator):
             if len(self.subcalls) == 1:
                 output = self.subcalls[0].answer
             else:
-                output = self.agent.synthesizer(self.task.prompt,
-                                                [(sc.prompt, sc.answer) for sc in self.subcalls])
+                output = self.synthesize(self.task.prompt, self.subcalls)
             if self.checker is not None:
                 error_code = self._check(plan, output)
         spent = total_cost(fresh)
@@ -290,6 +307,18 @@ class RoutedOrchestrator(Orchestrator):
         self._last_output = output
         self.attempts.append((plan.plan_id, result))
         return result
+
+    def synthesize(self, prompt: str, subcalls: list[SubCall]) -> str:
+        """The agent's synthesizer over ``subcalls``. With ``length_budgets`` an
+        :class:`LLMSynthesizer` also gets the final answer's budget, derived
+        from the plan's step budgets."""
+        pairs = [(sc.prompt, sc.answer) for sc in subcalls]
+        synth = self.agent.synthesizer
+        if self.length_budgets and isinstance(synth, LLMSynthesizer) and self.task.plan is not None:
+            budget = derive_final_budget(s.budget for s in self.task.plan.steps)
+            if budget is not None:
+                return synth(prompt, pairs, budget=budget)
+        return synth(prompt, pairs)
 
     def _check(self, plan: Plan, output: str) -> Optional[str]:
         """Check this round's answer, record the round and the best answer so
@@ -356,14 +385,20 @@ class RoutedOrchestrator(Orchestrator):
 
     def _run_step(self, step: PlanStep) -> SubCall:
         prompt, _ = self._contextual_prompt(step)
+        generation: dict = {}
+        if step.budget is not None:
+            prompt = f"{prompt}\n\n{budget_instruction(step.budget)}"
+            generation["max_tokens"] = budget_max_tokens(step.budget)
         tried = self._tried.setdefault(step.step_id, [])
         tried.append(step.model.model_id)
         sc = self.agent._call_model(prompt, step.model.model_id, self.task.depth + 1,
-                                    predicted_quality=step.predicted_quality)
+                                    predicted_quality=step.predicted_quality, **generation)
         sc.prompt = step.prompt
         sc.meta = {**sc.meta, "step_id": step.step_id,
                    "planned_model": self._planned.get(step.step_id, step.model.model_id),
                    "routed_model": step.model.model_id, "tried_models": list(tried)}
+        if step.budget is not None:
+            sc.meta["budget_words"] = list(step.budget)
         if step.step_id in self._escalation_note:
             sc.meta["escalation"] = self._escalation_note[step.step_id]
         return sc
@@ -422,7 +457,8 @@ class RoutedOrchestrator(Orchestrator):
             self._scores[step_id] = scores
             self._planned[step_id] = model_id
             deps = [plan.steps[d - 1].step_id for d in task.depends_on if 1 <= d <= len(plan.steps)]
-            added.append(self._new_step(step_id, task.text, model_id, scores, deps, context_chars))
+            added.append(self._new_step(step_id, task.text, model_id, scores, deps, context_chars,
+                                        budget=task.budget))
         return added, dropped
 
     def _last_failed_verdict(self, plan: Plan) -> Optional["QualityVerdict"]:
@@ -460,8 +496,9 @@ class RoutedOrchestrator(Orchestrator):
         return replace(
             step, model=profile,
             predicted_quality=self._scores.get(step.step_id, {}).get(model_id, float("nan")),
-            estimated_output_tokens=self._cost_model.predict_output_tokens(
-                profile, step.estimated_input_tokens),
+            estimated_output_tokens=(budget_mid_tokens(step.budget) if step.budget is not None
+                                     else self._cost_model.predict_output_tokens(
+                                         profile, step.estimated_input_tokens)),
         )
 
     def _next_plan(self, plan: Plan, steps: list[PlanStep]) -> Plan:
@@ -476,7 +513,7 @@ class RoutedOrchestrator(Orchestrator):
         return {**super()._child_kwargs(), "agent": self.agent, "objective": self.objective,
                 "registry": self.registry, "max_workers": self.max_workers,
                 "sequential": self.sequential, "route_late": self.route_late,
-                "checker": self.checker}
+                "checker": self.checker, "length_budgets": self.length_budgets}
 
 
 def _levels(plan: Plan) -> list[list[PlanStep]]:
@@ -548,7 +585,7 @@ class PlanOrchestratorBridge:
                  objective: Optional["OptimizationObjective"] = None,
                  registry: Optional["LLMRegistry"] = None,
                  max_workers: int = 4, sequential: bool = False,
-                 route_late: bool = False, checker=None):
+                 route_late: bool = False, checker=None, length_budgets: bool = False):
         self.budget = float(budget)
         self.limits = limits
         self.forecaster = forecaster or (lambda agent: RouterPlanForecaster(agent.router))
@@ -558,6 +595,7 @@ class PlanOrchestratorBridge:
         self.sequential = sequential
         self.route_late = route_late
         self.checker = checker
+        self.length_budgets = length_budgets
 
     def run(self, prompt: str, agent: "AgenticRouter", depth: int) -> tuple[str, list[SubCall]]:
         root_id = f"plan-{uuid.uuid4().hex[:12]}"
@@ -567,7 +605,7 @@ class PlanOrchestratorBridge:
                                ledger=BudgetLedger(root_id, self.budget), limits=limits),
             agent=agent, plan_forecaster=self.forecaster(agent), objective=self.objective,
             registry=self.registry, max_workers=self.max_workers, sequential=self.sequential,
-            route_late=self.route_late, checker=self.checker,
+            route_late=self.route_late, checker=self.checker, length_budgets=self.length_budgets,
         )
         if self.checker is not None and hasattr(self.checker, "on_call"):
             self.checker.on_call = agent._use_call
@@ -591,14 +629,12 @@ class PlanOrchestratorBridge:
             # a refused repair round must not discard the work already paid for
             steps = _all_steps(orch)
             done = [sc for sc in steps if sc.error is None and not sc.meta.get("superseded")]
-            answer = done[0].answer if len(done) == 1 else agent.synthesizer(
-                prompt, [(sc.prompt, sc.answer) for sc in done])
+            answer = done[0].answer if len(done) == 1 else orch.synthesize(prompt, done)
             return answer, steps + [refusal]
         steps = _all_steps(orch)
         if result.success:
             return result.output, steps
-        answer = agent.synthesizer(prompt, [(sc.prompt, sc.answer) for sc in steps])
-        return answer, steps
+        return orch.synthesize(prompt, steps), steps
 
 
 def _plan_records(orch: RoutedOrchestrator, budget: float) -> list[dict]:

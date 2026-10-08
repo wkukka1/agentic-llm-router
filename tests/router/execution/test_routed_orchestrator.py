@@ -676,3 +676,74 @@ def test_a_repair_round_with_nothing_to_repair_makes_no_calls():
     qc = res.quality_check
     assert len(qc["rounds"]) == 1 and qc["passed"] is False
     assert res.answer == checker.seen[0][2]
+
+
+# --------------------------------------------------------------------------- #
+# per-step length budgets                                                     #
+# --------------------------------------------------------------------------- #
+def _recording_clients(log):
+    """Every model answers '<m> answers'; records (model, prompt, generation kwargs)."""
+    def make(m):
+        def fn(prompt, **kw):
+            log.append((m, str(prompt), kw))
+            return LLMResponse(f"{m} answers", cost=0.01, input_tokens=5, output_tokens=2)
+        return LLMClient(CallableAdapter(m, fn))
+    return ClientRegistry({m: make(m) for m in POOL})
+
+
+BUDGET_PLAN = ("1. [150-300 words, max 450] Implement quicksort in Rust.\n"
+               "2. [after 1] Analyse the Rust quicksort from step 1.")
+
+
+def test_length_budget_reaches_the_step_prompt_and_max_tokens():
+    log = []
+    orch = _orchestrator(_planning_agent(BUDGET_PLAN, clients=_recording_clients(log)),
+                         length_budgets=True, max_workers=1)
+    assert orch.run(_task()).success
+    (_, p1, kw1), (_, p2, kw2) = log
+    assert p1.endswith("Length: aim for about 150-300 words; never exceed 450 words.")
+    assert kw1 == {"max_tokens": 1215}                               # 450 words x 1.35 x 2
+    assert p2.endswith("Length: aim for about 150-400 words; never exceed 600 words.")  # default
+    assert kw2 == {"max_tokens": 1620}
+    assert orch.subcalls[0].meta["budget_words"] == [150, 300, 450]
+
+
+def test_without_length_budgets_no_length_line_or_max_tokens_is_sent():
+    log = []
+    orch = _orchestrator(_planning_agent(BUDGET_PLAN, clients=_recording_clients(log)), max_workers=1)
+    assert orch.run(_task()).success
+    assert log and all("Length:" not in p and kw == {} for _, p, kw in log)
+
+
+def test_budget_sets_the_forecast_output_tokens():
+    orch = _orchestrator(_planning_agent(BUDGET_PLAN), length_budgets=True)
+    orch.task = _task()
+    plan = orch.plan(orch.task)
+    assert [s.budget for s in plan.steps] == [(150, 300, 450), (150, 400, 600)]
+    assert [s.estimated_output_tokens for s in plan.steps] == [304, 371]   # mid of the safe range
+
+
+def test_llm_synthesizer_gets_the_derived_final_budget():
+    from router.agentic import LLMSynthesizer
+    seen = []
+
+    def call_for(request):
+        def call(text, **kw):
+            seen.append((text, kw))
+            return "final answer"
+        return call
+
+    plan_text = ("1. [100-200 words, max 300] Explain quicksort.\n"
+                 "2. [200-400 words, max 600] Explain mergesort.")
+    agent = _planning_agent(plan_text, synthesizer=LLMSynthesizer(chat_for=call_for,
+                                                                  prompt="{original}|{body}"))
+    orch = _orchestrator(agent, length_budgets=True)
+    assert orch.run(_task()).output == "final answer"
+    (text, kw), = seen
+    assert text.endswith("Length: aim for about 180-360 words; never exceed 540 words.")
+    assert kw == {"max_tokens": 1458}                                # 60% of the steps' combined budget
+
+
+def test_length_budgets_setting_reaches_the_orchestrator():
+    agent = AgenticRouter.from_settings(_plan_settings(plan={"length_budgets": True}), router=TextRouter())
+    assert agent.orchestrator.length_budgets is True

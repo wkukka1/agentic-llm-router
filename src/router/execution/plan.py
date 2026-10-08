@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:  # pragma: no cover - type hints only, not a runtime import
     from ..llm.profile import LLMProfile
@@ -39,6 +39,9 @@ class PlanStep:
     #: fallback model ids, best first, for ``Orchestrator.replan`` to move a
     #: failed step to without re-routing it
     alternatives: list[str] = field(default_factory=list)
+    #: ``(low, high, limit)`` words the step's answer should take (``None``:
+    #: no length guidance) -- see ``router.agentic.decompose.Budget``
+    budget: Optional[tuple[int, int, int]] = None
 
 
 @dataclass
