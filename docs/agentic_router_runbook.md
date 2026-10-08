@@ -284,7 +284,13 @@ nothing spent.
 | `budget` | `inf` | USD cap per request |
 | `max_workers` | 4 | sub-tasks run in parallel |
 | `sequential` | `False` | `True` makes each step see the previous step's answer, and they run one by one |
-| `limits` | from `budget` | an `ExecutionLimits`; `max_replans` defaults to 1 |
+| `limits` | from `budget` | an `ExecutionLimits`; `max_replans` (repair rounds after a failed step or quality check) defaults to 1 |
+| `route_late` | `True` in `configs/agentic.yaml` | route each step on its prompt + dependency results |
+| `planner_prompt` | `plan` | numbered steps with `[after N]` dependencies (LLM decomposers) |
+| `quality_check.enabled` | `True` in `configs/agentic.yaml` | judge the synthesized answer; repair weak steps / add follow-ups |
+| `quality_check.min_quality` | 0.8 | judge = cheapest pool model predicted >= this |
+| `quality_check.pass_score` | 7 | PASS also needs SCORE >= this (0-10) |
+| `quality_check.prompt` | `verify` | prompt name for the judge |
 | `registry` | none | an `LLMRegistry`, for per-token prices in the forecast |
 
 Without a `registry`, the forecast prices each step at the router's average

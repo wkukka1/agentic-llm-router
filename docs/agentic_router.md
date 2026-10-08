@@ -89,6 +89,22 @@ latency / cost / caching, not a basis for quality claims. (`OpenAIAdapter` and
   next-best model. Steps are leaves (not re-triaged). Calls still go through
   the agent, so `max_calls` and conversation history apply.
 
+  **Adaptive plans.** The planner may mark a step `[after N]`; such a step
+  receives the successful outputs of the steps it depends on. With
+  `route_late`, each step is routed again on its final prompt (plus dependency
+  results): `SubCall.meta["planned_model"]` is the upfront choice and
+  `meta["routed_model"]` the one used. A failed step escalates to the next-best
+  model (`meta["tried_models"]`, `meta["escalation"]` = `escalated` /
+  `exhausted`) and never retries a model already tried. With
+  `plan.quality_check.enabled`, a judge scores the synthesized answer; on a
+  failure a repair round escalates the weak steps, re-runs their dependents and
+  adds the checker's follow-ups as steps (capped by `limits.max_fanout`;
+  unscorable follow-ups are dropped). `max_replans` is the number of repair
+  rounds. `AgenticResult.quality_check` holds the best round's verdict plus
+  `best_round` and `rounds`; the best answer is returned, flagged if no round
+  passed. Superseded paid attempts stay in `steps` with
+  `meta["superseded"]=True`, so `cost` / `models_used()` count all spend.
+
 Decomposition / synthesis helpers (`router/agentic/decompose.py`):
 `NaiveDecomposer` + `concat_synthesizer` (dependency-free defaults),
 `LLMDecomposer` / `LLMSynthesizer` (chat-model backed).

@@ -141,7 +141,14 @@ router:
     budget: null                  # USD per request (null = unlimited)
     max_workers: 4
     sequential: false
-    max_replans: 1
+    max_replans: 2                # repair rounds after a failed step or quality check
+    route_late: true              # route each step on its prompt + dependency results
+    planner_prompt: plan          # numbered steps with [after N] dependencies (LLM decomposers)
+    quality_check:
+      enabled: true               # judge the synthesized answer; repair weak steps / add follow-ups
+      min_quality: 0.8            # judge = cheapest pool model predicted >= this
+      pass_score: 7               # PASS also needs SCORE >= this (0-10)
+      prompt: verify
 
   tool_agent:                     # used when orchestrator: tool_agent
     model: null                   # chat model id driving the agent (required)
