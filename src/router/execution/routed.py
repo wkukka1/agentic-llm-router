@@ -109,6 +109,8 @@ class RoutedOrchestrator(Orchestrator):
         self._pinned: set[str] = set()                 # escalated this round: keep the model
         self._tried: dict[str, list[str]] = {}          # step_id -> models run, in order
         self._escalation_note: dict[str, str] = {}      # step_id -> "escalated" / "exhausted"
+        self._nothing_to_repair = False                 # the last replan changed nothing
+        self._last_output = ""
         cost_model = getattr(plan_forecaster, "cost_model", None)
         if cost_model is None:
             from ..llm.cost import CostModel
@@ -224,6 +226,13 @@ class RoutedOrchestrator(Orchestrator):
 
     # -- execute -----------------------------------------------------------
     def execute(self, plan: Plan) -> ExecutionResult:
+        if self._nothing_to_repair:
+            # the repair changed nothing: re-synthesizing and re-judging the same
+            # answer would only pay twice for the same verdict
+            result = ExecutionResult(output=self._last_output, actual_cost=0.0,
+                                     error_code="nothing_to_repair")
+            self.attempts.append((plan.plan_id, result))
+            return result
         t0 = time.perf_counter()
         fresh: list[SubCall] = []
         for level in _levels(plan):
@@ -273,6 +282,7 @@ class RoutedOrchestrator(Orchestrator):
             output_tokens=int(sum(sc.meta.get("output_tokens") or 0 for sc in fresh)),
             error_code=error_code,
         )
+        self._last_output = output
         self.attempts.append((plan.plan_id, result))
         return result
 
@@ -358,6 +368,7 @@ class RoutedOrchestrator(Orchestrator):
             self._calls.pop(sid, None)
         steps = [self._escalate(s) if s.step_id in escalate else s for s in plan.steps]
         added, dropped = self._follow_up_steps(plan, steps, verdict)
+        self._nothing_to_repair = not escalate and not added
         new = self._next_plan(plan, steps + added)
         self._round_changes[new.plan_id] = {"escalated": sorted(escalate),
                                             "follow_ups": [s.prompt for s in added],

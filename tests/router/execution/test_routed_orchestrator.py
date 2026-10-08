@@ -503,7 +503,8 @@ def test_out_of_range_weak_steps_are_ignored():
     checker = _ScriptedChecker(_fail(4, weak=[0, 99]), _pass())
     agent = _planning_agent(THREE_STEP, clients=_clients(sent=sent), orchestrator=plan_orchestrator(
         checker=checker, limits=ExecutionLimits(max_replans=2)))
-    assert agent.run(COMPOUND).quality_check["passed"] is True
+    qc = agent.run(COMPOUND).quality_check
+    assert qc["passed"] is False and len(qc["rounds"]) == 1     # nothing to repair: no second check
     assert len(sent) == 3                                       # nothing re-ran
 
 
@@ -585,7 +586,7 @@ def test_unscorable_follow_up_is_dropped_not_fatal():
     checker = _ScriptedChecker(_fail(5, follow_ups=[SubTask("UNSCORABLE follow-up task.")]), _pass())
     orch = _orchestrator(_planning_agent(THREE_STEP, router=_UnscorableFollowUpRouter()), checker=checker)
     orch.limits = ExecutionLimits(max_replans=1)
-    assert orch.run(_task()).success
+    assert not orch.run(_task()).success                        # nothing left to repair: no second check
     assert len(orch.task.plan.steps) == 3
     changes = orch._round_changes[orch.task.plan.plan_id]
     assert changes["follow_ups"] == [] and changes["dropped_follow_ups"] == ["UNSCORABLE follow-up task."]
@@ -626,3 +627,17 @@ def test_over_budget_message_reports_the_remaining_budget():
     agent = AgenticRouter(TextRouter(costs=[0.001, 0.01, 0.005]), _clients(),
                           orchestrator=plan_orchestrator(budget=0.001))
     assert "budget remaining 0.001" in agent.run(COMPOUND).answer
+
+
+def test_a_repair_round_with_nothing_to_repair_makes_no_calls():
+    sent, synth = [], []
+    checker = _ScriptedChecker(_fail(4))
+    agent = _planning_agent(THREE_STEP, clients=_clients(sent=sent), orchestrator=plan_orchestrator(
+        checker=checker, limits=ExecutionLimits(max_replans=2)))
+    real = agent.synthesizer
+    agent.synthesizer = lambda prompt, pairs: (synth.append(1), real(prompt, pairs))[1]
+    res = agent.run(COMPOUND)
+    assert len(sent) == 3 and len(checker.seen) == 1 and len(synth) == 1
+    qc = res.quality_check
+    assert len(qc["rounds"]) == 1 and qc["passed"] is False
+    assert res.answer == checker.seen[0][2]
