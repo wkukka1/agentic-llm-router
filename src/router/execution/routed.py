@@ -237,7 +237,12 @@ class RoutedOrchestrator(Orchestrator):
         fresh: list[SubCall] = []
         for level in _levels(plan):
             todo = [s for s in level if not self._succeeded(s.step_id)]
-            todo = self._assign_models(plan, todo)
+            blocked = [s for s in todo if not all(self._succeeded(d) for d in s.dependencies)]
+            todo = self._assign_models(plan, [s for s in todo if s not in blocked])
+            for step in blocked:
+                sc = self._blocked_call(step)
+                self._calls[step.step_id] = sc
+                fresh.append(sc)
             if len(todo) == 1:
                 results = [self._run_step(todo[0])]
             elif todo:
@@ -336,6 +341,19 @@ class RoutedOrchestrator(Orchestrator):
         return (f"Results of earlier steps:\n{context}\n\nNow: {step.prompt}",
                 f"{step.prompt}\n\nContext from earlier steps:\n{context}")
 
+    def _blocked_call(self, step: PlanStep) -> SubCall:
+        """The failed stand-in for a step whose dependency has no result: it is
+        not sent to a model (it would answer without its input), not counted as
+        tried, and re-runs as a dependent once the dependency is repaired."""
+        return SubCall(
+            prompt=step.prompt, model_id=step.model.model_id,
+            predicted_quality=step.predicted_quality, answer="[error: dependency_failed]",
+            depth=self.task.depth + 1, error="dependency_failed", cost=None,
+            meta={"step_id": step.step_id,
+                  "planned_model": self._planned.get(step.step_id, step.model.model_id),
+                  "routed_model": step.model.model_id},
+        )
+
     def _run_step(self, step: PlanStep) -> SubCall:
         prompt, _ = self._contextual_prompt(step)
         tried = self._tried.setdefault(step.step_id, [])
@@ -363,9 +381,13 @@ class RoutedOrchestrator(Orchestrator):
             weak = {plan.steps[k - 1].step_id for k in verdict.weak_steps
                     if 1 <= k <= len(plan.steps)}
         failed = {s.step_id for s in plan.steps if not self._succeeded(s.step_id)}
-        escalate = weak | failed
-        for sid in weak | _dependents(plan, escalate):
+        blocked = {sid for sid in failed if getattr(self._calls.get(sid), "error", None) == "dependency_failed"}
+        escalate = weak | (failed - blocked)
+        rerun = (_dependents(plan, escalate) | blocked) - escalate
+        for sid in weak | rerun:
             self._calls.pop(sid, None)
+        for sid in rerun:
+            self._escalation_note.pop(sid, None)
         steps = [self._escalate(s) if s.step_id in escalate else s for s in plan.steps]
         added, dropped = self._follow_up_steps(plan, steps, verdict)
         self._nothing_to_repair = not escalate and not added

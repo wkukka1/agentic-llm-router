@@ -321,8 +321,43 @@ def test_failed_dependency_output_is_not_passed_on():
     orch = _orchestrator(agent, max_workers=1)
     orch.limits = ExecutionLimits(max_replans=0)
     orch.run(_task())
+    assert not any("Analyse the time complexity" in str(p) for _, p in sent)    # nothing is sent
+    step2 = orch.subcalls[1]
+    assert step2.error == "dependency_failed" and step2.cost is None
+    assert step2.answer == "[error: dependency_failed]" and step2.prompt.startswith("Analyse the time")
+    assert step2.depth == 1 and step2.meta["step_id"] == "root.1" and "tried_models" not in step2.meta
+    assert not orch._tried.get("root.1")
+
+
+def test_dependent_of_a_failed_step_reruns_once_with_its_input_and_is_not_escalated():
+    sent, boom = [], {"n": 0}
+
+    def make(m):
+        def fn(prompt, **kw):
+            sent.append((m, str(prompt)))
+            if m == "big" and prompt == "Implement quicksort in Rust." and boom["n"] == 0:
+                boom["n"] += 1
+                raise RuntimeError("big is down once")
+            return LLMResponse(f"{m} answers", cost=0.01, input_tokens=5, output_tokens=2)
+        return LLMClient(CallableAdapter(m, fn))
+    agent = _planning_agent(DEP_PLAN, clients=ClientRegistry({m: make(m) for m in POOL}))
+    orch = _orchestrator(agent, max_workers=1)
+    orch.limits = ExecutionLimits(max_replans=1)
+    orch._escalation_note["root.1"] = "escalated"                  # stale note from an earlier round
+    assert orch.run(_task()).success
     step2 = [p for _, p in sent if "Analyse the time complexity" in p]
-    assert step2 and all("[error" not in p and "Results of earlier steps" not in p for p in step2)
+    assert len(step2) == 1 and "coder answers" in step2[0]
+    assert orch.subcalls[0].meta["escalation"] == "escalated" and orch.subcalls[0].model_id == "coder"
+    assert orch.subcalls[1].model_id == "big" and "escalation" not in orch.subcalls[1].meta
+
+
+def test_a_rerun_dependent_does_not_report_an_earlier_rounds_escalation():
+    checker = _ScriptedChecker(_fail(4, weak=[2]), _fail(4, weak=[1]), _pass())
+    orch = _orchestrator(_planning_agent(THREE_STEP), checker=checker, max_workers=1)
+    orch.limits = ExecutionLimits(max_replans=2)
+    assert orch.run(_task()).success
+    assert orch.subcalls[0].meta["escalation"] == "escalated"
+    assert "escalation" not in orch.subcalls[1].meta
 
 
 class ContextRouter(TextRouter):
