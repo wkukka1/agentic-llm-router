@@ -143,8 +143,8 @@ class TestTheTwoImplementationsAgree:
 
     Two implementations of one rule is exactly the bug that corrupted the
     offline baselines (a private copy in `policy_eval` had drifted to
-    cost-breaking ties at margin=0). The policy cannot simply delegate -- it
-    ranks objects, not a matrix -- so the agreement is pinned here instead.
+    cost-breaking ties at margin=0). The policy now delegates to
+    `routing_decision` on a one-row matrix; the agreement is still pinned here.
     """
 
     def _decide(self, margin, pred, costs):

@@ -18,7 +18,10 @@ import abc
 import math
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 from .decision import DecisionDestination, RoutingDecision
+from .nirt.routing_decision import routing_decision
 
 if TYPE_CHECKING:  # pragma: no cover - type hints only, not a runtime import
     from .context import RoutingContext
@@ -38,6 +41,17 @@ class RoutingPolicy(abc.ABC):
     def select_destination(self, context: "RoutingContext",
                            scores: list["ModelScore"]) -> DecisionDestination:
         raise NotImplementedError
+
+    def _ranked(self, context: "RoutingContext",
+                scores: list["ModelScore"]) -> list["ModelScore"]:
+        """``scores`` by the request's objective utility, best first (non-finite last)."""
+        objective = context.request.constraints.objective
+
+        def key(score: "ModelScore") -> float:
+            u = float(objective.utility(score))
+            return u if math.isfinite(u) else -math.inf
+
+        return sorted(scores, key=key, reverse=True)
 
 
 class DefaultRoutingPolicy(RoutingPolicy):
@@ -60,13 +74,7 @@ class DefaultRoutingPolicy(RoutingPolicy):
     version = "0"
 
     def decide(self, context: "RoutingContext", scores: list["ModelScore"]) -> RoutingDecision:
-        objective = context.request.constraints.objective
-
-        def key(score: "ModelScore") -> float:
-            u = float(objective.utility(score))
-            return u if math.isfinite(u) else -math.inf
-
-        ranked = sorted(scores, key=key, reverse=True)
+        ranked = self._ranked(context, scores)
         top = ranked[0] if ranked else None
         return RoutingDecision(
             request_id=context.request.request_id,
@@ -117,16 +125,6 @@ class MarginRoutingPolicy(RoutingPolicy):
         self.margin = float(margin)
         self.escalation_threshold = float(escalation_threshold)
 
-    def _ranked(self, context: "RoutingContext",
-                scores: list["ModelScore"]) -> list["ModelScore"]:
-        objective = context.request.constraints.objective
-
-        def key(score: "ModelScore") -> float:
-            u = float(objective.utility(score))
-            return u if math.isfinite(u) else -math.inf
-
-        return sorted(scores, key=key, reverse=True)
-
     def _margin_for(self, context: "RoutingContext") -> float:
         """The request's quality budget, or this policy's default.
 
@@ -150,11 +148,14 @@ class MarginRoutingPolicy(RoutingPolicy):
         ranked = self._ranked(context, scores)
         chosen = None
         if ranked:
-            best = float(objective.utility(ranked[0]))
-            within = [s for s in ranked if float(objective.utility(s)) >= best - margin]
-            # ties on cost keep the better-ranked model: `within` is already in
-            # rank order and `min` is stable.
-            chosen = min(within, key=lambda s: s.expected_cost)
+            # the served rule (routing_decision), not a copy: cost ties keep the
+            # better-ranked model and an unpriced model never wins on price.
+            # `tiny` keeps exact utility ties cost-broken at margin=0 (by design,
+            # see test_the_margin_zero_tie_break_differs_on_purpose).
+            util = np.array([[float(objective.utility(s)) for s in ranked]])
+            costs = np.array([s.expected_cost for s in ranked], np.float64)
+            m = margin or np.finfo(np.float64).tiny
+            chosen = ranked[int(routing_decision(util, model_costs=costs, margin=m)[0])]
         return RoutingDecision(
             request_id=context.request.request_id,
             ranked_models=ranked,
