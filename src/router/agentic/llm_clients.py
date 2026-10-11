@@ -76,6 +76,26 @@ class ClientRegistry:
         return cls({m: LLMClient(EchoAdapter(m)) for m in model_ids})
 
     @classmethod
+    def claude_subscription(cls, model_ids=(), **per_model_kwargs) -> "ClientRegistry":
+        """Every id served by
+        :class:`~router.llm.adapters.claude_subscription.ClaudeSubscriptionAdapter`
+        -- Claude calls billed against a ``claude login`` Pro/Max subscription
+        instead of a metered API key. The CLI's own ``--model`` value defaults
+        to the pool id itself (``cli``/``timeout`` can be overridden too);
+        pass ``per_model_kwargs[id]`` to give an id a different one --
+        e.g. ``claude_subscription(["claude-opus-5"], **{"claude-opus-5": {"model": "opus"}})``,
+        same pattern as :meth:`langchain`. Mix with :meth:`langchain`/direct
+        :meth:`register` calls to give other providers their own (metered)
+        lane in the same registry."""
+        from ..llm.adapters.claude_subscription import ClaudeSubscriptionAdapter
+
+        def _build(pool_id: str, kwargs: dict) -> LLMClient:
+            cli_model = kwargs.pop("model", pool_id)
+            return LLMClient(ClaudeSubscriptionAdapter(cli_model, **kwargs))
+
+        return cls({m: _build(m, dict(per_model_kwargs.get(m, {}))) for m in model_ids})
+
+    @classmethod
     def langchain(cls, model_ids=(), **per_model_kwargs) -> "ClientRegistry":
         """Every id served by a :class:`~router.llm.adapters.langchain_adapter.LangChainAdapter`
         (provider guessed unless ``per_model_kwargs[id]`` gives ``provider=``

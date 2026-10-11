@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AAR Gateway</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0A0A0A; --panel: #111111; --panel-2: #141414; --ink: #EDEDED; --ink-2: #D4D4D4; --muted: #A1A1A1;
+    --line: #262626; --row: #1F1F1F; --track: #1F1F1F; --base: #404040; --soft: #262626;
+    --good: #4ADE80; --bad: #F87171; --accent: #EDEDED;
+    --violet: #C4B5FD; --violet-soft: #1E1B2E; --amber: #FDBA74; --amber-soft: #2A1A12;
+    --opus: #EDEDED; --sonnet: #A1A1AA; --haiku: #52525B; --other: #525252;
+    --sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+    --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 var(--sans); }
+  main { max-width: 1240px; margin: 0 auto; padding: 28px 24px 64px; display: flex; flex-direction: column; gap: 28px; }
+  @media (max-width: 600px) { main { padding: 20px 16px 48px; } }
+  .mono { font-family: var(--mono); }
+  .muted { color: var(--muted); }
+
+  header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .logo { width: 36px; height: 36px; border-radius: 10px; background: var(--ink); display: grid; place-items: center; color: var(--bg); }
+  h1 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+  .tagline { font-size: 12.5px; color: var(--muted); }
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; }
+  .chip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: var(--panel);
+    border: 1px solid var(--line); font-size: 12.5px; color: var(--ink-2); }
+  .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--good); }
+  .dot.off { background: var(--bad); }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+  .kpi { padding: 20px 22px; display: flex; flex-direction: column; gap: 10px; }
+  .eyebrow { font-size: 12.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .big { font-family: var(--mono); font-size: 34px; font-weight: 600; letter-spacing: -0.02em; }
+  .tags { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tag { padding: 3px 9px; border-radius: 6px; background: var(--panel-2); color: var(--ink-2); font-size: 12px; }
+  .tag.blue { background: var(--soft); color: var(--ink); font-weight: 600; }
+  .bars { display: flex; flex-direction: column; gap: 6px; }
+  .bar { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--ink-2); }
+  .bar > span:first-child { width: 78px; }
+  .bar > span:last-child { width: 64px; text-align: right; font-family: var(--mono); }
+  .track { flex: 1; height: 8px; border-radius: 999px; background: var(--track); overflow: hidden; }
+  .fill { height: 8px; border-radius: 999px; background: var(--ink); }
+  .fill.base { background: var(--base); }
+
+  section { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .sec-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+  h2 { margin: 0; font-size: 15px; font-weight: 700; }
+  .hint { font-size: 12.5px; color: var(--muted); }
+
+  .pref { padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; }
+  .pref-row { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; }
+  .seg { display: inline-flex; padding: 4px; gap: 4px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); }
+  .seg button { min-height: 40px; padding: 0 18px; border: 0; border-radius: 9px; background: transparent; color: var(--ink-2);
+    font: 500 13.5px var(--sans); cursor: pointer; }
+  .seg button.on { background: var(--ink); color: var(--bg); font-weight: 600; }
+  .slider { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 13px; color: var(--ink-2); }
+  .slider input { width: 220px; accent-color: var(--accent); }
+  .slider output { font-family: var(--mono); color: var(--ink); min-width: 40px; }
+
+  .table-box { overflow: hidden; }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  th { background: var(--panel-2); color: var(--muted); font-size: 11.5px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.05em; padding: 11px 12px; text-align: right; white-space: nowrap; }
+  td { padding: 11px 12px; border-top: 1px solid var(--row); text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { padding-left: 18px; }
+  th:last-child, td:last-child { padding-right: 18px; }
+  th.l, td.l { text-align: left; }
+  td.num { font-family: var(--mono); color: var(--ink-2); }
+  td.strong { font-family: var(--mono); font-weight: 600; color: var(--ink); }
+  td.save { font-family: var(--mono); font-weight: 600; color: var(--good); }
+  td.save.neg { color: var(--bad); }
+  td.why { max-width: 320px; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); }
+  td.empty { text-align: left; color: var(--muted); padding: 22px 18px; }
+  .m { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+  .sw { width: 10px; height: 10px; border-radius: 3px; background: var(--other); flex: none; }
+  .flow { display: inline-flex; align-items: center; gap: 8px; }
+  .flow .asked { color: var(--muted); }
+  .pill { padding: 2px 7px; border-radius: 5px; font-size: 11px; font-weight: 600; background: var(--soft); color: var(--ink); }
+  .pill.sub { background: var(--violet-soft); color: var(--violet); }
+  .pill.fb { background: var(--amber-soft); color: var(--amber); }
+  .pill.src { background: transparent; border: 1px solid var(--line); color: var(--ink-2); font-weight: 500; margin-right: 6px; }
+  .share { display: flex; align-items: center; gap: 10px; min-width: 200px; }
+  .share .track { min-width: 90px; }
+  .ok { font-family: var(--mono); color: var(--good); }
+  .err { font-family: var(--mono); color: var(--bad); font-weight: 600; }
+
+  .pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px;
+    border-top: 1px solid var(--row); background: var(--panel-2); }
+  .pages { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .pages button { min-width: 40px; min-height: 40px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px;
+    background: var(--panel); color: var(--ink-2); font: 500 13px var(--mono); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; }
+  .pages button[aria-current="page"] { background: var(--ink); border-color: var(--ink); color: var(--bg); font-weight: 600; }
+  .pages button:disabled { opacity: .4; cursor: default; }
+  .pages .gap { color: var(--muted); padding: 0 4px; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+  footer { font-size: 12.5px; color: var(--muted); max-width: 860px; }
+  h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+  .sub-block { display: flex; flex-direction: column; gap: 12px; padding-top: 16px; border-top: 1px solid var(--row); }
+  .sub-block[hidden], .select[hidden] { display: none; }
+  .select { display: inline-flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-2); }
+  select { min-height: 40px; padding: 0 34px 0 12px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel-2)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23A1A1A1' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center;
+    color: var(--ink); font: 500 13px var(--mono); appearance: none; cursor: pointer; transition: border-color .15s; }
+  select:hover { border-color: #3A3A3A; }
+  select:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .roles { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+  .role { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px;
+    border: 1px solid var(--row); border-radius: 10px; background: var(--panel-2); }
+  .role > span { font-weight: 600; }
+  .role .changed { font-size: 11px; color: var(--amber); font-weight: 600; margin-left: 6px; }
+  .role select { min-width: 150px; }
+  .toggle { display: flex; align-items: flex-start; gap: 12px; font-size: 13px; cursor: pointer; }
+  .toggle input { appearance: none; flex: none; width: 40px; height: 24px; margin: 0; border-radius: 999px; background: #2E2E2E;
+    position: relative; cursor: pointer; transition: background-color .2s; }
+  .toggle input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 999px;
+    background: var(--muted); transition: transform .2s cubic-bezier(.2,.8,.2,1), background-color .2s; }
+  .toggle input:checked { background: var(--ink); }
+  .toggle input:checked::after { transform: translateX(16px); background: var(--bg); }
+  .toggle input:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+  /* motion: every number, bar and row says when it changed */
+  .dot { animation: pulse 2.2s ease-out infinite; }
+  .dot.off { animation: none; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(74,222,128,.55); } 70%, 100% { box-shadow: 0 0 0 9px rgba(74,222,128,0); } }
+  .fill { transition: width .9s cubic-bezier(.2,.8,.2,1); }
+  .card { transition: border-color .2s ease, transform .2s ease, background-color .2s ease; }
+  .kpi:hover { border-color: #3A3A3A; transform: translateY(-2px); }
+  tbody tr { transition: background-color .15s ease; }
+  tbody tr:hover td { background: rgba(237,237,237,.03); }
+  tr.new td { animation: row-in .5s cubic-bezier(.2,.8,.2,1), glow 2.4s ease-out; }
+  @keyframes row-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+  @keyframes glow { from { background: rgba(237,237,237,.09); } to { background: transparent; } }
+  tbody.turn tr { animation: fade-in .28s ease-out both; }
+  tbody.turn tr:nth-child(2) { animation-delay: .02s; } tbody.turn tr:nth-child(3) { animation-delay: .04s; }
+  tbody.turn tr:nth-child(4) { animation-delay: .06s; } tbody.turn tr:nth-child(5) { animation-delay: .08s; }
+  tbody.turn tr:nth-child(n+6) { animation-delay: .1s; }
+  @keyframes fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  .big.bump { animation: bump .5s ease-out; }
+  @keyframes bump { 30% { color: #FFFFFF; text-shadow: 0 0 18px rgba(237,237,237,.35); } }
+  .loading .big, .loading .bars, .loading .tags, .loading .spark { color: transparent; border-radius: 8px;
+    background: linear-gradient(90deg, #161616 25%, #222 50%, #161616 75%); background-size: 200% 100%;
+    animation: shimmer 1.3s linear infinite; }
+  @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+  .spark { display: flex; align-items: flex-end; gap: 3px; height: 44px; }
+  .spark i { flex: 1; min-width: 3px; height: 0; border-radius: 2px 2px 0 0; background: #3A3A3A;
+    transition: height .7s cubic-bezier(.2,.8,.2,1), background-color .3s; }
+  .spark i.hot { background: var(--ink); }
+  .spark-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 4px; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<main class="loading" id="main">
+  <header>
+    <div class="brand">
+      <div class="logo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h6l4 6-4 6H4"/><path d="M14 12h6"/><path d="M17 9l3 3-3 3"/></svg></div>
+      <div><h1>AAR Gateway</h1><div class="tagline">Claude Code, routed on your own login</div></div>
+    </div>
+    <div class="chips">
+      <span class="chip"><span class="dot" id="live-dot"></span><span id="status">loading…</span></span>
+      <span class="chip">Strongest <span class="mono" id="strongest" style="color: var(--ink)">–</span></span>
+    </div>
+  </header>
+
+  <div class="kpis" aria-label="Summary">
+    <div class="card kpi">
+      <span class="eyebrow">Requests</span>
+      <span class="big" id="k-req">–</span>
+      <div class="tags" id="k-req-tags"></div>
+      <div><div class="spark" id="spark" role="img" aria-label="Requests per minute, last 30 minutes"></div>
+        <div class="spark-axis"><span>30 min ago</span><span>now</span></div></div>
+    </div>
+    <div class="card kpi">
+      <span class="eyebrow">Plan usage vs no router</span>
+      <span class="big" id="k-asked-pct">–</span>
+      <div class="bars" id="k-asked-bars"></div>
+    </div>
+    <div class="card kpi">
+      <span class="eyebrow" id="k-strong-label">Plan usage vs always strongest</span>
+      <span class="big" id="k-strong-pct">–</span>
+      <div class="bars" id="k-strong-bars"></div>
+    </div>
+  </div>
+
+  <section aria-labelledby="pref-h">
+    <div class="card pref">
+      <div class="sec-head">
+        <h2 id="pref-h">Routing</h2>
+        <span class="hint" id="mode-note"></span>
+      </div>
+      <div class="pref-row">
+        <div class="seg" role="group" aria-label="Routing mode">
+          <button type="button" data-mode="auto">Auto</button>
+          <button type="button" data-mode="pin">Pin a model</button>
+          <button type="button" data-mode="off">Off</button>
+        </div>
+        <label class="select" id="pin-box" hidden>Every turn on
+          <select id="pin-model"></select>
+        </label>
+      </div>
+
+      <div class="sub-block" id="auto-box">
+        <div class="sec-head"><h3>Cost preference</h3><span class="hint" id="pref-note"></span></div>
+        <div class="pref-row">
+          <div class="seg" role="group" aria-label="Presets">
+            <button type="button" data-preset="best_quality">Best quality</button>
+            <button type="button" data-preset="balanced">Balanced</button>
+            <button type="button" data-preset="save_more">Save more</button>
+          </div>
+          <label class="slider">Quality margin
+            <input type="range" id="margin" min="0" max="0.3" step="0.01">
+            <output id="margin-val" for="margin"></output>
+          </label>
+        </div>
+        <span class="hint" id="margin-note"></span>
+        <label class="toggle"><input type="checkbox" id="allow-upgrade">
+          <span><strong>Let hard turns go up a tier</strong><br>
+          <span class="hint">e.g. a Haiku session sends a hard question to Opus. Off: routing only ever moves you to a cheaper model.</span></span>
+        </label>
+      </div>
+
+      <div class="sub-block" id="roles-box">
+        <div class="sec-head"><h3>Subagent tiers</h3>
+          <span class="hint">Your changes are logged as feedback on the defaults</span></div>
+        <div class="roles" id="roles"></div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="models-h">
+    <h2 id="models-h">By model</h2>
+    <div class="card table-box"><div class="scroll"><table id="models"><thead><tr>
+      <th class="l">Model</th><th>Requests</th><th>Rerouted to</th><th>Fallbacks</th>
+      <th>Cache read</th><th>Cache write</th><th>Output</th><th class="l">Share of cost</th>
+    </tr></thead><tbody></tbody></table></div></div>
+  </section>
+
+  <section aria-labelledby="sub-h">
+    <div class="sec-head">
+      <h2 id="sub-h">Subagents</h2>
+      <span class="hint">Role picks the tier · never above the session's model</span>
+    </div>
+    <div class="card table-box"><div class="scroll"><table id="subagents"><thead><tr>
+      <th class="l">Role</th><th class="l">Recognised by</th><th>Spawns</th><th>Requests</th><th class="l">Answered by</th>
+      <th>Cost</th><th>On session model</th><th>Saved</th><th>Cache hit</th>
+    </tr></thead><tbody></tbody></table></div></div>
+  </section>
+
+  <section aria-labelledby="recent-h">
+    <div class="sec-head">
+      <h2 id="recent-h">Recent requests</h2>
+      <span class="hint" id="recent-range"></span>
+    </div>
+    <div class="card table-box">
+      <div class="scroll"><table id="recent"><thead><tr>
+        <th class="l">Time</th><th class="l">Asked → answered</th><th class="l">Why</th>
+        <th>Tokens</th><th>Cost</th><th>If strongest</th><th>Latency</th><th>Status</th>
+      </tr></thead><tbody></tbody></table></div>
+      <nav class="pager" aria-label="Pages">
+        <span class="hint" id="page-label"></span>
+        <div class="pages" id="pages"></div>
+      </nav>
+    </div>
+  </section>
+
+  <footer>Plan usage is what the same work costs at API prices on each model, the relative price of the models:
+    on a Claude subscription nothing is billed per token. Baselines reuse each request's tokens on the other model,
+    adjusted for what it would have had cached. Routing decisions marked "benchmark" come from the 2025 LLMRouterBench
+    router through stand-ins (Opus → GPT-5, Sonnet → Claude Sonnet 4, Haiku → Gemini 2.5 Flash); "your data" from your graded turns.</footer>
+</main>
+<script>
+const PAGE_SIZE = 12;
+const $ = (id) => document.getElementById(id);
+const usd = (x) => x == null ? "–" : (x >= 1 ? "$" + x.toFixed(2) : "$" + x.toFixed(4));
+const num = (x) => (x || 0).toLocaleString();
+const compact = (x) => { x = x || 0; return x >= 1e6 ? (x / 1e6).toFixed(1) + "M" : x >= 1e4 ? Math.round(x / 1e3) + "k" : x.toLocaleString(); };
+const pct = (a, b) => (b > 0 ? Math.round(100 * (1 - a / b)) : null);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const tier = (m) => { m = String(m || ""); return m.includes("opus") ? "var(--opus)" : m.includes("sonnet") ? "var(--sonnet)"
+  : m.includes("haiku") ? "var(--haiku)" : "var(--other)"; };
+const swatch = (m) => `<span class="sw" style="background:${tier(m)}"></span>`;
+const ARROW = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--other)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>';
+const CHEV = (d) => `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
+let prefs = null, recent = [], page = 0, seen = null, lastTables = {};
+const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* counts a number up (or down) to its new value, then flashes it once */
+function tween(el, to, fmt) {
+  const from = el._v ?? 0;
+  el._v = to;
+  if (calm || from === to || el._first === undefined) { el._first = true; el.textContent = fmt(to); return; }
+  const t0 = performance.now(), dur = 700;
+  const step = (now) => {
+    const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+    el.textContent = fmt(from + (to - from) * e);
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+  el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump");
+}
+
+/* rebuilds a table body only when its rows changed, so bars grow instead of blinking */
+function setRows(id, html) {
+  if (lastTables[id] === html) return;
+  const first = lastTables[id] === undefined;
+  lastTables[id] = html;
+  const body = $(id).tBodies[0];
+  body.innerHTML = html;
+  const grow = () => body.querySelectorAll(".fill[data-w]").forEach((f) => { f.style.width = f.dataset.w; });
+  first ? requestAnimationFrame(grow) : grow();  // grow on first load; afterwards just update
+}
+
+function renderSpark(records) {
+  const el = $("spark"), now = Date.now(), buckets = new Array(30).fill(0);
+  for (const r of records) {
+    const age = (now - new Date(r.ts).getTime()) / 60000;
+    if (age >= 0 && age < 30) buckets[29 - Math.floor(age)]++;
+  }
+  const max = Math.max(1, ...buckets);
+  if (el.children.length !== 30) el.innerHTML = buckets.map(() => "<i></i>").join("");
+  [...el.children].forEach((bar, i) => {
+    bar.style.height = Math.max(buckets[i] ? 8 : 2, Math.round(100 * buckets[i] / max)) + "%";
+    bar.classList.toggle("hot", i >= 27 && buckets[i] > 0);
+    bar.title = `${buckets[i]} request${buckets[i] === 1 ? "" : "s"}`;
+  });
+}
+
+const rowKey = (r) => `${r.ts}|${r.conversation}|${r.status}|${r.cost_usd}|${r.latency_s}`;
+
+function saving(pctEl, barsEl, actual, base, baseLabel) {
+  const p = pct(actual, base);
+  if (p == null) pctEl.textContent = "–";
+  else tween(pctEl, p, (v) => { v = Math.round(v); return v >= 0 ? `−${v}%` : `+${-v}%`; });
+  pctEl.style.color = p == null ? "" : (p >= 0 ? "var(--good)" : "var(--bad)");
+  if (!(base > 0)) { barsEl.innerHTML = '<span class="hint">No priced requests yet.</span>'; barsEl._built = false; return; }
+  const w = Math.min(100, Math.round(100 * actual / Math.max(actual, base)));
+  const wb = Math.min(100, Math.round(100 * base / Math.max(actual, base)));
+  if (!barsEl._built) {
+    barsEl.innerHTML = `
+      <div class="bar"><span>With router</span><div class="track"><div class="fill" style="width:0"></div></div><span></span></div>
+      <div class="bar"><span>${esc(baseLabel)}</span><div class="track"><div class="fill base" style="width:0"></div></div><span></span></div>`;
+    barsEl._built = true;
+  }
+  const [a, b] = barsEl.querySelectorAll(".bar");
+  a.lastElementChild.textContent = usd(actual);
+  b.lastElementChild.textContent = usd(base);
+  requestAnimationFrame(() => { a.querySelector(".fill").style.width = w + "%"; b.querySelector(".fill").style.width = wb + "%"; });
+}
+
+const short = (m) => String(m).replace(/^claude-/, "");
+
+function renderPrefs() {
+  if (!prefs) return;
+  document.querySelectorAll("[data-mode]").forEach((b) => {
+    const on = prefs.mode === b.dataset.mode;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-pressed", on);
+  });
+  const pin = $("pin-model");
+  if (pin.options.length !== prefs.models.length)
+    pin.innerHTML = prefs.models.map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join("");
+  pin.value = prefs.pinned_model || prefs.strongest_model || prefs.models[0];
+  $("pin-box").hidden = prefs.mode !== "pin";
+  $("allow-upgrade").checked = !!prefs.allow_upgrade;
+  $("auto-box").hidden = prefs.mode !== "auto";
+  $("roles-box").hidden = prefs.mode !== "auto";
+  $("mode-note").textContent = {
+    auto: "The router picks a model for every turn you type",
+    pin: "Every agent turn and subagent goes to the pinned model",
+    off: "Every request keeps the model Claude Code asked for",
+  }[prefs.mode] || "";
+  if (!document.activeElement || !document.activeElement.closest("#roles")) {
+    $("roles").innerHTML = prefs.roles.map((r) => {
+      const label = (m) => m == null ? "session's model" : short(m);
+      const value = !r.overridden ? "default" : (r.model == null ? "session" : r.model);
+      const opt = (v, text) => `<option value="${esc(v)}"${v === value ? " selected" : ""}>${esc(text)}</option>`;
+      const opts = [opt("default", `default · ${label(r.default)}`), ...prefs.models.map((m) => opt(m, short(m))),
+        opt("session", "session's model")];
+      return `<div class="role"><span>${esc(r.role)}${r.overridden ? '<span class="changed">changed</span>' : ""}</span>
+        <select data-role="${esc(r.role)}" aria-label="Tier for ${esc(r.role)}">${opts.join("")}</select></div>`;
+    }).join("");
+  }
+  const m = prefs.quality_margin;
+  document.querySelectorAll("[data-preset]").forEach((b) => {
+    const on = prefs.presets[b.dataset.preset] === m;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-pressed", on);
+  });
+  $("margin").value = m;
+  $("margin-val").textContent = m.toFixed(2);
+  $("margin-note").textContent = `Gives up to ${m.toFixed(2)} predicted quality to reach a cheaper model.`;
+  $("pref-note").textContent = prefs.router_enabled
+    ? `Applies to every new turn · per session: ANTHROPIC_CUSTOM_HEADERS="${prefs.header}: 0.1"`
+    : "The router is off (interceptor.router.enabled), so turns keep the model you picked.";
+}
+
+async function setPref(body) {
+  const r = await fetch("/api/preferences", {method: "POST", headers: {"content-type": "application/json"},
+    body: JSON.stringify(body)});
+  if (r.ok) { prefs = await r.json(); renderPrefs(); }
+}
+
+function renderRecent(turning) {
+  const pages = Math.max(1, Math.ceil(recent.length / PAGE_SIZE));
+  page = Math.min(page, pages - 1);
+  const start = page * PAGE_SIZE, rows = recent.slice(start, start + PAGE_SIZE);
+  $("recent-range").textContent = recent.length ? `Showing ${start + 1}–${start + rows.length} of ${recent.length}` : "";
+  const body = $("recent").tBodies[0];
+  body.classList.toggle("turn", !!turning);
+  body.innerHTML = rows.map((r) => {
+    const tokens = (r.input_tokens || 0) + (r.cache_read_input_tokens || 0) + (r.cache_creation_input_tokens || 0) + (r.output_tokens || 0);
+    const moved = r.routed_model !== r.requested_model && !r.fallback;
+    const src = r.quality_source ? (r.quality_source.startsWith("graded") ? "your data" : "benchmark") : "";
+    const fresh = seen && !seen.has(rowKey(r));
+    return `<tr${fresh ? ' class="new"' : ""}>
+      <td class="l num">${esc(r.ts ? new Date(r.ts).toLocaleTimeString() : "")}</td>
+      <td class="l"><span class="flow"><span class="asked">${esc(r.requested_model)}</span>${ARROW}
+        <span class="m">${swatch(r.routed_model)}${esc(r.routed_model)}</span>
+        ${moved ? '<span class="pill">routed</span>' : ""}
+        ${r.subagent ? `<span class="pill sub">subagent${r.agent_role ? " · " + esc(r.agent_role) : ""}</span>` : ""}
+        ${r.fallback ? '<span class="pill fb">fallback</span>' : ""}</span></td>
+      <td class="l why" title="${esc(r.reason)}">${src ? `<span class="pill src">${src}</span>` : ""}${esc(r.reason)}</td>
+      <td class="num">${num(tokens)}</td><td class="strong">${usd(r.cost_usd)}</td><td class="num">${usd(r.cost_if_strongest_usd)}</td>
+      <td class="num">${r.latency_s == null ? "–" : r.latency_s.toFixed(1) + "s"}</td>
+      <td>${r.status === 200 ? '<span class="ok">200</span>' : `<span class="err">${esc(r.status)}</span>`}</td></tr>`;
+  }).join("") || `<tr><td colspan="8" class="empty">Nothing yet. Run <code>aar-gateway code</code>.</td></tr>`;
+
+  $("page-label").textContent = `Page ${page + 1} of ${pages}`;
+  const shown = [...new Set([0, pages - 1, page - 1, page, page + 1])].filter((i) => i >= 0 && i < pages).sort((a, b) => a - b);
+  let html = `<button type="button" data-page="${page - 1}" aria-label="Previous page" ${page === 0 ? "disabled" : ""}>${CHEV("M15 6l-6 6 6 6")}</button>`;
+  shown.forEach((i, k) => {
+    if (k && i - shown[k - 1] > 1) html += '<span class="gap">…</span>';
+    html += `<button type="button" data-page="${i}" ${i === page ? 'aria-current="page"' : ""}>${i + 1}</button>`;
+  });
+  html += `<button type="button" data-page="${page + 1}" aria-label="Next page" ${page >= pages - 1 ? "disabled" : ""}>${CHEV("M9 6l6 6-6 6")}</button>`;
+  $("pages").innerHTML = html;
+}
+
+async function refresh() {
+  try {
+    const [s, p] = await Promise.all([fetch("/stats").then((r) => r.json()),
+      prefs ? Promise.resolve(prefs) : fetch("/api/preferences").then((r) => r.json())]);
+    prefs = p; renderPrefs();
+    const t = s.totals;
+    $("strongest").textContent = s.strongest_model || "–";
+    tween($("k-req"), t.requests, (v) => num(Math.round(v)));
+    $("k-req-tags").innerHTML = `<span class="tag blue">${num(t.rerouted)} rerouted</span>
+      <span class="tag">${num(t.fallbacks)} fell back</span><span class="tag">${num(t.errors)} errors</span>
+      ${t.subagent_requests ? `<span class="tag">${num(t.subagent_requests)} from subagents</span>` : ""}`;
+    $("k-strong-label").textContent = `Plan usage vs always ${s.strongest_model || "strongest"}`;
+    saving($("k-asked-pct"), $("k-asked-bars"), t.cost_usd, t.cost_if_requested_usd, "As asked");
+    saving($("k-strong-pct"), $("k-strong-bars"), t.cost_usd, t.cost_if_strongest_usd, "All strongest");
+
+    const models = Object.entries(s.models).sort((a, b) => b[1].cost_usd - a[1].cost_usd);
+    const totalCost = models.reduce((a, [, r]) => a + r.cost_usd, 0);
+    setRows("models", models.map(([m, r]) => {
+      const share = totalCost > 0 ? Math.round(100 * r.cost_usd / totalCost) : 0;
+      return `<tr><td class="l"><span class="m">${swatch(m)}${esc(m)}</span></td><td class="num">${num(r.requests)}</td>
+        <td class="num">${num(r.rerouted)}</td><td class="num">${num(r.fallbacks)}</td>
+        <td class="num">${compact(r.cache_read_input_tokens)}</td><td class="num">${compact(r.cache_creation_input_tokens)}</td>
+        <td class="num">${compact(r.output_tokens)}</td>
+        <td class="l"><div class="share"><div class="track"><div class="fill" data-w="${share}%" style="width:0;background:${tier(m)}"></div></div>
+          <span class="mono">${usd(r.cost_usd)}</span></div></td></tr>`;
+    }).join("") || `<tr><td colspan="8" class="empty">No requests yet. Run <code>aar-gateway code</code>.</td></tr>`);
+
+    const how = {definition: "role definition", builtin: "built-in agent", task: "task keywords"};
+    setRows("subagents", (s.subagents || []).map((r) => {
+      const p = pct(r.cost_usd, r.cost_if_requested_usd);
+      const models = Object.entries(r.models).map(([m, n]) => `<span class="m">${swatch(m)}${esc(m)} <span class="muted">×${n}</span></span>`).join(" ");
+      return `<tr><td class="l"><strong>${esc(r.role)}</strong></td><td class="l muted">${esc(how[r.source] || "–")}</td>
+        <td class="num">${num(r.spawns)}</td><td class="num">${num(r.requests)}</td><td class="l">${models}</td>
+        <td class="strong">${usd(r.cost_usd)}</td><td class="num">${usd(r.cost_if_requested_usd)}</td>
+        <td class="save ${p != null && p < 0 ? "neg" : ""}">${p == null ? "–" : p + "%"}</td>
+        <td class="num">${r.cache_hit_rate == null ? "–" : Math.round(100 * r.cache_hit_rate) + "%"}</td></tr>`;
+    }).join("") || `<tr><td colspan="9" class="empty">No subagents yet.</td></tr>`);
+
+    recent = s.recent || [];
+    renderRecent();
+    seen = new Set(recent.map(rowKey));
+    renderSpark(recent);
+    $("main").classList.remove("loading");
+    $("live-dot").classList.remove("off");
+    $("status").textContent = "Live · updated " + new Date().toLocaleTimeString();
+  } catch (e) {
+    $("live-dot").classList.add("off");
+    $("status").textContent = "Gateway not reachable";
+  }
+}
+
+document.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () =>
+  setPref({mode: b.dataset.mode, pinned_model: b.dataset.mode === "pin" ? $("pin-model").value : undefined})));
+$("allow-upgrade").addEventListener("change", (e) => setPref({allow_upgrade: e.target.checked}));
+$("pin-model").addEventListener("change", (e) => setPref({mode: "pin", pinned_model: e.target.value}));
+$("roles").addEventListener("change", (e) => {
+  const sel = e.target.closest("select[data-role]");
+  if (sel) setPref({role: sel.dataset.role, model: sel.value}).then(() => sel.blur());
+});
+document.querySelectorAll("[data-preset]").forEach((b) =>
+  b.addEventListener("click", () => setPref({preset: b.dataset.preset})));
+$("margin").addEventListener("input", (e) => { $("margin-val").textContent = parseFloat(e.target.value).toFixed(2); });
+$("margin").addEventListener("change", (e) => setPref({quality_margin: parseFloat(e.target.value)}));
+$("pages").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-page]");
+  if (b && !b.disabled) { page = parseInt(b.dataset.page, 10); renderRecent(true); }
+});
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>
