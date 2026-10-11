@@ -40,8 +40,13 @@ _DEFAULT_MODEL = {
 
 
 def _resolve_device(pref: str) -> str:
+    """``auto`` is CUDA when present, else CPU. ``ROUTER_EMBED_DEVICE`` (e.g.
+    ``mps`` on Apple silicon) overrides ``auto`` for one run without editing a
+    shared config -- the device is not part of the cache key."""
     if pref and pref != "auto":
         return pref
+    if os.environ.get("ROUTER_EMBED_DEVICE"):
+        return os.environ["ROUTER_EMBED_DEVICE"]
     try:
         import torch
 

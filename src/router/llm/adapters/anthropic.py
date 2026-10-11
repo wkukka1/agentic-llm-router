@@ -33,7 +33,8 @@ imported from ``router``; this is the serving-side adapter.
 
 from __future__ import annotations
 
-from typing import Any, Generator, Optional
+from collections.abc import Generator
+from typing import Any
 
 from ..client import LLMResponse
 from .base import Prompt, ProviderAdapter
@@ -46,7 +47,7 @@ _SDK_CLIENT_KEYS = ("timeout", "max_retries", "base_url")
 
 
 class AnthropicAdapter(ProviderAdapter):
-    def __init__(self, model: str, *, api_key: Optional[str] = None, **client_kwargs):
+    def __init__(self, model: str, *, api_key: str | None = None, **client_kwargs):
         super().__init__(model, api_key=api_key, **client_kwargs)
         self._client_obj = client_kwargs.get("client")
 
@@ -117,7 +118,7 @@ class AnthropicAdapter(ProviderAdapter):
             },
         )
 
-    def _cost(self, uncached: int, read: int, write: int, out: int) -> Optional[float]:
+    def _cost(self, uncached: int, read: int, write: int, out: int) -> float | None:
         in_price = self.client_kwargs.get("input_cost_per_token")
         out_price = self.client_kwargs.get("output_cost_per_token")
         if in_price is None or out_price is None:
@@ -133,7 +134,6 @@ class AnthropicAdapter(ProviderAdapter):
         """Yield text deltas; the generator's return value (``StopIteration.value``)
         is the final :class:`LLMResponse`, with usage -- see :meth:`LLMClient.stream`."""
         with self._client.messages.stream(**self._request(prompt, generation_kwargs)) as stream:
-            for text in stream.text_stream:
-                yield text
+            yield from stream.text_stream
             final = stream.get_final_message()
         return self._to_response(final)

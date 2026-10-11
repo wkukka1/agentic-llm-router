@@ -681,7 +681,7 @@ _LLMROUTERBENCH_METRIC_TYPES: dict[str, str] = {
 }
 
 
-def _llmrouterbench_latest_files(results_dir: Path) -> list[Path]:
+def _llmrouterbench_latest_files(results_dir: Path, keep=None) -> list[Path]:
     """One file per ``(dataset_name, split, model_name)``, keeping the file with the
     lexicographically-latest ``<timestamp>.json`` stem when a combination was re-run --
     mirrors the reference framework's own dedup (``baselines/data_loader.py``'s
@@ -690,6 +690,8 @@ def _llmrouterbench_latest_files(results_dir: Path) -> list[Path]:
     ``skip_demo``), so a later-timestamped smoke-test run can never evict a real one."""
     groups: dict[tuple[str, str, str], list[Path]] = {}
     for path in sorted(results_dir.rglob("*.json")):
+        if keep is not None and not keep(path):
+            continue
         try:
             header = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError) as e:
@@ -737,12 +739,35 @@ def load_llmrouterbench(cfg: Config) -> pd.DataFrame:
         )
 
     dropped_missing_score = 0
+    nulled_negative = 0
     dropped_out_of_pool: dict[str, int] = {}
     dropped_out_of_split: dict[str, int] = {}
     dropped_unknown_dataset: dict[str, int] = {}
     n_files_seen = 0
     records: list[dict] = []
-    for path in _llmrouterbench_latest_files(results_dir):
+    skipped_unread: dict[str, set] = {"dataset": set(), "split": set(), "model": set()}
+
+    def keep(path: Path) -> bool:
+        """Skip by the ``<dataset>/<split>/<model>/<ts>.json`` layout before
+        reading: most of the release is outside this setting, and parsing it
+        is not free -- one excluded 14 MB arc-agi file alone takes ~15 minutes
+        for ``json.loads``. Files not in that layout are read and checked by
+        their header, as before."""
+        nonlocal n_files_seen
+        rel = path.relative_to(results_dir).parts
+        if len(rel) != 4:
+            return True
+        dataset, split, model, _ = rel
+        for kind, name, ok in (("dataset", dataset, dataset in _LLMROUTERBENCH_METRIC_TYPES),
+                               ("split", split, not allowed_splits or split in allowed_splits),
+                               ("model", model, not pool or model in pool)):
+            if not ok:
+                skipped_unread[kind].add(name)
+                n_files_seen += 1
+                return False
+        return True
+
+    for path in _llmrouterbench_latest_files(results_dir, keep):
         n_files_seen += 1
         payload = json.loads(path.read_text(encoding="utf-8"))
         dataset = str(payload["dataset_name"])
@@ -770,6 +795,13 @@ def load_llmrouterbench(cfg: Config) -> pd.DataFrame:
             text = row.get("origin_query") or row.get("prompt") or ""
             prompt = render_prompt(text)
             qid = make_query_id(schemas.Source.LLMROUTERBENCH, dataset, prompt)
+            # a negative count/cost is corrupt, not a measurement: unknown (None), and the
+            # record's score -- which is fine -- is kept
+            counts = {k: row.get(k) for k in ("prompt_tokens", "completion_tokens", "cost")}
+            for k, v in counts.items():
+                if v is not None and v < 0:
+                    counts[k] = None
+                    nulled_negative += 1
             records.append({
                 "query_id": qid,
                 "model_id": model_id,
@@ -781,10 +813,10 @@ def load_llmrouterbench(cfg: Config) -> pd.DataFrame:
                 "source": schemas.Source.LLMROUTERBENCH,
                 "is_multiple_choice": is_mc,
                 "n_choices": n_choices,
-                "input_tokens": row.get("prompt_tokens"),
-                "output_tokens": row.get("completion_tokens"),
+                "input_tokens": counts["prompt_tokens"],
+                "output_tokens": counts["completion_tokens"],
                 "latency": None,
-                "cost": row.get("cost"),
+                "cost": counts["cost"],
                 "metadata": {
                     "native_model_name": model_native,
                     "record_index": row.get("index"),
@@ -792,6 +824,18 @@ def load_llmrouterbench(cfg: Config) -> pd.DataFrame:
                 },
             })
 
+    if any(skipped_unread.values()):
+        warnings.warn(
+            "LLMRouterBench: skipped result files without reading them -- "
+            f"out-of-pool model(s): {sorted(skipped_unread['model'])}; split(s) outside "
+            f"sources.llmrouterbench.splits: {sorted(skipped_unread['split'])}; dataset(s) "
+            f"outside the performance-cost setting: {sorted(skipped_unread['dataset'])}"
+        )
+    if nulled_negative:
+        warnings.warn(
+            f"LLMRouterBench: {nulled_negative} negative token count/cost value(s) set to unknown "
+            f"(None); their records' scores are kept"
+        )
     if dropped_missing_score:
         warnings.warn(
             f"LLMRouterBench: dropped {dropped_missing_score} record(s) with score=null "
@@ -841,13 +885,33 @@ LOADERS = {
 
 
 def load_all(cfg: Config, sources: Optional[Iterable[str]] = None) -> pd.DataFrame:
-    sources = list(sources) if sources else list(LOADERS)
-    frames = []
-    for s in sources:
+    """Load every requested source and concatenate.
+
+    A missing file is skipped with a warning only when the caller took the
+    default set: most installs have one or two of the five sources on disk, and
+    failing on the others would make the default unusable. When the caller
+    *named* the sources, a missing file is an error -- they asked for that one.
+
+    Loading nothing at all always raises. It used to return an empty frame,
+    which `build_response_matrix.py` wrote out as `responses (0 rows)` and then
+    passed through its own quality checks with "No issues detected": a build
+    that found no data reported success.
+    """
+    explicit = sources is not None
+    requested = list(sources) if sources else list(LOADERS)
+    frames, skipped = [], {}
+    for s in requested:
         try:
             frames.append(LOADERS[s](cfg))
         except FileNotFoundError as exc:
+            if explicit:
+                raise
+            skipped[s] = str(exc)
             warnings.warn(f"skipping source '{s}': {exc}")
     if not frames:
-        return schemas.coerce_response_frame(schemas.empty_response_frame())
+        detail = "; ".join(f"{k}: {v}" for k, v in skipped.items()) or "no loaders ran"
+        raise FileNotFoundError(
+            f"no sources loaded from {requested} -- refusing to build an empty "
+            f"response matrix. {detail}"
+        )
     return pd.concat(frames, ignore_index=True)

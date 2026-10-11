@@ -704,3 +704,882 @@ The shipped 384-d encoder is English-trained and it shows.
 Non-English traffic is 47% of this corpus, so this is not a corner case. The
 domain ensemble already carries `multilingual-e5-large-instruct`; pointing the
 length head at it is the obvious next measurement.
+
+## Random forest on domain, task and the encoded query
+
+`evaluation.prompt_decomposition.forest_report`. A forest grown with
+`criterion="entropy"` -- so its impurity importances *are* information gain --
+over three feature families, predicting `strong_needed` (did the stronger model
+win the battle). 6,000 English arena prompts, 876 held out.
+
+| family | cols | info gain | per column | permutation drop | alone | without |
+|---|---|---|---|---|---|---|
+| domain | 8 | 0.022 | 0.00281 | −0.0032 | 0.525 | 0.555 |
+| task | 7 | 0.020 | 0.00286 | +0.0009 | 0.530 | 0.559 |
+| embedding | 384 | **0.958** | 0.00249 | +0.062 | 0.552 | 0.542 |
+
+AUC 0.566 against a 0.494 base rate. Information gain says the embedding is 96%
+of everything; **per column, domain and task are worth more than the average
+embedding dimension**, and the two highest-gain single columns in the model are
+`task.extract` and `domain.language`. The embedding wins by being 384 columns
+wide. Ablation is the arbiter and says everything is weak: every family alone
+lands 0.525–0.552, and domain's permutation drop is negative. Domain and task
+add about +0.01 AUC over the embedding alone -- inside the noise at 876 rows.
+
+## Spot check: the forest was not fed bad features
+
+Two explanations for the forest's result: the classifier outputs are wrong on
+this data, or they are right and the target does not depend on them. The spot
+check separates them (`evaluation.prompt_decomposition.spot_check`), on the
+exact rows the forest used.
+
+**Where the predictions land** (1,500 prompts): 6.2 effective domains of 8, top
+two holding 51% -- not the two-domain collapse suspected, but skewed.
+`software_tech` is 32.9% of this traffic against 13.1% of the training labels.
+
+**Accuracy, read by hand** (80 random prompts, marked against
+`domain_taxonomy.DOMAIN_DESCRIPTIONS`; the marked sheet is kept at
+`artifacts/forest/spot_check_review.csv`):
+
+| | correct | 95% Wilson | documented |
+|---|---|---|---|
+| domain top-1 | 74/80 = 0.925 | [0.846, 0.965] | 0.923 (external) |
+| domain in shortlist | 79/80 = 0.988 | [0.933, 0.998] | 0.980 |
+| task | 70/80 = 0.875 | [0.785, 0.931] | 0.844 |
+
+The heads perform on the forest's data exactly as documented. **The forest's
+verdict is about the target, not the features.**
+
+The misses are informative:
+
+- **Domain (6).** Five of six had the right answer second on the shortlist.
+  Three are "building software for X" read as X -- a trading bot as finance, a
+  chatbot as meta, an HTML page from sales copy as business.
+- **Task (10), and 7 of them one pattern: rare classes firing where `answer` or
+  `create` belong.** `classify` on explain-this and solve-this prompts (a group
+  theory definition, a physics word problem), `extract` on "tell me about SQL
+  QUALIFY", `media` on requests for *text* about images or for an HTML page.
+  The rare task classes are the weak spot, as their per-class precision already
+  said.
+- The corpus `language` column is not reliable: a Russian prompt is tagged `en`.
+
+## Per-model correctness: the opportunity is per prompt, not per category
+
+`evaluation.prompt_decomposition.per_model`, on RouterBench: 36,497 prompts, 11
+models, every model scored on every prompt -- observed correctness, not a
+preference vote. Routers are fitted on a hashed 70% and scored on the rest.
+
+| router | accuracy | $/prompt | gap closed |
+|---|---|---|---|
+| single best (GPT-4 for everything) | 0.7754 | 0.003312 | 0% |
+| best model per benchmark (true labels) | 0.7770 | 0.002740 | 1.2% |
+| best model per subset (86 true labels) | 0.7771 | 0.002738 | 1.2% |
+| oracle (best model per prompt) | **0.9104** | **0.000246** | 100% |
+
+**Even perfect category labels close 1.2% of the accuracy gap**, because GPT-4
+is the best model on 24 of 27 benchmarks -- knowing the category almost never
+changes the choice. Decomposed on the full table, **98% of the oracle's
+advantage is within categories**, and moving from 27 benchmark families to 86
+subsets moves that by 0.1 points. Finer categories do not help: model choice
+varies per prompt, which no category label can see. That is the job of a
+per-query model such as NIRT.
+
+**Cost is where category routing pays.** On the accuracy/cost frontier the
+per-benchmark router sits above every single model across the middle of the
+range. The cheapest single model matching its accuracy costs:
+
+| category router | cheapest single model at that accuracy |
+|---|---|
+| 0.769 at $0.00138 | GPT-4, 2.4x the cost |
+| 0.745 at $0.00080 | GPT-4, 4.1x |
+| 0.687 at $0.00026 | GPT-4, 12.9x |
+
+99% of GPT-4's accuracy at 42% of its cost; 96% at 24%.
+
+### With our predicted labels instead of the true ones
+
+The same analysis on a random 3,000 RouterBench prompts (2,105 train / 895
+test), with the domain and task heads' predictions as the categories.
+
+**The domain head is measurably weaker on exam-format prompts.** Scored where
+the benchmark fixes the domain (1,628 prompts; ambiguous subsets excluded, see
+`spot_check.BENCHMARK_DOMAIN`): **0.867** [0.849, 0.882], 0.958 in shortlist,
+against 0.925 on the chat prompts. By domain: science_math 0.97, business_law
+0.94 -- and three weak spots:
+
+| expected | accuracy | where it goes instead |
+|---|---|---|
+| culture (history, society, philosophy) | 0.52 | business_law 54 of 187 |
+| medicine_health | 0.59 | science_math 26 of 118 |
+| software_tech | 0.62 | science_math 15, language 11 of 73 |
+
+History-and-government questions read as politics, anatomy and virology as
+biology. Multiple-choice exam text is a different register from the chat
+prompts the head was trained on.
+
+**On accuracy, nothing moves.** On this sample GPT-4 is best in every category
+under every grouping, so every category router -- true labels included -- is
+identical to one model for everything: 0.0% of the gap. Between-category share
+of the oracle gap: benchmark 1.2%, domain 0.0%, task 0.3%, domain x task 0.7%.
+
+**On cost, predicted domain x task nearly matches the true labels at the top of
+the range** (`artifacts/per_model/frontier_predicted.png`). From about
+$0.0005/prompt up to GPT-4 its frontier tracks the true-benchmark router's
+closely; at the cheap end the true labels keep a margin of a few points (at
+$0.00011, 0.595 against 0.573). Domain alone or task alone captures less:
+around $0.001 both sit on the single-model line. The combination is what
+recovers most of the value. With 895 test prompts, differences of one or two
+points are inside the noise.
+
+### What this means
+
+- The classifiers are accurate on the traffic they were built for (0.925 /
+  0.875 by hand), less so on exam-format text (0.867).
+- **Category routing cannot improve accuracy here, and finer categories would
+  not change that**: 98% of the oracle's advantage is per prompt. Reaching it
+  needs a per-query model, not a better category.
+- **Category routing is a cost lever**, and predicted domain x task delivers
+  most of what perfect category labels would -- roughly GPT-4's accuracy at
+  2-4x lower cost at the high end of the frontier.
+- Caveats: RouterBench is benchmark prompts and 2023-era models. Whether GPT-4's
+  dominance holds for a current model pool is the first thing to check before
+  leaning on the accuracy result.
+
+## A newer model pool changes the answer (and the paper that explains why)
+
+The per-model results above are RouterBench: an 11-model pool from 2023 where
+GPT-4-1106 led the runner-up by twelve points. "Category routing cannot improve
+accuracy" was a fact about *that pool*. Pools are now pluggable
+(`training.prompt_decomposition.data.pools`) so the same analysis runs on any
+model set: `register_pool(name, loader)`, or `load_pool_from_frame` over a wide
+table of per-model scores.
+
+On **SPROUT** (CARROT; 6,637 prompts x 13 models from 2024-25 -- GPT-4o, Claude
+3.5 Sonnet, Llama-3.3-70B, Granite, Mixtral):
+
+| | RouterBench (2023) | SPROUT (2024-25) |
+|---|---|---|
+| best model's lead over runner-up | 12.4 pp | 1.4 pp |
+| between-category share of the oracle gap | 1.5% | **13.5%** |
+| gap closed by routing on the true category | 1.2% | **11.5%** |
+
+With the pool tightened, the category starts to matter -- because different
+models now win different categories. On SPROUT the per-category winners are
+Llama-3.3-70B (MATH, GPQA, MuSR), GPT-4o (MMLU-Pro, chat) and Claude 3.5 Sonnet
+(retrieval), where RouterBench had GPT-4 winning 24 of 27.
+
+### But it is format, not topic -- and our taxonomy encodes topic
+
+Our own heads do **not** recover that gain:
+
+| category | between-category share | gap closed (held out) |
+|---|---|---|
+| true source benchmark | 13.5% | 11.5% |
+| **predicted** source benchmark | 12.8% | **10.5%** |
+| our predicted domain | 2.3% | −0.4% |
+| our predicted task | 2.8% | 1.4% |
+| our domain x task | 5.4% | 1.1% |
+
+Two reasons. The domain head collapses on this corpus -- 64% `science_math`,
+because SPROUT is MMLU-Pro, MATH and GPQA. And the distinction that pays is
+*what kind of problem this is* -- multiple choice, a maths derivation,
+retrieval over a supplied context, open chat -- which is answer format and
+structure, not subject matter.
+
+**That distinction is cheap to predict.** A logistic head on frozen bge-small
+embeddings recovers the source benchmark at 0.965 over six labels, and routing
+on its prediction closes 10.5% of the gap against 11.5% for the true label:
+91% of the value, available at serving time.
+
+The caveat is that "source benchmark" is partly an artefact -- production
+traffic is not a mixture of six datasets, and dataset identity is easy to spot
+from formatting. What transfers is the mechanism: **route on problem format and
+structure, not on topic.** The task head is already closer to this than the
+domain head (1.4% against −0.4%), and the surface features already measure
+format-ish things.
+
+## The routing plateau (Lu et al., arXiv 2606.07587)
+
+Published work that independently reaches this project's central finding, with
+a sharper diagnostic. 21 routers across five benchmarks converge to a narrow
+band far below the oracle -- a *routing plateau* -- because routers learn
+global model-capability averages rather than instance-level correctness.
+
+Their Sec 5.1 stratification is implemented as
+`evaluation.prompt_decomposition.per_model.stratify_hard_easy`. A solvable
+prompt is **hard** when exactly one model gets it, or when few do and the
+globally best model is wrong on it; everything else is **easy**, because the
+best-on-average model already collects it. Our reproduction:
+
+| | fraction hard | hard/easy gap ratio | share of gap on hard |
+|---|---|---|---|
+| RouterBench (ours) | 13.6% | 39.3x | 86.6% |
+| RouterBench (paper) | 11.1% | 38.5x | 90.8% |
+| SPROUT (ours) | 11.8% | 44.0x | 85.5% |
+| CARROT/SPROUT (paper) | 11.8% | 27.2x | 69.9% |
+
+(Gap sizes differ because we measure against the best single model and the
+paper against the mean over its 21 routers; the shape is the same.)
+
+Three things taken from it:
+
+- **`selection_concentration`** is their Fig. 4 check, and our category router
+  fails it exactly as their routers do: it picks Claude 3.5 Sonnet on 99.8% of
+  prompts and 99.6% of *hard* prompts, while the oracle's hard-prompt mass sits
+  on Llama-3.3-70B (13.8%), Llama-405B (12.7%) and Llama-3.1-70B (12.3%). A
+  router whose hard-prompt choices match its overall choices is defaulting.
+- **`knn_router`**: plain similarity search over frozen embeddings ranks top-2
+  on all five of their benchmarks. It is the baseline any router here has to
+  beat before its machinery is worth anything.
+- **Their remedies were small.** Scaling the training set 30k -> 300k,
+  upgrading ModernBERT-base to ModernBERT-large, and end-to-end fine-tuning
+  together bought +2.13 pp, closing 14.6% of the oracle gap. More data and a
+  bigger encoder are not the way out of the plateau.
+
+## Will's end-to-end pipeline: run, measured, and where it goes wrong
+
+Run from scratch on RouterBench (0-shot + 5-shot): response matrix (802,626
+observations, chance-corrected) -> leakage-checked splits (58,344 / 7,268 /
+7,354 queries) -> NIRT observations -> BERT query embeddings (72,966) + profile
+embeddings -> `train_nirt.py --dim 2 --model-params projected` -> `eval_nirt`,
+`route_eval`, `misroute_analysis`.
+
+**Prediction quality is real.** Test BCE 0.615 against a 0.654 per-model-mean
+baseline (-0.039), AUC 0.717, accuracy 0.681, ECE 0.018. The predictor is
+calibrated and beats "assume each model's average correctness".
+
+**Routing quality is not.**
+
+| | quality | cost / 1k |
+|---|---|---|
+| best fixed model (gpt-4-1106-preview) | 0.7883 | $5.75 |
+| NIRT router (argmax, lambda=0) | 0.7875 | $5.69 |
+| oracle (per query) | 0.9149 | $0.38 |
+
+It lands 0.0008 *below* always-calling-GPT-4 -- **-0.6% of the oracle gap** --
+at the same cost. Oracle hit rate 1.7%. The oracle is 13.7 points better and
+15x cheaper, so the opportunity is there and the router does not take it.
+
+### Why
+
+`misroute_analysis.py` and the plateau stratification agree on the mechanism.
+
+1. **It defaults.** The router picks gpt-4 on 7,252 of 7,354 queries (98.6%);
+   seven of the eleven models are never picked once. Yet yi-34b is *a* best
+   option on 5,111 queries, gpt-3.5 on 4,982, mixtral on 4,443.
+2. **The regret is concentrated and recoverable.** 18% of queries are
+   mis-routed; 794 catastrophic cases (regret > 0.5) carry 84.3% of all regret,
+   and 854 queries holding 86.1% of regret had a pool model scoring >= 0.8 that
+   the router passed over. This is not "no model could answer".
+3. **The ranking knows, the argmax does not.** On mis-routes the model it
+   should have taken was ranked #2 by NIRT on 48.9% of the regret mass, #3 on
+   16.3%; median rank 3 of 11.
+4. **It fails precisely where the gain is.** Hard prompts (paper's Sec 5.1
+   definition) are 12.7% of the split and hold **84.9%** of the oracle gap, a
+   37.2x hard/easy ratio. On those prompts the router picks gpt-4 ~99.4% of the
+   time, while the oracle's correct-model mass is spread almost uniformly over
+   the other ten (yi 12.8%, gpt-3.5 11.7%, claude-v1 10.7%, claude-v2 10.5%,
+   claude-instant 10.1%, mixtral 9.7%, wizardlm 9.3%, mistral 8.1%).
+
+That is the routing plateau (arXiv 2606.07587) reproduced end to end in this
+repo: a calibrated per-(query, model) predictor whose argmax collapses onto the
+globally strongest model, because the learned global capability prior dominates
+the instance-level differences that decide the hard queries.
+
+### Two pipeline bugs found while running it
+
+* **An empty build passes its own quality check.** `loaders.load_all` catches
+  `FileNotFoundError` per source and only warns, so a missing
+  `routerbench_5shot.pkl` skipped RouterBench entirely -- and
+  `build_response_matrix.py` printed `wrote responses (0 rows)` followed by
+  "No issues detected". A build that finds nothing should fail.
+* **`_to_parquet` breaks on pandas 3.** `out[col].map(...).any()` raises
+  "Cannot perform reduction 'any' with string dtype" on Arrow-backed string
+  columns (pandas 3.0.5 here; fine on 2.x). Fixed by iterating instead.
+
+## The signals do have a job: triage, not difficulty
+
+Everything above measures the heads against *difficulty*, and they lose to the
+global prior. But the agentic loop makes a second, structural decision before
+difficulty is ever consulted -- one shot, or decompose and route each part --
+and that decision was being made by a hand-written phrase list in
+`router.agentic.triage`.
+
+The list was wrong in a way that is easy to demonstrate:
+
+```
+Summarise transformers, then implement attention in NumPy and analyse its complexity.
+  -> single -> gpt-4-1106-preview   (before)
+```
+
+It contained `" and then "` but not `", then"`. A three-deliverable prompt
+answered in one shot, and the orchestrator never ran.
+
+**What was built.** `StructureClassifier`, a `Classifier` in
+`decompose/classifiers/prompt_heads.py` like the other heads, emitting
+`multi_part` (with its evidence attached) and `part_count`. The evidence is
+named, not scored: distinct task verbs, sequence markers matched after a clause
+boundary, enumerated items, question marks, length. `HeuristicTriage` now takes
+it and prefers it, falling back to the old list when no classifier is given;
+`AgenticRouter` wires it in by default.
+
+Two properties worth recording, because both were mistakes on the first pass:
+
+* **A sequence marker alone is enough.** Requiring two known task verbs as
+  corroboration made the classifier *narrower* than the list it replaced, and
+  broke two of Will's orchestrator tests. The verb list is exactly the
+  brittleness being removed, so it may inform the reported reason but cannot
+  gate the decision. The asymmetry justifies it: triage pays a little for a
+  false "decompose" and loses the entire point on a false "single".
+* **Fixing triage is not enough.** With triage corrected the same prompt came
+  back "nothing to decompose" -- `_SPLIT_RE` in `router.agentic.decompose`
+  lacked the comma form too. Both ends needed the fix, and the chain test pins
+  the join.
+
+After:
+
+```
+What is 2+2?
+  -> single -> gpt-4-1106-preview (q~0.57): best predicted quality 0.57 >= 0.55
+Summarise transformers, then implement attention in NumPy and analyse its complexity.
+  -> orchestrated (recursive) -> 2 sub-call(s): prompt looks multi-part
+     (sequence marker ', then' joining 3 task verbs); decompose so each part
+     routes independently
+```
+
+Note what this is *not*: it is not evidence that prompt features predict
+difficulty. It is a structural property of the text -- how many deliverables
+are asked for -- which is why a rule can do it when nothing we tried could
+predict correctness. The heads' value is in the decisions that are structural,
+and the measurements above are the reason to stop looking for it elsewhere.
+
+## kNN vs trained NIRT, in Will's harness (and a correction)
+
+Earlier in this work I wrote that kNN with no training "beats trained NIRT on
+the frontier, +0.023 vs +0.0005". That was measured with our code. Run both
+through his `compare_routers` on the `test` split (7,354 queries x 11 models),
+and the picture is sharper in one direction and wrong in the other.
+
+**Correction: on raw argmax quality, the trained model wins, everywhere.**
+
+| router (lam=0) | quality | cost/1k | regret | oracle hit |
+|---|---|---|---|---|
+| NIRT (trained) | **0.7875** | 5.69 | **0.1274** | **0.820** |
+| kNN k=25 | 0.7728 | 4.05 | 0.1421 | 0.815 |
+| kNN k=10 | 0.7358 | 3.23 | 0.1792 | 0.778 |
+| kNN k=5 | 0.6973 | 2.70 | 0.2177 | 0.741 |
+| hard oracle | 0.9149 | 0.38 | 0.0 | 1.0 |
+| random | 0.5715 | 1.48 | 0.3435 | 0.594 |
+
+NIRT is the better predictor on every column. Training is doing something.
+
+**What survives, and is much larger than reported: the frontier gain.** Quality
+at a cost is not an achievement unless it beats mixing the two endpoint models
+at that same cost. In that column:
+
+| policy | quality | cost/1k | gpt-4 share | vs mixture |
+|---|---|---|---|---|
+| NIRT argmax | 0.7875 | 5.69 | **98.6%** | **+0.004** |
+| always gpt-4 | 0.7883 | 5.75 | 100% | 0.000 |
+| kNN k=5 argmax | 0.6973 | 2.70 | 25.1% | **+0.120** |
+| NIRT + margin=0.1 | 0.7382 | 1.86 | 32.3% | **+0.219** |
+| kNN k=25 + margin=0.1 | 0.7223 | 1.51 | 22.2% | +0.227 |
+| kNN k=25 + margin=0.2 | 0.6571 | 0.52 | 4.8% | +0.230 |
+
+The trained router's argmax buys **+0.004** over free mixing, at 98.6% gpt-4 --
+it is `always gpt-4` with extra steps, and the table says so on the next row.
+The untrained kNN buys +0.120 while sending 25.1% to gpt-4. Not because it
+predicts better -- it predicts *worse* on every metric above -- but because it
+spreads, and spreading is what the mixture line charges for.
+
+(The kNN rows here are lower than first reported, and the NIRT rows are
+unchanged. Same cause as the SPROUT correction below: a drifted private copy of
+the selection rule flattered quantised predictors and left continuous ones
+alone. The rule now has one definition, and the two tables above -- produced by
+different code paths -- agree to the last digit, which is the check that was
+failing silently before.)
+
+**The conclusion is not "use kNN". It is that the selection rule dominates the
+predictor.** Holding the predictor fixed and only changing argmax -> margin=0.1
+moves NIRT from +0.004 to +0.219, a 61x difference. Changing the predictor
+while holding the rule fixed moves things by 0.01-0.05. The better predictor
+plus the better rule (NIRT + margin=0.1: 0.738 quality at 1.86/1k, a **68% cost
+cut for 5.0 quality points**) is the configuration to take forward, and it is
+the trained model that gets there -- but only once it is allowed to not pick
+gpt-4.
+
+One diagnostic worth keeping: for kNN k=5 and k=10 the `margin=0.02` row is
+*identical* to argmax. A k-neighbour mean is quantised to multiples of 1/k, so
+a 0.02 margin falls below the predictor's own resolution and can never change a
+choice. If a margin sweep shows no movement at the low end, check the
+predictor's granularity before concluding the rule does nothing.
+
+## The margin rule on the 2024-25 pool (SPROUT): holds, and for a different reason
+
+RouterBench is a pool where one model dominates, which is the condition that
+makes "always pick the strongest" hard to beat. SPROUT's 13 models are stronger
+and closer together, so the rule needed re-testing there before anything is
+claimed generally. Predictor: kNN (k=16) over frozen MiniLM embeddings,
+train -> test, 4,685 / 1,952 prompts.
+
+| policy | quality | cost/1k | gpt-4o share | vs mixture |
+|---|---|---|---|---|
+| argmax | 0.8489 | **5.62** | 32.4% | **off the frontier** |
+| margin=0.02 | 0.8467 | 3.06 | 20.9% | +0.077 |
+| **margin=0.05** | **0.8390** | **2.02** | 17.5% | **+0.110** |
+| margin=0.1 | 0.8163 | 0.92 | 8.4% | +0.132 |
+| margin=0.2 | 0.7656 | 0.32 | 1.7% | +0.105 |
+| always gpt-4o | 0.8496 | 5.05 | 100% | 0.000 |
+| oracle (cheapest correct) | 0.9783 | 0.64 | 2.5% | +0.305 |
+
+**The rule holds: margin=0.05 matches gpt-4o's quality to within 1.1 points at
+60% less cost.** Push to margin=0.1 and it is 82% cheaper for 3.3 points.
+
+**And argmax is now worse than useless here.** At 5.62/1k it costs *11% more*
+than simply always calling gpt-4o (5.05), for slightly *less* quality. There is
+no `vs_mixture` figure because the point falls outside the cheap-to-strong cost
+span entirely -- you cannot beat a mixture you are dearer than. A router that
+spends more than the single best model and returns less is strictly worse than
+having no router, and only the corrected prices made that visible: under the
+original estimates argmax looked like a modest +0.041.
+
+**But the failure mode it fixes is absent here.** On RouterBench the argmax
+sent 98.6% of traffic to gpt-4 and bought +0.004 over free mixing. On SPROUT
+the same kind of predictor already spreads -- 32.4% to gpt-4o -- and argmax
+alone buys +0.041. The collapse-onto-one-model pathology is a property of a
+pool with a dominant model, not of routing. So:
+
+* the margin rule is worth having on both pools, but
+* the *dramatic* version of the result (60x) is specific to RouterBench, and
+* a router evaluated only on RouterBench will look better than it is, because
+  the baseline it beats there (`always gpt-4`) is unusually strong.
+
+**The prices: 6 of 13 verified on 2026-09-25, and the conclusion survived the
+corrections.** SPROUT ships token counts but prices nothing, and none of its 13
+models were in `configs/model_prices.yaml`. The block added for them began as
+recalled list pricing; it has since been checked against provider pages, and
+every entry now carries `verified: <date>` with a source or `verified: false`.
+
+Two estimates were wrong, in opposite directions:
+
+| model | estimated | actual |
+|---|---|---|
+| aws-claude-3-5-sonnet-v1 | 3.00 / 15.00 | **6.00 / 30.00** |
+| wxai-llama-3-3-70b | 1.80 flat | **0.7526 flat** |
+
+The Sonnet miss is the instructive one: Bedrock **doubled** that rate on
+2025-12-01 when the model moved to Public Extended Access, so the recalled
+figure had been correct and silently stopped being so. No amount of care at
+recall time catches that; only checking the page does.
+
+Seven remain unverified -- the 2024-vintage watsonx models, which IBM has
+deprecated or withdrawn and no longer publishes rates for (its billing docs are
+JS-rendered and cannot be fetched). Their values follow IBM's documented
+Resource Unit ladder (1 RU = 1000 tokens, base $0.0001/RU = $0.10 per 1M, each
+model a whole multiple), which is the right shape but an unconfirmed rung. The
+cheap endpoint of the mixture line is one of them, so absolute dollar figures
+here still rest partly on estimates.
+
+That is why the sweep was also re-run 20 times with every rate multiplied by a
+random factor in [0.5, 1.5] -- a range that comfortably contains both
+corrections found above:
+
+| policy | median vs mixture | min | max | positive |
+|---|---|---|---|---|
+| argmax | +0.062 | +0.021 | +0.157 | **17/20** |
+| margin=0.05 | +0.157 | +0.102 | +0.262 | 20/20 |
+| margin=0.1 | +0.192 | +0.116 | +0.289 | 20/20 |
+| margin=0.2 | +0.182 | +0.089 | +0.261 | 20/20 |
+
+The margin rule beats free mixing in every price world drawn; plain argmax does
+not (17/20). The ordering is robust; the dollar amounts are not.
+
+### These numbers are a correction
+
+The first version of this table was measured with a private copy of the
+selection rule inside `policy_eval`, and the copy had drifted: it broke ties on
+cost even at `margin=0`. The "argmax (incumbent)" control row was therefore not
+the incumbent -- it quietly took the tie-breaking saving for free.
+
+That matters most on exactly this predictor. A k-neighbour mean is quantised to
+multiples of 1/k, so ties are constant, and the flattery was worth 21% of the
+baseline's cost: argmax's true cost is 4.00/1k, not 3.31, and its true gain
+over free mixing is +0.041, not +0.070. The margin rows barely moved, because
+they were already selecting on cost deliberately.
+
+The correction makes the case for the rule **stronger**, not weaker: the gap
+between argmax and margin=0.05 widens from +0.052 to +0.078, and plain argmax
+loses its claim to beat free mixing reliably (17/20 price worlds, not 20/20).
+
+The tell was visible in the earlier output and I missed it: `compare_routers`
+and `margin_sweep` reported different quality for the *same* router on the
+*same* split (kNN k=5: 0.6973 vs 0.6699). Two numbers for one thing is a bug
+report. `margin_selection` now delegates to
+`router.nirt.routing_decision.routing_decision` -- the rule the served router
+applies -- so there is one definition and the two tables agree by
+construction.
+
+## Why `CostModel` is blocked, and which pool unblocks it
+
+`CostModel` (the UML's predicted-cost type, not yet built) needs a per-model
+price and a predicted token count. On the current processed build it cannot be
+fit, and the reason is structural rather than a bug:
+
+```
+rows 802,626   input_tokens  non-null 0        output_tokens non-null 0
+               cost          non-null 802,626  latency       non-null 0
+source: routerbench only
+```
+
+RouterBench ships a precomputed `total_cost` per (model, query) and **no token
+counts at all** -- that is why `configs/model_prices.yaml` says RouterBench "is
+NOT priced here". No amount of work on that source will produce the columns:
+input and output counts are not separable from one blended dollar figure.
+
+**SPROUT has them.** `num_input_tokens` and `num_output_tokens` are on every
+cell, which is what made the cost analysis above possible once a price table
+existed. So the sequence is: price the SPROUT models properly (the block added
+here is unverified), then fit `CostModel` against SPROUT, not RouterBench.
+
+Second thing that table says: the current build is **RouterBench-only**. The
+other sources' raw files are absent, and since `load_all` now raises rather
+than warning, that is visible instead of silent -- but it does mean every
+number computed from the processed tables is one pool.
+
+## Running the test suite: two environment traps
+
+Both cost about an hour each to find, and neither announces itself -- the
+suite simply stops, with no output, forever.
+
+**1. faiss deadlocks unless OpenMP is pinned to one thread.** `pytest tests`
+hangs inside `faiss::IndexFlat::search`. It looks like a slow test: the process
+is alive, RSS ~5 GB, and there is no error. It is not slow -- accumulated CPU
+time stops advancing entirely while elapsed time climbs, which is the tell.
+Run the suite as:
+
+```bash
+OMP_NUM_THREADS=1 PYTHONPATH=src pytest tests -q
+```
+
+To diagnose the next one of these: `ps -o pid,time,etime -p <pid>` twice a few
+seconds apart. If `TIME` is frozen and `ELAPSED` is growing, it is blocked, not
+working, and `sample <pid> 3` names the call it is blocked in.
+
+**2. A dead HuggingFace download hangs the process rather than failing it.** A
+separate hang traced to a half-finished `multilingual-e5-large-instruct`
+download: the HTTPS socket was in `CLOSE_WAIT` and the main thread was parked
+on the cache lock, which is never released. `HF_HUB_OFFLINE=1` turns that into
+an immediate error. Everything the suite needs is already cached, so the
+offline flag is the right default for a local run.
+
+Neither is caused by anything in this work; both are worth putting in the
+README, because "the tests hang" is otherwise an unfalsifiable bug report.
+
+## Cosine agreement: the encoder-sensitivity check, finished
+
+Will's two objections to the agreement signal were (1) that exact-match
+disagreement cannot work on tasks with no single right answer, and (2) that
+cosine similarity "really depends on your encoder". The first is why the signal
+is cosine rather than exact match. This is the second, answered: the same
+sweep, three encoders, both slices of RouterBench, threshold re-tuned per
+encoder.
+
+**Free-form** (n=9,676) -- the slice the objection was about:
+
+| encoder | AUC | best tau | quality | cost/1k | kept cheap | vs mixture |
+|---|---|---|---|---|---|---|
+| bge-small-en-v1.5 | 0.727 | 0.88 | 0.5872 | $2.71 | 71% | **+0.0400** |
+| all-MiniLM-L6-v2 | 0.727 | 0.77 | 0.5848 | $2.65 | 73% | **+0.0389** |
+| e5-large-v2 | 0.746 | 0.91 | 0.5850 | $2.72 | 72% | **+0.0376** |
+
+**Multiple-choice** (n=26,821):
+
+| encoder | AUC | best tau | quality | cost/1k | kept cheap | vs mixture |
+|---|---|---|---|---|---|---|
+| bge-small-en-v1.5 | 0.703 | 0.97 | 0.8161 | $1.15 | 48% | +0.0270 |
+| all-MiniLM-L6-v2 | 0.689 | 0.91 | 0.8159 | $1.15 | 48% | +0.0269 |
+| e5-large-v2 | 0.688 | 0.96 | 0.8160 | $1.15 | 48% | +0.0269 |
+
+Three things follow.
+
+1. **The gain does not depend on the encoder.** +0.038 to +0.040 on free-form
+   and +0.027 on multiple-choice, across a 384-d small model and a 1024-d large
+   one. What *does* depend on the encoder is the threshold -- 0.77 to 0.91 for
+   the same behaviour -- so tau has to be tuned per encoder and is not a
+   constant to hard-code. That is exactly the sensitivity Will named, and it
+   lives in the threshold rather than in the result.
+2. **The free-form slice is the better one, not the worse one.** +0.040 vs
+   +0.027. The worry was that agreement would collapse where there is no single
+   right answer; measured, it does the opposite. Multiple-choice is where the
+   signal is *weakest*, because a 4-way question makes two models agree by
+   chance far too often.
+3. **Better ranking is not better routing, again.** e5-large has the best
+   free-form AUC by a clear margin (0.746 vs 0.727) and the *worst* frontier
+   gain of the three. This is the same dissociation as the NIRT-vs-kNN result
+   above, arrived at independently: the quantity that predicts well and the
+   quantity that routes well are not the same quantity. It is the strongest
+   reason in this document to stop optimising AUC.
+
+## The rule is now in the serving path
+
+Everything above was measured offline. The served router went on doing argmax,
+so none of it reached a real request. It does now.
+
+`router.nirt.routing_decision.routing_decision` is the single rule every
+routing call in the repo funnels through -- `Router.route`, `Router.route_text`,
+and through those the `AgenticRouter`. It takes `margin` alongside `lam`:
+
+```python
+AgenticRouter(router, margin=0.05)          # or Router.route(..., margin=0.05)
+```
+
+The two are different levers and they compose. `lam` prices cost *into* the
+utility being maximised; `margin` spends a bounded amount of predicted quality
+to reach a cheaper model. `RoutingResult` records both as applied, not as
+requested, so a trace never claims a rule that did not run (an unpriced pool
+downgrades to argmax with a warning rather than raising mid-request).
+
+Live, on `nirt-2d-projected`:
+
+```
+margin=0.0   -> ['gpt-4-1106-preview', 'yi-34b-chat', 'claude-instant-v1']
+margin=0.05  -> ['claude-instant-v1',  'yi-34b-chat', 'claude-instant-v1']
+margin=0.2   -> ['wizardlm-13b-v1.2',  'mistral-7b-instruct', 'wizardlm-13b-v1.2']
+```
+
+`What is 2+2?` stops being answered by GPT-4.
+
+**`margin=0.0` is a bit-exact no-op, tie semantics included.** This function
+decides every served request, so cost-based tie-breaking switches on only above
+zero -- a default that changed behaviour even on ties would have silently moved
+every routing decision in the repo at once. That is not hypothetical: it is
+precisely the drift that corrupted the baselines above, and the no-op property
+is pinned by its own test.
+
+Not done, and deliberately: no default `margin` is set anywhere. The right
+value is pool-dependent (0.05 on SPROUT, 0.1 on RouterBench) and the SPROUT
+prices are unverified, so picking a number here would bake a guess into serving
+behaviour. Callers opt in until someone re-prices the pool.
+
+## Where the agreement signal stops, and what the literature does about it
+
+Three measurements this session converge on one boundary, and a paper confirms it.
+
+**1. Agreement does not work on hard queries.** Of free-form RouterBench
+queries in the hard stratum where two cheap models *agree* (cosine >= 0.95),
+**61.6%** are cases where both are wrong; the cheap model is wrong 86.8% of the
+time even under confident agreement. AUC 0.616 on hard against 0.721 on easy.
+Two weak models converge on the same wrong answer. A cascade that keeps the
+cheap answer when they agree is therefore exactly wrong where the regret is.
+
+**2. It also costs more than the alternative where it does work.** A cascade
+needs two cheap calls before it can decide, plus a strong call when it
+escalates. On easy queries the margin rule reaches the same savings with one
+call, so the cascade is dominated there and useless on hard. That closes the
+direction.
+
+**3. Where it does work is narrower than "free-form".** Predicting *hardness*
+(not correctness) from a cheap model's response lifts within-benchmark AUC from
+0.525 to 0.677 -- the first real movement on hardness in this whole effort. But
+broken down per benchmark, all of it is grade-school-math:
+
+| benchmark | n | prompt only | + response |
+|---|---|---|---|
+| grade-school-math | 2,252 | 0.511 | **0.690** |
+| mbpp | 130 | 0.458 | 0.491 |
+| consensus_summary | 109 | 0.667 | 0.664 |
+| chinese_zodiac | 105 | 0.666 | 0.659 |
+| bias_detection | 86 | 0.633 | 0.653 |
+
+GSM is 77% of the free-form slice, so it carried the weighted average. The real
+line is not multiple-choice vs free-form; it is **checkable vs not**. Two
+different numeric answers is evidence; two different summaries is not.
+
+**This also puts an earlier claim in doubt.** The documented result that cosine
+agreement gains more on free-form (+0.040) than multiple-choice (+0.027) was
+measured on that same GSM-dominated slice, and needs the same per-benchmark
+decomposition before it stands.
+
+### RoBoN (Geuter & Kornhardt, arXiv 2512.05542) reaches the same boundary
+
+A NeurIPS 2025 workshop paper that routes a fixed budget of *n* generations
+across a model suite one at a time, training-free, at exact compute parity with
+single-model best-of-*n*. It scores candidates with
+
+    Score(S) = sum_l w_l * (alpha * r_l + (1 - alpha) * agree_S(a_l)),  alpha = 0.4
+
+where `w` is a softmax over reward-model scores and `agree` is the share of the
+selected set sharing the same normalized answer.
+
+Two things matter for us:
+
+* **Their agreement is exact string match on an extracted answer** -- "the boxed
+  final value for math", canonically normalized. It structurally cannot run
+  where no answer can be extracted, which is why all five benchmarks (MATH500,
+  OlympiadBench, MinervaMath, GSM8K, MMLU-STEM) are maths or STEM
+  multiple-choice. The published state of the art in agreement-based routing is
+  checkable-answer-only too. Our finding is not a failure to find something
+  others have.
+* **They pair agreement with a reward model** (Skywork-Reward-V2-Llama-3.1-8B),
+  normalized per model by empirical CDF because raw rewards are not comparable
+  across models. At `alpha = 0` the policy degenerates to majority voting --
+  which is close to what our cascade was. We had the agreement half and no
+  reward half.
+
+That reframes the hard stratum: not "unreachable", but "needs a component we do
+not have". A reward model scores a response without ground truth, which is
+exactly the missing input both for the cascade and for any level-2 evaluation.
+
+Note the regimes differ. RoBoN spends *more* (n generations) to buy accuracy;
+the margin rule spends *less* at similar quality. Opposite directions on the
+same frontier, so the two compose rather than compete.
+
+## Correction: Will was right about agreement, and the pooled comparison lied
+
+This document claimed cosine agreement gains **more** on free-form (+0.040) than
+on multiple-choice (+0.0275), and called that "the opposite of the worry". Both
+pooled numbers are real. The conclusion drawn from them is not.
+
+Decomposed per benchmark, with the cascade threshold tuned within each:
+
+| slice | benchmarks | median gain | mean gain | worst | negative |
+|---|---|---|---|---|---|
+| free-form | 6 | +0.0106 | +0.0037 | **-0.0691** | 1/6 |
+| multiple-choice | 38 | **+0.0360** | **+0.0331** | -0.0090 | 3/38 |
+
+Multiple-choice is roughly **3x better by median, 9x by mean, and far more
+consistent** -- its worst benchmark loses 0.009, while free-form's worst
+(`chinese_zodiac`) loses 0.069. Within free-form, even the dominant
+grade-school-math slice gives only +0.0217, *below* the pooled +0.0400.
+
+The pooled free-form figure was inflated by pooling itself: mixing benchmarks
+with different base rates and cost profiles moves the mixture line, and the
+aggregate gain exceeded every large component of it. A Simpson-style artifact,
+and exactly the failure the per-benchmark controls elsewhere in this document
+exist to catch -- it was simply never applied to this claim.
+
+**Will's original objection stands**: agreement works best where there is a
+right answer to agree on. The earlier "measured" rebuttal was an artifact.
+
+## The cascade is not dead -- I was measuring the wrong thing
+
+Earlier this document concluded the cascade direction was closed, because
+cosine agreement is near-useless on hard queries (61.6% of confident agreements
+there are both-wrong). That reasoning was wrong, and the error is instructive.
+
+**The cascade is not trying to fix hard queries.** It is trying to avoid paying
+strong-model prices on easy ones. Hard queries are 18.8% of RouterBench, and on
+them the cheap model is right only 24.8% of the time -- so the correct action is
+"escalate", which is what a low judge score produces anyway. A judge that is
+blind on hard queries loses little, because it is being asked the wrong question
+there. The value lives in the easy 81%, where the cheap model is right 77.5% of
+the time and a judge only has to notice the exceptions.
+
+Measured with a simulated judge, against `always gpt-4` (0.7814 quality, $3.29
+per 1k, 36,497 queries):
+
+| judge | quality | cost/1k | gain vs mixture |
+|---|---|---|---|
+| perfect (AUC 1.00) | 0.8296 | $1.59 | +0.1217 |
+| uniform AUC 0.95 | 0.7998 | $1.69 | +0.0876 |
+| uniform AUC 0.90 | 0.7888 | $1.80 | +0.0717 |
+| **realistic: 0.95 easy / 0.60 hard** | **0.7866** | **$1.72** | **+0.0728** |
+| realistic: 0.90 easy / 0.65 hard | 0.7745 | $1.72 | +0.0610 |
+
+The realistic judge -- sharp on easy queries, near-blind on hard ones, which is
+exactly how every signal we have measured behaves -- gives **slightly better
+quality than gpt-4 at 48% of the cost**, and gives up almost nothing against the
+optimistic uniform-AUC judge (+0.0728 vs +0.0876).
+
+That makes this the **only configuration found in this whole effort that
+improves quality and cuts cost at once.** Every other result, the margin rule
+included, trades quality away to buy cost.
+
+Two caveats, neither small:
+
+* The judge is simulated by adding calibrated noise to the true label. A real
+  reward model's errors will be structured in ways this does not capture. The
+  hard/easy split above is one such structure, and the result survived it, but
+  it is not proof that every structure is survivable.
+* This is measured on the full 36,497-row pool against `always gpt-4`, while the
+  margin-rule numbers elsewhere use the 7,354-row test split. The two are **not
+  directly comparable** -- the reference costs differ ($3.29 vs $5.75 per 1k).
+  A like-for-like run on one split is required before claiming the cascade beats
+  the margin rule, and has not been done.
+
+**What it changes.** RoBoN's reward model stops being a nice-to-have for the
+hard stratum and becomes the central component: at 0.90 AUC it matches gpt-4
+quality for roughly 30% of the price. The break-even is around AUC 0.90, which
+published reward models plausibly reach on some task families -- and, per the
+correction above, most plausibly on the checkable ones.
+
+## All four routers trained and compared -- and a correction about the lever
+
+Until now every number here used `nirt-2d-projected`, the only trained run that
+existed on this machine. Phase 1 (Bernoulli), Phase 2 (ZOIB, beta) and the
+IRT-Router `model_latent` baseline have now been trained, so the comparison
+Will's `scripts/route_compare.py` was written for can actually run.
+
+### The collapse is universal, not a NIRT quirk
+
+Test split, 7,354 queries x 11 models, argmax selection, against
+`always gpt-4` (quality 0.7883, $5.75/1k):
+
+| router | quality | cost/1k | saving | gpt-4 share | vs mixture |
+|---|---|---|---|---|---|
+| Bernoulli (phase 1) | 0.7889 | 5.74 | 0.3% | **99.5%** | +0.002 |
+| NIRT (query_latent 2d) | 0.7875 | 5.69 | 1.1% | **98.6%** | +0.004 |
+| ZOIB E[Y] (phase 2) | 0.7908 | 5.51 | 4.3% | 89.0% | +0.019 |
+| IRT-Router (model_latent 25d) | 0.7901 | 5.29 | 8.1% | 89.0% | +0.034 |
+| beta E[Y] (phase 2) | 0.7558 | 5.17 | 10.1% | 69.1% | +0.008 |
+
+Four different likelihoods -- Bernoulli, zero-one-inflated beta, query-latent
+and model-latent IRT -- and every one of them lands on the `always gpt-4` point.
+The best buys 8% of the cost. The oracle, for reference, reaches 0.913 quality
+at $0.38/1k. Argmax collapse is a property of the decision rule, not of any one
+predictor.
+
+**Also worth noting: NIRT is the weakest of the four at argmax.** Every number
+elsewhere in this document was measured on it. IRT-Router and ZOIB both beat
+gpt-4 slightly on quality *and* cost at argmax, which NIRT does not.
+
+### CORRECTION: lambda is the better lever, and it always existed
+
+This document says the margin rule is the lever that works and that `lam` is
+nearly inert. **That is wrong, and the error came from a mis-scaled sweep.**
+
+`route_compare.py` sweeps `lam` from 0 to 5. But `lam` multiplies a *per-query
+dollar* cost, and gpt-4 costs $0.00575/query against $0.00009 for the cheapest
+model -- a difference of $0.0057. To outvote a typical predicted-quality gap of
+~0.3, `lam` must exceed **~53**. The existing sweep covers 9% of the distance to
+the point where the knob can do anything, which is why its frontier looked flat
+(cost moved 3.20 -> 3.10 across the whole range).
+
+Swept over the range that can actually bite, on one metric, same split:
+
+| router | best lam-only | best margin-only | best combined |
+|---|---|---|---|
+| NIRT | **+0.2789** (lam=50) | +0.2449 (margin=0.15) | +0.2674 |
+| IRT-Router | **+0.2862** (lam=75) | +0.2480 (margin=0.2) | +0.2700 |
+
+`lam` wins on both routers, and combining the two is *worse* than `lam` alone --
+so the margin rule adds nothing on top of a correctly-scaled `lam`.
+
+Why: `lam` prices cost continuously, so it can express "ten times cheaper for
+slightly less quality" smoothly. The margin is a hard tolerance band -- inside
+it, the cheapest candidate wins regardless of how much cheaper; outside it,
+nothing does. Coarser control, slightly worse frontier.
+
+**What survives.** The headline finding is unchanged and now much better
+supported: the predictors are fine, argmax is the problem, and changing the
+selection rule is worth far more than changing the predictor. What changes is
+the remedy. The lever was already in the codebase -- `Router.route(lam=...)`
+has always been there. It looked useless because it was being swept over a
+range where it cannot act.
+
+The margin rule is not useless, but its case is now about ergonomics rather
+than performance: it is bounded and in quality units ("I accept an answer 0.05
+worse"), where `lam`'s usable value depends on the pool's price scale and is
+~53 here, ~0.5 elsewhere. That scale-dependence is exactly the footgun that hid
+the lever for this long. A correctly-calibrated `lam` is the better default;
+`quality_margin` remains the better thing to expose to a caller.

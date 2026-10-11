@@ -33,6 +33,7 @@ the run that produced it.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -179,4 +180,84 @@ class AttributeClassifier(_HeadClassifier):
             self._signal("gates", p.gates, kind="precondition"),
             self._signal("criteria", p.criteria, kind="judged",
                          caveat="LLM-judged labels; chance-level for model choice"),
+        ]
+
+
+#: Verbs that name a deliverable. Two distinct ones joined by a sequence marker
+#: is the signature of a compound request ("summarise X, then implement Y").
+_TASK_VERBS = (
+    "summarise", "summarize", "implement", "analyse", "analyze", "write", "compare",
+    "explain", "translate", "list", "review", "design", "compute", "calculate",
+    "draft", "refactor", "debug", "plan", "outline", "rank", "classify", "extract",
+    "generate", "build", "create", "evaluate", "prove", "derive", "benchmark",
+)
+#: Sequence markers, matched after a clause boundary so ", then" counts as well
+#: as " and then". The hand-written list in `router.agentic.triage` missed the
+#: comma form, and routed "Summarise X, then implement Y" as a single shot.
+_SEQUENCE_RE = re.compile(
+    r"(?:^|[,;.]\s*|\band\s+|\bthen\s+)(?:then|next|after\s+that|afterwards|"
+    r"followed\s+by|finally|lastly|as\s+well\s+as|also)\b"
+    r"|\bstep[-\s]by[-\s]step\b|\bfirst,", re.I)
+_VERB_RE = re.compile(r"\b(" + "|".join(_TASK_VERBS) + r")\b", re.I)
+_ENUMERATED_RE = re.compile(r"^\s*(?:\d+[.)]|[-*+])\s", re.MULTILINE)
+
+
+class StructureClassifier(SimpleClassifier):
+    """Is this one request or several?
+
+    The decision `router.agentic.triage` makes before anything else: answer in
+    one shot, or decompose and route each part. It is a *structural* property
+    of the text -- how many deliverables are asked for -- not a semantic one,
+    which is why a classifier can do it when nothing we tried could predict
+    difficulty from a prompt.
+
+    Emits ``multi_part`` (bool) with the evidence attached, and ``part_count``,
+    a lower bound on the number of deliverables. Deliberately conservative:
+    each piece of evidence is a thing a reader would point at.
+    """
+
+    name = "structure"
+    version = "1"
+
+    def __init__(self, *, max_chars_single: int = 600, min_questions: int = 3) -> None:
+        self.max_chars_single = int(max_chars_single)
+        self.min_questions = int(min_questions)
+
+    def evidence(self, prompt: str) -> dict:
+        """Every reason to think this is compound, named."""
+        verbs = {m.group(1).lower() for m in _VERB_RE.finditer(prompt)}
+        return {
+            "distinct_task_verbs": sorted(verbs),
+            "sequence_markers": [m.group(0).strip() for m in _SEQUENCE_RE.finditer(prompt)],
+            "enumerated_items": len(_ENUMERATED_RE.findall(prompt)),
+            "question_marks": prompt.count("?"),
+            "chars": len(prompt),
+        }
+
+    def classify(self, input: ClassificationInput) -> list[Signal]:
+        e = self.evidence(input.prompt)
+        reasons = []
+        if e["enumerated_items"] >= 2:
+            reasons.append(f"{e['enumerated_items']} enumerated items")
+        if e["sequence_markers"]:
+            # A marker alone is enough. Requiring two known task verbs as well
+            # made this *narrower* than the list it replaces -- and the verb
+            # list is exactly the brittleness being removed. Triage pays little
+            # for a false "decompose" and loses the whole point on a false
+            # "single", so the asymmetry favours firing.
+            verbs = e["distinct_task_verbs"]
+            detail = f" joining {len(verbs)} task verbs" if len(verbs) >= 2 else ""
+            reasons.append(f"sequence marker {e['sequence_markers'][0]!r}{detail}")
+        if e["question_marks"] >= self.min_questions:
+            reasons.append(f"{e['question_marks']} questions")
+        if e["chars"] > self.max_chars_single:
+            reasons.append(f"{e['chars']} characters")
+        parts = max(e["enumerated_items"], len(e["distinct_task_verbs"]) if reasons else 1, 1)
+        produced_by = f"{self.name}:{self.version}"
+        return [
+            Signal(name="multi_part", value=bool(reasons), confidence=1.0,
+                   produced_by=produced_by,
+                   metadata={"reasons": reasons, **e}),
+            Signal(name="part_count", value=int(parts), confidence=1.0,
+                   produced_by=produced_by),
         ]

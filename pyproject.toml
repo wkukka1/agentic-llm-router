@@ -16,6 +16,34 @@ dependencies = [
     "pydantic>=2",                 # router.agentic.schemas: prompt / agent settings
     "python-dotenv",
     "tqdm",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "langchain-core>=0.3", "import-linter", "httpx"]  # httpx: fastapi.testclient.TestClient
+labeling = ["openai", "anthropic"]
+# router.llm.adapters.anthropic: serve routed calls through Claude (AnthropicAdapter,
+# ClientRegistry.anthropic + configs/serve_anthropic.yaml).
+anthropic = ["anthropic>=1.0", "pyyaml"]
+# router.agentic: LLM-driven orchestrator. Core install (echo backends,
+# HeuristicTriage, a single-shot request) needs none of this; an orchestrated
+# request's decompose/judge/synthesize calls through plan.model, which needs
+# LangChain -- langchain-ollama specifically for a local Ollama plan.model.
+agentic = ["langchain>=0.3", "langchain-core>=0.3", "langchain-ollama"]
+# router.llm.adapters.ollama: serve routed calls through a local `ollama serve`
+# (OllamaAdapter, ClientRegistry.ollama). No API key, no LangChain.
+ollama = ["ollama>=0.4"]
+# router.gateway: HTTP front door (Anthropic/OpenAI wire protocols) over the
+# agentic ClientRegistry. Core install needs none of this -- deliberately
+# kept free of `research` below so `pip install -e ".[gateway]"` stays a
+# seconds-long, no-native-build install for someone who only wants to run
+# the gateway locally (see docs/gateway.md).
+gateway = ["fastapi", "uvicorn[standard]", "httpx"]  # httpx: interceptor's upstream client
+# The data pipeline + model training/eval stack (training/, evaluation/,
+# most of decompose/): heavy, sometimes-native-build dependencies that
+# nothing in router.agentic/router.llm/router.gateway actually imports
+# (verified: importing router.gateway pulls in numpy/pandas/pyarrow, never
+# these). Split out so those three stay installable without them.
+research = [
     "datasets",
     "scikit-learn",
     "sentence-transformers",
@@ -33,27 +61,18 @@ dependencies = [
     "tabulate",
 ]
 
-[project.optional-dependencies]
-dev = ["pytest", "langchain-core>=0.3", "import-linter"]
-labeling = ["openai", "anthropic"]
-# router.llm.adapters.anthropic: serve routed calls through Claude (AnthropicAdapter,
-# ClientRegistry.anthropic + configs/serve_anthropic.yaml).
-anthropic = ["anthropic>=1.0", "pyyaml"]
-# router.agentic: LLM-driven orchestrator. Core install (echo backends,
-# HeuristicTriage, a single-shot request) needs none of this; an orchestrated
-# request's decompose/judge/synthesize calls through plan.model, which needs
-# LangChain -- langchain-ollama specifically for a local Ollama plan.model.
-agentic = ["langchain>=0.3", "langchain-core>=0.3", "langchain-ollama"]
-# router.llm.adapters.ollama: serve routed calls through a local `ollama serve`
-# (OllamaAdapter, ClientRegistry.ollama). No API key, no LangChain.
-ollama = ["ollama>=0.4"]
-
 [project.scripts]
 router-phase0 = "training.phase0:main"
 prompt-decomposition = "scripts.prompt_decomposition_cli:main"
+aar-gateway = "router.gateway.server:main"
+aar-gateway-grade = "evaluation.gateway.grade:main"
+aar-gateway-subagents = "evaluation.gateway.subagent_baseline:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"router.gateway" = ["static/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -136,6 +155,10 @@ include = [
   "src/evaluation/prompt_decomposition/**/*.py",
   "scripts/prompt_decomposition_cli.py",
   "tests/prompt_decomposition/**/*.py",
+  "src/router/gateway/**/*.py",
+  "src/evaluation/gateway/**/*.py",
+  "src/router/llm/**/*.py",
+  "tests/router/gateway/**/*.py",
 ]
 
 [tool.ruff.lint]

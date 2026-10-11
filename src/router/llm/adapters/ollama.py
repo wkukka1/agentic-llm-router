@@ -27,7 +27,8 @@ file: the ``model`` string is always the real Ollama tag (e.g.
 
 from __future__ import annotations
 
-from typing import Any, Generator, Optional
+from collections.abc import Generator
+from typing import Any
 
 from ..client import LLMResponse
 from .base import Prompt, ProviderAdapter
@@ -44,8 +45,8 @@ def _messages(prompt: Prompt) -> list[dict[str, str]]:
 
 
 class OllamaAdapter(ProviderAdapter):
-    def __init__(self, model: Optional[str] = None, *, host: Optional[str] = None,
-                 api_key: Optional[str] = None, **client_kwargs):
+    def __init__(self, model: str | None = None, *, host: str | None = None,
+                 api_key: str | None = None, **client_kwargs):
         super().__init__(model, api_key=api_key, **client_kwargs)
         self._host = host or client_kwargs.get("host") or "http://localhost:11434"
         self._client_obj = client_kwargs.get("client")
@@ -60,7 +61,7 @@ class OllamaAdapter(ProviderAdapter):
         return self._client_obj
 
     # -- request / response translation ---------------------------------
-    def _resolve_model(self, model: Optional[str]) -> str:
+    def _resolve_model(self, model: str | None) -> str:
         resolved = model or self.model
         if not resolved:
             raise ValueError(
@@ -91,14 +92,14 @@ class OllamaAdapter(ProviderAdapter):
         )
 
     # -- ProviderAdapter -------------------------------------------------
-    def complete(self, prompt: Prompt, *, model: Optional[str] = None,
+    def complete(self, prompt: Prompt, *, model: str | None = None,
                  **generation_kwargs) -> LLMResponse:
         resolved = self._resolve_model(model)
         resp = self._client.chat(model=resolved, messages=_messages(prompt),
                                   **self._request(generation_kwargs))
         return self._to_response(resp)
 
-    def stream(self, prompt: Prompt, *, model: Optional[str] = None,
+    def stream(self, prompt: Prompt, *, model: str | None = None,
                **generation_kwargs) -> Generator[str, None, LLMResponse]:
         """Yield text deltas; the generator's return value (``StopIteration.value``)
         is the final :class:`LLMResponse`, with usage -- see :meth:`LLMClient.stream`."""

@@ -13,7 +13,7 @@ ever needed ``message_text`` to flatten a LangChain message, never the old
 from __future__ import annotations
 
 import re
-from typing import Iterator, Mapping, Optional
+from collections.abc import Iterator, Mapping
 
 from ..client import LLMResponse
 from ..cost import price_tokens
@@ -33,7 +33,7 @@ _PROVIDER_HINTS = [
 ]
 
 
-def guess_provider(model_id: str) -> Optional[str]:
+def guess_provider(model_id: str) -> str | None:
     """Best-effort LangChain ``model_provider`` from a bare model id -- a last
     resort. Each hint must start its own token and end on a boundary; a hint
     may be followed by a version number such as ``llama3`` / ``qwen2.5`` /
@@ -68,7 +68,7 @@ def message_text(msg: object) -> str:
     return str(content)
 
 
-def chat_model(model: str, *, provider: Optional[str] = None, **kwargs):
+def chat_model(model: str, *, provider: str | None = None, **kwargs):
     """A LangChain chat model for ``model`` (``init_chat_model``; provider
     guessed from the id unless given) -- what the LLM helpers
     (``LLMTriage``/``LLMDecomposer``/``LLMSynthesizer``) and the tool-agent
@@ -93,10 +93,10 @@ class LangChainAdapter(ProviderAdapter):
         model: str,
         chat_model: object = None,
         *,
-        provider: Optional[str] = None,
-        input_cost_per_token: Optional[float] = None,
-        output_cost_per_token: Optional[float] = None,
-        api_key: Optional[str] = None,
+        provider: str | None = None,
+        input_cost_per_token: float | None = None,
+        output_cost_per_token: float | None = None,
+        api_key: str | None = None,
         **client_kwargs,
     ):
         super().__init__(model, api_key=api_key, **client_kwargs)
@@ -127,13 +127,13 @@ class LangChainAdapter(ProviderAdapter):
             yield message_text(chunk)
 
     @staticmethod
-    def _tokens(usage) -> tuple[Optional[int], Optional[int]]:
+    def _tokens(usage) -> tuple[int | None, int | None]:
         if usage is None:
             return None, None
         get = usage.get if isinstance(usage, Mapping) else (lambda k, d=None: getattr(usage, k, d))
         return get("input_tokens"), get("output_tokens")
 
-    def _cost(self, in_tok: Optional[int], out_tok: Optional[int]) -> Optional[float]:
+    def _cost(self, in_tok: int | None, out_tok: int | None) -> float | None:
         """``None`` (unknown) when there are no token counts at all, or when a
         side with a nonzero token count has no configured price -- an unpriced
         side must not be silently treated as free (LANGCHAINADAPTER-002)."""

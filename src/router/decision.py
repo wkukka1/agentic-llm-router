@@ -39,8 +39,22 @@ class DecisionDestination(enum.Enum):
 class RoutingDecision:
     request_id: str
     ranked_models: list[ModelScore] = field(default_factory=list)
+    #: The model actually chosen. Usually ``ranked_models[0]``, but not always:
+    #: a cost-aware policy deliberately takes a cheaper model that ranks below
+    #: the top, so the choice cannot be read off the ranking. Left ``None`` by
+    #: a policy that does not distinguish the two; use :meth:`selected`.
+    selected_model_id: Optional[str] = None
     destination: DecisionDestination = DecisionDestination.USER
     reason: str = ""
     confidence: float = 1.0
     artifact_id: Optional[str] = None
     policy_version: str = ""
+
+    def selected(self) -> Optional[ModelScore]:
+        """The chosen :class:`ModelScore`: ``selected_model_id`` when a policy
+        set one, otherwise the top of the ranking."""
+        if self.selected_model_id is not None:
+            for score in self.ranked_models:
+                if score.model.model_id == self.selected_model_id:
+                    return score
+        return self.ranked_models[0] if self.ranked_models else None

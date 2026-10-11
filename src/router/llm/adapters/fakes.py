@@ -7,7 +7,7 @@ onto the adapter-based :class:`~router.llm.client.LLMClient` contract.
 
 from __future__ import annotations
 
-from typing import Callable, Generator, Optional
+from collections.abc import Callable, Generator
 
 from ..client import LLMResponse
 from .base import Prompt, ProviderAdapter
@@ -18,7 +18,7 @@ class EchoAdapter(ProviderAdapter):
     thread through an orchestrator and assert on in tests."""
 
     def __init__(self, model: str = "echo", *, prefix: str = "answer",
-                 api_key: Optional[str] = None, **client_kwargs):
+                 api_key: str | None = None, **client_kwargs):
         super().__init__(model, api_key=api_key, **client_kwargs)
         self.prefix = prefix
 
@@ -38,7 +38,7 @@ class CallableAdapter(ProviderAdapter):
     """Wrap any ``(prompt, **kw) -> str`` (or ``-> LLMResponse``)."""
 
     def __init__(self, model: str, fn: Callable[..., object], *,
-                 api_key: Optional[str] = None, **client_kwargs):
+                 api_key: str | None = None, **client_kwargs):
         super().__init__(model, api_key=api_key, **client_kwargs)
         self._fn = fn
 

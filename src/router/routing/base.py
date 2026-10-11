@@ -84,7 +84,11 @@ class RoutingResult:
     an all-False ``eligible`` row). Their ``selected`` is column 0 by
     convention; it is *not* a real choice and may even be an ineligible model,
     so callers must check this before dispatching. ``lam`` is the cost weight
-    actually applied (``0`` when no cost vector resolved). ``alpha`` is the
+    actually applied (``0`` when no cost vector resolved), and ``margin`` the
+    quality the selection was allowed to give up to reach a cheaper model
+    (``0`` = plain argmax, and likewise ``0`` when no cost vector resolved).
+    Both record what was *applied*, not what was asked for, so a result can be
+    read back without knowing how it was called. ``alpha`` is the
     IRT-Router-style reward blend requested of :meth:`RouterModel.route`
     (``None`` for an ordinary ``lam``-driven or quality-only route -- ``lam``
     still records the equivalent weight that was actually applied).
@@ -98,6 +102,7 @@ class RoutingResult:
     model_costs: Optional[np.ndarray] = None
     fallback: Optional[np.ndarray] = None
     alpha: Optional[float] = None
+    margin: float = 0.0
 
     @property
     def any_fallback(self) -> bool:
@@ -377,6 +382,7 @@ class RouterModel(abc.ABC):
         costs: Optional[np.ndarray],
         eligible,
         alpha: Optional[float] = None,
+        margin: float = 0.0,
     ) -> RoutingResult:
         scores = scores.reindex(columns=self._model_ids).astype(np.float64)
         if lam and costs is None:
@@ -394,7 +400,15 @@ class RouterModel(abc.ABC):
             elig = np.where(pd.isna(arr), False, arr).astype(bool)
 
         mat = scores.to_numpy(np.float64)
-        selected = routing_decision(mat, lam=lam, model_costs=costs, eligible=elig)
+        if margin and costs is None:
+            warnings.warn(
+                f"{self.name}: margin={margin} requested but no model cost vector "
+                "resolved; selecting on quality only (RoutingResult.margin records 0.0)",
+                stacklevel=3,
+            )
+            margin = 0.0
+        selected = routing_decision(mat, lam=lam, model_costs=costs, eligible=elig,
+                                    margin=margin)
         # the same cost-aware utility routing_decision actually selected on --
         # not a cost-blind np.isfinite(mat) copy (RR-01), which misses a
         # non-finite lam forcing every cell to -inf after `pred - lam*cost`
@@ -408,6 +422,7 @@ class RouterModel(abc.ABC):
             model_costs=costs,
             fallback=no_selectable_rows(util),
             alpha=alpha,
+            margin=float(margin),
         )
 
     def _resolve_alpha(
@@ -450,6 +465,7 @@ class RouterModel(abc.ABC):
         alpha: Optional[float] = None,
         model_costs: Optional[Sequence[float] | Mapping[str, float] | np.ndarray] = None,
         eligible: Optional[pd.DataFrame | np.ndarray] = None,
+        margin: float = 0.0,
     ) -> RoutingResult:
         """Pick one model per query.
 
@@ -468,11 +484,12 @@ class RouterModel(abc.ABC):
         """
         # quality-only routing never needs (possibly expensive) predicted costs
         costs = (self.decision_costs(query_ids, model_costs)
-                 if lam or alpha is not None or model_costs is not None
+                 if lam or margin or alpha is not None or model_costs is not None
                  else self.default_model_costs)
         lam, costs = self._resolve_alpha(alpha, lam, costs)
         return self._route_from_scores(
-            self.aligned_scores(query_ids), lam=lam, costs=costs, eligible=eligible, alpha=alpha,
+            self.aligned_scores(query_ids), lam=lam, costs=costs, eligible=eligible,
+            alpha=alpha, margin=margin,
         )
 
     def __call__(self, *args, **kwargs) -> RoutingResult:
@@ -489,6 +506,7 @@ class RouterModel(abc.ABC):
         alpha: Optional[float] = None,
         model_costs: Optional[Sequence[float] | Mapping[str, float] | np.ndarray] = None,
         eligible: Optional[pd.DataFrame | np.ndarray] = None,
+        margin: float = 0.0,
     ) -> RoutingResult:
         """:meth:`route`, but from raw prompt text (via :meth:`predict_scores_text`).
 
@@ -506,10 +524,11 @@ class RouterModel(abc.ABC):
         scores.index = [str(i) for i in range(len(scores))]
         # quality-only routing never needs (possibly expensive) predicted costs
         costs = (self.decision_costs(list(scores.index), model_costs)
-                 if lam or alpha is not None or model_costs is not None
+                 if lam or margin or alpha is not None or model_costs is not None
                  else self.default_model_costs)
         lam, costs = self._resolve_alpha(alpha, lam, costs)
-        return self._route_from_scores(scores, lam=lam, costs=costs, eligible=eligible, alpha=alpha)
+        return self._route_from_scores(scores, lam=lam, costs=costs, eligible=eligible,
+                                       alpha=alpha, margin=margin)
 
     # Oracle-relative evaluation needs ground truth and lives in
     # evaluation.routing.oracle.evaluate_router(router, true_df, cost_df, lam)

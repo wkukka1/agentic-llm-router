@@ -58,6 +58,7 @@ The README is a front door; the depth lives in `docs/`:
 | [routing_interface.md](docs/routing_interface.md) | The `RouterModel` ABC, `RoutingResult`, registered strategies (`matrix`/`nirt`/`knn`/`mlp`/`random`) |
 | [routing_evaluation.md](docs/routing_evaluation.md) | Oracle labels, regret/hit metrics, the prediction-vs-routing distinction |
 | [agentic_router.md](docs/agentic_router.md) | `AgenticRouter`: triage → single call or recursive decompose/route/synthesize |
+| [gateway.md](docs/gateway.md) | HTTP front door (Anthropic/OpenAI wire protocols) over the `ClientRegistry`, config format, Claude-subscription vs. metered-key lanes |
 | [anchor_judge.md](docs/anchor_judge.md) | The query-matched gold/preference overlap pipeline resolving whether correctness and human/judge preference are one utility or two |
 
 ## Installation
@@ -67,21 +68,30 @@ Requires Python ≥ 3.11.
 ```bash
 python -m venv .venv
 .venv/Scripts/activate            # Windows;  source .venv/bin/activate on POSIX
-pip install -e ".[dev]"           # router + torch / transformers / sentence-transformers / pytest / import-linter
+pip install -e ".[dev,research]"  # router + torch / transformers / sentence-transformers / pytest / import-linter
 ```
 
-Optional extras:
+Base install is deliberately light (`numpy`/`pandas`/`pyarrow`/`pyyaml`/
+`python-dotenv`/`tqdm`) — everything else is an extra, so installing just
+what you're touching doesn't pull in what you're not:
 
+* `pip install -e ".[research]"` — the data pipeline / training / evaluation
+  stack: `torch`, `transformers`, `sentence-transformers`, `faiss-cpu`,
+  `umap-learn`, `hdbscan`, `scikit-learn`, `matplotlib`, `scipy`,
+  `huggingface_hub`, `tabulate`, `datasets`. Nothing in
+  `router.agentic`/`router.llm`/`router.gateway` imports any of this.
 * `pip install -e ".[agentic]"` — `langchain` / `langchain-core`, for
   `LangChainClient` and `LangChainToolOrchestrator`. The core agentic path
   (echo/callable backends, `RecursiveOrchestrator`, `HeuristicTriage`) needs
   none of this.
 * `pip install -e ".[labeling]"` — `openai` / `anthropic` SDKs, for the
   anchor-judge pipeline and the future LLM cluster-labelling stage.
+* `pip install -e ".[gateway]"` — just `fastapi` / `uvicorn`, for the HTTP
+  gateway (`aar-gateway`) that exposes the `ClientRegistry` over the
+  Anthropic/OpenAI wire protocols. A seconds-long install with no `research`
+  needed — this is the path for someone who only wants to run the gateway
+  locally. See [docs/gateway.md](docs/gateway.md).
 * `pip install lm-eval` — to run lm-evaluation-harness yourself.
-
-Core deps also include `matplotlib`, `faiss-cpu`, `umap-learn`, `hdbscan`
-(query taxonomy + FAISS bank + diagnostic plots).
 
 ## Quickstart: routing
 
@@ -203,6 +213,20 @@ own predicted quality (`HeuristicTriage`, default threshold 0.55) or an
 `route_and_answer` as LangChain tools) with the `agentic` extra installed.
 Full write-up: [docs/agentic_router.md](docs/agentic_router.md).
 
+## Gateway
+
+[`src/router/gateway/`](src/router/gateway/) runs Claude Code through the
+router, the way claude-code-router does: a local process Claude Code points
+at, keeping the user's own login and tools. At every new message the trained
+router picks the model for that turn. It only ever picks a model as cheap as
+or cheaper than the one the user chose, it accounts for the prompt-cache
+cost of switching, and the user sets the cost preference. Claude models go
+to Anthropic on the user's login; other models (OpenAI-compatible APIs,
+Ollama) get the request with its tools translated. A dashboard shows actual
+cost against "no router" and "always the strongest model".
+`aar-gateway code` / `aar-gateway dashboard`; walkthrough in
+[docs/gateway.md](docs/gateway.md).
+
 ## Configuration
 
 Everything experimental is in [`configs/phase0.yaml`](configs/phase0.yaml)
@@ -221,10 +245,24 @@ not hard-code these; pass `--config path/to.yaml` to any script.
 ## Tests
 
 ```bash
-pytest -q
+OMP_NUM_THREADS=1 HF_HUB_OFFLINE=1 pytest -q
 ```
 
-417 tests across `tests/router/{agentic,embeddings,nirt,routing}`,
+**Both environment variables matter, and without them the suite hangs rather
+than fails** — no output, no error, just a process that never returns:
+
+* `OMP_NUM_THREADS=1` — faiss deadlocks inside `IndexFlat::search` when its
+  OpenMP pool contends with the other native libraries here. The run looks
+  merely slow. To tell the difference, check the process twice a few seconds
+  apart with `ps -o pid,time,etime -p <pid>`: if `TIME` is frozen while
+  `ELAPSED` grows, it is blocked, not working, and `sample <pid> 3` names the
+  call it is stuck in. With the pin the full suite takes ~3.5 minutes.
+* `HF_HUB_OFFLINE=1` — a half-finished model download leaves a lock in
+  `~/.cache/huggingface` that is never released, and the next run parks on it
+  forever with its HTTPS socket in `CLOSE_WAIT`. Offline turns that into an
+  immediate, readable error. Everything the suite needs is already cached.
+
+891 tests across `tests/router/{agentic,embeddings,nirt,routing}`,
 `tests/training/{data,models,nirt,retrieval,taxonomy}`,
 `tests/evaluation/{data,judge,nirt,pool_expansion,routing}`,
 `tests/decompose/`. Shared builders (config fixtures, FAISS bank, synthetic

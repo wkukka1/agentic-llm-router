@@ -45,6 +45,7 @@ state (thread- or asyncio-task-isolated), not on the instance.
 from __future__ import annotations
 
 import contextvars
+import copy
 import hashlib
 import logging
 import math
@@ -54,6 +55,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Generator, Optional
+
+from decompose.classifiers.prompt_heads import StructureClassifier
 
 from ..routing.base import RouterModel, RoutingResult
 from .conversation import (
@@ -206,22 +209,25 @@ class AgenticRouter:
         router: RouterModel,
         clients: Optional[ClientRegistry | dict[str, LLMClient]] = None,
         *,
-        triage: Optional[Triage] = None,
+        triage: Triage | None = None,
         orchestrator: object = None,
-        decomposer: Optional[Decomposer] = None,
-        synthesizer: Optional[Synthesizer] = None,
+        decomposer: Decomposer | None = None,
+        synthesizer: Synthesizer | None = None,
         encoder: object = None,
         lam: float = 0.0,
+        margin: float = 0.0,
         max_depth: int = 2,
-        max_calls: Optional[int] = None,
-        query_resolver: Optional[Callable[[str], str]] = None,
-        result_sink: Optional[Callable[[AgenticResult], None]] = None,
+        max_calls: int | None = None,
+        query_resolver: Callable[[str], str] | None = None,
+        result_sink: Callable[[AgenticResult], None] | None = None,
     ):
         self.router = router
         if not isinstance(clients, ClientRegistry):
             clients = ClientRegistry(clients or None)
         self.clients = clients
-        self.triage = triage or HeuristicTriage()
+        # Default triage reads the structure signal rather than a phrase list:
+        # the list missed ", then" and answered a three-part request in one shot.
+        self.triage = triage or HeuristicTriage(structure=StructureClassifier())
         if orchestrator is None:
             from ..execution.routed import plan_orchestrator
             orchestrator = plan_orchestrator()
@@ -230,6 +236,10 @@ class AgenticRouter:
         self.synthesizer = synthesizer or concat_synthesizer
         self.encoder = encoder
         self.lam = float(lam)
+        # `margin` is the measured lever, not `lam` -- see
+        # docs/prompt_decomposition_experiments.md. Default 0.0 keeps the
+        # served behaviour identical until a caller opts in.
+        self.margin = float(margin)
         self.max_depth = int(max_depth)
         self.max_calls = None if max_calls is None else int(max_calls)
         self._resolver = query_resolver
@@ -280,7 +290,8 @@ class AgenticRouter:
         prompts = s.prompts
         t = s.triage
         heuristic = HeuristicTriage(quality_threshold=t.quality_threshold,
-                                    max_chars_single=t.max_chars_single)
+                                    max_chars_single=t.max_chars_single,
+                                    structure=StructureClassifier())
         triage = heuristic if t.kind == "heuristic" else LLMTriage(
             chat(t.model), fallback=heuristic, prompt=prompts[t.prompt],
             margin=math.inf if t.margin is None else t.margin)
@@ -364,7 +375,8 @@ class AgenticRouter:
         lam = 0.0 if alpha is not None else self.lam
         eligible = self.clients.eligible_mask(self.router.model_ids)
         if self._resolver is not None:
-            rr = self.router.route([self._resolver(prompt)], lam=lam, alpha=alpha, eligible=eligible)
+            rr = self.router.route([self._resolver(prompt)], lam=lam, alpha=alpha,
+                                   eligible=eligible, margin=self.margin)
         elif not getattr(self.router, "can_route_text", False):
             raise TypeError(
                 f"{type(self.router).__name__} cannot score raw text; pass "
@@ -372,7 +384,7 @@ class AgenticRouter:
             )
         else:
             rr = self.router.route_text([prompt], encoder=self.encoder, lam=lam, alpha=alpha,
-                                        eligible=eligible)
+                                        eligible=eligible, margin=self.margin)
         if rr.any_fallback:
             raise LookupError(
                 f"{self.router.name}: no usable score for this prompt "
@@ -466,7 +478,8 @@ class AgenticRouter:
         """The triage heuristic's lexical multi-part check (an ``LLMTriage``'s
         fallback heuristic, or default ``HeuristicTriage`` settings)."""
         heuristic = getattr(self.triage, "_fallback", self.triage)
-        check = getattr(heuristic, "is_multipart", None) or HeuristicTriage().is_multipart
+        check = (getattr(heuristic, "is_multipart", None)
+                 or HeuristicTriage(structure=StructureClassifier()).is_multipart)
         return check(prompt)
 
     def pick_helper_model(self, request: str, min_quality: float) -> tuple[str, float]:
@@ -685,7 +698,7 @@ class AgenticRouter:
         )
 
     # -- recursion unit ------------------------------------------------
-    def _solve(self, prompt: str, depth: int, *, decision: Optional[TriageDecision] = None) -> SubCall:
+    def _solve(self, prompt: str, depth: int, *, decision: TriageDecision | None = None) -> SubCall:
         """Solve one (sub-)prompt: a leaf ``SubCall`` (single) or a branch whose
         ``children`` are the orchestrator's sub-calls."""
         if decision is None:
@@ -721,7 +734,7 @@ class AgenticRouter:
 
     def _answer_directly(
         self, prompt: str, depth: int, *,
-        model_id: Optional[str] = None, predicted_quality: float = float("nan"),
+        model_id: str | None = None, predicted_quality: float = float("nan"),
     ) -> SubCall:
         """Route ``prompt`` (if the model was not already chosen) and invoke it."""
         if model_id is None:
@@ -828,6 +841,30 @@ class AgenticRouter:
     # ------------------------------------------------------------------ #
     # convenience                                                        #
     # ------------------------------------------------------------------ #
+    def with_margin(self, margin: float) -> AgenticRouter:
+        """A copy that spends ``margin`` quality to reach a cheaper model.
+
+        Cost sensitivity belongs to the request, not the deployment -- the same
+        service answers "summarise this changelog" and "write the migration",
+        and they do not deserve the same budget. A copy rather than a mutable
+        attribute so two concurrent callers cannot change each other's routing:
+
+            router.with_margin(0.02).run(prompt)   # barely cheaper, barely worse
+            router.with_margin(0.15).run(prompt)   # much cheaper, noticeably worse
+
+        The margin is a quality budget, not a savings target. What it promises
+        is the floor -- "no worse than ``margin`` below the best this router
+        can predict" -- and that holds on any pool. What it buys varies by
+        pool, so translate a savings target with
+        ``evaluation.prompt_decomposition.policy_eval.margin_for_target_saving``
+        rather than guessing.
+        """
+        if margin < 0:
+            raise ValueError(f"margin must be >= 0, got {margin}")
+        clone = copy.copy(self)
+        clone.margin = float(margin)
+        return clone
+
     def __repr__(self) -> str:  # pragma: no cover - cosmetic
         return (f"AgenticRouter(router={self.router.name!r}, "
                 f"orchestrator={getattr(self.orchestrator, 'name', '?')!r}, "

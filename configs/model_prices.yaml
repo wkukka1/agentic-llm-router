@@ -65,3 +65,111 @@ prices:
     source: "deepinfra/novita 2026-09 (meta-llama/Llama-3.1-8B-Instruct)"
     hf_repo: "meta-llama/Llama-3.1-8B-Instruct"
     open_source: true
+
+  # ---------------------------------------------------------------------------
+  # SPROUT / CARROT pool (2024-25).
+  #
+  # These entries exist so the SPROUT pool can be used in cost-aware routing
+  # analysis at all: the dataset ships per-call token counts but prices nothing,
+  # and with no price table every SPROUT model is dropped from the routing eval.
+  #
+  # Checked against provider pages on 2026-09-25. Each entry carries either
+  # `verified: 2026-09-25` with its source, or `verified: false` -- read that
+  # field before quoting a dollar figure. Two of the original estimates were
+  # wrong in opposite directions and are corrected here:
+  #
+  #   aws-claude-3-5-sonnet-v1   3.00/15.00 -> 6.00/30.00  (doubled 2025-12-01
+  #                              when it moved to Bedrock Public Extended Access)
+  #   wxai-llama-3-3-70b         1.80       -> 0.7526      (IBM's current rate)
+  #
+  # Still UNVERIFIED (7 models): the 2024-vintage watsonx models below. IBM has
+  # withdrawn or deprecated most of them and no longer publishes a current rate,
+  # and its billing docs are JS-rendered and could not be read. Their values
+  # follow IBM's documented Resource Unit structure (1 RU = 1000 tokens, base
+  # $0.0001/RU = $0.10 per 1M, each model a whole multiple of the base), which
+  # is the right shape but not a confirmed per-model multiplier.
+  #
+  # watsonx (`wxai-*`) bills one blended token rate, so input and output are
+  # set equal for those models rather than guessed apart.
+  # ---------------------------------------------------------------------------
+  openai-gpt-4o:
+    input_per_1m: 2.50
+    output_per_1m: 10.00
+    source: "developers.openai.com/api/docs/pricing"
+    verified: 2026-09-25
+    open_source: false
+  openai-gpt-4o-mini:
+    input_per_1m: 0.15
+    output_per_1m: 0.60
+    source: "developers.openai.com/api/docs/pricing"
+    verified: 2026-09-25
+    open_source: false
+  aws-claude-3-5-sonnet-v1:
+    # CORRECTED: was 3.00/15.00. Bedrock doubled this rate on 2025-12-01 when
+    # the model moved to Public Extended Access.
+    input_per_1m: 6.00
+    output_per_1m: 30.00
+    source: "aws.amazon.com/bedrock/pricing (standard tier, on-demand)"
+    verified: 2026-09-25
+    open_source: false
+  aws-titan-text-premier-v1:
+    input_per_1m: 0.50
+    output_per_1m: 1.50
+    source: "Bedrock Titan Text Premier on-demand, corroborated 2026-08"
+    verified: 2026-09-25
+    open_source: false
+  wxai-granite-3-2b-instruct-8k-max-tokens:
+    input_per_1m: 0.10
+    output_per_1m: 0.10
+    source: "estimate from IBM Resource Unit tiers (Granite 3 2B); no current published rate"
+    verified: false
+    open_source: true
+  wxai-granite-3-8b-instruct-8k-max-tokens:
+    input_per_1m: 0.20
+    output_per_1m: 0.20
+    source: "IBM watsonx.ai rate card (granite-3-8b-instruct, marked deprecated)"
+    verified: 2026-09-25
+    open_source: true
+  wxai-llama-3-2-1b-instruct:
+    input_per_1m: 0.06
+    output_per_1m: 0.06
+    source: "estimate from IBM Resource Unit tiers (Llama 3.2 1B); no current published rate"
+    verified: false
+    open_source: true
+  wxai-llama-3-2-3b-instruct:
+    input_per_1m: 0.06
+    output_per_1m: 0.06
+    source: "estimate from IBM Resource Unit tiers (Llama 3.2 3B); no current published rate"
+    verified: false
+    open_source: true
+  wxai-llama-3-1-8b-instruct:
+    input_per_1m: 0.60
+    output_per_1m: 0.60
+    source: "estimate from IBM Resource Unit tiers (Llama 3.1 8B); no current published rate"
+    verified: false
+    open_source: true
+  wxai-llama-3-1-70b-instruct:
+    input_per_1m: 1.80
+    output_per_1m: 1.80
+    source: "estimate from IBM Resource Unit tiers (Llama 3.1 70B); no current published rate"
+    verified: false
+    open_source: true
+  wxai-llama-3-3-70b-instruct:
+    # CORRECTED: was 1.80. IBM's published rate is materially lower.
+    input_per_1m: 0.7526
+    output_per_1m: 0.7526
+    source: "ibm.com/products/watsonx-ai/pricing (llama-3-3-70b-instruct)"
+    verified: 2026-09-25
+    open_source: true
+  wxai-llama-3-405b-instruct:
+    input_per_1m: 5.00
+    output_per_1m: 16.00
+    source: "estimate from IBM Resource Unit tiers (Llama 3.1 405B); no current published rate"
+    verified: false
+    open_source: true
+  wxai-mixtral-8x7b-instruct-v01:
+    input_per_1m: 0.60
+    output_per_1m: 0.60
+    source: "estimate from IBM Resource Unit tiers (Mixtral 8x7B); no current published rate"
+    verified: false
+    open_source: true

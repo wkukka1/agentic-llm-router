@@ -44,6 +44,11 @@ _SPLIT_RE = re.compile(
     rf"|{_NO_SPLIT_BEFORE}[?.]\s+(?-i:(?=[A-Z]))"   # sentence boundary before a capital
     r"|\band then\b|\bafter that\b|\bthen,\b|\bfollowed by\b|\bas well as\b"
     r"|;\s+then\b"
+    # ", then" -- the comma form. Present in neither this list nor the triage
+    # marker list, so "Summarise X, then implement Y, then analyse Z" was
+    # triaged as one task and, once triage was fixed, still came back as one
+    # part with "nothing to decompose".
+    r"|,\s*then\b"
     r")\s*",
     re.IGNORECASE,
 )
@@ -226,8 +231,9 @@ class NaiveDecomposer:
     """Regex split on list markers / "and then" / question boundaries. No LLM.
 
     No part of the request is dropped: a fragment shorter than ``min_part_chars``
-    is merged into its neighbour, and parts beyond ``max_parts`` are folded into
-    the last one."""
+    is merged into its neighbour, a clause ending in ``:`` introduces the next
+    part rather than becoming a task of its own, and parts beyond ``max_parts``
+    are folded into the last one."""
 
     def __init__(self, *, max_parts: int = 6, min_part_chars: int = 8):
         self.max_parts = max_parts
@@ -235,12 +241,15 @@ class NaiveDecomposer:
 
     def __call__(self, prompt: str) -> list[str]:
         seen, out = set(), []
-        lead = ""          # short fragments before the first full part, awaiting a neighbour
+        lead = ""          # a lead-in, or a fragment too small to stand alone
         for frag in _SPLIT_RE.split(prompt.strip()):
             p = frag.strip(" \t\n-*.")
             if not p or p.lower() in seen:      # empty, or a repeat of an earlier part
                 continue
             seen.add(p.lower())
+            if p.endswith(":"):                 # "Do these:" introduces the next part;
+                lead = f"{lead} {p}".strip()    # billing it as a task of its own is waste
+                continue
             text = p if p.endswith(("?", ".", "!")) else p + "."
             if len(p) < self.min_part_chars:
                 if out:
@@ -250,6 +259,11 @@ class NaiveDecomposer:
             else:
                 out.append(f"{lead} {text}".strip())
                 lead = ""
+        if lead:                                # a lead-in with nothing following it
+            if out:
+                out[-1] += " " + lead
+            else:
+                out.append(lead)
         out = _fold_tail(out, self.max_parts)
         return out if len(out) > 1 else [prompt]
 

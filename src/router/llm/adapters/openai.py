@@ -8,7 +8,7 @@ indirection); it is not implemented.
 
 from __future__ import annotations
 
-from typing import Iterator
+from collections.abc import Iterator
 
 from ..client import LLMResponse
 from .base import Prompt, ProviderAdapter
