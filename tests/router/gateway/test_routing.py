@@ -189,8 +189,11 @@ def test_graded_traffic_replaces_the_stand_ins_when_it_has_neighbours(settings, 
     benchmark stand-ins say it is far worse. Graded data wins, and the
     decision says where its quality came from."""
     router.scores = HARD
-    graded = lambda text: {"quality": {"claude-opus-5": 0.8, "claude-haiku-4-5": 0.79},
-                           "neighbors": 5, "graded_prompts": 40, "max_similarity": 0.8}
+
+    def graded(text):
+        return {"quality": {"claude-opus-5": 0.8, "claude-haiku-4-5": 0.79},
+                "neighbors": 5, "graded_prompts": 40, "max_similarity": 0.8}
+
     settings["models"]["claude-haiku-4-5"].pop("rejects", None)
     decision = build_picker(settings, router_model=router, graded=graded)(BODY, ctx())
     assert decision["model"] == "claude-haiku-4-5"
@@ -226,8 +229,9 @@ def test_stand_ins_are_calibrated_on_the_users_grades(settings, router, tmp_path
 
 
 def test_calibration_is_shrunk_while_grades_are_few(settings, router, tmp_path):
-    from router.gateway.routing import calibration_offsets
     import json as _json
+
+    from router.gateway.routing import calibration_offsets
 
     router.scores = {"strong": 0.5, "mid": 0.5, "weak": 0.5}
     graded = tmp_path / "graded.jsonl"

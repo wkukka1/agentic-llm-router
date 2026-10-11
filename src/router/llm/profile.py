@@ -5,7 +5,6 @@ NIRT/IRT ``theta_m``) live inside the loaded model checkpoint, not here."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
@@ -24,8 +23,8 @@ class LLMProfile:
     provider: str
     model_id: str
     version: str = ""
-    input_cost_per_token: Optional[float] = None
-    output_cost_per_token: Optional[float] = None
+    input_cost_per_token: float | None = None
+    output_cost_per_token: float | None = None
     context_window: int = 0
     capabilities: list[str] = field(default_factory=list)
-    serving_provider: Optional[str] = None
+    serving_provider: str | None = None

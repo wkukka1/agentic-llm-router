@@ -13,8 +13,15 @@ from fastapi.testclient import TestClient
 
 from router.gateway import interceptor, server
 from router.gateway.config import load_settings
-from router.gateway.subagents import (ROLES, agent_definitions, agent_markdown, classify_task, detect,
-                                      role_decision, spawn_decision)
+from router.gateway.subagents import (
+    ROLES,
+    agent_definitions,
+    agent_markdown,
+    classify_task,
+    detect,
+    role_decision,
+    spawn_decision,
+)
 
 AUTH = {"authorization": "Bearer sk-ant-oat-not-a-real-token"}
 TOOL = {"name": "Read", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}}}

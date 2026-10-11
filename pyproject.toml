@@ -136,6 +136,10 @@ include = [
   "src/evaluation/prompt_decomposition/**/*.py",
   "scripts/prompt_decomposition_cli.py",
   "tests/prompt_decomposition/**/*.py",
+  "src/router/gateway/**/*.py",
+  "src/evaluation/gateway/**/*.py",
+  "src/router/llm/**/*.py",
+  "tests/router/gateway/**/*.py",
 ]
 
 [tool.ruff.lint]

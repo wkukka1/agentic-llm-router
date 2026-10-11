@@ -21,7 +21,7 @@ import json
 import os
 import shutil
 import subprocess
-from typing import Iterator, Mapping, Optional, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 
 from ..client import LLMResponse
 from .base import Prompt, ProviderAdapter
@@ -46,7 +46,7 @@ class ClaudeSubscriptionAdapter(ProviderAdapter):
         self,
         model: str,
         *,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         cli: str = "claude",
         timeout: float = 120.0,
         **client_kwargs,

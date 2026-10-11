@@ -26,12 +26,10 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import json
 import random
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
 POOL_DIR = Path.home() / ".cache" / "aar" / "routing-pool"
 ARENA_URL = ("https://huggingface.co/datasets/lmarena-ai/arena-human-preference-140k/resolve/main/"
@@ -69,7 +67,7 @@ def _row(prompt: str, **extra) -> dict:
     return {"prompt_hash": hashlib.sha1(prompt.encode()).hexdigest()[:16], "prompt": prompt, **extra}
 
 
-def _user_text(message: dict) -> Optional[str]:
+def _user_text(message: dict) -> str | None:
     parts = message.get("content")
     if parts is None:
         return None
@@ -89,7 +87,7 @@ def arena_rows(n: int, seed: int = 0, pool_dir: Path = POOL_DIR, shards: int = 1
     df = pd.concat(frames, ignore_index=True)
     df = df[df["is_code"] & (df["language"] == "en")]
     seen: dict[str, dict] = {}
-    for conv, meta in zip(df["conversation_a"], df["conv_metadata"]):
+    for conv, meta in zip(df["conversation_a"], df["conv_metadata"], strict=True):
         if (meta or {}).get("turns") != 1:
             continue
         users = [m for m in conv if m.get("role") == "user"]
@@ -103,7 +101,7 @@ def arena_rows(n: int, seed: int = 0, pool_dir: Path = POOL_DIR, shards: int = 1
     return rows[:n]
 
 
-def _git(*args: str, cwd: Optional[Path] = None) -> None:
+def _git(*args: str, cwd: Path | None = None) -> None:
     subprocess.run(["git", *args], cwd=cwd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 
 
@@ -121,7 +119,7 @@ def _worktree(repo: str, commit: str, instance_id: str, pool_dir: Path) -> Path:
 
 
 def swe_rows(n: int, seed: int = 0, pool_dir: Path = POOL_DIR,
-             repos: Optional[list[str]] = None) -> list[dict]:
+             repos: list[str] | None = None) -> list[dict]:
     """``n`` SWE-bench Verified issues, spread across repositories, each
     checked out at its base commit."""
     import pandas as pd
@@ -154,7 +152,7 @@ def swe_rows(n: int, seed: int = 0, pool_dir: Path = POOL_DIR,
     return rows
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m evaluation.gateway.pool", description=__doc__.split("\n\n")[0])
     ap.add_argument("source", choices=("arena", "swe"))
     ap.add_argument("--n", type=int, required=True)

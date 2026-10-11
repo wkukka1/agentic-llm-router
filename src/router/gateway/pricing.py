@@ -10,7 +10,7 @@ also the best available proxy for how much plan quota a request consumed.
 
 from __future__ import annotations
 
-from typing import Mapping, Optional
+from collections.abc import Mapping
 
 #: $/MTok, Anthropic first-party API rates (platform.claude.com/docs/en/about-
 #: claude/pricing, read 2026-10-07). Cache writes are priced off ``input``:
@@ -32,12 +32,12 @@ WRITE_5M = 1.25
 WRITE_1H = 2.0
 
 
-def canonical_model(model: Optional[str]) -> Optional[str]:
+def canonical_model(model: str | None) -> str | None:
     """Claude Code may tag a model with a context suffix (``claude-opus-5[1m]``)."""
     return model.split("[", 1)[0] if model else model
 
 
-def price_at(price: Optional[Mapping], prompt_tokens: float) -> Optional[Mapping]:
+def price_at(price: Mapping | None, prompt_tokens: float) -> Mapping | None:
     """The rates that apply to a prompt of this many tokens (input + cache
     read + cache write): the ``over`` tier past its threshold, else the base."""
     if not price:
@@ -52,7 +52,7 @@ def cache_read_rate(price: Mapping[str, float]) -> float:
     return price.get("cache_read", 0.1 * price["input"])
 
 
-def cost_usd(price: Optional[Mapping[str, float]], usage: Optional[Mapping]) -> Optional[float]:
+def cost_usd(price: Mapping[str, float] | None, usage: Mapping | None) -> float | None:
     """``None`` when the model has no price or there is no usage -- unknown,
     never silently ``0.0``. A write with no TTL breakdown is priced at the
     5-minute rate (the API default)."""

@@ -39,7 +39,7 @@ moving it never makes the main conversation rewrite its cache.
 from __future__ import annotations
 
 import re
-from typing import Mapping, Optional
+from collections.abc import Mapping
 
 from .pricing import canonical_model
 from .routing import incompatibility, price_for
@@ -53,7 +53,7 @@ _BUILTINS = (("explore", re.compile(r"You are a file search specialist")),
 
 _HAIKU, _SONNET = "claude-haiku-5-5", "claude-sonnet-5-5"
 #: role -> model. ``None`` keeps the session's model.
-DEFAULT_ROLE_MODELS: dict[str, Optional[str]] = {
+DEFAULT_ROLE_MODELS: dict[str, str | None] = {
     "lookup": _HAIKU, "explore": _HAIKU,
     "make": _SONNET, "plan": _SONNET,
     "judge": None,
@@ -76,7 +76,7 @@ _TASK_RULES: tuple[tuple[str, re.Pattern], ...] = (
 TASK_CHARS = 400
 
 
-def classify_task(task: str) -> Optional[tuple[str, str]]:
+def classify_task(task: str) -> tuple[str, str] | None:
     """``(kind, the words that decided it)`` for a subagent's task, or ``None``."""
     head = (task or "")[:TASK_CHARS].lower().lstrip()
     for kind, pattern in _TASK_RULES:
@@ -93,7 +93,7 @@ def _system_text(body: Mapping) -> str:
     return "\n".join(b.get("text", "") for b in system or [] if isinstance(b, Mapping))
 
 
-def identify(subagent_type: Optional[str], task: Optional[str], system: str = "") -> dict:
+def identify(subagent_type: str | None, task: str | None, system: str = "") -> dict:
     """``{"role", "source", "why"}`` for a subagent (``role`` ``None`` when
     nothing here recognises it)."""
     kind = (subagent_type or "").lower()
@@ -111,7 +111,7 @@ def identify(subagent_type: Optional[str], task: Optional[str], system: str = ""
     return {"role": None, "source": None, "why": None}
 
 
-def detect(body: Mapping, task: Optional[str]) -> Optional[dict]:
+def detect(body: Mapping, task: str | None) -> dict | None:
     """``None`` for anything but a subagent's request; else :func:`identify`."""
     system = _system_text(body)
     if SUBAGENT_MARK not in system:
@@ -119,7 +119,7 @@ def detect(body: Mapping, task: Optional[str]) -> Optional[dict]:
     return identify(None, task, system)
 
 
-def role_model(role: Optional[str], settings: Mapping) -> tuple[bool, Optional[str]]:
+def role_model(role: str | None, settings: Mapping) -> tuple[bool, str | None]:
     """``(known, model)`` for a role: ``model`` ``None`` keeps the session's."""
     models = {**DEFAULT_ROLE_MODELS, **((settings.get("subagents") or {}).get("roles") or {})}
     if role is None or role not in models:
@@ -127,13 +127,13 @@ def role_model(role: Optional[str], settings: Mapping) -> tuple[bool, Optional[s
     return True, canonical_model(models[role]) if models[role] else None
 
 
-def _pricier(settings: Mapping, model: str, than: Optional[str]) -> bool:
+def _pricier(settings: Mapping, model: str, than: str | None) -> bool:
     mine, other = price_for(settings, model), price_for(settings, than)
     return bool(mine and other and mine["output"] > other["output"])
 
 
-def role_decision(agent: Mapping, body: Mapping, requested: Optional[str], settings: Mapping,
-                  blocked: Mapping[str, str], est_prompt_tokens: int) -> Optional[dict]:
+def role_decision(agent: Mapping, body: Mapping, requested: str | None, settings: Mapping,
+                  blocked: Mapping[str, str], est_prompt_tokens: int) -> dict | None:
     """At the gateway: the model for a subagent's turn from its kind, or
     ``None`` to leave it to the general router (no kind, or the kind's model
     can't take this request)."""
@@ -158,8 +158,8 @@ def role_decision(agent: Mapping, body: Mapping, requested: Optional[str], setti
 _ALIASES = ("haiku", "sonnet", "opus")
 
 
-def spawn_decision(subagent_type: Optional[str], task: Optional[str], session_model: Optional[str],
-                   settings: Mapping, asked_model: Optional[str] = None) -> dict:
+def spawn_decision(subagent_type: str | None, task: str | None, session_model: str | None,
+                   settings: Mapping, asked_model: str | None = None) -> dict:
     """At spawn time (the hook): ``{"role", "source", "why", "model", "alias",
     "reason"}``. ``alias`` is what to set the Agent call's ``model`` to, or
     ``None`` to leave the call alone -- no kind, the main agent already chose a

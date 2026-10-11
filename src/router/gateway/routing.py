@@ -26,8 +26,8 @@ from __future__ import annotations
 import math
 import os
 import threading
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Callable, Mapping, Optional
 
 import numpy as np
 
@@ -46,10 +46,10 @@ from .translate import untranslatable_reason
 #: quality_margin (the user's cost preference; ``None`` = the configured default),
 #: warm_tokens ({model: prefix tokens it has cached recently}), blocked
 #: ({model: why the upstream rejected it for this client}).
-ModelPicker = Callable[[dict, dict], Optional[dict]]
+ModelPicker = Callable[[dict, dict], dict | None]
 
 
-def incompatibility(body: Mapping, spec: Mapping) -> Optional[str]:
+def incompatibility(body: Mapping, spec: Mapping) -> str | None:
     """Request settings a model is known to reject with a 400 (``rejects`` in
     its config). Claude Code's agent requests use adaptive thinking and
     ``effort``; its side requests switch thinking off."""
@@ -65,7 +65,7 @@ def incompatibility(body: Mapping, spec: Mapping) -> Optional[str]:
 
 
 def unavailable_reason(model: str, body: Mapping, settings: Mapping, blocked: Mapping[str, str],
-                       est_prompt_tokens: int) -> Optional[str]:
+                       est_prompt_tokens: int) -> str | None:
     """Why ``model`` can't take this request -- not configured, rejects its
     settings, rejected for this client before, prompt too long, or not
     translatable for an ``openai`` lane -- else ``None``."""
@@ -84,7 +84,7 @@ def unavailable_reason(model: str, body: Mapping, settings: Mapping, blocked: Ma
     return None
 
 
-def price_for(settings: Mapping, model: Optional[str]) -> Optional[Mapping]:
+def price_for(settings: Mapping, model: str | None) -> Mapping | None:
     model = canonical_model(model)
     spec = settings["models"].get(model) or {}
     return spec.get("prices") or CLAUDE_PRICES.get(model)
@@ -130,7 +130,7 @@ def calibration_offsets(graded_file: Path, router_model, settings: Mapping,
 
 
 def build_picker(settings: Mapping, router_model=None, graded=None,
-                 graded_file: Optional[Path] = None) -> Optional[ModelPicker]:
+                 graded_file: Path | None = None) -> ModelPicker | None:
     """``graded`` (:func:`router.gateway.graded.graded_predictor`): the
     user's own turns graded on the real tiers. When it has enough similar
     prompts it supplies quality directly, with no stand-ins; otherwise the
@@ -217,7 +217,7 @@ def build_picker(settings: Mapping, router_model=None, graded=None,
         first = steady + (prefix - warm) * (write - cache_read_rate(price))
         return 1e-6 * (first + (horizon - 1) * steady) / horizon
 
-    def pick(body: dict, ctx: dict) -> Optional[dict]:
+    def pick(body: dict, ctx: dict) -> dict | None:
         requested = canonical_model(ctx["requested"])
         if requested not in settings["models"]:
             return None

@@ -13,13 +13,13 @@ from __future__ import annotations
 import json
 import os
 import threading
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Callable, Optional, Sequence
 
 import numpy as np
 
 Encoder = Callable[[Sequence[str]], np.ndarray]  # unit-normalized rows
-GradedPredictor = Callable[[str], Optional[dict]]
+GradedPredictor = Callable[[str], dict | None]
 
 
 def load_graded(path: Path) -> tuple[list[str], list[str], np.ndarray]:
@@ -56,7 +56,7 @@ def graded_predictor(path: Path, encode: Encoder, *, k: int = 10, min_similarity
         vectors = encode(prompts) if prompts else None
         state.update(mtime=mtime, prompts=prompts, models=models, scores=scores, vectors=vectors)
 
-    def predict(text: str) -> Optional[dict]:
+    def predict(text: str) -> dict | None:
         with lock:
             refresh()
             if len(state["prompts"]) < min_prompts:

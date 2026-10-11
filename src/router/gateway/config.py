@@ -9,10 +9,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Union
 
 import yaml
-
 
 #: what the interceptor may route Claude Code's requests to when no config
 #: says otherwise. ``proxy`` is the router's pool model whose predicted quality
@@ -42,7 +40,7 @@ DEFAULT_ROUTER = {"enabled": False, "kind": "knn", "data_config": "configs/llmro
 DEFAULT_SUBAGENTS = {"enabled": True, "roles": {}}
 
 
-def load_settings(config_path: Union[str, Path, None] = None) -> dict:
+def load_settings(config_path: str | Path | None = None) -> dict:
     """The interceptor's settings: the ``interceptor:`` section of a gateway
     config merged over the defaults above. Fails at load time, not on a
     request, for a bad lane, an ``openai`` lane without ``base_url``, or an

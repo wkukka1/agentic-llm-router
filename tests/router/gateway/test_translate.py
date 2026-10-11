@@ -6,8 +6,12 @@ from __future__ import annotations
 
 import json
 
-from router.gateway.translate import (OpenAIStreamTranslator, anthropic_to_openai,
-                                      openai_to_anthropic, untranslatable_reason)
+from router.gateway.translate import (
+    OpenAIStreamTranslator,
+    anthropic_to_openai,
+    openai_to_anthropic,
+    untranslatable_reason,
+)
 
 TOOL = {"name": "Read", "description": "read a file",
         "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}}}

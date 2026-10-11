@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from typing import Iterable, Mapping, Optional
+from collections.abc import Iterable, Mapping
 
 _TOOL_NAME = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 _PASSABLE_BLOCKS = {"text", "image", "tool_use", "tool_result", "thinking", "redacted_thinking"}
@@ -33,7 +33,7 @@ def _blocks(content) -> list:
     return [{"type": "text", "text": content}] if isinstance(content, str) else list(content)
 
 
-def untranslatable_reason(body: Mapping, *, max_tools: Optional[int] = None) -> Optional[str]:
+def untranslatable_reason(body: Mapping, *, max_tools: int | None = None) -> str | None:
     """``None`` if ``body`` survives translation intact, else why not."""
     tools = body.get("tools") or []
     if max_tools is not None and len(tools) > max_tools:
@@ -132,7 +132,7 @@ def anthropic_to_openai(body: Mapping, model: str, *, max_tokens_param: str = "m
     return req
 
 
-def openai_usage(usage: Optional[Mapping]) -> dict:
+def openai_usage(usage: Mapping | None) -> dict:
     """OpenAI usage in Anthropic's shape: ``input_tokens`` is the *uncached*
     remainder, same convention as Anthropic's own usage."""
     usage = usage or {}
@@ -143,7 +143,7 @@ def openai_usage(usage: Optional[Mapping]) -> dict:
             "cache_creation_input_tokens": 0}
 
 
-def _tool_input(arguments: Optional[str]) -> dict:
+def _tool_input(arguments: str | None) -> dict:
     try:
         parsed = json.loads(arguments or "{}")
     except ValueError:
@@ -189,9 +189,9 @@ class OpenAIStreamTranslator:
         self.model = model
         self.usage: dict = {}
         self._started = False
-        self._open: Optional[tuple[str, object]] = None  # ("text", None) | ("tool", openai index)
+        self._open: tuple[str, object] | None = None  # ("text", None) | ("tool", openai index)
         self._index = -1
-        self._finish: Optional[str] = None
+        self._finish: str | None = None
         self._saw_tool = False
 
     def _start(self) -> list[bytes]:

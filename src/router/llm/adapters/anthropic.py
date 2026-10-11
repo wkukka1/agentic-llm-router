@@ -13,7 +13,7 @@ else ``client_kwargs["max_tokens"]`` (both reach the adapter through
 
 from __future__ import annotations
 
-from typing import Iterator
+from collections.abc import Iterator
 
 from ..client import LLMResponse
 from .base import Prompt, ProviderAdapter

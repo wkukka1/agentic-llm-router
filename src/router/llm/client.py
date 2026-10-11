@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import importlib
 import time
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Iterator, Mapping, Optional, Union
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - type hints only, not a runtime import
     from .adapters.base import Prompt, ProviderAdapter
@@ -27,15 +28,15 @@ class LLMResponse:
     streaming) -- distinct from a genuinely free (``0``) call."""
 
     content: str
-    input_tokens: Optional[int] = None
-    output_tokens: Optional[int] = None
-    cost: Optional[float] = None
-    latency: Optional[float] = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cost: float | None = None
+    latency: float | None = None
     #: provider-specific raw response object / metadata (finish reason,
     #: tool-call payloads, moderation flags, ...). Nothing reads these today;
     #: kept so an adapter can attach them without another migration.
-    raw: Optional[object] = None
-    meta: Optional[dict] = None
+    raw: object | None = None
+    meta: dict | None = None
 
 
 class LLMClient:
@@ -44,11 +45,11 @@ class LLMClient:
     times the call and prices it from the ``profile``'s per-token costs when
     the adapter reports token counts but no cost."""
 
-    def __init__(self, adapter: "ProviderAdapter", profile: Optional["LLMProfile"] = None):
+    def __init__(self, adapter: ProviderAdapter, profile: LLMProfile | None = None):
         self._adapter = adapter
         self.profile = profile
 
-    def complete(self, prompt: "Prompt", **generation_kwargs) -> LLMResponse:
+    def complete(self, prompt: Prompt, **generation_kwargs) -> LLMResponse:
         t0 = time.perf_counter()
         resp = self._adapter.complete(prompt, **generation_kwargs)
         if resp.latency is None:
@@ -57,10 +58,10 @@ class LLMClient:
             resp.cost = self.price(resp.input_tokens, resp.output_tokens)
         return resp
 
-    def stream(self, prompt: "Prompt", **generation_kwargs) -> Iterator[str]:
+    def stream(self, prompt: Prompt, **generation_kwargs) -> Iterator[str]:
         return self._adapter.stream(prompt, **generation_kwargs)
 
-    def price(self, input_tokens: Optional[int], output_tokens: Optional[int]) -> Optional[float]:
+    def price(self, input_tokens: int | None, output_tokens: int | None) -> float | None:
         """``in * input_cost_per_token + out * output_cost_per_token``, or
         ``None`` without a profile or token counts, or when the price for a
         side that was actually used (a nonzero token count) is unset -- an
@@ -91,7 +92,7 @@ _ADAPTERS: dict[str, str] = {
     "google": "router.llm.adapters.google:GoogleAdapter",
 }
 
-AdapterSpec = Union[str, type]
+AdapterSpec = str | type
 
 
 def _adapter_class(spec: AdapterSpec) -> type:
@@ -115,13 +116,13 @@ class LLMClientFactory:
     from an earlier call for the same provider/model.
     """
 
-    def __init__(self, adapters: Optional[Mapping[str, AdapterSpec]] = None, *,
-                 fallback: Optional[AdapterSpec] = None):
+    def __init__(self, adapters: Mapping[str, AdapterSpec] | None = None, *,
+                 fallback: AdapterSpec | None = None):
         self._adapters: dict[str, AdapterSpec] = {**_ADAPTERS, **dict(adapters or {})}
         self._fallback = fallback
-        self._cache: dict[tuple, "ProviderAdapter"] = {}
+        self._cache: dict[tuple, ProviderAdapter] = {}
 
-    def client_for(self, profile: "LLMProfile", *, api_key: Optional[str] = None,
+    def client_for(self, profile: LLMProfile, *, api_key: str | None = None,
                    **client_kwargs) -> LLMClient:
         provider = (getattr(profile, "serving_provider", None) or profile.provider).lower()
         key = (provider, profile.model_id, api_key, repr(sorted(client_kwargs.items())))

@@ -36,10 +36,10 @@ import random
 import re
 import sys
 import tempfile
+from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterable, Optional
 
 from router.llm.adapters.claude_subscription import ClaudeSubscriptionAdapter
 
@@ -89,7 +89,7 @@ def read_jsonl(path: Path) -> list[dict]:
 
 
 def pending_turns(turns: Iterable[dict], graded: Iterable[dict], *,
-                  subagents: Optional[bool] = None) -> list[dict]:
+                  subagents: bool | None = None) -> list[dict]:
     """One turn per distinct prompt that has no grade yet, skipping ones
     marked as needing their conversation (``self_contained: false``).
     ``subagents``: only subagent tasks (``True``), only the user's own
@@ -106,13 +106,13 @@ def pending_turns(turns: Iterable[dict], graded: Iterable[dict], *,
     return list(seen.values())
 
 
-def parse_scores(text: str, labels: Iterable[str]) -> dict[str, tuple[Optional[float], str]]:
+def parse_scores(text: str, labels: Iterable[str]) -> dict[str, tuple[float | None, str]]:
     """``{label: (score in [0, 1] or None, reason)}`` from the judge's JSON --
     tolerant of prose or fences around it, never invents a score."""
     return {k: (v[0], v[1]) for k, v in parse_verdicts(text, labels).items()}
 
 
-def parse_verdicts(text: str, labels: Iterable[str]) -> dict[str, tuple[Optional[float], str, Optional[bool]]]:
+def parse_verdicts(text: str, labels: Iterable[str]) -> dict[str, tuple[float | None, str, bool | None]]:
     """``{label: (score in [0, 1] or None, reason, matches_best or None)}``."""
     found = re.search(r"\{.*\}", text or "", re.S)
     try:
@@ -131,7 +131,7 @@ def parse_verdicts(text: str, labels: Iterable[str]) -> dict[str, tuple[Optional
     return out
 
 
-def judge_prompt(request: str, answers: dict[str, str], reference: Optional[str] = None) -> str:
+def judge_prompt(request: str, answers: dict[str, str], reference: str | None = None) -> str:
     parts = [JUDGE_INSTRUCTIONS]
     if reference:
         parts.append(f"\n\n{REFERENCE_NOTE}")
@@ -161,8 +161,8 @@ def grade_turn(turn: dict, tiers: tuple[str, ...], judge_model: str, *, timeout:
         labels = [chr(ord("A") + i) for i in range(len(answered))]
         order = answered[:]
         rng.shuffle(order)
-        by_label = dict(zip(labels, order))
-        scores: dict[str, tuple[Optional[float], str, Optional[bool]]] = {}
+        by_label = dict(zip(labels, order, strict=True))
+        scores: dict[str, tuple[float | None, str, bool | None]] = {}
         judge_error = None
         if answered:
             try:
@@ -175,7 +175,7 @@ def grade_turn(turn: dict, tiers: tuple[str, ...], judge_model: str, *, timeout:
                 judge_error = f"{type(exc).__name__}: {exc}"[:300]
 
     model_score = {m: scores.get(lab, (None, "", None)) for lab, m in by_label.items()}
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    now = datetime.now(UTC).isoformat(timespec="seconds")
     rows = []
     for model in tiers:
         score, reason, matches = model_score.get(model, (None, "", None))
@@ -194,8 +194,8 @@ def grade_turn(turn: dict, tiers: tuple[str, ...], judge_model: str, *, timeout:
 
 def grade(n: int, *, tiers: tuple[str, ...] = DEFAULT_TIERS, judge_model: str = DEFAULT_JUDGE,
           workers: int = 2, timeout: float = 600.0, seed: int = 0,
-          turns_file: Optional[Path] = None, out_file: Optional[Path] = None,
-          subagents: Optional[bool] = None) -> list[dict]:
+          turns_file: Path | None = None, out_file: Path | None = None,
+          subagents: bool | None = None) -> list[dict]:
     turns_file = turns_file or _home() / "turns.jsonl"
     out_file = out_file or _home() / "graded.jsonl"
     todo = pending_turns(read_jsonl(turns_file), read_jsonl(out_file), subagents=subagents)
@@ -225,7 +225,7 @@ def _fmt(row: dict) -> str:
     return f"{row['model']}={score}"
 
 
-def summarize(rows: list[dict], *, subagents: Optional[bool] = None) -> str:
+def summarize(rows: list[dict], *, subagents: bool | None = None) -> str:
     by: dict[str, list[float]] = {}
     usage: dict[str, float] = {}
     for r in rows:
@@ -248,7 +248,7 @@ def summarize(rows: list[dict], *, subagents: Optional[bool] = None) -> str:
     return "\n".join(lines)
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="aar-gateway-grade", description=__doc__.split("\n\n")[0])
     ap.add_argument("--n", type=int, default=10, help="max ungraded turns to grade (each costs plan usage)")
     ap.add_argument("--tiers", default=",".join(DEFAULT_TIERS))

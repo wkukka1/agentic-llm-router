@@ -17,7 +17,6 @@ import shlex
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -93,7 +92,7 @@ async def events(request: Request):
                 try:
                     await asyncio.wait_for(queue.get(), timeout=15)
                     yield "event: update\ndata: {}\n\n"
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield ": keep-alive\n\n"
         finally:
             interceptor.unsubscribe(queue)
@@ -146,7 +145,7 @@ async def update_preferences(request: Request):
         if "role" in body:
             return interceptor.set_role_model(body["role"], body.get("model"))
     except ValueError as exc:
-        raise HTTPException(400, str(exc))
+        raise HTTPException(400, str(exc)) from exc
     margin = body.get("quality_margin")
     if body.get("preset") is not None:
         if body["preset"] not in interceptor.PRESETS:
@@ -157,7 +156,7 @@ async def update_preferences(request: Request):
     try:
         return interceptor.set_quality_margin(margin)
     except ValueError as exc:
-        raise HTTPException(400, str(exc))
+        raise HTTPException(400, str(exc)) from exc
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -378,7 +377,7 @@ def _statusline() -> None:
     print(info.get("line", "aar gateway"))
 
 
-def main(argv: Optional[list[str]] = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     import argparse
 
     argv = sys.argv[1:] if argv is None else argv

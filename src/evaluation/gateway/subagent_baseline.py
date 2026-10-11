@@ -22,7 +22,6 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Optional
 
 from router.gateway.config import load_settings
 from router.gateway.pricing import cost_usd
@@ -128,7 +127,7 @@ def report(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="aar-gateway-subagents", description=__doc__.split("\n\n")[0])
     ap.add_argument("--config", help="gateway config (models, prices, subagent roles)")
     ap.add_argument("--projects", default=str(PROJECTS_DIR))

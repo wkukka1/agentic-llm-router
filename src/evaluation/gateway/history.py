@@ -15,8 +15,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Optional
 
 PROJECTS_DIR = Path.home() / ".claude" / "projects"
 MIN_CHARS = 20
@@ -31,7 +31,7 @@ def _text(content) -> str:
                      if isinstance(b, dict) and b.get("type") == "text")
 
 
-def _typed(record: dict) -> Optional[str]:
+def _typed(record: dict) -> str | None:
     if record.get("type") != "user" or record.get("isSidechain") or record.get("isMeta"):
         return None
     if (record.get("origin") or {}).get("kind") != "human":

@@ -38,9 +38,9 @@ import os
 import re
 import time
 from collections import OrderedDict
-from datetime import datetime, timezone
+from collections.abc import Mapping
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Mapping, Optional
 
 import httpx
 from fastapi import Request
@@ -50,9 +50,9 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from .config import load_settings
 from .pricing import canonical_model, cost_usd
 from .routing import ModelPicker, price_for, unavailable_reason
-from .subagents import DEFAULT_ROLE_MODELS, detect as detect_subagent, role_decision, spawn_decision
-from .translate import (OpenAIStreamTranslator, anthropic_to_openai, iter_openai_sse,
-                        openai_to_anthropic)
+from .subagents import DEFAULT_ROLE_MODELS, role_decision, spawn_decision
+from .subagents import detect as detect_subagent
+from .translate import OpenAIStreamTranslator, anthropic_to_openai, iter_openai_sse, openai_to_anthropic
 
 _REQUEST_HOP_HEADERS = {"host", "content-length", "connection", "accept-encoding",
                         "transfer-encoding", "keep-alive"}
@@ -62,9 +62,9 @@ _RESPONSE_HOP_HEADERS = {"content-length", "content-encoding", "transfer-encodin
 _MAX_SESSIONS = 2000
 
 _settings: dict = load_settings(None)
-_picker: Optional[ModelPicker] = None
-_client: Optional[httpx.AsyncClient] = None
-_sessions: "OrderedDict[str, dict]" = OrderedDict()
+_picker: ModelPicker | None = None
+_client: httpx.AsyncClient | None = None
+_sessions: OrderedDict[str, dict] = OrderedDict()
 #: prefix signature (system prompt + tools) -> (last seen, fewest prompt tokens
 #: seen with it): the shared part every conversation with that prefix reuses
 _prefixes: dict[str, tuple[float, int]] = {}
@@ -94,17 +94,17 @@ ROUTING_MODES = ("auto", "off", "pin")
 
 #: subagent task hash -> the decision the spawn hook got (``record_spawn``),
 #: so the subagent's own requests are labelled with it
-_spawns: "OrderedDict[str, dict]" = OrderedDict()
+_spawns: OrderedDict[str, dict] = OrderedDict()
 _MAX_SPAWNS = 500
 
 #: Claude Code session id -> running totals, for its status line
-_cc_sessions: "OrderedDict[str, dict]" = OrderedDict()
+_cc_sessions: OrderedDict[str, dict] = OrderedDict()
 #: (model, client user-agent) -> why the upstream rejected that model for
 #: that client (e.g. "Claude Code x.y does not support this model")
 _blocked: dict[tuple[str, str], str] = {}
 
 
-def configure(settings: dict, picker: Optional[ModelPicker]) -> None:
+def configure(settings: dict, picker: ModelPicker | None) -> None:
     global _settings, _picker
     _settings, _picker = settings, picker
     _sessions.clear()
@@ -166,8 +166,8 @@ def _task_key(task: str) -> str:
     return hashlib.sha1(_REMINDER.sub("", task or "").strip().encode()).hexdigest()[:16]
 
 
-def record_spawn(session_id: str, subagent_type: Optional[str], task: str,
-                 asked_model: Optional[str] = None) -> dict:
+def record_spawn(session_id: str, subagent_type: str | None, task: str,
+                 asked_model: str | None = None) -> dict:
     """The model for a subagent Claude Code is about to spawn (asked by the
     ``PreToolUse`` hook, ``aar-gateway hook``). Kept, so the subagent's own
     requests are labelled with it when they arrive. Respects the dashboard:
@@ -202,10 +202,10 @@ def _log_override(record: dict) -> None:
     path = overrides_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps({"ts": datetime.now(timezone.utc).isoformat(timespec="seconds"), **record}) + "\n")
+        f.write(json.dumps({"ts": datetime.now(UTC).isoformat(timespec="seconds"), **record}) + "\n")
 
 
-def set_routing(mode: str, pinned_model: Optional[str] = None) -> dict:
+def set_routing(mode: str, pinned_model: str | None = None) -> dict:
     """``auto``: the router decides; ``off``: every request keeps the model
     Claude Code asked for; ``pin``: every agent turn goes to
     ``pinned_model`` (it may be pricier than the one asked for -- the user
@@ -232,7 +232,7 @@ def set_allow_upgrade(allow: bool) -> dict:
     return preferences()
 
 
-def set_role_model(role: str, model: Optional[str]) -> dict:
+def set_role_model(role: str, model: str | None) -> dict:
     """A subagent role's tier: a configured model, ``"session"`` (keep the
     session's model) or ``"default"`` (drop the override)."""
     defaults = {**DEFAULT_ROLE_MODELS, **_config_roles}
@@ -281,7 +281,7 @@ def set_model_picker(picker) -> None:
     _picker = picker
 
 
-def set_upstream_client(client: Optional[httpx.AsyncClient]) -> None:
+def set_upstream_client(client: httpx.AsyncClient | None) -> None:
     global _client
     _client = client
 
@@ -308,7 +308,7 @@ def has_client_credentials(request: Request) -> bool:
     return "authorization" in request.headers or "x-api-key" in request.headers
 
 
-def lane_of(model: Optional[str]) -> str:
+def lane_of(model: str | None) -> str:
     return (_settings["models"].get(canonical_model(model)) or {}).get("lane", "anthropic")
 
 
@@ -321,7 +321,7 @@ def turns_path() -> Path:
 _CWD = re.compile(r"Primary working directory: ([^\n]+)")
 
 
-def working_directory(body: Mapping) -> Optional[str]:
+def working_directory(body: Mapping) -> str | None:
     """Where Claude Code was run -- it states it in an environment block of
     the messages (or the system prompt). A replay of the turn runs there."""
     for block in _blocks(body.get("system")) + [b for m in body.get("messages") or []
@@ -332,7 +332,7 @@ def working_directory(body: Mapping) -> Optional[str]:
     return None
 
 
-def _capture(turn: "_Turn") -> None:
+def _capture(turn: _Turn) -> None:
     """Only the human's own words of a new agent turn, plus where it ran --
     never the conversation, tool results or credentials. For a subagent,
     the "human" is the main agent and its words are the subagent's task."""
@@ -340,7 +340,7 @@ def _capture(turn: "_Turn") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps({
-            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "ts": datetime.now(UTC).isoformat(timespec="seconds"),
             "conversation": turn.key,
             "prompt_hash": hashlib.sha1(turn.human.encode()).hexdigest()[:16],
             "prompt": turn.human,
@@ -377,19 +377,19 @@ def _append_record(record: dict) -> None:
 _listeners: set = set()
 
 
-def subscribe() -> "asyncio.Queue":
+def subscribe() -> asyncio.Queue:
     """A queue that gets an item each time a request is logged."""
     queue: asyncio.Queue = asyncio.Queue(maxsize=1)
     _listeners.add((asyncio.get_running_loop(), queue))
     return queue
 
 
-def unsubscribe(queue: "asyncio.Queue") -> None:
+def unsubscribe(queue: asyncio.Queue) -> None:
     for entry in [e for e in _listeners if e[1] is queue]:
         _listeners.discard(entry)
 
 
-def _offer(queue: "asyncio.Queue") -> None:
+def _offer(queue: asyncio.Queue) -> None:
     if not queue.full():  # one pending "something changed" is enough
         queue.put_nowait(True)
 
@@ -411,7 +411,7 @@ def _blocks(content) -> list:
 _REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
 
 
-def human_text(body: Mapping) -> Optional[str]:
+def human_text(body: Mapping) -> str | None:
     """The new human text that starts a turn, or ``None`` for a tool-loop
     continuation. Trailing ``system`` messages (Claude Code appends hook
     output after the user's message) are skipped, and ``<system-reminder>``
@@ -495,7 +495,7 @@ class _SSEUsageTap:
     def __init__(self):
         self._buf = b""
         self.usage: dict = {}
-        self.stop_reason: Optional[str] = None
+        self.stop_reason: str | None = None
 
     def feed(self, chunk: bytes) -> None:
         self._buf += chunk
@@ -531,7 +531,7 @@ class _Turn:
         self.shared_before = _shared_tokens(self.sig)
         self.session = dict(_sessions.get(self.key) or {})
         self.human = human_text(body)
-        self.stop_reason: Optional[str] = None
+        self.stop_reason: str | None = None
         # a subagent's role comes from its task, which only its first request
         # carries as new text; later requests reuse what that one found
         self.agent = (self.session["agent"] if self.human is None and "agent" in self.session
@@ -541,13 +541,13 @@ class _Turn:
             self.agent = {"role": spawned["role"], "source": "hook", "why": spawned.get("why")}
         self.decision: dict = {"reason": "client's choice"}
         self.fallback = False
-        self.attempted: Optional[str] = None
+        self.attempted: str | None = None
         self.t0 = time.perf_counter()
 
     def body_for(self, model: str) -> bytes:
         return self.raw if model == self.requested else json.dumps({**self.body, "model": model}).encode()
 
-    def finish(self, status: int, usage: Optional[Mapping], lane: str) -> None:
+    def finish(self, status: int, usage: Mapping | None, lane: str) -> None:
         """Baselines ("on the model you asked for", "on the strongest") assume
         that model had served all the traffic: it would hold this
         conversation's previous prefix, or at least the system prompt and
@@ -592,7 +592,7 @@ class _Turn:
             while len(_cc_sessions) > _MAX_SESSIONS:
                 _cc_sessions.popitem(last=False)
         _append_record({
-            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "ts": datetime.now(UTC).isoformat(timespec="seconds"),
             "claude_session": self.claude_session[:12] or None,
             "conversation": self.key,
             "new_turn": self.human is not None,
@@ -732,7 +732,7 @@ async def _relay_anthropic(upstream: httpx.Response, on_done) -> Response:
     return Response(content, status_code=upstream.status_code, headers=headers)
 
 
-def _unreachable(turn: Optional["_Turn"], where: str, exc: Exception, lane: str) -> JSONResponse:
+def _unreachable(turn: _Turn | None, where: str, exc: Exception, lane: str) -> JSONResponse:
     """A network failure reaching the provider: an Anthropic-shaped 502
     (Claude Code retries those) instead of an unlogged crash."""
     if turn is not None:
@@ -759,7 +759,7 @@ async def _via_anthropic_unguarded(turn: _Turn) -> Response:
         turn.decision = {**turn.decision, "reason": f"fell back: {turn.attempted} returned "
                                                     f"{upstream.status_code}: {detail[:160]}"}
         upstream = await _send_anthropic(turn.request, "v1/messages", turn.raw)
-    def done(status: int, usage: Optional[Mapping], stop_reason: Optional[str] = None) -> None:
+    def done(status: int, usage: Mapping | None, stop_reason: str | None = None) -> None:
         turn.stop_reason = stop_reason
         turn.finish(status, usage, "anthropic")
 
@@ -825,7 +825,7 @@ async def _via_openai_unguarded(turn: _Turn) -> Response:
     return JSONResponse(message)
 
 
-async def handle_messages(request: Request) -> Optional[Response]:
+async def handle_messages(request: Request) -> Response | None:
     """``None`` means "not mine": no credentials to forward and the model is
     not on an ``openai`` lane -- the server answers 401."""
     raw = await request.body()
@@ -887,14 +887,14 @@ def read_records() -> list[dict]:
 RECENT_RECORDS = 200
 
 
-def summarize(records: Optional[list[dict]] = None) -> dict:
+def summarize(records: list[dict] | None = None) -> dict:
     """Totals and per-model rows for ``GET /stats`` and the dashboard."""
     records = read_records() if records is None else records
     token_keys = ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
 
     def blank() -> dict:
         return {"requests": 0, "errors": 0, "rerouted": 0, "fallbacks": 0,
-                **{k: 0 for k in token_keys}, "cost_usd": 0.0}
+                **dict.fromkeys(token_keys, 0), "cost_usd": 0.0}
 
     total = {**blank(), "cost_if_requested_usd": 0.0, "cost_if_strongest_usd": 0.0,
              "priced_requests": 0, "turns_routed": 0}

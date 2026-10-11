@@ -60,7 +60,8 @@ def test_new_grades_are_picked_up_without_a_restart(tmp_path):
     write(p, graded_rows(1))
     predict = graded_predictor(p, encode, min_prompts=4)
     assert predict("sql") is None
-    import os, time
+    import os
+    import time
     write(p, graded_rows(4))
     os.utime(p, (time.time() + 5, time.time() + 5))
     assert predict("sql")["quality"]["claude-opus-5-5"] == 0.9
