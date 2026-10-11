@@ -33,6 +33,10 @@ def _blocks(content) -> list:
     return [{"type": "text", "text": content}] if isinstance(content, str) else list(content)
 
 
+#: the ``<system-reminder>`` blocks Claude Code injects into user turns
+REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
+
+
 def untranslatable_reason(body: Mapping, *, max_tools: int | None = None) -> str | None:
     """``None`` if ``body`` survives translation intact, else why not."""
     tools = body.get("tools") or []

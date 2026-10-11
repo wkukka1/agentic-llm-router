@@ -52,7 +52,14 @@ from .pricing import canonical_model, cost_usd
 from .routing import ModelPicker, price_for, unavailable_reason
 from .subagents import DEFAULT_ROLE_MODELS, role_decision, spawn_decision
 from .subagents import detect as detect_subagent
-from .translate import OpenAIStreamTranslator, anthropic_to_openai, iter_openai_sse, openai_to_anthropic
+from .translate import REMINDER as _REMINDER
+from .translate import (
+    OpenAIStreamTranslator,
+    _blocks,
+    anthropic_to_openai,
+    iter_openai_sse,
+    openai_to_anthropic,
+)
 
 _REQUEST_HOP_HEADERS = {"host", "content-length", "connection", "accept-encoding",
                         "transfer-encoding", "keep-alive"}
@@ -411,15 +418,6 @@ def _notify() -> None:
             loop.call_soon_threadsafe(_offer, queue)
         except RuntimeError:  # that loop is gone
             _listeners.discard((loop, queue))
-
-
-def _blocks(content) -> list:
-    if content is None:
-        return []
-    return [{"type": "text", "text": content}] if isinstance(content, str) else list(content)
-
-
-_REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
 
 
 def human_text(body: Mapping) -> str | None:
