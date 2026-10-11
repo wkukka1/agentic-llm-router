@@ -67,4 +67,5 @@ def test_the_log_rotates(tmp_path, monkeypatch):
     interceptor._append_record({"a": 1})
     interceptor._append_record({"b": 2})
     assert (tmp_path / "requests.jsonl.1").exists()
-    assert interceptor.read_records() == [{"b": 2}]
+    assert (tmp_path / "requests.jsonl").read_text().strip() == '{"b": 2}'
+    assert interceptor.read_records() == [{"a": 1}, {"b": 2}]  # the rotated one still counts

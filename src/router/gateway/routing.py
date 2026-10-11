@@ -66,21 +66,23 @@ def incompatibility(body: Mapping, spec: Mapping) -> str | None:
 
 def unavailable_reason(model: str, body: Mapping, settings: Mapping, blocked: Mapping[str, str],
                        est_prompt_tokens: int) -> str | None:
-    """Why ``model`` can't take this request -- not configured, rejects its
-    settings, rejected for this client before, prompt too long, or not
-    translatable for an ``openai`` lane -- else ``None``."""
+    """Why ``model`` can't take this request -- not configured, rejected for
+    this client before, prompt too long, rejects its settings, or not
+    translatable for an ``openai`` lane -- else ``None``. The one place these
+    rules live: the picker, a subagent's kind and a pinned model all ask it."""
     spec = settings["models"].get(canonical_model(model))
     if spec is None:
         return "not a configured model"
     if model in blocked:
-        return f"rejected for this client: {blocked[model][:80]}"
+        return f"rejected earlier for this client: {blocked[model]}"
+    if spec.get("context_window") and est_prompt_tokens > spec["context_window"]:
+        return "prompt exceeds context window"
     why = incompatibility(body, spec)
     if why:
         return why
-    if spec.get("context_window") and est_prompt_tokens > spec["context_window"]:
-        return "prompt longer than its context window"
     if spec.get("lane") == "openai":
-        return untranslatable_reason(body, max_tools=spec.get("max_tools"))
+        why = untranslatable_reason(body, max_tools=spec.get("max_tools"))
+        return f"not translatable: {why}" if why else None
     return None
 
 
@@ -235,24 +237,16 @@ def build_picker(settings: Mapping, router_model=None, graded=None,
         for model, spec in settings["models"].items():
             price = price_for(settings, model)
             proxy = spec.get("proxy")
-            reason = None
-            if model in (ctx.get("blocked") or {}):
-                reason = f"rejected earlier for this client: {ctx['blocked'][model]}"
-            elif use_graded and model not in own["quality"]:
-                reason = "no graded data for this model"
-            elif not use_graded and proxy not in pool:
-                reason = f"proxy {proxy!r} not in the router's pool"
-            elif not price or price.get("input") is None:
-                reason = "no price"
-            elif spec.get("context_window") and ctx["est_prompt_tokens"] > spec["context_window"]:
-                reason = "prompt exceeds context window"
-            elif ceiling and (price["input"] > ceiling["input"] or price["output"] > ceiling["output"]):
-                reason = "pricier than the requested model"
-            elif incompatibility(body, spec):
-                reason = incompatibility(body, spec)
-            elif spec["lane"] == "openai":
-                why = untranslatable_reason(body, max_tools=spec.get("max_tools"))
-                reason = f"not translatable: {why}" if why else None
+            reason = unavailable_reason(model, body, settings, ctx.get("blocked") or {}, ctx["est_prompt_tokens"])
+            if reason is None:
+                if use_graded and model not in own["quality"]:
+                    reason = "no graded data for this model"
+                elif not use_graded and proxy not in pool:
+                    reason = f"proxy {proxy!r} not in the router's pool"
+                elif not price or price.get("input") is None:
+                    reason = "no price"
+                elif ceiling and (price["input"] > ceiling["input"] or price["output"] > ceiling["output"]):
+                    reason = "pricier than the requested model"
             if reason is not None:
                 quality = math.nan
             elif use_graded:

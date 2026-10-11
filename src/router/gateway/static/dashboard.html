@@ -429,7 +429,10 @@ function renderPrefs() {
   $("preset-note").textContent = prefs.mode !== "auto"
     ? `Routing is ${prefs.mode === "off" ? "off" : "pinned to " + short(prefs.pinned_model)} (Advanced settings)`
     : (preset ? PRESET_NOTES[preset] : `Custom margin ${m.toFixed(2)} (Advanced settings)`);
-  $("pref-note").textContent = prefs.router_enabled ? "" : "The router is off in the gateway config";
+  $("pref-note").textContent = prefs.router_enabled ? ""
+    : prefs.router_error ? `Router failed to load, so requests go through unrouted: ${prefs.router_error}`
+    : "The router is off in the gateway config";
+  $("pref-note").style.color = prefs.router_error ? "var(--amber)" : "";
   document.querySelectorAll("[data-mode]").forEach((b) => {
     const on = prefs.mode === b.dataset.mode;
     b.classList.toggle("on", on);

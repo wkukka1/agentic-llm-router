@@ -101,12 +101,22 @@ _MAX_SPAWNS = 500
 _cc_sessions: OrderedDict[str, dict] = OrderedDict()
 #: (model, client user-agent) -> why the upstream rejected that model for
 #: that client (e.g. "Claude Code x.y does not support this model")
-_blocked: dict[tuple[str, str], str] = {}
+_blocked: dict[tuple[str, str], tuple[str, float]] = {}
+#: a block is retried after this long: a 400 can be passing (a model briefly
+#: unavailable to this client) and a permanent block silently ends all savings
+BLOCK_SECONDS = 600.0
+#: 400s about this one request, not the model -- never a reason to stop using it
+_REQUEST_SPECIFIC = re.compile(r"prompt is too long|too many tokens|max_tokens|context (?:length|window)"
+                               r"|exceeds|too large|invalid image|could not process image", re.I)
 
 
-def configure(settings: dict, picker: ModelPicker | None) -> None:
-    global _settings, _picker
-    _settings, _picker = settings, picker
+#: why the router isn't loaded, when it failed at startup (shown on the dashboard)
+_router_error: str | None = None
+
+
+def configure(settings: dict, picker: ModelPicker | None, router_error: str | None = None) -> None:
+    global _settings, _picker, _router_error
+    _settings, _picker, _router_error = settings, picker, router_error
     _sessions.clear()
     _cc_sessions.clear()
     _global_profile.clear()
@@ -154,7 +164,8 @@ def preferences() -> dict:
     overrides = _read_preferences().get("role_models") or {}
     defaults = {**DEFAULT_ROLE_MODELS, **_config_roles}
     return {"quality_margin": _settings["router"]["margin"], "presets": PRESETS,
-            "router_enabled": _picker is not None, "strongest_model": _settings.get("strongest"),
+            "router_enabled": _picker is not None, "router_error": _router_error,
+            "strongest_model": _settings.get("strongest"),
             "header": MARGIN_HEADER, "mode": routing["mode"], "pinned_model": routing["pinned_model"],
             "allow_upgrade": bool(routing.get("allow_upgrade")),
             "models": list(_settings["models"]),
@@ -567,6 +578,7 @@ class _Turn:
                 _warm[(canonical_model(self.target), self.sig)] = now
             fewest = min(self.shared_before or tokens, tokens)
             _prefixes[self.sig] = (now, fewest)
+            _forget_cold(now)
             profile = _update_profile(self.session.get("profile") or {}, usage)
             _sessions[self.key] = {"model": self.target, "prompt_tokens": tokens, "profile": profile,
                                    "agent": self.agent}
@@ -626,6 +638,16 @@ class _Turn:
         })
 
 
+def _forget_cold(now: float) -> None:
+    """Drop cache entries past the cache's lifetime: they can never be warm
+    again, and otherwise every new system prompt or tool set ever seen stays."""
+    ttl = _ttl()
+    for key in [k for k, t in _warm.items() if now - t >= ttl]:
+        del _warm[key]
+    for sig in [k for k, (t, _) in _prefixes.items() if now - t >= ttl]:
+        del _prefixes[sig]
+
+
 def _warm_tokens(sig: str) -> dict[str, int]:
     """Models that recently cached this prefix, with how many tokens of it."""
     shared, now = _shared_tokens(sig), time.monotonic()
@@ -634,7 +656,9 @@ def _warm_tokens(sig: str) -> dict[str, int]:
 
 def _blocked_for(turn: _Turn) -> dict[str, str]:
     ua = turn.request.headers.get("user-agent", "")
-    return {m: why for (m, agent), why in _blocked.items() if agent == ua}
+    now = time.monotonic()
+    return {m: why for (m, agent), (why, at) in _blocked.items()
+            if agent == ua and now - at < BLOCK_SECONDS}
 
 
 def _est_prompt_tokens(turn: _Turn) -> int:
@@ -754,7 +778,8 @@ async def _via_anthropic_unguarded(turn: _Turn) -> Response:
         detail = (await upstream.aread()).decode(errors="replace")[:300]
         await upstream.aclose()
         if upstream.status_code == 400:  # the request is valid for the client's model, not this one
-            _blocked[(turn.target, turn.request.headers.get("user-agent", ""))] = detail[:160]
+            if not _REQUEST_SPECIFIC.search(detail):
+                _blocked[(turn.target, turn.request.headers.get("user-agent", ""))] = (detail[:160], time.monotonic())
         turn.fallback, turn.attempted, turn.target = True, turn.target, turn.requested
         turn.decision = {**turn.decision, "reason": f"fell back: {turn.attempted} returned "
                                                     f"{upstream.status_code}: {detail[:160]}"}
@@ -860,9 +885,36 @@ async def forward(request: Request, path: str) -> Response:
 #: the request log as parsed so far: a dashboard refresh parses only the
 #: lines appended since the last one, not the whole file
 _log_cache: dict = {"key": None, "offset": 0, "partial": b"", "records": []}
+#: the rotated log (``.1``), parsed once per rotation
+_rotated_cache: dict = {"key": None, "records": []}
+
+
+def _rotated_records() -> list[dict]:
+    path = log_path().with_name(log_path().name + ".1")
+    try:
+        st = path.stat()
+    except FileNotFoundError:
+        return []
+    key = (str(path), st.st_ino, st.st_size)
+    if _rotated_cache["key"] != key:
+        records = []
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                records.append(json.loads(line))
+            except ValueError:  # a line cut short when the log was rotated
+                continue
+        _rotated_cache.update(key=key, records=records)
+    return _rotated_cache["records"]
 
 
 def read_records() -> list[dict]:
+    """Every logged request, oldest first: the rotated log (``.1``) and the
+    current one -- so totals don't reset when the log rotates at
+    ``MAX_LOG_BYTES``. Older rotations are gone."""
+    return _rotated_records() + _current_records()
+
+
+def _current_records() -> list[dict]:
     path = log_path()
     try:
         st = path.stat()

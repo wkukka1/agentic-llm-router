@@ -64,7 +64,8 @@ interceptor:
         calls["anthropic"].append(body)
         status = state["anthropic_status"].get(body.get("model"), 200)
         if status != 200:
-            return httpx.Response(status, json={"type": "error", "error": {"message": "nope"}})
+            return httpx.Response(status, json={"type": "error",
+                                                "error": {"message": state.get("error_message", "nope")}})
         return httpx.Response(200, json={"type": "message", "model": body["model"], "content": [],
                                          "usage": state.get("usage", {"input_tokens": 10, "output_tokens": 2})})
 
@@ -220,6 +221,30 @@ def test_a_model_the_upstream_rejects_for_this_client_is_not_tried_again(env):
     client.post("/v1/messages", json={**turn("two"), "messages": [{"role": "user", "content": "x"}]},
                 headers={**AUTH, "user-agent": "claude-cli/1.0"})
     assert seen[0] == {} and "claude-haiku-4-5" in seen[1]
+
+
+def test_a_400_about_the_request_itself_does_not_block_the_model(env):
+    """Anthropic answers 400 to a prompt too long for a model: that says
+    nothing about the next request, which may be short."""
+    client, settings, calls, state = env
+    state["anthropic_status"]["claude-haiku-4-5"] = 400
+    state["error_message"] = "prompt is too long: 210000 tokens > 200000 maximum"
+    seen = []
+    interceptor.configure(settings, lambda body, ctx: seen.append(dict(ctx["blocked"])) or "claude-haiku-4-5")
+    client.post("/v1/messages", json=turn("one"), headers=AUTH)
+    client.post("/v1/messages", json={**turn("two"), "messages": [{"role": "user", "content": "x"}]}, headers=AUTH)
+    assert seen == [{}, {}]
+
+
+def test_a_blocked_model_is_tried_again_after_a_while(env, monkeypatch):
+    client, settings, calls, state = env
+    state["anthropic_status"]["claude-haiku-4-5"] = 400
+    seen = []
+    interceptor.configure(settings, lambda body, ctx: seen.append(dict(ctx["blocked"])) or "claude-haiku-4-5")
+    client.post("/v1/messages", json=turn("one"), headers=AUTH)
+    monkeypatch.setattr(interceptor, "BLOCK_SECONDS", 0.0)
+    client.post("/v1/messages", json={**turn("two"), "messages": [{"role": "user", "content": "x"}]}, headers=AUTH)
+    assert seen == [{}, {}]
 
 
 def test_a_new_session_sharing_the_prefix_counts_the_cache_an_earlier_one_wrote(env):

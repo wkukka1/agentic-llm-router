@@ -486,9 +486,30 @@ variables:
 * `AAR_GATEWAY_HOST` / `AAR_GATEWAY_PORT`: default `127.0.0.1:8787`.
 * `AAR_GATEWAY_LOG`: the request log.
 * `AAR_GATEWAY_UPSTREAM`: default `https://api.anthropic.com`.
+* `AAR_GATEWAY_ALLOWED_HOSTS`: extra host names the gateway answers to,
+  comma-separated (by default only `127.0.0.1`, `localhost`, `[::1]`).
 
 A request with no Anthropic credentials, for a model not on an `openai`
 lane, gets a 401: the gateway has nothing of its own to answer with.
+
+**Only this machine's programs, never a web page.** A page open in your
+browser can send requests to `localhost`. The gateway refuses any request
+whose `Origin` header names a site other than its own dashboard, and any
+whose `Host` isn't a local name (a "DNS rebinding" page, whose own domain
+points at your machine). Without this, a site you visit could switch routing
+off or spend an `openai`-lane API key through the gateway. Claude Code and
+the CLI send no `Origin`, so they are unaffected.
+
+**If the router can't load** (its data missing, a broken run), the gateway
+still starts and forwards every request as asked. `/health` and the
+dashboard say why.
+
+**A model Anthropic rejects** for your Claude Code version (a 400) is not
+tried again for 10 minutes. A 400 about the request itself (prompt too long,
+image too large) never blocks the model.
+
+The request log rotates at 50 MB into `requests.jsonl.1`; the dashboard reads
+both, so totals survive one rotation.
 
 ## Verified end to end
 

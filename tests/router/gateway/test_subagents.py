@@ -358,3 +358,45 @@ def test_claude_code_is_launched_with_the_spawn_hook(monkeypatch):
     assert entry["matcher"] == "Agent|Task" and entry["hooks"][0]["command"].endswith("server hook")
     monkeypatch.setenv("AAR_GATEWAY_HOOK", "0")
     assert "--settings" not in server._claude_command("http://127.0.0.1:8787", [])[0]
+
+
+def test_a_subagent_tier_on_a_model_that_cannot_take_the_request_is_not_forced():
+    """Found by audit: a kind's tier set to an openai-lane model skipped the
+    lossless-translation check every other route makes."""
+    settings = load_settings(None)
+    settings["models"]["local-coder"] = {"lane": "openai", "base_url": "http://local.test/v1", "max_tools": 1,
+                                         "prices": {"input": 0, "output": 0}}
+    settings["subagents"]["roles"] = {"lookup": "local-coder"}
+    agent = {"role": "lookup", "source": "task", "why": "find"}
+    two_tools = subagent_body("Find X", tools=[TOOL, {**TOOL, "name": "Grep"}])
+    assert role_decision(agent, two_tools, "claude-opus-5-5", settings, {}, 1000) is None
+    assert role_decision(agent, subagent_body("Find X"), "claude-opus-5-5", settings, {}, 1000)["model"] == "local-coder"
+
+
+def test_a_subagents_final_streamed_reply_has_its_size_logged():
+    """Claude Code streams; the report size comes from the stream's
+    stop_reason, so a streamed final answer must set report_tokens and a
+    tool-call step must not."""
+    def sse(stop_reason, output_tokens):
+        return (b'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":5}}}\n\n'
+                + ("event: message_delta\ndata: " + json.dumps({"type": "message_delta",
+                   "delta": {"stop_reason": stop_reason}, "usage": {"output_tokens": output_tokens}}) + "\n\n").encode()
+                + b'event: message_stop\ndata: {"type":"message_stop"}\n\n')
+    replies = [sse("tool_use", 40), sse("end_turn", 97)]
+    interceptor.set_upstream_client(httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda req: httpx.Response(200, content=replies.pop(0), headers={"content-type": "text/event-stream"}))))
+    try:
+        with TestClient(server.app) as client:
+            interceptor.configure(load_settings(None), None)
+            task = "Find where X is defined"
+            first = [{"role": "user", "content": [{"type": "text", "text": task}]}]
+            client.post("/v1/messages", json=subagent_body(task, messages=first, stream=True), headers=AUTH)
+            loop = first + [{"role": "assistant", "content": [{"type": "tool_use", "id": "t", "name": "Read", "input": {}}]},
+                            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t", "content": "ok"}]}]
+            client.post("/v1/messages", json=subagent_body(task, messages=loop, stream=True), headers=AUTH)
+        assert [r["report_tokens"] for r in interceptor.read_records()] == [None, 97]
+        (row,) = interceptor.summarize()["subagents"]
+        assert row["avg_report_tokens"] == 97
+    finally:
+        interceptor.set_upstream_client(None)
+        interceptor.configure(load_settings(None), None)

@@ -20,9 +20,12 @@ def test_the_log_is_read_incrementally_and_survives_rotation():
     with path.open("a") as f:
         f.write("4}\n")
     assert [r["n"] for r in interceptor.read_records()] == [1, 2, 3, 4]
-    path.replace(path.with_name(path.name + ".1"))  # rotated
+    path.replace(path.with_name(path.name + ".1"))  # rotated: its records still count
     path.write_text(json.dumps({"n": 5}) + "\n")
-    assert [r["n"] for r in interceptor.read_records()] == [5]
+    assert [r["n"] for r in interceptor.read_records()] == [1, 2, 3, 4, 5]
+    path.replace(path.with_name(path.name + ".1"))  # rotated again: only one old file is kept
+    path.write_text(json.dumps({"n": 6}) + "\n")
+    assert [r["n"] for r in interceptor.read_records()] == [5, 6]
 
 
 def test_listeners_hear_about_each_logged_request():

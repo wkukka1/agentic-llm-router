@@ -106,14 +106,10 @@ def pending_turns(turns: Iterable[dict], graded: Iterable[dict], *,
     return list(seen.values())
 
 
-def parse_scores(text: str, labels: Iterable[str]) -> dict[str, tuple[float | None, str]]:
-    """``{label: (score in [0, 1] or None, reason)}`` from the judge's JSON --
-    tolerant of prose or fences around it, never invents a score."""
-    return {k: (v[0], v[1]) for k, v in parse_verdicts(text, labels).items()}
-
-
 def parse_verdicts(text: str, labels: Iterable[str]) -> dict[str, tuple[float | None, str, bool | None]]:
-    """``{label: (score in [0, 1] or None, reason, matches_best or None)}``."""
+    """``{label: (score in [0, 1] or None, reason, matches_best or None)}``
+    from the judge's JSON -- tolerant of prose or fences around it, never
+    invents a score."""
     found = re.search(r"\{.*\}", text or "", re.S)
     try:
         data = json.loads(found.group(0)) if found else {}

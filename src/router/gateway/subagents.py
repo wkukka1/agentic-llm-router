@@ -42,7 +42,7 @@ import re
 from collections.abc import Mapping
 
 from .pricing import canonical_model
-from .routing import incompatibility, price_for
+from .routing import price_for, unavailable_reason
 
 SUBAGENT_MARK = "cc_is_subagent=true"
 _ROLE_MARK = re.compile(r"\baar-role:\s*([a-z-]+)")
@@ -143,10 +143,8 @@ def role_decision(agent: Mapping, body: Mapping, requested: str | None, settings
     label = f"{agent['role']} subagent ({agent['source']}: {agent['why']})"
     if target is None:
         return {"model": requested, "reason": f"{label}: keeps the session's model"}
-    spec = settings["models"].get(target)
-    if spec is None or target in blocked or incompatibility(body, spec) \
-            or est_prompt_tokens > spec.get("context_window", float("inf")):
-        return None
+    if unavailable_reason(target, body, settings, blocked, est_prompt_tokens):
+        return None  # e.g. too long for it, or an openai-lane model it can't be translated for
     if not price_for(settings, target) or not price_for(settings, requested):
         return None
     if _pricier(settings, target, requested):

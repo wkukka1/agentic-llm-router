@@ -69,8 +69,8 @@ def test_a_prompt_is_graded_once(fake, tmp_path):
 
 
 def test_unparseable_verdict_is_no_score_not_zero():
-    assert g.parse_scores("I refuse", ["A"]) == {"A": (None, "")}
-    assert g.parse_scores('```json\n{"A": {"score": 15, "reason": "x"}}\n```', ["A"])["A"][0] == 1.0
+    assert g.parse_verdicts("I refuse", ["A"]) == {"A": (None, "", None)}
+    assert g.parse_verdicts('```json\n{"A": {"score": 15, "reason": "x"}}\n```', ["A"])["A"][0] == 1.0
 
 
 def test_follow_ups_that_need_their_conversation_are_not_graded():

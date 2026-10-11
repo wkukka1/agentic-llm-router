@@ -36,11 +36,19 @@ async def _lifespan(_app: FastAPI):
 
     settings = load_settings(os.environ.get("AAR_GATEWAY_CONFIG"))
     use_graded = settings["router"].get("use_graded", True)
-    picker = build_picker(settings, graded=_graded_predictor(settings),
-                          graded_file=interceptor.log_path().parent / "graded.jsonl" if use_graded else None)
-    interceptor.configure(settings, picker)
+    router_error = None
+    try:
+        picker = build_picker(settings, graded=_graded_predictor(settings),
+                              graded_file=interceptor.log_path().parent / "graded.jsonl" if use_graded else None)
+    except Exception as exc:  # noqa: BLE001 -- no router must not mean no Claude Code
+        # The router (its data, encoder or run) failed to load: forward
+        # everything as asked instead of refusing to start, and say why.
+        picker = None
+        router_error = f"{type(exc).__name__}: {exc}"[:400]
+        print(f"router not loaded, forwarding requests unrouted: {router_error}", file=sys.stderr)
+    interceptor.configure(settings, picker, router_error=router_error)
     rcfg = settings["router"]
-    _router_status.update(enabled=picker is not None, kind=rcfg.get("kind"),
+    _router_status.update(enabled=picker is not None, error=router_error, kind=rcfg.get("kind"),
                           source=rcfg.get("data_config") if rcfg.get("kind") == "knn" else rcfg.get("run"),
                           models=sorted(settings["models"]))
     pid_file = _pid_file()
@@ -73,6 +81,43 @@ def _graded_predictor(settings: dict):
 
 
 app = FastAPI(title="AAR gateway", lifespan=_lifespan)
+
+#: names this gateway answers to; anything else in ``Host`` is a DNS-rebinding
+#: page (a site whose domain resolves to 127.0.0.1). ``AAR_GATEWAY_ALLOWED_HOSTS``
+#: adds more, comma-separated, e.g. when serving on a LAN address.
+_LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]", "::1"}
+
+
+def _allowed_hosts() -> set[str]:
+    extra = os.environ.get("AAR_GATEWAY_ALLOWED_HOSTS", "")
+    return _LOCAL_HOSTS | {h.strip().lower() for h in extra.split(",") if h.strip()}
+
+
+def _hostname(netloc: str) -> str:
+    netloc = netloc.strip().lower()
+    if netloc.startswith("["):  # [::1]:8787
+        return netloc.split("]", 1)[0] + "]"
+    return netloc.rsplit(":", 1)[0] if netloc.count(":") == 1 else netloc
+
+
+@app.middleware("http")
+async def _local_callers_only(request: Request, call_next):
+    """Claude Code, the CLI and the dashboard -- never a web page. A page in
+    the browser can send requests to localhost but can't make them look
+    same-origin: its ``Origin`` header names its own site (rejected unless it
+    is this gateway's own dashboard), and a DNS-rebinding page arrives with
+    its own domain in ``Host``. Without this, any site the user visits could
+    switch routing off or spend an ``openai``-lane API key through the
+    gateway."""
+    host = request.headers.get("host", "")
+    if _hostname(host) not in _allowed_hosts():
+        return JSONResponse({"type": "error", "error": {"type": "forbidden",
+                             "message": f"host {host!r} is not this gateway"}}, status_code=403)
+    origin = request.headers.get("origin")
+    if origin and origin.rstrip("/").lower() not in (f"http://{host.lower()}", f"https://{host.lower()}"):
+        return JSONResponse({"type": "error", "error": {"type": "forbidden",
+                             "message": f"requests from {origin} are not accepted"}}, status_code=403)
+    return await call_next(request)
 
 
 @app.get("/api/events")
