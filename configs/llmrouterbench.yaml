@@ -87,3 +87,59 @@ split:
   train_fraction: 0.7
   validation_fraction: 0.15
   test_fraction: 0.15
+
+# Encoders, profiles and the query taxonomy -- the same pathways as
+# configs/phase0.yaml (`retrieval` = MiniLM for kNN / the FAISS bank / clustering,
+# `irt` = BERT for NIRT queries and profiles), with this pool's own cache dir.
+embedding:
+  batch_size: 64
+  device: auto
+  cache_dir: data/processed/llmrouterbench/embeddings
+  pathways:
+    retrieval:
+      backend: sentence_transformer
+      model_name: sentence-transformers/all-MiniLM-L6-v2
+      normalize: true
+      max_seq_length: 256
+    irt:
+      backend: bert
+      model_name: bert-base-uncased
+      pooling: mean
+      normalize: false
+      max_seq_length: 256
+  default_pathway: irt
+
+profiles:
+  config_path: configs/model_profiles.yaml
+  include_empirical: false
+  version: 1
+  task_families:
+    math: [aime, livemathbench]
+    code: [livecodebench, swe-bench]
+    knowledge: [gpqa, mmlupro, simpleqa, hle]
+    reasoning: [tau2]
+    chat: [arenahard]
+
+clustering:
+  pathway: retrieval
+  method: umap_hdbscan
+  umap:
+    n_neighbors: 15
+    min_dist: 0.1
+    n_components: 5
+    metric: cosine
+  hdbscan:
+    # phase0.yaml's 150 was tuned on 36.5k queries; scaled to this pool's 12.3k
+    min_cluster_size: 50
+    min_samples: 10
+    metric: euclidean
+    cluster_selection_method: eom
+  representatives_per_cluster: 10
+
+taxonomy:
+  target_dimensions: 20
+  version: 1
+
+retrieval:
+  k: 5
+  index_type: flat_ip

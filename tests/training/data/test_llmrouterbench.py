@@ -306,3 +306,40 @@ def test_split_outside_the_configured_allowlist_is_dropped(tmp_path):
     df = load_llmrouterbench(cfg)
     assert len(df) == 1
     assert df["split"].iloc[0] == "test"
+
+
+def test_negative_token_counts_are_unknown_not_kept_or_dropped(tmp_path, monkeypatch):
+    """Found running the real release: 10 records carry negative
+    completion_tokens. The score is fine; the count is corrupt -- None, with a
+    warning, never a fabricated value and never a dropped record."""
+    import json as _json
+
+    import pytest as _pytest
+
+    from training.data.loaders import load_llmrouterbench
+
+    base = tmp_path / "bench" / "aime" / "test" / "gpt-5"
+    base.mkdir(parents=True)
+    (base / "20260101.json").write_text(_json.dumps({
+        "dataset_name": "aime", "split": "test", "model_name": "gpt-5", "demo": False,
+        "records": [{"index": 0, "origin_query": "q", "score": 1.0, "prompt_tokens": 10,
+                     "completion_tokens": -5, "cost": 0.01}]}))
+
+    class Cfg:
+        def resolve(self, p):
+            return tmp_path / "bench"
+
+        def __getitem__(self, k):
+            return {"sources": {"llmrouterbench": {"local_dir": "x", "pool": ["gpt-5"], "splits": ["test"]}},
+                    "multiple_choice": {"by_task": {}, "by_prefix": {}}}[k]
+
+        def get(self, k, d=None):
+            try:
+                return self[k]
+            except KeyError:
+                return d
+
+    with _pytest.warns(UserWarning, match="negative"):
+        df = load_llmrouterbench(Cfg())
+    assert len(df) == 1 and df.iloc[0]["score"] == 1.0
+    assert df.iloc[0]["output_tokens"] is None or df["output_tokens"].isna().iloc[0]

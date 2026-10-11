@@ -73,10 +73,42 @@ pre-partitioned mode — LLMRouterBench's own `split` field is a run identifier
 
 ## Results
 
-**Not yet run in this environment** — Task 5/7 of the E4 implementation plan
-(`docs/superpowers/plans/2026-09-23-llmrouterbench-integration.md`) require downloading the
-real results tarball, which needs network access this planning session didn't have. Once run,
-this section should report: row/query/model counts (mirroring the tables in
-[pool_expansion.md](pool_expansion.md)'s E0-E2 sections), the data-quality report from
-`build_response_matrix.py`'s `check_responses` output, and — after a retrain — the same
-oracle-ceiling / ZOIB-NLL metrics those sections report, to show what this data source moved.
+First run: October 2026, on the 2026 release tarball (1.28 GB, 6.5 GB extracted).
+
+**Data:**
+
+* 12,336 queries × 13 models;
+* 159,688 NIRT observations;
+* splits 8,602 / 1,896 / 1,838 train / validation / test (by query; content-hash group split);
+* 43 taxonomy clusters, 33.9% noise.
+
+**What running it changed:**
+
+* `download_llmrouterbench.py` accepts the tarball's new top-level
+  `bench-release/` directory.
+* The loader sets 10 negative `completion_tokens` / `cost` values to unknown
+  (`None`) and keeps their scores.
+* The loader skips files outside the pool, splits and datasets **by path,
+  before reading them**. Most of the release is outside this setting, and
+  one excluded 14 MB `arc-agi` file takes ~15 minutes to `json.loads`.
+  The skip is reported in a warning that names what was skipped.
+* The config gained `embedding` / `profiles` / `clustering` / `taxonomy` /
+  `retrieval` blocks, so `training.phase0 --sources llmrouterbench
+  --embeddings --taxonomy --query-bank` runs end to end.
+
+**Routing, test split, cheapest-within-margin rule:**
+
+| Policy | Quality | Cost / 1k |
+|---|---|---|
+| always gpt-5 (strongest) | 0.596 | $28.30 |
+| kNN k=25, margin 0.01 | 0.615 | $24.40 |
+| kNN k=25, margin 0.05 | 0.596 | $17.25 |
+| kNN k=25, margin 0.08 | 0.580 | $12.06 |
+| NIRT 2-d projected, margin 0.01 | 0.610 | $29.06 |
+| NIRT 2-d projected, margin 0.05 | 0.575 | $11.37 |
+| oracle (cheapest correct) | 0.817 | $3.96 |
+
+* NIRT on its own scores AUC 0.78, ECE 0.044, and 0.105 lower BCE than the
+  per-model mean.
+* kNN matches or beats it at every margin, which is why the gateway uses kNN
+  (docs/gateway.md).

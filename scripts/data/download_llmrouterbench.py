@@ -49,6 +49,9 @@ def main() -> int:
         # (tar-slip, CVE-2007-4559), absolute paths, or device/symlink tricks
         tf.extractall(dest.parent, filter="data")
 
+    release = dest.parent / "bench-release"  # the 2026 tarball's top-level directory
+    if not dest.exists() and release.exists():
+        release.rename(dest)
     if not dest.exists():
         info(f"ERROR: expected {dest} after extraction; check the archive's internal layout")
         return 1
