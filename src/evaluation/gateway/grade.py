@@ -48,19 +48,23 @@ DEFAULT_JUDGE = "claude-opus-5-5"
 #: per answer, in the judge prompt -- long enough for a code review, bounded
 #: so one runaway answer can't crowd the others out
 ANSWER_CHARS = 12_000
-#: replays and the judge run read-only, and without the user's MCP servers --
-#: found live: with them loaded, an answer can wander into the servers' auth
-#: status, which the judge rightly penalises but which says nothing about the
-#: model's answer to the request
-READ_ONLY = ("--permission-mode", "plan", "--strict-mcp-config")
+#: replays and the judge run read-only and with none of the user's own
+#: customisation (--safe-mode: CLAUDE.md, skills, plugins, hooks, agents) or
+#: MCP servers -- found live: with them loaded an answer wandered into the MCP
+#: servers' auth status, and another ended with a line a plugin added; the
+#: judge rightly penalised both, which says nothing about the model
+READ_ONLY = ("--permission-mode", "plan", "--strict-mcp-config", "--safe-mode")
 
 JUDGE_INSTRUCTIONS = """You are grading answers to a developer's request to an AI coding assistant.
 The answers come from different assistants and are labelled only by letter, in random order.
 
 For EACH answer, score 0-10: would a careful senior engineer accept it as a correct and
 complete response to this request, as written? 10 = fully correct and complete; 7 = acceptable
-with minor gaps; 4 = partly right or incomplete; 0 = wrong, irrelevant or refused. Judge
-correctness and completeness first, then clarity. Do not reward length for its own sake.
+with minor gaps; 4 = partly right or incomplete; 0 = wrong, irrelevant or refused.
+- Correctness first: a factual or code error that would mislead the developer is a serious flaw.
+- Complete means covering what was ASKED. Extra sections, background, alternatives or caveats
+  nobody asked for earn nothing; never prefer an answer for being longer or more thorough.
+- A short answer that fully and correctly answers the request is as good as a long one.
 Some answers were produced in a read-only mode: for a request to change code, a correct,
 specific plan counts as a complete answer.
 
