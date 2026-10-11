@@ -34,3 +34,10 @@ artifacts/
 !data/external/
 !data/external/*.parquet
 !data/synthetic/
+
+# per-machine gateway config (copy of configs/gateway.example.yaml)
+configs/gateway.yaml
+
+# LLMRouterBench result tarball, extracted (6.5 GB; scripts/data/download_llmrouterbench.py)
+evaluations/LLMRouterBench/results
+evaluations/LLMRouterBench/results.nosync/

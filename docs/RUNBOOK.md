@@ -13,8 +13,15 @@ Run everything from the repo root, with the venv active.
 ```bash
 python -m venv .venv
 .venv/Scripts/activate                # Windows; `source .venv/bin/activate` on POSIX
-pip install -e ".[dev]"
+pip install -e ".[dev,research]"
 ```
+
+`research` is everything the data pipeline / training / evaluation stack
+needs (torch, transformers, faiss-cpu, umap-learn, hdbscan, ...) — split out
+from the base install so `router.agentic`/`router.llm`/`router.gateway` stay
+installable without it. Only running the HTTP gateway locally (no training,
+no evaluation)? Skip straight to `pip install -e ".[gateway]"` and
+[docs/gateway.md](gateway.md) — none of the above.
 
 **GPU check** (this machine has an RTX 3050 Ti — worth 11x on embedding
 encode speed):
@@ -263,7 +270,7 @@ lint-imports          # package-layering contract (router / training / evaluatio
 ## Cheat sheet: minimum path from zero to a trained, evaluated router
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev,research]"
 python -m training.phase0 --embeddings --taxonomy --query-bank
 python scripts/nirt/train_nirt.py --dim 2 --model-params projected --name nirt-2d-projected
 python scripts/nirt/eval_nirt.py --run nirt-2d-projected --split test
