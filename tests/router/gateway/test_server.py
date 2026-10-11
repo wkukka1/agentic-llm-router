@@ -51,6 +51,7 @@ def test_an_existing_status_line_is_left_alone(monkeypatch, tmp_path):
     (tmp_path / ".claude").mkdir()
     (tmp_path / ".claude" / "settings.json").write_text(json.dumps({"statusLine": {"type": "command"}}))
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))   # Path.home() on Windows
     args, _ = server._claude_command("http://x", [])
     assert "statusLine" not in json.loads(args[args.index("--settings") + 1])
 
