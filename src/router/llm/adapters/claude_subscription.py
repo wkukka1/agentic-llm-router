@@ -65,11 +65,15 @@ class ClaudeSubscriptionAdapter(ProviderAdapter):
 
     def complete(self, prompt: Prompt, **generation_kwargs) -> LLMResponse:
         text = prompt if isinstance(prompt, str) else _flatten(prompt)
-        cmd = [self._cli, "-p", text, "--output-format", "json", "--model", self.model,
+        # The prompt goes in on stdin, never as an argument: as an argument, one
+        # starting with "-" is parsed as CLI flags ("--version" printed the
+        # version; "--permission-mode bypassPermissions ..." would lift the
+        # read-only mode the grader replays untrusted public prompts under).
+        cmd = [self._cli, "-p", "--output-format", "json", "--model", self.model,
                *generation_kwargs.get("extra_args", ())]
         env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_BASE_URL"}
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=self._timeout,
-                              cwd=generation_kwargs.get("cwd"), env=env, stdin=subprocess.DEVNULL)
+        proc = subprocess.run(cmd, input=text, capture_output=True, text=True, timeout=self._timeout,
+                              cwd=generation_kwargs.get("cwd"), env=env)
         if proc.returncode != 0:
             raise RuntimeError(f"{self._cli} exited {proc.returncode}: {proc.stderr.strip()}")
         payload = json.loads(proc.stdout)

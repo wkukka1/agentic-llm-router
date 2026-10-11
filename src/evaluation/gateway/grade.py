@@ -90,11 +90,14 @@ def read_jsonl(path: Path) -> list[dict]:
 
 def pending_turns(turns: Iterable[dict], graded: Iterable[dict], *,
                   subagents: bool | None = None) -> list[dict]:
-    """One turn per distinct prompt that has no grade yet, skipping ones
+    """One turn per distinct prompt that has no score yet, skipping ones
     marked as needing their conversation (``self_contained: false``).
     ``subagents``: only subagent tasks (``True``), only the user's own
     messages (``False``), or both (``None``)."""
-    done = {g["prompt_hash"] for g in graded}
+    # graded = at least one answer scored; a prompt whose judge timed out or
+    # whose replays all failed is tried again (its unscored rows are ignored
+    # by every reader of graded.jsonl)
+    done = {g["prompt_hash"] for g in graded if g.get("score") is not None}
     seen: dict[str, dict] = {}
     for t in turns:
         if t.get("self_contained") is False:  # can't be answered out of its conversation

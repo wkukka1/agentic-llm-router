@@ -49,7 +49,6 @@ from typing import Callable, Optional
 from decompose.classifiers.prompt_heads import StructureClassifier
 
 from ..routing.base import RouterModel, RoutingResult
-from .llm_clients import ClientRegistry, LLMClient
 from .decompose import NaiveDecomposer, concat_synthesizer
 from .llm_clients import ClientRegistry, LLMClient
 from .orchestrator import RecursiveOrchestrator

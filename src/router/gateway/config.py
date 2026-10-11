@@ -62,9 +62,12 @@ def load_settings(config_path: str | Path | None = None) -> dict:
                              "but it is not set in the environment")
         if "prices" not in m and model_id in CLAUDE_PRICES:
             m["prices"] = CLAUDE_PRICES[model_id]
+    # The "always the strongest" baseline: the config's choice, else the first
+    # priced Claude model listed (the defaults list Opus 5.5 first). Not the
+    # priciest: Opus 5 costs more than the newer, stronger Opus 5.5, and
+    # measuring against it overstated the saving.
     anthropic_priced = [k for k, m in models.items() if m["lane"] == "anthropic" and m.get("prices")]
-    strongest = section.get("strongest") or max(
-        anthropic_priced, key=lambda k: models[k]["prices"]["output"], default=None)
+    strongest = section.get("strongest") or next(iter(anthropic_priced), None)
     return {"models": models, "strongest": strongest,
             "capture_prompts": bool(section.get("capture_prompts", False)),
             "router": {**DEFAULT_ROUTER, **(section.get("router") or {})},

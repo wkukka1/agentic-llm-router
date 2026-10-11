@@ -78,3 +78,11 @@ def test_follow_ups_that_need_their_conversation_are_not_graded():
              {"prompt_hash": "b", "prompt": "okay do it", "self_contained": False},
              {"prompt_hash": "c", "prompt": "captured live, unmarked"}]
     assert [t["prompt_hash"] for t in g.pending_turns(turns, [])] == ["a", "c"]
+
+
+def test_a_prompt_whose_grading_failed_entirely_is_tried_again():
+    turns = [{"prompt_hash": "a", "prompt": "x"}, {"prompt_hash": "b", "prompt": "y"}]
+    failed = [{"prompt_hash": "a", "model": m, "score": None, "error": "TimeoutExpired"} for m in ("o", "s")]
+    assert [t["prompt_hash"] for t in g.pending_turns(turns, failed)] == ["a", "b"]
+    scored = failed + [{"prompt_hash": "a", "model": "h", "score": 0.7}]
+    assert [t["prompt_hash"] for t in g.pending_turns(turns, scored)] == ["b"]

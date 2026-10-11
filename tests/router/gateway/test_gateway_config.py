@@ -16,7 +16,7 @@ def write(tmp_path, text):
 def test_defaults_without_a_config():
     s = load_settings(None)
     assert s["router"]["enabled"] is False
-    assert s["strongest"] == "claude-opus-5"  # the most expensive priced Claude model
+    assert s["strongest"] == "claude-opus-5-5"  # the first listed, not Opus 5, which costs more
     assert s["models"]["claude-haiku-4-5"]["prices"]["input"] == 1.0
 
 

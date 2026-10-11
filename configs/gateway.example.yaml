@@ -15,8 +15,9 @@ version: 1
 # or API key); `openai` models go to that provider with full tool translation.
 # ---------------------------------------------------------------------------
 interceptor:
-  # the "if you always used the strongest model" baseline on the dashboard
-  strongest: claude-opus-5
+  # the "if you always used the strongest model" baseline on the dashboard:
+  # the newest Opus, not the priciest (Opus 5 costs more than Opus 5.5)
+  strongest: claude-opus-5-5
 
   # Save the human's own message (and the folder Claude Code ran in) for each
   # new turn to ~/.aar-gateway/turns.jsonl, so `aar-gateway-grade` can replay
