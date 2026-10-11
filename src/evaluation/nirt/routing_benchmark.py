@@ -9,7 +9,7 @@ Every policy picks one model per query; it is graded on the REALIZED quality
 
 * router ``name``@lam   ``argmax_m  pred_quality[q, m] - lam * pred_cost[q, m]``
 * reference             a fixed column (GPT-4 by default)
-* oracle@lam            ``argmax_m  Y[q, m] - lam * C[q, m]``
+* oracle@lam            ``argmax_m  Y[q, m] - lam * C[q, m]``, ties to the cheapest model
 * oracle_best_quality   best realized score, ties to the cheapest model
 * oracle_match_reference  cheapest model scoring >= the reference on that query
 
@@ -75,19 +75,33 @@ def source_picks(Y: np.ndarray, C: np.ndarray, models: Sequence[str], reference:
     """``{policy: (realized_quality, realized_cost, picked_reference)}``, one entry
     per query, for every policy in the module docstring on one dense ``[Q, M]`` pool.
     ``routers`` maps a name to ``(pred_quality, pred_cost)``; ``pred_cost`` may be
-    ``[Q, M]`` or per-model ``[M]``."""
+    ``[Q, M]`` or per-model ``[M]``.
+
+    Every input must be finite and the pool non-empty (``ValueError`` otherwise):
+    ``routing_decision`` silently masks a non-finite cost only when ``lam > 0``, so
+    a missing ``C(m)`` would drop that model from every ``lam > 0`` row alone."""
     Y, C = np.asarray(Y, np.float64), np.asarray(C, np.float64)
+    if len(Y) == 0:
+        raise ValueError("source_picks: no queries in the pool")
+    arrays = {"Y": Y, "C": C} | {f"{n}.{part}": np.asarray(a, np.float64)
+                                 for n, (pq, pc) in routers.items()
+                                 for part, a in (("pred_quality", pq), ("pred_cost", pc))}
+    bad = [n for n, a in arrays.items() if not np.isfinite(a).all()]
+    if bad:
+        raise ValueError(f"source_picks: non-finite values in {bad}")
     qi, ri = np.arange(len(Y)), list(models).index(reference)
 
     def take(sel):
         return Y[qi, sel], C[qi, sel], sel == ri
 
-    best = Y.max(1, keepdims=True)
+    def cheapest_at_max(U):   # argmax U, ties to the cheapest model (not the first column)
+        return np.where(U >= U.max(1, keepdims=True) - _TIE, C, np.inf).argmin(1)
+
     picks = {"reference": take(np.full(len(Y), ri)),
-             "oracle_best_quality": take(np.where(Y >= best - _TIE, C, np.inf).argmin(1)),
+             "oracle_best_quality": take(cheapest_at_max(Y)),
              "oracle_match_reference": take(np.where(Y >= Y[:, [ri]] - _TIE, C, np.inf).argmin(1))}
     for lam in lams:
-        picks[f"oracle@{lam:g}"] = take(np.argmax(Y - lam * C, 1))
+        picks[f"oracle@{lam:g}"] = take(cheapest_at_max(Y - lam * C))
         for name, (pq, pc) in routers.items():
             picks[f"{name}@{lam:g}"] = take(routing_decision(pq, lam=lam, model_costs=pc))
     return picks
