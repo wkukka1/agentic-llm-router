@@ -415,6 +415,23 @@ def resolve_benchmarks(entry: Optional[dict], cfg: Optional[Config] = None) -> d
     return merge_benchmarks(openlm_rec, model_card_rec, benchlm_rec, hf_rec, manual_rec, arena_rec)
 
 
+def render_zero_shot_profile_text(cfg: Optional[Config], model_id: str,
+                                  entry: Optional[dict] = None) -> str:
+    """One model's profile text with no empirical addendum -- the shared
+    "describe a model with zero observations in this project's own data"
+    idiom, used both for live ad hoc routing
+    (``router.routing.model_profiles.embed_ad_hoc_profile``) and offline
+    zero-observation generalization eval
+    (``training.data.modern_pool_battles.modern_pool_profile_texts``).
+    ``entry`` is a curated ``configs/model_profiles.yaml`` entry, or ``None``
+    for a bare model id (falls back to :func:`render_profile_text`'s generic
+    templated sentence)."""
+    benchmarks = resolve_benchmarks(entry, cfg)
+    _, text, _ = render_profile_text(model_id, entry, {}, include_empirical=False,
+                                     benchmarks=benchmarks)
+    return text
+
+
 # --------------------------------------------------------------------------- #
 # build                                                                       #
 # --------------------------------------------------------------------------- #

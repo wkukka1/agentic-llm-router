@@ -133,6 +133,47 @@ def test_plan_routes_all_subprompts_in_one_batch():
     assert plan.estimated_cost == pytest.approx(0.03) and plan.status.value == "evaluated"
 
 
+def test_executed_step_meta_carries_the_full_score_comparison():
+    router = TextRouter()
+    agent = AgenticRouter(router, _clients(), decomposer=_decomposer(["a?", "b?", "c?"]))
+    orch = _orchestrator(agent)
+    res = orch.run(_task())
+    assert res.success
+    for sc in orch.subcalls:
+        assert sc.meta["step_scores"] == {"small": 0.7, "big": 0.9, "coder": 0.8}
+
+
+def test_plan_never_routes_a_subprompt_to_an_unregistered_model():
+    # TextRouter always scores big=0.9 > coder=0.8 > small=0.7; "big" is
+    # deliberately left unregistered, so every step must land on "coder",
+    # the best model the registry can actually serve.
+    router = TextRouter()
+    reg = ClientRegistry({m: LLMClient(CallableAdapter(m, lambda p, **kw: LLMResponse(f"{m} answers")))
+                          for m in ["small", "coder"]})
+    agent = AgenticRouter(router, reg, decomposer=_decomposer(["a?", "b?", "c?"]))
+    orch = _orchestrator(agent)
+    orch.task = _task()
+    plan = orch.plan(orch.task)
+    assert [s.model.model_id for s in plan.steps] == ["coder"] * 3
+
+
+def test_escalation_never_picks_an_unregistered_model():
+    # "big" out-scores "coder" (0.9 > 0.8) but is deliberately unregistered;
+    # when the planned step ("coder", the best REGISTERED model) fails, the
+    # escalation must not jump to the higher-scoring-but-unservable "big".
+    router = TextRouter()
+    reg = ClientRegistry({m: LLMClient(CallableAdapter(m, lambda p, **kw: LLMResponse(f"{m} answers")))
+                          for m in ["small", "coder"]})
+    agent = AgenticRouter(router, reg, decomposer=_decomposer(["a?"]))
+    orch = _orchestrator(agent)
+    orch.task = _task()
+    plan = orch.plan(orch.task)
+    step = plan.steps[0]
+    assert step.model.model_id == "coder"
+    model_id, outcome, _ = orch._escalation_pick(step)
+    assert (model_id, outcome) == ("small", "escalated")
+
+
 # --------------------------------------------------------------------------- #
 # execute / run                                                               #
 # --------------------------------------------------------------------------- #
@@ -177,6 +218,7 @@ def test_failed_step_is_replanned_onto_its_next_best_model():
     assert res.success
     assert [sc.model_id for sc in orch.subcalls] == ["coder", "coder"]
     assert orch.task.plan.revision == 1
+    assert "best untried: coder" in orch.subcalls[0].meta["escalation_reason"]
 
 
 def test_replan_does_not_rerun_succeeded_steps():
@@ -386,8 +428,20 @@ def _code_answers(m, p):
 
 def _plan_settings(**kw):
     from router.agentic.schemas import AgenticRouterSettings, load_settings
+    base = load_settings().model_dump()
+    plan_override = kw.pop("plan", {})
     return AgenticRouterSettings.model_validate(
-        {**load_settings().model_dump(), "orchestrator": "plan", "warmup": False, **kw})
+        {**base, "warmup": False, "plan": {**base["plan"], **plan_override}, **kw})
+
+
+@pytest.fixture
+def fake_chat_model(monkeypatch):
+    """from_settings now unconditionally builds a real chat model for
+    plan.model (decompose + judge + synthesize) -- stand in for it so these
+    settings-wiring tests need no langchain-ollama install or network."""
+    import router.llm.adapters.langchain_adapter as lca
+
+    monkeypatch.setattr(lca, "chat_model", lambda model, **kw: object())
 
 
 def test_late_routing_routes_a_dependent_step_on_its_context():
@@ -409,7 +463,7 @@ def test_without_late_routing_steps_keep_their_plan_time_model():
     assert orch.subcalls[1].model_id == "big"
 
 
-def test_route_late_setting_reaches_the_orchestrator():
+def test_route_late_setting_reaches_the_orchestrator(fake_chat_model):
     agent = AgenticRouter.from_settings(_plan_settings(plan={"route_late": True}), router=TextRouter())
     assert agent.orchestrator.route_late is True
 
@@ -419,11 +473,11 @@ def test_escalation_never_retries_a_tried_model_and_takes_the_closest_step_up():
     orch.task = _task()
     step = replace(orch.plan(orch.task).steps[0], model=orch._profile("small"))
     orch._scores[step.step_id] = {"small": 0.7, "big": 0.9, "coder": 0.8}
-    assert orch._escalation_pick(step) == ("coder", "escalated")   # .8 is the closest step up
+    assert orch._escalation_pick(step)[:2] == ("coder", "escalated")   # .8 is the closest step up
     orch._tried[step.step_id] = ["small", "coder"]
-    assert orch._escalation_pick(step) == ("big", "escalated")
+    assert orch._escalation_pick(step)[:2] == ("big", "escalated")
     orch._tried[step.step_id] = ["small", "coder", "big"]
-    assert orch._escalation_pick(step) == ("small", "exhausted")
+    assert orch._escalation_pick(step)[:2] == ("small", "exhausted")
 
 
 def test_escalation_prefers_the_cheapest_stronger_model():
@@ -432,7 +486,7 @@ def test_escalation_prefers_the_cheapest_stronger_model():
     orch.task = _task()
     step = replace(orch.plan(orch.task).steps[0], model=orch._profile("small"))
     orch._scores[step.step_id] = {"small": 0.7, "big": 0.9, "coder": 0.8}
-    assert orch._escalation_pick(step) == ("big", "escalated")
+    assert orch._escalation_pick(step)[:2] == ("big", "escalated")
 
 
 def test_step_failing_on_every_model_is_marked_exhausted():
@@ -554,16 +608,16 @@ def test_over_budget_repair_round_returns_the_best_answer_not_an_error():
     assert res.quality_check["best_round"] == 0
 
 
-def test_quality_check_setting_builds_a_routed_checker():
+def test_quality_check_builds_a_checker_unconditionally(fake_chat_model):
+    """The judge is mandatory now -- no quality_check.enabled toggle left to set."""
     from router.agentic.quality import QualityChecker
-    agent = AgenticRouter.from_settings(
-        _plan_settings(plan={"quality_check": {"enabled": True, "min_quality": 0.5}}), router=TextRouter())
+    agent = AgenticRouter.from_settings(_plan_settings(), router=TextRouter())
     assert isinstance(agent.orchestrator.checker, QualityChecker)
 
 
 def test_unknown_verify_prompt_is_rejected():
     with pytest.raises(ValueError, match="quality_check.prompt"):
-        _plan_settings(plan={"quality_check": {"enabled": True, "prompt": "nope"}})
+        _plan_settings(plan={"quality_check": {"prompt": "nope"}})
 
 
 def test_best_round_answer_comes_with_that_rounds_steps_and_all_spend_is_counted():
@@ -744,6 +798,73 @@ def test_llm_synthesizer_gets_the_derived_final_budget():
     assert kw == {"max_tokens": 1458}                                # 60% of the steps' combined budget
 
 
-def test_length_budgets_setting_reaches_the_orchestrator():
+def test_length_budgets_setting_reaches_the_orchestrator(fake_chat_model):
     agent = AgenticRouter.from_settings(_plan_settings(plan={"length_budgets": True}), router=TextRouter())
     assert agent.orchestrator.length_budgets is True
+
+
+# --------------------------------------------------------------------------- #
+# audit fixes (2026-10-08)                                                    #
+# --------------------------------------------------------------------------- #
+def test_unverified_repair_round_beats_a_known_failing_round():
+    checker = _ScriptedChecker(_fail(5, weak=[3]), QualityVerdict(False, status="error"))
+    agent = _planning_agent(THREE_STEP, orchestrator=plan_orchestrator(
+        checker=checker, limits=ExecutionLimits(max_replans=2)))
+    res = agent.run(COMPOUND)
+    assert res.quality_check["best_round"] == 1 and res.quality_check["status"] == "error"
+    assert res.answer == checker.seen[1][2]
+
+
+def _mergesort_fails_clients():
+    def make(m):
+        def fn(prompt, **kw):
+            if "Explain mergesort" in str(prompt):
+                raise RuntimeError(f"{m} cannot do mergesort")
+            return LLMResponse(f"{m} answers", cost=0.01, input_tokens=5, output_tokens=2)
+        return LLMClient(CallableAdapter(m, fn))
+    return ClientRegistry({m: make(m) for m in POOL})
+
+
+def test_failed_plan_synthesizes_only_the_answers_that_succeeded():
+    seen = []
+
+    def synth(original, pairs):
+        seen.append(pairs)
+        return "merged"
+
+    agent = _planning_agent(THREE_STEP, clients=_mergesort_fails_clients(), synthesizer=synth,
+                            orchestrator=plan_orchestrator(limits=ExecutionLimits(max_replans=1)))
+    res = agent.run(COMPOUND)
+    assert res.answer == "merged"
+    (pairs,) = seen
+    assert [task for task, _ in pairs] == ["Implement quicksort in Rust.",
+                                          "Analyse the Rust quicksort from step 1."]
+    assert all("[error" not in answer for _, answer in pairs)
+
+
+def test_failed_plan_with_no_successful_step_makes_no_synthesis_call():
+    seen = []
+    agent = _planning_agent(THREE_STEP, clients=_clients(fail=set(POOL)),
+                            synthesizer=lambda o, p: seen.append(p) or "merged",
+                            orchestrator=plan_orchestrator(limits=ExecutionLimits(max_replans=0)))
+    res = agent.run(COMPOUND)
+    assert seen == [] and res.answer.startswith("[error")
+
+
+class _CountingChecker(_ScriptedChecker):
+    """A scripted checker that, like QualityChecker, counts against max_calls."""
+
+    def __call__(self, original, steps, answer):
+        if self.on_call is not None:
+            self.on_call()
+        return super().__call__(original, steps, answer)
+
+
+def test_running_out_of_calls_in_a_repair_round_returns_the_best_answer():
+    checker = _CountingChecker(_fail(5, weak=[1]))
+    agent = _planning_agent(THREE_STEP, max_calls=7, orchestrator=plan_orchestrator(
+        checker=checker, limits=ExecutionLimits(max_replans=2)))
+    res = agent.run(COMPOUND)                    # 1 plan + 3 steps + 1 check, then 2 re-runs: the 2nd check is call 8
+    assert res.answer == checker.seen[0][2]
+    assert res.quality_check["stopped_early"] == "max_calls"
+    assert res.quality_check["passed"] is False

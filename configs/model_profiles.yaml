@@ -253,7 +253,7 @@ profiles:
       agentic and coding workloads.
     context_window: 200000
     release: "2025-05"
-    benchlm_slug: "claude-4-sonnet"   # benchlm.ai/models/claude-4-sonnet, overall 38.45
+    benchlm_slug: "claude-4-sonnet"   # benchlm.ai/models/claude-4-sonnet, overall 38.49
     strengths:
       - "Strong coding performance for its cost tier (SWE-bench Verified 72.7%, BenchLM)"
       - "Large 200K context window"

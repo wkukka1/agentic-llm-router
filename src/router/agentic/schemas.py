@@ -13,10 +13,10 @@ before anything is built::
     agent = AgenticRouter.from_settings(settings)    # or from_settings("path.yaml")
 
 **Settings.** One model per helper (:class:`TriageSettings`,
-:class:`DecomposerSettings`, :class:`SynthesizerSettings`), one per
-orchestrator option (:class:`PlanSettings`, :class:`ToolAgentSettings`), and
-the root :class:`AgenticRouterSettings`. All forbid unknown keys, so a
-misspelled setting is an error rather than a silently ignored default.
+:class:`DecomposerSettings`, :class:`SynthesizerSettings`), one for the
+orchestrator (:class:`PlanSettings`), and the root
+:class:`AgenticRouterSettings`. All forbid unknown keys, so a misspelled
+setting is an error rather than a silently ignored default.
 
 **Prompts** are plain ``str.format`` templates, ``{name: template}`` under the
 file's ``prompts`` section -- the single copy of every prompt the LLM helpers
@@ -39,7 +39,6 @@ __all__ = [
     "DecomposerSettings",
     "SynthesizerSettings",
     "PlanSettings",
-    "ToolAgentSettings",
     "AgenticRouterSettings",
     "load_settings",
     "default_prompts",
@@ -66,47 +65,50 @@ class TriageSettings(BaseModel):
 
 
 class DecomposerSettings(BaseModel):
+    """Structural knobs for the plan orchestrator's ``NaiveDecomposer`` fallback
+    (used only when the shared LLM call itself fails or the prompt is too
+    long -- see ``LLMDecomposer``'s ``fallback=``) -- decomposition itself is
+    always LLM-driven via ``plan.model``."""
+
     model_config = _STRICT
 
-    #: routed: run on the cheapest pool model whose predicted quality >= min_quality
-    kind: Literal["naive", "llm", "routed"] = "naive"
     max_parts: int = Field(6, gt=0)
     min_part_chars: int = Field(8, ge=0)
     max_prompt_chars: int = Field(4000, gt=0)
-    prompt: str = "decompose"
-    model: Optional[str] = None
-    min_quality: float = Field(0.75, ge=0.0, le=1.0)
 
 
 class SynthesizerSettings(BaseModel):
     model_config = _STRICT
 
-    #: routed: as on DecomposerSettings
-    kind: Literal["concat", "llm", "routed"] = "concat"
     max_body_chars: int = Field(8000, gt=0)
     prompt: str = "synthesize"
-    model: Optional[str] = None
-    min_quality: float = Field(0.75, ge=0.0, le=1.0)
 
 
 class QualityCheckSettings(BaseModel):
-    """The plan orchestrator's final quality check (``router.agentic.quality``)."""
+    """The plan orchestrator's final quality check (``router.agentic.quality``);
+    always on -- see :class:`PlanSettings`."""
 
     model_config = _STRICT
 
-    enabled: bool = False
-    #: the judge = cheapest pool model predicted >= this for the request
-    min_quality: float = Field(0.8, ge=0.0, le=1.0)
     #: a PASS verdict also needs SCORE >= this (0-10)
     pass_score: float = Field(7.0, ge=0.0, le=10.0)
     prompt: str = "verify"
 
 
 class PlanSettings(BaseModel):
-    """The plan orchestrator (``router.execution.routed.plan_orchestrator``)."""
+    """The one orchestrator (``router.execution.routed.plan_orchestrator``).
+
+    ``model``/``provider`` is the one chat model that drives decomposition,
+    judging, and synthesis -- a single shared dependency, not three
+    independently-configured ones. ``provider`` is forwarded to
+    ``chat_model(provider=...)`` for ids ``guess_provider`` can't identify
+    (e.g. a local Ollama tag like ``"deepseek-llm:7b-chat"``)."""
 
     model_config = _STRICT
 
+    #: chat model id driving decompose + judge + synthesize (required)
+    model: str
+    provider: Optional[str] = None
     budget: Optional[float] = Field(None, gt=0.0)        # USD per request; None = unlimited
     max_workers: int = Field(4, gt=0)
     sequential: bool = False
@@ -119,16 +121,6 @@ class PlanSettings(BaseModel):
     #: a length line in the prompt plus a generous max_tokens safety cut-off
     length_budgets: bool = False
     quality_check: QualityCheckSettings = Field(default_factory=QualityCheckSettings)
-
-
-class ToolAgentSettings(BaseModel):
-    """The LangChain tool-calling orchestrator."""
-
-    model_config = _STRICT
-
-    model: Optional[str] = None
-    max_iterations: int = Field(8, gt=0)
-    prompt: str = "tool_agent_system"
 
 
 class AgenticRouterSettings(BaseModel):
@@ -150,9 +142,7 @@ class AgenticRouterSettings(BaseModel):
     triage: TriageSettings = Field(default_factory=TriageSettings)
     decomposer: DecomposerSettings = Field(default_factory=DecomposerSettings)
     synthesizer: SynthesizerSettings = Field(default_factory=SynthesizerSettings)
-    orchestrator: Literal["recursive", "plan", "tool_agent"] = "recursive"
     plan: PlanSettings = Field(default_factory=PlanSettings)
-    tool_agent: ToolAgentSettings = Field(default_factory=ToolAgentSettings)
 
     @model_validator(mode="before")
     @classmethod
@@ -165,21 +155,19 @@ class AgenticRouterSettings(BaseModel):
     @model_validator(mode="after")
     def _references_resolve(self) -> "AgenticRouterSettings":
         """Every prompt a helper names exists, and every LLM-backed helper has a model."""
-        uses = [("triage", self.triage), ("decomposer", self.decomposer),
-                ("synthesizer", self.synthesizer), ("tool_agent", self.tool_agent)]
-        for section, s in uses:
-            if s.prompt not in self.prompts:
-                raise ValueError(f"{section}.prompt: no prompt {s.prompt!r}; "
-                                 f"known: {sorted(self.prompts)}")
-            if getattr(s, "kind", None) == "llm" and not s.model:
-                raise ValueError(f"{section}.kind is 'llm' but {section}.model is not set")
-        if self.orchestrator == "tool_agent" and not self.tool_agent.model:
-            raise ValueError("orchestrator is 'tool_agent' but tool_agent.model is not set")
-        if self.orchestrator == "plan" and self.plan.planner_prompt not in self.prompts:
+        if self.triage.prompt not in self.prompts:
+            raise ValueError(f"triage.prompt: no prompt {self.triage.prompt!r}; "
+                             f"known: {sorted(self.prompts)}")
+        if self.triage.kind == "llm" and not self.triage.model:
+            raise ValueError("triage.kind is 'llm' but triage.model is not set")
+        if self.synthesizer.prompt not in self.prompts:
+            raise ValueError(f"synthesizer.prompt: no prompt {self.synthesizer.prompt!r}; "
+                             f"known: {sorted(self.prompts)}")
+        if self.plan.planner_prompt not in self.prompts:
             raise ValueError(f"plan.planner_prompt: no prompt {self.plan.planner_prompt!r}; "
                              f"known: {sorted(self.prompts)}")
         q = self.plan.quality_check
-        if self.orchestrator == "plan" and q.enabled and q.prompt not in self.prompts:
+        if q.prompt not in self.prompts:
             raise ValueError(f"plan.quality_check.prompt: no prompt {q.prompt!r}; "
                              f"known: {sorted(self.prompts)}")
         return self

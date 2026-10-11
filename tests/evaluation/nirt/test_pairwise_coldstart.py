@@ -198,6 +198,22 @@ def test_e1_both_warm_mode_scores_warm_vs_warm_battles(world):
     assert result["per_model"]["warm0"]["prediction"]["n"] == 2
 
 
+def test_battles_with_no_query_embedding_are_dropped_not_crashed(world):
+    """Real-world battles routinely reference a query_id absent from the
+    query embedding store (the pairwise/correctness query spaces are built
+    separately) -- these must be dropped, not raise, mirroring
+    training.nirt.pairwise.build_pairwise_arrays's own n_dropped handling."""
+    model, run_cfg, data = world
+    # add one more battle for cold0 whose query_id was never embedded
+    extra = _battles([("q-not-embedded", "cold0", "warm0", 1.0, "chatbot_arena")])
+    data._battles = pd.concat([data._battles, extra], ignore_index=True)
+    result = pairwise_cold_start_eval(model, run_cfg, data, target_models=["cold0"],
+                                      sources=("chatbot_arena",))
+    # still exactly the 3 embeddable battles -- the unembeddable one is dropped
+    assert result["per_model"]["cold0"]["prediction"]["n"] == 3
+    assert result["per_model"]["cold0"]["n_dropped"] == 1
+
+
 def test_require_warm_opponent_excludes_cold_vs_cold_rows():
     """With require_warm_opponent=True (the E2+ default), a battle between two
     cold models contributes to neither side -- baselines assume a warm

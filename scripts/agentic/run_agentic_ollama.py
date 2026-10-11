@@ -16,10 +16,13 @@ Two parts:
   ``run_agentic_nirt.py`` uses) over its actual pool. ``deepseek_chat`` and
   ``deepseek_coder`` -- real ids in that pool (configs/serve_anthropic.yaml's
   ``pool:`` map) -- are served locally through Ollama; every other pool id
-  the router might pick instead still falls back to ``ClientRegistry``'s
-  echo placeholder. This is a genuine routing decision, live-backed only
+  the router might pick instead has no registered client, so ``ClientRegistry``
+  raises rather than silently answering with an echo placeholder (see
+  CLIENTREGISTRY-001). This is a genuine routing decision, live-backed only
   when it happens to land on one of the two mapped ids -- the prompt below
-  is code-flavored to make that more likely, not to force it. The local
+  is code-flavored to make that more likely, not to force it; a full-coverage
+  fix (every pool id resolving to a real local model) is a separate, not yet
+  built project. The local
   models are NOT the same checkpoints RouterBench scored (deepseek-llm:7b-chat
   / deepseek-coder:1.3b vs. DeepSeek's ~2024 hosted deepseek_chat / coder
   API models) -- closest locally-runnable approximations only.
@@ -37,6 +40,9 @@ Two parts:
 """
 
 from __future__ import annotations
+
+import re
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -62,17 +68,24 @@ ORCHESTRATE_PROMPT = (
 )
 
 
+def _debug_path(label: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")
+    return f"debug_traces/{slug}.txt"
+
+
 def show(label: str, prompt: str, agent: AgenticRouter, *, alpha: float | None = None) -> None:
     print(f"\n{'=' * 70}\n{label}\n{'=' * 70}")
     print(f"prompt: {prompt!r}")
-    result = agent.run(prompt, alpha=alpha)
+    debug_path = _debug_path(label)
+    result = agent.run(prompt, alpha=alpha, debug=debug_path)
+    print(f"debug_trace:        {Path(debug_path).resolve()}")
     print(f"mode:               {result.mode}")
     print(f"triage_reason:      {result.triage_reason}")
     print(f"selected_model_id:  {result.selected_model_id}")
     print(f"predicted_quality:  {result.predicted_quality:.3f}")
     print(f"models_used:        {result.models_used()}")
     print(f"cost:               {result.cost}")
-    print(f"answer:             {result.answer[:500]}")
+    print(f"answer ({len(result.answer)} chars): {result.answer}")
 
 
 # --------------------------------------------------------------------------- #
@@ -90,52 +103,6 @@ def part_a() -> None:
 
     agent = AgenticRouter(router=router, clients=clients)
     show("PART A: real nirt-2d-projected router (deepseek -> local Ollama)", CODE_PROMPT, agent)
-
-
-# --------------------------------------------------------------------------- #
-# Part B -- illustrative stand-in router, five real small local models      #
-# --------------------------------------------------------------------------- #
-class _LocalPool(RouterModel):
-    """Not a trained scorer -- no NIRT checkpoint exists for this pool. Scores
-    are a fixed, deterministic heuristic (bigger model => higher illustrative
-    quality) purely to give the demo something to route and trade off."""
-
-    kind = "local_ollama_demo"
-    can_route_text = True
-
-    #: Ollama tag -> (illustrative quality in [0, 1], illustrative USD/call cost)
-    _POOL = {
-        "qwen2.5:0.5b":   (0.55, 0.00002),
-        "smollm2:1.7b":   (0.62, 0.00006),
-        "qwen2.5:1.5b":   (0.66, 0.00006),
-        "phi3.5":         (0.74, 0.00015),
-        "qwen2.5:3b":     (0.78, 0.00012),
-    }
-
-    def __init__(self):
-        super().__init__(list(self._POOL))
-
-    @property
-    def default_model_costs(self) -> np.ndarray:
-        return np.array([self._POOL[m][1] for m in self._model_ids])
-
-    def _score_row(self) -> dict[str, float]:
-        return {m: self._POOL[m][0] for m in self._model_ids}
-
-    def predict_scores(self, query_ids) -> pd.DataFrame:
-        row = self._score_row()
-        return pd.DataFrame([row for _ in query_ids], index=[str(q) for q in query_ids])
-
-    def predict_scores_text(self, texts, *, encoder=None) -> pd.DataFrame:
-        row = self._score_row()
-        return pd.DataFrame([row for _ in texts])
-
-
-def part_b() -> None:
-    clients = ClientRegistry.ollama(list(_LocalPool._POOL), host=OLLAMA_HOST)
-    agent = AgenticRouter(router=_LocalPool(), clients=clients)
-    print(repr(agent))
-
     show("PART B: single-shot over the local pool", SINGLE_PROMPT, agent)
     show("PART B: orchestrated over the local pool", ORCHESTRATE_PROMPT, agent)
     show("PART B: alpha=1.0 (quality-first)", ORCHESTRATE_PROMPT, agent, alpha=1.0)
@@ -144,7 +111,6 @@ def part_b() -> None:
 
 def main() -> None:
     part_a()
-    part_b()
 
 
 if __name__ == "__main__":

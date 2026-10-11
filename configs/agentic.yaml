@@ -12,7 +12,6 @@
 #   plan              {prompt}
 #   verify            {original} {steps} {answer}
 #   synthesize        {original} {body}
-#   tool_agent_system (none -- write literal braces as {{ }})
 
 prompts:
   triage: |-
@@ -100,9 +99,6 @@ prompts:
 
     Write a single, coherent final answer to the original request using the sub-answers above. Do not mention that the work was split up.
 
-  tool_agent_system: |-
-    You are an orchestrator for an LLM router. Break the user's request into sub-tasks and solve each with the tools. Prefer `route_and_answer` so the router picks the model for each sub-task; use `route_query` first if you want to inspect the choice. Combine the results into one final answer. Do not answer from your own knowledge.
-
 router:
   run: nirt-2d-projected          # data/processed/nirt_runs/<run>
   clients: echo                   # echo (no network) | anthropic (serve_map) | langchain
@@ -122,38 +118,24 @@ router:
     model: null                   # llm only: chat model id, e.g. claude-haiku-4-5
 
   decomposer:
-    kind: naive                   # naive | llm (fixed model) | routed (pool model, see min_quality)
     max_parts: 6
-    min_part_chars: 8
+    min_part_chars: 8              # NaiveDecomposer fallback only, see plan.model below
     max_prompt_chars: 4000
-    prompt: decompose
-    model: null                   # llm only
-    min_quality: 0.75             # routed only: cheapest pool model predicted >= this; else the top-scored
 
   synthesizer:
-    kind: concat                  # concat | llm (fixed model) | routed (pool model, see min_quality)
     max_body_chars: 8000
     prompt: synthesize
-    model: null                   # llm only
-    min_quality: 0.75             # routed only, as above
 
-  orchestrator: recursive         # recursive | plan | tool_agent
-
-  plan:                           # used when orchestrator: plan
+  plan:                            # the one orchestrator: decompose -> execute -> judge -> repair/stop -> synthesize
+    model: deepseek-llm:7b-chat    # chat model driving decompose + judge + synthesize; local Ollama tag (see scripts/agentic/run_agentic_ollama.py)
+    provider: ollama                # forwarded to chat_model(provider=...); guess_provider can't identify Ollama tags
     budget: null                  # USD per request (null = unlimited)
     max_workers: 4
     sequential: false
     max_replans: 2                # repair rounds after a failed step or quality check
     route_late: true              # route each step on its prompt + dependency results
     length_budgets: true          # per-step [A-B words, max C] from the planner -> length line + 2x max_tokens safety cap
-    planner_prompt: plan          # numbered steps with [after N] dependencies (LLM decomposers)
-    quality_check:
-      enabled: true               # judge the synthesized answer; repair weak steps / add follow-ups
-      min_quality: 0.8            # judge = cheapest pool model predicted >= this
+    planner_prompt: plan          # numbered steps with [after N] dependencies
+    quality_check:                # always on -- judges the synthesized answer; repairs weak steps / adds follow-ups
       pass_score: 7               # PASS also needs SCORE >= this (0-10)
       prompt: verify
-
-  tool_agent:                     # used when orchestrator: tool_agent
-    model: null                   # chat model id driving the agent (required)
-    max_iterations: 8
-    prompt: tool_agent_system

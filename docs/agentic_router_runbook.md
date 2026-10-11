@@ -375,8 +375,8 @@ its final attempt; the failed attempt's spend is in that plan revision's
 
 ```bash
 python scripts/agentic/build_multiturn_set.py                     # once: 200 held-out Arena conversations -> data/eval/
-python scripts/agentic/latency_bench.py --limit 60                # echo clients, recursive orchestrator
-python scripts/agentic/latency_bench.py --limit 60 --orchestrator plan --stream
+python scripts/agentic/latency_bench.py --limit 60                # echo clients, plan orchestrator
+python scripts/agentic/latency_bench.py --limit 60 --stream
 python scripts/agentic/latency_bench.py --limit 5 --anthropic --stream    # live Claude: costs money
 ```
 
@@ -416,8 +416,9 @@ lint-imports                            # the router must not import training/ev
 | `ValueError: AnthropicAdapter needs max_tokens` | No `max_tokens` from the call or the serve map | Set `max_tokens` in `serve_anthropic.yaml` or per call |
 | `KeyError: pool model 'x' has no tier in the serve map` | Pool id not mapped and `default_tier` is null | Add it under `pool:` or set `default_tier` |
 | `RuntimeError: <model> refused the request` | Claude declined (`stop_reason: refusal`) | Expected for some content; inside an orchestration it becomes a failed sub-call |
+| `RuntimeError: <model> returned no answer (empty response)` | The adapter call succeeded but came back with blank content | Treated as a failure (raises at the root, a failed sub-call inside an orchestration) -- a blank response is never read as success |
 | Answers look like `[answer::model] ...` | Echo clients (the default) | Pass real `clients=` (§4.4) |
-| `UserWarning: no client registered for model ...; answering with an echo placeholder` | Real clients given, but not for every pool id | Register every id in `router.model_ids`, or use `ClientRegistry.anthropic` / `.langchain` |
+| `LookupError: no client registered for model ...; refusing to answer with an echo placeholder` | Real clients given, but not for every pool id | Register every id in `router.model_ids`, or use `ClientRegistry.anthropic` / `.langchain` |
 | No rows in `data/runs/agentic_runs.sqlite` | No `result_sink=`, or the process exited before the background write ran | Pass `result_sink=sqlite_sink()`; on shutdown, writes already queued finish first if the process exits normally |
 | Cache reads stay 0 on Claude | Prompt below the model's minimum cacheable length (512–4096 tokens) | Expected for short chats; longer conversations cache from turn 2 |
 

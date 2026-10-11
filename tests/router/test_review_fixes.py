@@ -262,17 +262,14 @@ def _costed(model_ids):
                            for m in model_ids})
 
 
-def test_nested_orchestration_counts_each_leaf_once():
-    """RA-01"""
-    splits = {"root": ["sub one here", "sub two here"], "sub one here": ["leaf a here", "leaf b here"]}
-    agent = AgenticRouter(
-        _TextRouter([0.9, 0.9, 0.9]), _costed(POOL), max_depth=2,
-        triage=lambda p, **kw: TriageDecision("orchestrate", kw["model_id"], 0.1, "forced", kw.get("scores", {})),
-        decomposer=lambda p: splits.get(p, [p]),
-    )
-    res = agent.run("root")
-    assert sum(1 for s in res.steps for _ in s.leaves()) == 3
-    assert res.cost == pytest.approx(3.0)
+# RA-01 ("nested orchestration counts each leaf once") tested AgenticResult's
+# leaf-counting/total_cost under a nested SubCall tree (parent step with
+# children, each possibly with children of its own) -- only reachable via
+# RecursiveOrchestrator's recursive agent._solve() re-decomposition, now
+# removed (the one surviving orchestrator, RoutedOrchestrator, plans every
+# step as a leaf up front; see routed.py's module docstring). SubCall.leaves()/
+# total_cost() themselves are unchanged and still correct for a nested tree,
+# should one ever exist again -- there's just no live path that builds one.
 
 
 def test_nan_quality_is_not_strong():
@@ -414,12 +411,12 @@ def test_commit_within_total_does_not_warn_and_reports_no_overspend():
     assert ledger.overspent == 0.0
 
 
-def test_register_then_unknown_id_still_warns():
-    """CLIENTREGISTRY-001: the echo-fallback warning must fire whether real
+def test_register_then_unknown_id_still_raises():
+    """CLIENTREGISTRY-001: the echo-fallback error must fire whether real
     clients arrived via the constructor or via register()."""
     reg = ClientRegistry()
     reg.register("real-model", LLMClient(CallableAdapter("real-model", lambda p: p)))
-    with pytest.warns(UserWarning, match="echo"):
+    with pytest.raises(LookupError, match="echo"):
         reg.get("unregistered-model")
 
 

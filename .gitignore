@@ -20,6 +20,9 @@ routerbench/
 # Phase 1 training runs / plots — reproducible from scripts
 artifacts/
 
+# AgenticRouter.run(..., debug=...) trace dumps
+debug_traces/
+
 # keep curated, human-editable taxonomy files under version control
 !data/taxonomy/candidate_abilities.yaml
 !data/taxonomy/final_taxonomy.yaml

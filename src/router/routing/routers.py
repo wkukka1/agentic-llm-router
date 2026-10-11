@@ -394,33 +394,141 @@ class NIRTRouter(RouterModel):
 
     def _score_embeddings(self, e_q: np.ndarray) -> pd.DataFrame:
         """Forward the NIRT model over a raw ``[N, d]`` query-embedding batch ->
-        ``[N x model_id]`` predicted ``P(correct)``.
+        ``[N x model_id]`` predicted ``P(correct)``, against this run's own
+        trained pool (:attr:`model_ids`). See :meth:`_forward_pool` for the
+        pure forward-pass math this wraps."""
+        e_q = np.ascontiguousarray(e_q, dtype=np.float32)
+        want = int(getattr(self._model, "query_dim", e_q.shape[1]))
+        if e_q.shape[1] != want:
+            e_q = self._pad_query_features(e_q, want)
+        refs, pool_ref = self._pool_refs()
+        prob = self._forward_pool(e_q, refs, pool_ref)
+        return pd.DataFrame(prob, columns=self._model_ids)
+
+    def _forward_pool(self, e_q: np.ndarray, refs: np.ndarray,
+                      pool_ref: Optional[np.ndarray]) -> np.ndarray:
+        """Forward an already-padded ``[N, d]`` query-embedding batch against
+        every row of ``refs`` -> ``[N, M]`` predicted ``P(correct)``.
+
+        ``refs`` is the ``[M, p]`` profile matrix for a projected run (not
+        necessarily this run's own trained pool -- see
+        :meth:`resolve_pool_profile_matrix`) or the ``[M]`` model-index vector
+        for a free one; ``pool_ref`` is the projected-mode centring reference
+        (``None`` for free mode).
 
         One forward pass over the ``N x M`` grid (model-major: every query
         against model 0, then model 1, ...), not one pass per pool model -- the
         model scores each row independently, and projected-mode centring uses
-        the fixed pool reference, so this matches the per-model loop exactly."""
+        a fixed pool reference, so this matches a per-model loop exactly."""
         import torch
 
         from ..nirt.predict import pool_centering
 
         model = self._model
-        n, m_count = len(e_q), len(self._model_ids)
-        e_q = np.ascontiguousarray(e_q, dtype=np.float32)
-        want = int(getattr(model, "query_dim", e_q.shape[1]))
-        if e_q.shape[1] != want:
-            e_q = self._pad_query_features(e_q, want)
-
-        refs, pool_ref = self._pool_refs()
+        n, m_count = len(e_q), len(refs)
         q = torch.from_numpy(np.tile(e_q, (m_count, 1)))             # [M*N, d]
         if model.model_params == "projected":
+            refs = np.ascontiguousarray(refs, dtype=np.float32)
             ref = torch.from_numpy(np.repeat(refs, n, axis=0))      # [M*N, p]
         else:
             ref = torch.from_numpy(np.repeat(refs, n))              # [M*N] model index
         model.eval()
         with torch.no_grad(), pool_centering(model, pool_ref):
             prob = torch.sigmoid(model(q, ref)).cpu().numpy().astype(np.float64)
-        return pd.DataFrame(prob.reshape(m_count, n).T, columns=self._model_ids)
+        return prob.reshape(m_count, n).T
+
+    def resolve_pool_profile_matrix(
+        self, pool_ids: Sequence[str], *, profiles: Optional[dict[str, dict]] = None,
+        impute_unknown: bool = False, knn_k: int = 10, knn_weighting: str = "similarity",
+        profile_encoder=None,
+    ) -> np.ndarray:
+        """``[len(pool_ids), p]`` profile-embedding matrix for an ARBITRARY
+        pool -- not just this run's trained :attr:`model_ids`. Each row comes
+        from, in order:
+
+        1. the already-built profile embedding store, if ``mid`` is in it;
+        2. else a caller-supplied (``profiles[mid]``) or curated
+           (``configs/model_profiles.yaml``) entry, rendered + embedded on the
+           fly (:mod:`router.routing.model_profiles`) -- ``None`` if neither
+           exists, which still renders a generic templated profile;
+        3. if ``impute_unknown`` and ``mid`` is not part of this run's own
+           trained pool (no training observations either way), that vector is
+           additionally kNN-blended toward the trained pool's nearest
+           profiles (see :func:`router.routing.model_profiles.impute_unknown_profile`
+           for the caveat this carries).
+
+        Projected mode only: a 'free' run's model-side params are a
+        transductive per-model table, not a function of ``e_m``, so there is
+        nothing to project an unseen model onto -- this generalizes the same
+        guard :meth:`_pool_refs` raises for a single missing id.
+
+        ``profile_encoder`` overrides the encoder used to embed an ad hoc
+        profile's rendered text (default: this run's own ``pathway`` encoder,
+        lazily resolved/cached like :meth:`predict_scores_text`'s ``encoder``
+        -- pass an explicit one in tests to avoid loading a real model).
+        """
+        if self._model.model_params != "projected":
+            raise ValueError(
+                f"{self.name}: resolve_pool_profile_matrix needs a 'projected' NIRT "
+                f"run (cold-start capable); this run is model_params='free'"
+            )
+        from . import model_profiles
+
+        m_store = self._store("profile", self._pathway)
+        if m_store is None:
+            raise FileNotFoundError(
+                f"NIRTRouter: profile embeddings for pathway {self._pathway!r} not built"
+            )
+        cfg = getattr(self._data, "cfg", None)
+        trained = set(self._model_ids)
+        encoder = profile_encoder
+        rows = []
+        for mid in pool_ids:
+            mid = str(mid)
+            if mid in m_store:
+                vec = np.asarray(m_store.get(mid), dtype=np.float32)
+            else:
+                if encoder is None:
+                    encoder = _resolve_encoder(self._data, self._pathway, cache=self._encoder_cache)
+                entry = (profiles or {}).get(mid)
+                if entry is None and cfg is not None:
+                    entry = model_profiles.lookup_curated_entry(cfg, mid)
+                vec = model_profiles.embed_ad_hoc_profile(mid, entry, encoder, cfg=cfg)
+            if impute_unknown and mid not in trained:
+                vec, _found = model_profiles.impute_unknown_profile(
+                    vec, m_store, self._model_ids, k=knn_k, weighting=knn_weighting,
+                )
+            rows.append(vec)
+        return np.stack(rows).astype(np.float32)
+
+    def predict_pool_scores_text(
+        self, texts: Sequence[str], pool_ids: Sequence[str], *,
+        profiles: Optional[dict[str, dict]] = None, impute_unknown: bool = False,
+        knn_k: int = 10, knn_weighting: str = "similarity", encoder=None,
+        profile_encoder=None,
+    ) -> pd.DataFrame:
+        """:meth:`predict_scores_text`, but against ``pool_ids`` instead of
+        this run's own trained :attr:`model_ids` -- see
+        :meth:`resolve_pool_profile_matrix` for how each pool id's profile is
+        resolved (``profile_encoder`` is forwarded there). The broadened pool
+        is centred on itself (``pool_ref == refs``), matching
+        :func:`router.nirt.predict.predict_dataset`'s own projected-mode
+        centring semantics (the dataset's whole model pool, not a fixed
+        trained-only reference)."""
+        e_q = _encode_texts(
+            self._data, texts, self._query_pathway,
+            fallback_pathway=self._pathway, encoder=encoder, cache=self._encoder_cache,
+        )
+        e_q = np.ascontiguousarray(e_q, dtype=np.float32)
+        want = int(getattr(self._model, "query_dim", e_q.shape[1]))
+        if e_q.shape[1] != want:
+            e_q = self._pad_query_features(e_q, want)
+        mat = self.resolve_pool_profile_matrix(
+            pool_ids, profiles=profiles, impute_unknown=impute_unknown,
+            knn_k=knn_k, knn_weighting=knn_weighting, profile_encoder=profile_encoder,
+        )
+        prob = self._forward_pool(e_q, mat, mat)
+        return pd.DataFrame(prob, columns=[str(m) for m in pool_ids])
 
     def _pool_refs(self) -> tuple[np.ndarray, Optional[np.ndarray]]:
         """``(per-model reference, pool centring reference)``, built once per

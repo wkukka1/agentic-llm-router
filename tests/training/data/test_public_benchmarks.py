@@ -24,13 +24,18 @@ from training.data.public_benchmarks import (
 # pure record builders                                                       #
 # --------------------------------------------------------------------------- #
 def test_hf_leaderboard_record_keeps_only_present_benchmark_columns():
-    row = {"fullname": "mistralai/Mixtral-8x7B-Instruct-v0.1", "MMLU": 70.6, "GSM8K": 74.4,
-           "HellaSwag": None}
+    """Column names verified against a live download of
+    open-llm-leaderboard/contents (2026-10-07): the dataset's current
+    benchmark suite is v3 (IFEval/BBH/MATH Lvl 5/GPQA/MUSR/MMLU-PRO) -- it
+    has no MMLU/GSM8K/ARC/HellaSwag/TruthfulQA/Winogrande columns at all
+    (that was a v1-era assumption that never matched the live schema)."""
+    row = {"fullname": "mistralai/Mixtral-8x7B-Instruct-v0.1", "IFEval": 55.99, "BBH": 29.74,
+           "GPQA": None}
     rec = hf_leaderboard_record(row)
-    assert rec["mmlu"] == {"value": 70.6, "unit": "percent", "source": "hf_open_llm_leaderboard",
-                            "version": "v1", "snapshot_date": None}
-    assert rec["gsm8k"]["value"] == 74.4
-    assert "hellaswag" not in rec  # null column dropped, not fabricated as 0
+    assert rec["ifeval"] == {"value": 55.99, "unit": "percent", "source": "hf_open_llm_leaderboard",
+                              "version": "v3", "snapshot_date": None}
+    assert rec["bbh"]["value"] == 29.74
+    assert "gpqa" not in rec  # null column dropped, not fabricated as 0
 
 
 def test_hf_leaderboard_record_empty_when_no_known_columns():
@@ -117,20 +122,20 @@ def test_merge_benchmarks_all_none_is_empty_dict():
 # --------------------------------------------------------------------------- #
 def test_lookup_hf_leaderboard_finds_known_repo_id(tmp_path):
     table = [
-        {"fullname": "mistralai/Mixtral-8x7B-Instruct-v0.1", "MMLU": 70.6, "GSM8K": 74.4},
-        {"fullname": "some/other-model", "MMLU": 50.0},
+        {"fullname": "mistralai/Mixtral-8x7B-Instruct-v0.1", "IFEval": 55.99, "BBH": 29.74},
+        {"fullname": "some/other-model", "IFEval": 50.0},
     ]
     path = tmp_path / "contents.json"
     path.write_text(json.dumps(table), encoding="utf-8")
 
     rec = lookup_hf_leaderboard("mistralai/Mixtral-8x7B-Instruct-v0.1", table_path=path)
-    assert rec["mmlu"]["value"] == 70.6
-    assert rec["gsm8k"]["value"] == 74.4
+    assert rec["ifeval"]["value"] == 55.99
+    assert rec["bbh"]["value"] == 29.74
 
 
 def test_lookup_hf_leaderboard_returns_none_for_unknown_repo_id(tmp_path):
     path = tmp_path / "contents.json"
-    path.write_text(json.dumps([{"fullname": "some/other-model", "MMLU": 50.0}]), encoding="utf-8")
+    path.write_text(json.dumps([{"fullname": "some/other-model", "IFEval": 50.0}]), encoding="utf-8")
 
     assert lookup_hf_leaderboard("anthropic/claude-2.0", table_path=path) is None
 

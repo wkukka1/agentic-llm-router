@@ -155,7 +155,8 @@ def parse_plan_lines(text: str, *, max_parts: int = 8,
     earlier lines whose results it needs, and/or -- in either order -- a
     length budget ``[A-B words, max C]`` (sorted into order and clamped to
     ``MIN_WORDS..MAX_WORDS``). ``N`` is the number the model gave that line
-    (``"2. ..."``), else its position among the kept lines.
+    (``"2. ..."``), else its position among the kept lines. When any line is
+    numbered, unnumbered lines are commentary and are dropped.
     Malformed references never invalidate the plan: a reference to an unknown,
     later or the same line is dropped, and one to a dropped repeat points at
     the line it repeated.
@@ -166,8 +167,14 @@ def parse_plan_lines(text: str, *, max_parts: int = 8,
     kept: list[tuple[str, list[int], Optional[Budget]]] = []
     label_to_pos: dict[int, int] = {}
     key_to_pos: dict[str, int] = {}
-    for ln in text.splitlines():
+    lines = text.splitlines()
+    # in a numbered plan an unnumbered line is commentary ("Sure, here is the
+    # plan", "Note: ..."): as a task it would also take a number the model uses
+    numbered_plan = ref_limit is None and any(_LINE_NUMBER_RE.match(ln) for ln in lines)
+    for ln in lines:
         m = _LINE_NUMBER_RE.match(ln)
+        if numbered_plan and m is None:
+            continue
         label = int(m.group(1)) if m else None
         ln = _LINE_PREFIX_RE.sub("", ln).strip()
         refs: list[int] = []

@@ -221,7 +221,11 @@ def test_unpriced_call_is_charged_its_estimate():
 def test_priced_and_failed_calls_are_labelled():
     ok = AgenticRouter(TextRouter(), _priced_clients()).run("What is 2+2?")
     assert ok.steps[0].meta["cost_source"] == "actual"
-    bad = AgenticRouter(TextRouter(), _priced_clients(fail={"big"})).run(COMPOUND)
+    # every pool model fails -- the plan orchestrator's repair round (default
+    # max_replans=1) escalates a failed step to its next-best model, so failing
+    # only one model would let that escalation quietly succeed instead of
+    # leaving the step labelled "failed"
+    bad = AgenticRouter(TextRouter(), _priced_clients(fail=set(POOL))).run(COMPOUND)
     assert {s.meta["cost_source"] for s in bad.steps} == {"failed"}
 
 

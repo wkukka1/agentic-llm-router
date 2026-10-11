@@ -1,0 +1,783 @@
+{
+  "title": "Agentic Orchestrator Architecture",
+  "direction": "TB",
+  "nodes": [
+    {
+      "id": "user",
+      "label": "Prompt\n(str | messages | Conversation)",
+      "type": "user",
+      "color": "gray",
+      "x": 220,
+      "y": 126
+    },
+    {
+      "id": "begin",
+      "label": "AgenticRouter.run\n_begin: latest turn, history,\nper-run state (max_calls, alpha)",
+      "type": "component",
+      "color": "green",
+      "x": 730,
+      "y": 126
+    },
+    {
+      "id": "route",
+      "label": "route_decision\nRouterModel (NIRT / kNN)\nscores the narrow, ClientRegistry-dispatchable pool",
+      "type": "component",
+      "color": "purple",
+      "x": 1240,
+      "y": 126
+    },
+    {
+      "id": "triage",
+      "label": "Triage\nHeuristic (q* < 0.55 or multi-part)\n/ LLMTriage -> TriageDecision{mode}",
+      "type": "component",
+      "color": "yellow",
+      "x": 1750,
+      "y": 126
+    },
+    {
+      "id": "solve",
+      "label": "_solve(prompt, depth, decision)",
+      "type": "component",
+      "color": "green",
+      "x": 2260,
+      "y": 126
+    },
+    {
+      "id": "direct",
+      "label": "_answer_directly -> _call_model -> _leaf\n(single mode, or depth >= max_depth)",
+      "type": "component",
+      "color": "blue",
+      "x": 2770,
+      "y": 126
+    },
+    {
+      "id": "gate",
+      "label": "decompose_plan gate: _skip_decomposition\nlooks_atomic (root) / is_multipart (sub-task)\nonly orchestrator: PlanOrchestratorBridge\n(no recursive/tool-calling alt - orchestrator.py deleted)",
+      "type": "component",
+      "color": "yellow",
+      "x": 415,
+      "y": 637
+    },
+    {
+      "id": "planner",
+      "label": "LLMDecomposer.plan(prompt) -> parse_plan_lines\n'2. [after 1] [150-300 words, max 450] task'\nnumbered lines only; dedupe -> list[SubTask]",
+      "type": "component",
+      "color": "red",
+      "x": 220,
+      "y": 849
+    },
+    {
+      "id": "route0",
+      "label": "Plan-time routing: RoutedOrchestrator.plan\none batched route_text (_route_batch)\nper sub-prompt",
+      "type": "component",
+      "color": "purple",
+      "x": 610,
+      "y": 849
+    },
+    {
+      "id": "plan",
+      "label": "Plan: PlanStep DAG (_new_step)\ndependencies + word budget\n(budget_mid_tokens / DEFAULT_BUDGET)",
+      "type": "component",
+      "color": "green",
+      "x": 220,
+      "y": 1049
+    },
+    {
+      "id": "fc",
+      "label": "Forecast/admit: RoutedOrchestrator._score\nPlanForecaster / RouterPlanForecaster.score_plan\ncost / quality / latency",
+      "type": "component",
+      "color": "purple",
+      "x": 610,
+      "y": 1049
+    },
+    {
+      "id": "ledger",
+      "label": "BudgetLedger.resize\nreserve plan.budget_estimate()",
+      "type": "database",
+      "color": "orange",
+      "x": 1000,
+      "y": 1037
+    },
+    {
+      "id": "refuse",
+      "label": "over_budget\nTaskStatus.TERMINATED, error_code=over_budget\nnothing ran, nothing spent",
+      "type": "component",
+      "color": "red",
+      "x": 220,
+      "y": 1249
+    },
+    {
+      "id": "levels",
+      "label": "RoutedOrchestrator.execute(plan)\n_levels: topological groups by satisfied deps\nparallel within a level (ThreadPoolExecutor)",
+      "type": "component",
+      "color": "green",
+      "x": 1203,
+      "y": 1476
+    },
+    {
+      "id": "blocked",
+      "label": "_blocked_call\nerror=dependency_failed, no model call\n(ROUTEDORCHESTRATOR-004: still counted in models_used())",
+      "type": "component",
+      "color": "gray",
+      "x": 220,
+      "y": 1676
+    },
+    {
+      "id": "assign",
+      "label": "_assign_models: route_late\nre-routes any non-pinned step whose contextual\nprompt changed (escalated steps stay pinned)\n(ROUTEDORCHESTRATOR-001: bypasses budget re-admission\nROUTEDORCHESTRATOR-003: dep context not in input estimate)",
+      "type": "component",
+      "color": "purple",
+      "x": 615,
+      "y": 1700
+    },
+    {
+      "id": "call",
+      "label": "_run_step -> agent._call_model\n+ budget_instruction(step.budget)\nmax_tokens = budget_max_tokens\n(TOKENS_PER_WORD=1.35 x SAFETY_FACTOR=2.0 = 2.7x)",
+      "type": "component",
+      "color": "blue",
+      "x": 615,
+      "y": 1936
+    },
+    {
+      "id": "synth",
+      "label": "Synthesize: self.synthesize(task.prompt, subcalls)\nderive_final_budget = 60% of step budgets\nonly successful answers\n(ROUTEDORCHESTRATOR-002: synth + judge calls\nnever charged to the budget ledger)",
+      "type": "component",
+      "color": "red",
+      "x": 1010,
+      "y": 1700
+    },
+    {
+      "id": "check",
+      "label": "Quality check: self.checker (QualityChecker)\nparse_verdict -> QualityVerdict\nVERDICT/SCORE/WEAK_STEPS/FOLLOW_UPS/ISSUES\npass_score default 7.0",
+      "type": "component",
+      "color": "yellow",
+      "x": 1010,
+      "y": 1936
+    },
+    {
+      "id": "best",
+      "label": "Track best round: self.best\npassed > unverified > judged-failing,\nthen score (later round wins ties)",
+      "type": "component",
+      "color": "green",
+      "x": 1010,
+      "y": 2148
+    },
+    {
+      "id": "escalate",
+      "label": "Escalate weak + failed steps (_escalate/_escalation_pick)\nnever a previously-tried model\ncheapest stronger, else best untried, else exhausted\n-> pinned (stays pinned through route_late)",
+      "type": "component",
+      "color": "purple",
+      "x": 1795,
+      "y": 1688
+    },
+    {
+      "id": "deps_clear",
+      "label": "Dependents of re-run steps (_dependents)\nlose cached output -> re-run\nwith fresh context (not escalated)",
+      "type": "component",
+      "color": "blue",
+      "x": 1795,
+      "y": 1900
+    },
+    {
+      "id": "follow",
+      "label": "Checker follow-ups -> new PlanSteps\n(_follow_up_steps); [after N] = reviewed step N\ncapped at limits.max_fanout (default 8); unscorable dropped",
+      "type": "component",
+      "color": "blue",
+      "x": 1795,
+      "y": 2100
+    },
+    {
+      "id": "keep",
+      "label": "Every other step\nkeeps its paid output",
+      "type": "component",
+      "color": "gray",
+      "x": 1600,
+      "y": 2288
+    },
+    {
+      "id": "nochange",
+      "label": "_nothing_to_repair: round changes nothing\n-> short-circuit, no re-synthesis, no re-judge",
+      "type": "component",
+      "color": "gray",
+      "x": 1955,
+      "y": 2288
+    },
+    {
+      "id": "revised",
+      "label": "replan(plan) -> _next_plan\nprevious plan + repair instructions\nre-score -> reserve -> execute (next round)",
+      "type": "component",
+      "color": "green",
+      "x": 1600,
+      "y": 2476
+    },
+    {
+      "id": "stop_budget",
+      "label": "Repair refused over budget\n-> best round returned\n(PLANORCHESTRATORBRIDGE-001: an all-failed round\nrefused this way calls the synthesizer with no sub-answers)",
+      "type": "component",
+      "color": "red",
+      "x": 1405,
+      "y": 2688
+    },
+    {
+      "id": "stop_calls",
+      "label": "max_calls ran out inside a helper call\n-> best round, stopped_early",
+      "type": "component",
+      "color": "red",
+      "x": 1795,
+      "y": 2664
+    },
+    {
+      "id": "stop_cap",
+      "label": "max_replans reached (limits.max_replans, default 2)\n-> best round, flagged failed",
+      "type": "component",
+      "color": "red",
+      "x": 2185,
+      "y": 2664
+    },
+    {
+      "id": "bridge_out",
+      "label": "PlanOrchestratorBridge.run\nmaps ExecutionResult -> (answer, [SubCall])\nback in _solve: becomes a branch SubCall",
+      "type": "component",
+      "color": "green",
+      "x": 1403,
+      "y": 2900
+    },
+    {
+      "id": "result",
+      "label": "_result builds AgenticResult\nsteps (superseded marked), cost (total_cost over leaves),\nplans (one dict per revision), quality_check, helper_calls",
+      "type": "component",
+      "color": "green",
+      "x": 1403,
+      "y": 3100
+    },
+    {
+      "id": "helpers",
+      "label": "Routed helpers: decomposer / synthesizer / judge\n= cheapest pool model with q >= min_quality\n(AgenticRouter.decompose gate vs runaway re-splitting)",
+      "type": "component",
+      "color": "yellow",
+      "x": 1010,
+      "y": 3100
+    },
+    {
+      "id": "clients",
+      "label": "ClientRegistry\nmodel_id -> LLMClient",
+      "type": "component",
+      "color": "blue",
+      "x": 615,
+      "y": 3288
+    },
+    {
+      "id": "adapters",
+      "label": "Adapters\nOllama / Anthropic / LangChain / Echo",
+      "type": "cloud",
+      "color": "gray",
+      "x": 615,
+      "y": 3464
+    },
+    {
+      "id": "sink",
+      "label": "result_sink\n(SQLite, background thread)",
+      "type": "database",
+      "color": "orange",
+      "x": 1403,
+      "y": 3288
+    },
+    {
+      "id": "score_all",
+      "label": "AgenticRouter.score_all_models(prompt, *,\nimpute_unknown=False, knn_k=10,\nknn_weighting=\"similarity\")\nSIBLING entry point - NOT part of the\ndecompose / orchestrate / repair flow above",
+      "type": "component",
+      "color": "green",
+      "x": 730,
+      "y": 362
+    },
+    {
+      "id": "pool_union",
+      "label": "pool_ids = union\nrouter.model_ids (trained pool)\n∪ model_profiles.list_profiled_model_ids(cfg)\n(every configs/model_profiles.yaml entry)",
+      "type": "component",
+      "color": "green",
+      "x": 1240,
+      "y": 362
+    },
+    {
+      "id": "predict_pool",
+      "label": "NIRTRouter.predict_pool_scores_text(\n[prompt], pool_ids, encoder=self.encoder,\nprofile_encoder=self.encoder)",
+      "type": "component",
+      "color": "green",
+      "x": 1750,
+      "y": 362
+    },
+    {
+      "id": "resolve_profile",
+      "label": "resolve_pool_profile_matrix(pool_ids)\nper id: existing store row / ad hoc render+embed /\n+ kNN blend toward trained pool if impute_unknown\ndeep mechanics: see\ndocs/diagrams/nirt/nirt-training-and-serving.excalidraw",
+      "type": "component",
+      "color": "orange",
+      "x": 2260,
+      "y": 362
+    },
+    {
+      "id": "scope_note",
+      "label": "Scope boundary, not a bug\nA high score here never implies ClientRegistry can\ndispatch to that model -- separate LookupError.\nroute_decision / pick_helper_model stay scoped to the\nnarrow, ClientRegistry-dispatchable pool (also used by\n_assign_models/route_late and helper_call above)",
+      "type": "component",
+      "color": "purple",
+      "x": 2770,
+      "y": 362
+    }
+  ],
+  "edges": [
+    {
+      "from": "user",
+      "to": "begin"
+    },
+    {
+      "from": "begin",
+      "to": "route",
+      "label": "every user turn"
+    },
+    {
+      "from": "begin",
+      "to": "score_all",
+      "label": "NEW sibling entry\n(visibility/ranking only)"
+    },
+    {
+      "from": "route",
+      "to": "triage",
+      "label": "best model + q*"
+    },
+    {
+      "from": "triage",
+      "to": "solve",
+      "label": "TriageDecision"
+    },
+    {
+      "from": "solve",
+      "to": "direct",
+      "label": "single / depth cap"
+    },
+    {
+      "from": "solve",
+      "to": "gate",
+      "label": "orchestrate"
+    },
+    {
+      "from": "direct",
+      "to": "clients",
+      "points": [
+        [
+          2610,
+          126
+        ],
+        [
+          -130,
+          126
+        ],
+        [
+          -130,
+          3288
+        ],
+        [
+          490,
+          3288
+        ]
+      ]
+    },
+    {
+      "from": "direct",
+      "to": "result",
+      "label": "leaf",
+      "points": [
+        [
+          2610,
+          126
+        ],
+        [
+          -80,
+          126
+        ],
+        [
+          -80,
+          3100
+        ],
+        [
+          1243,
+          3100
+        ]
+      ]
+    },
+    {
+      "from": "gate",
+      "to": "planner",
+      "label": "not atomic"
+    },
+    {
+      "from": "gate",
+      "to": "route0",
+      "label": "atomic: single SubTask,\nskip LLM decompose call"
+    },
+    {
+      "from": "planner",
+      "to": "helpers",
+      "label": "decomposer call"
+    },
+    {
+      "from": "planner",
+      "to": "route0",
+      "label": "SubTasks"
+    },
+    {
+      "from": "route0",
+      "to": "plan"
+    },
+    {
+      "from": "plan",
+      "to": "fc",
+      "label": "score"
+    },
+    {
+      "from": "fc",
+      "to": "ledger",
+      "label": "reserve"
+    },
+    {
+      "from": "ledger",
+      "to": "refuse",
+      "label": "doesn't fit"
+    },
+    {
+      "from": "ledger",
+      "to": "levels",
+      "label": "fits"
+    },
+    {
+      "from": "refuse",
+      "to": "result",
+      "points": [
+        [
+          60,
+          1249
+        ],
+        [
+          -130,
+          1249
+        ],
+        [
+          -130,
+          3100
+        ],
+        [
+          1243,
+          3100
+        ]
+      ]
+    },
+    {
+      "from": "levels",
+      "to": "blocked",
+      "label": "dependency failed"
+    },
+    {
+      "from": "levels",
+      "to": "assign",
+      "label": "deps ok"
+    },
+    {
+      "from": "assign",
+      "to": "call"
+    },
+    {
+      "from": "call",
+      "to": "clients"
+    },
+    {
+      "from": "levels",
+      "to": "synth",
+      "label": "all levels done"
+    },
+    {
+      "from": "levels",
+      "to": "escalate",
+      "label": "step failed"
+    },
+    {
+      "from": "synth",
+      "to": "helpers",
+      "label": "synthesizer call"
+    },
+    {
+      "from": "synth",
+      "to": "check"
+    },
+    {
+      "from": "check",
+      "to": "helpers",
+      "label": "judge call"
+    },
+    {
+      "from": "check",
+      "to": "best",
+      "label": "record round"
+    },
+    {
+      "from": "best",
+      "to": "bridge_out",
+      "label": "PASS / unverified\n(no replan)"
+    },
+    {
+      "from": "check",
+      "to": "escalate",
+      "label": "FAIL\n(<= max_replans)"
+    },
+    {
+      "from": "escalate",
+      "to": "deps_clear"
+    },
+    {
+      "from": "deps_clear",
+      "to": "follow"
+    },
+    {
+      "from": "follow",
+      "to": "keep"
+    },
+    {
+      "from": "keep",
+      "to": "revised"
+    },
+    {
+      "from": "follow",
+      "to": "nochange",
+      "label": "nothing escalated\nor added"
+    },
+    {
+      "from": "nochange",
+      "to": "stop_cap"
+    },
+    {
+      "from": "best",
+      "to": "stop_cap",
+      "label": "no rounds left"
+    },
+    {
+      "from": "revised",
+      "to": "fc",
+      "label": "revised plan\n(re-score, reserve)",
+      "points": [
+        [
+          1440,
+          2476
+        ],
+        [
+          -30,
+          2476
+        ],
+        [
+          -30,
+          1049
+        ],
+        [
+          450,
+          1049
+        ]
+      ]
+    },
+    {
+      "from": "revised",
+      "to": "stop_budget",
+      "label": "doesn't fit"
+    },
+    {
+      "from": "revised",
+      "to": "stop_calls",
+      "label": "max_calls"
+    },
+    {
+      "from": "stop_budget",
+      "to": "bridge_out"
+    },
+    {
+      "from": "stop_calls",
+      "to": "bridge_out"
+    },
+    {
+      "from": "stop_cap",
+      "to": "bridge_out"
+    },
+    {
+      "from": "bridge_out",
+      "to": "result",
+      "label": "best answer + steps"
+    },
+    {
+      "from": "helpers",
+      "to": "clients"
+    },
+    {
+      "from": "clients",
+      "to": "adapters"
+    },
+    {
+      "from": "result",
+      "to": "sink"
+    },
+    {
+      "from": "score_all",
+      "to": "pool_union",
+      "label": "sorted(set(router.model_ids) | ...)"
+    },
+    {
+      "from": "pool_union",
+      "to": "predict_pool"
+    },
+    {
+      "from": "predict_pool",
+      "to": "resolve_profile",
+      "label": "build [pool x profile] matrix"
+    },
+    {
+      "from": "resolve_profile",
+      "to": "scope_note",
+      "label": "broad score ≠ dispatchable"
+    },
+    {
+      "from": "route",
+      "to": "scope_note",
+      "label": "UNCHANGED: narrow pool only"
+    },
+    {
+      "from": "assign",
+      "to": "scope_note",
+      "label": "route_late: narrow pool only",
+      "points": [
+        [
+          775,
+          1700
+        ],
+        [
+          3020,
+          1700
+        ],
+        [
+          3020,
+          362
+        ],
+        [
+          2930,
+          362
+        ]
+      ]
+    },
+    {
+      "from": "helpers",
+      "to": "scope_note",
+      "label": "pick_helper_model: narrow pool only",
+      "points": [
+        [
+          1170,
+          3100
+        ],
+        [
+          3070,
+          3100
+        ],
+        [
+          3070,
+          362
+        ],
+        [
+          2930,
+          362
+        ]
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "id": "g_entry",
+      "label": "Request entry + triage",
+      "members": [
+        "user",
+        "begin",
+        "route",
+        "triage",
+        "solve",
+        "direct"
+      ]
+    },
+    {
+      "id": "g_decompose",
+      "label": "Decompose",
+      "members": [
+        "gate",
+        "planner"
+      ]
+    },
+    {
+      "id": "g_plan",
+      "label": "Plan / forecast / budget",
+      "members": [
+        "route0",
+        "plan",
+        "fc",
+        "ledger",
+        "refuse"
+      ]
+    },
+    {
+      "id": "g_execute",
+      "label": "Execute by level + route_late",
+      "members": [
+        "levels",
+        "blocked",
+        "assign",
+        "call"
+      ]
+    },
+    {
+      "id": "g_quality",
+      "label": "Quality check",
+      "members": [
+        "synth",
+        "check",
+        "best"
+      ]
+    },
+    {
+      "id": "g_repair",
+      "label": "Repair round",
+      "members": [
+        "escalate",
+        "deps_clear",
+        "follow",
+        "keep",
+        "nochange",
+        "revised",
+        "stop_budget",
+        "stop_calls",
+        "stop_cap"
+      ]
+    },
+    {
+      "id": "g_result",
+      "label": "Result + LLM dispatch",
+      "members": [
+        "bridge_out",
+        "result",
+        "helpers",
+        "clients",
+        "adapters",
+        "sink"
+      ]
+    },
+    {
+      "id": "g_score_all",
+      "label": "NEW: score_all_models (scope boundary)",
+      "members": [
+        "score_all",
+        "pool_union",
+        "predict_pool",
+        "resolve_profile",
+        "scope_note"
+      ]
+    }
+  ],
+  "_layout": "manual-bands-v2"
+}

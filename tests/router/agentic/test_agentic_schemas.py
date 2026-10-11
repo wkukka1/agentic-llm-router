@@ -8,7 +8,6 @@ import pytest
 from pydantic import ValidationError
 
 from router.agentic import AgenticRouter, HeuristicTriage, LLMDecomposer, LLMSynthesizer, LLMTriage
-from router.agentic.orchestrator import LangChainToolOrchestrator, RecursiveOrchestrator
 from router.agentic.schemas import AgenticRouterSettings, default_prompts, load_settings
 from router.routing import RouterModel
 
@@ -50,8 +49,8 @@ def _settings(**router):
 # --------------------------------------------------------------------------- #
 def test_shipped_settings_file_validates():
     s = load_settings()
-    assert set(s.prompts) == {"triage", "decompose", "plan", "verify", "synthesize", "tool_agent_system"}
-    assert s.run == "nirt-2d-projected" and s.orchestrator == "recursive"
+    assert set(s.prompts) == {"triage", "decompose", "plan", "verify", "synthesize"}
+    assert s.run == "nirt-2d-projected" and s.plan.model
     assert default_prompts() == s.prompts
 
 
@@ -68,13 +67,16 @@ def test_unknown_setting_is_an_error():
 def test_llm_helper_without_a_model_is_an_error():
     with pytest.raises(ValidationError, match="triage.model is not set"):
         _settings(triage={"kind": "llm"})
-    with pytest.raises(ValidationError, match="tool_agent.model is not set"):
-        _settings(orchestrator="tool_agent")
+
+
+def test_plan_without_a_model_is_an_error():
+    with pytest.raises(ValidationError):
+        _settings(plan={"budget": 1.0})  # drops the shipped plan.model
 
 
 def test_helper_must_reference_a_known_prompt():
     with pytest.raises(ValidationError, match="no prompt 'nope'"):
-        _settings(decomposer={"prompt": "nope"})
+        _settings(synthesizer={"prompt": "nope"})
 
 
 def test_values_are_range_checked():
@@ -111,11 +113,6 @@ def test_helpers_accept_a_custom_prompt():
     assert LLMSynthesizer(_Chat()).prompt == default_prompts()["synthesize"]
 
 
-def test_tool_agent_system_prompt_defaults_to_the_file():
-    assert LangChainToolOrchestrator(object())._system == default_prompts()["tool_agent_system"]
-    assert LangChainToolOrchestrator(object(), system_prompt="Be brief")._system == "Be brief"
-
-
 # --------------------------------------------------------------------------- #
 # AgenticRouter.from_settings                                                 #
 # --------------------------------------------------------------------------- #
@@ -126,15 +123,20 @@ def fake_run(monkeypatch):
     monkeypatch.setattr(NIRTRouter, "from_run", classmethod(lambda cls, run, runs_dir=None: _TextRouter()))
 
 
-def test_from_settings_builds_the_default_router(fake_run):
+def test_from_settings_builds_the_default_router(fake_run, monkeypatch):
+    import router.llm.adapters.langchain_adapter as lca
+    from router.execution.routed import PlanOrchestratorBridge
+
+    monkeypatch.setattr(lca, "chat_model", lambda model, **kw: _Chat("SINGLE"))
     agent = AgenticRouter.from_settings(_settings(warmup=False))
     assert isinstance(agent.triage, HeuristicTriage) and agent.triage.quality_threshold == 0.55
-    assert isinstance(agent.orchestrator, RecursiveOrchestrator)
+    assert isinstance(agent.orchestrator, PlanOrchestratorBridge)
     assert agent.run("What is 2+2?").mode == "single"
 
 
 def test_from_settings_wires_llm_helpers_plan_orchestrator_and_sink(fake_run, monkeypatch, tmp_path):
     import router.llm.adapters.langchain_adapter as lca
+    from router.agentic.quality import QualityChecker
     from router.agentic.router import flush_bookkeeping
     from router.execution.routed import PlanOrchestratorBridge
     from router.tracing.run_store import connect
@@ -143,30 +145,35 @@ def test_from_settings_wires_llm_helpers_plan_orchestrator_and_sink(fake_run, mo
     monkeypatch.setattr(lca, "chat_model", lambda model, **kw: chats.append(model) or _Chat("SINGLE"))
     db = tmp_path / "runs.sqlite"
     agent = AgenticRouter.from_settings(_settings(
-        warmup=False, max_calls=5, result_sink=str(db), orchestrator="plan",
+        warmup=False, max_calls=5, result_sink=str(db),
         prompts={**load_settings().prompts, "terse_synth": "Merge: {original} / {body}"},
         triage={"kind": "llm", "model": "claude-haiku-4-5", "margin": 0.1},
-        synthesizer={"kind": "llm", "model": "claude-sonnet-5", "prompt": "terse_synth"},
-        plan={"budget": 0.5, "max_workers": 2},
+        synthesizer={"prompt": "terse_synth"},
+        plan={"model": "claude-sonnet-5", "budget": 0.5, "max_workers": 2},
     ))
     assert isinstance(agent.triage, LLMTriage) and agent.triage.margin == 0.1
+    # one shared chat model drives decompose + judge + synthesize
+    assert isinstance(agent.decomposer, LLMDecomposer)
     assert isinstance(agent.synthesizer, LLMSynthesizer) and agent.synthesizer.prompt == "Merge: {original} / {body}"
-    assert chats == ["claude-haiku-4-5", "claude-sonnet-5"]
     assert isinstance(agent.orchestrator, PlanOrchestratorBridge) and agent.orchestrator.budget == 0.5
+    assert isinstance(agent.orchestrator.checker, QualityChecker)  # always on now
+    # one chat() call for triage's own model, one (shared, reused 3x) for plan.model
+    assert chats == ["claude-haiku-4-5", "claude-sonnet-5"]
     assert agent.max_calls == 5
     assert agent.run("What is 2+2?").mode == "single"
     flush_bookkeeping(timeout=5)
     assert connect(db).execute("SELECT router FROM runs").fetchone() == ("nirt-2d-projected",)
 
 
-def test_from_settings_accepts_a_yaml_path(fake_run, tmp_path):
+def test_from_settings_accepts_a_yaml_path(fake_run, monkeypatch, tmp_path):
+    import router.llm.adapters.langchain_adapter as lca
     import yaml
 
     from router.execution.routed import PlanOrchestratorBridge
 
+    monkeypatch.setattr(lca, "chat_model", lambda model, **kw: _Chat("SINGLE"))
     data = yaml.safe_load(open("configs/agentic.yaml", encoding="utf-8"))
     data["router"]["warmup"] = False
-    data["router"]["orchestrator"] = "plan"
     path = tmp_path / "agentic.yaml"
     path.write_text(yaml.safe_dump(data), encoding="utf-8")
     assert isinstance(AgenticRouter.from_settings(path).orchestrator, PlanOrchestratorBridge)

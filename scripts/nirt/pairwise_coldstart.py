@@ -91,10 +91,19 @@ def main() -> int:
     results: dict = {}
 
     if "E0" in experiments:
-        results["E0"] = cold_start_eval(model, model_index, split="test", pathway=pathway, data=data)
-        print("\n=== E0: pointwise cold-start baseline (existing, unchanged) ===")
-        print(f"  cold models: {results['E0']['cold_models']}")
-        print(f"  pooled NIRT bce: {results['E0']['pooled_prediction']['nirt']['bce']:.4f}")
+        try:
+            results["E0"] = cold_start_eval(model, model_index, split="test", pathway=pathway,
+                                            data=data)
+            print("\n=== E0: pointwise cold-start baseline (existing, unchanged) ===")
+            print(f"  cold models: {results['E0']['cold_models']}")
+            print(f"  pooled NIRT bce: {results['E0']['pooled_prediction']['nirt']['bce']:.4f}")
+        except ValueError as exc:
+            # cold_start_eval needs one SOURCE's dense [query x model] matrix; a
+            # pool spanning sources with disjoint model coverage (e.g. this run's
+            # combined routerbench + irt_router pool) has none. Pre-existing
+            # limitation of the unchanged function, not something this script
+            # works around -- skip E0 rather than crash the other experiments.
+            print(f"\n=== E0: SKIPPED (needs a dense single-source pool) ===\n  {exc}")
 
     if "E1" in experiments:
         results["E1"] = pairwise_cold_start_eval(

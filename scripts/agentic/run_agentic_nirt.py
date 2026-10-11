@@ -4,7 +4,12 @@ prompt at two different IRT-Router-style alpha blends to show the per-request
 cost-preference override picking a different model.
 
 Uses configs/agentic.yaml as-is (run: nirt-2d-projected, clients: echo --
-no network calls, no API keys needed) so this is safe to run standalone.
+per-leaf model answers are a no-network placeholder, no API keys needed). The
+SINGLE_PROMPT case stays fully offline (triage answers it directly, no plan,
+no LLM helper calls). The ORCHESTRATE_PROMPT case decomposes, judges and
+synthesizes through plan.model -- a local Ollama model by default (needs
+`ollama serve` running with that tag pulled; see
+scripts/agentic/run_agentic_ollama.py), not literally network-free.
 
     python scripts/agentic/run_agentic_nirt.py
 """
@@ -44,7 +49,8 @@ def show(label: str, prompt: str, agent: AgenticRouter, *, alpha: float | None =
 
 
 def main() -> None:
-    # configs/agentic.yaml: run=nirt-2d-projected, clients=echo, orchestrator=recursive
+    # configs/agentic.yaml: run=nirt-2d-projected, clients=echo (plan orchestrator;
+    # decompose/judge/synthesize via plan.model, a local Ollama model by default)
     agent = AgenticRouter.from_settings()
     print(repr(agent))
 

@@ -60,12 +60,28 @@ def db(tmp_path):
     return tmp_path / "e2e_runs.sqlite"
 
 
+@pytest.fixture(autouse=True)
+def fake_shared_chat(monkeypatch):
+    """from_settings always builds a real chat model for plan.model (decompose
+    + judge + synthesize), even for a request that stays single-shot -- stand
+    in for it so this module needs no langchain-ollama install or network,
+    matching its own "no network or API key" claim above. The live-Claude test
+    (ANTHROPIC_LIVE_TEST=1) uses router.llm clients directly, not this."""
+    import router.llm.adapters.langchain_adapter as lca
+
+    monkeypatch.setattr(lca, "chat_model", lambda model, **kw: object())
+
+
 def _agent(router, db=None, **overrides):
-    """AgenticRouter from the shipped settings file, with ``overrides`` applied."""
+    """AgenticRouter from the shipped settings file, with ``overrides`` applied.
+    A ``plan=`` override merges onto the shipped plan settings (preserving
+    ``plan.model``) rather than replacing the whole section."""
     from router.agentic import AgenticRouter
     from router.agentic.schemas import AgenticRouterSettings, load_settings
 
-    data = {**load_settings().model_dump(), "warmup": False, **overrides}
+    base = load_settings().model_dump()
+    plan_override = overrides.pop("plan", {})
+    data = {**base, "warmup": False, "plan": {**base["plan"], **plan_override}, **overrides}
     if db is not None:
         data["result_sink"] = str(db)
     return AgenticRouter.from_settings(AgenticRouterSettings.model_validate(data), router=router)
@@ -168,7 +184,7 @@ def test_streaming_yields_the_answer_then_the_result(router, db):
 # 4. plan orchestrator: batched routing, parallel steps, budget               #
 # --------------------------------------------------------------------------- #
 def test_plan_orchestrator_end_to_end(router, db):
-    agent = _agent(router, db, orchestrator="plan", plan={"budget": 1.0, "max_workers": 4})
+    agent = _agent(router, db, plan={"budget": 1.0, "max_workers": 4})
     res = agent.run(COMPOUND)
 
     assert res.mode == "orchestrated" and res.orchestrator == "plan"
@@ -185,7 +201,7 @@ def test_plan_orchestrator_end_to_end(router, db):
 
 
 def test_plan_over_budget_is_refused_before_any_call(router, db):
-    agent = _agent(router, db, orchestrator="plan", plan={"budget": 1e-12})
+    agent = _agent(router, db, plan={"budget": 1e-12})
     res = agent.run(COMPOUND)
 
     assert res.mode == "orchestrated" and "over budget" in res.answer
@@ -198,7 +214,7 @@ def test_plan_over_budget_is_refused_before_any_call(router, db):
 # 5. the report script reads what the store wrote                             #
 # --------------------------------------------------------------------------- #
 def test_runs_report_reads_the_database(router, db):
-    agent = _agent(router, db, orchestrator="plan")
+    agent = _agent(router, db)
     agent.run("What is the capital of France?")
     agent.run(COMPOUND)
     _query(db, "SELECT 1")                                   # flush the background writes

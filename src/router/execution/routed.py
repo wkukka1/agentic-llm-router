@@ -105,7 +105,7 @@ class RoutedOrchestrator(Orchestrator):
         self.checker = checker
         #: one dict per checked round: ``plan_id``, ``answer``, ``verdict``
         self.rounds: list[dict] = []
-        #: the best checked round so far (a passed round beats any failed one)
+        #: the best checked round so far: passed > unverified > judged failing, then score
         self.best: Optional[dict] = None
         #: every model call this orchestrator made, every round, in order
         self.executed: list[SubCall] = []
@@ -121,6 +121,7 @@ class RoutedOrchestrator(Orchestrator):
         self._pinned: set[str] = set()                 # escalated this round: keep the model
         self._tried: dict[str, list[str]] = {}          # step_id -> models run, in order
         self._escalation_note: dict[str, str] = {}      # step_id -> "escalated" / "exhausted"
+        self._escalation_reason: dict[str, str] = {}    # step_id -> why that model was picked
         self._nothing_to_repair = False                 # the last replan changed nothing
         self._last_output = ""
         cost_model = getattr(plan_forecaster, "cost_model", None)
@@ -192,13 +193,22 @@ class RoutedOrchestrator(Orchestrator):
         # not just the root (AGENTICROUTER-alpha-plan).
         alpha = agent._run_state().alpha
         lam = 0.0 if alpha is not None else agent.lam
-        rr = agent.router.route_text(prompts, encoder=agent.encoder, lam=lam, alpha=alpha)
+        eligible = agent.clients.eligible_mask(agent.router.model_ids)
+        rr = agent.router.route_text(prompts, encoder=agent.encoder, lam=lam, alpha=alpha,
+                                     eligible=eligible)
+        servable = {m for m, ok in zip(agent.router.model_ids, eligible) if ok}
         fallback = getattr(rr, "fallback", None)
         out = []
         for i, p in enumerate(prompts):
             if fallback is not None and bool(np.asarray(fallback)[i]):
+                if not eligible.any():
+                    raise LookupError(
+                        f"{agent.router.name}: no model in the pool is registered in "
+                        f"ClientRegistry for sub-task {p[:80]!r}; register a client or widen it"
+                    )
                 raise LookupError(f"{agent.router.name}: no usable score for sub-task {p[:80]!r}")
-            out.append((rr.selected_model_ids[i], rr.row_scores(i)))
+            out.append((rr.selected_model_ids[i],
+                       {m: q for m, q in rr.row_scores(i).items() if m in servable}))
         return out
 
     @staticmethod
@@ -219,7 +229,7 @@ class RoutedOrchestrator(Orchestrator):
                 pass
         try:
             served = getattr(self.agent.clients.get(model_id), "profile", None)
-        except KeyError:
+        except LookupError:
             served = None
         return LLMProfile(
             name=model_id, provider=getattr(served, "provider", None) or "unknown", model_id=model_id,
@@ -328,7 +338,10 @@ class RoutedOrchestrator(Orchestrator):
         verdict = self.checker(self.task.prompt, [(sc.prompt, sc.answer) for sc in self.subcalls],
                                output)
         self.rounds.append({"plan_id": plan.plan_id, "answer": output, "verdict": verdict})
-        key = (verdict.passed, verdict.score if math.isfinite(verdict.score) else -math.inf)
+        # passed > unverified (the check errored / was unparseable) > judged failing:
+        # a repaired round whose check broke must not lose to the round it repaired
+        tier = 2 if verdict.passed else (0 if verdict.status == "ok" else 1)
+        key = (tier, verdict.score if math.isfinite(verdict.score) else -math.inf)
         if self.best is None or key >= self.best["key"]:
             self.best = {"key": key, "answer": output, "round": len(self.rounds) - 1,
                          "verdict": verdict, "subcalls": list(self.subcalls)}
@@ -397,10 +410,14 @@ class RoutedOrchestrator(Orchestrator):
         sc.meta = {**sc.meta, "step_id": step.step_id,
                    "planned_model": self._planned.get(step.step_id, step.model.model_id),
                    "routed_model": step.model.model_id, "tried_models": list(tried)}
+        if step.step_id in self._scores:
+            sc.meta["step_scores"] = dict(self._scores[step.step_id])
         if step.budget is not None:
             sc.meta["budget_words"] = list(step.budget)
         if step.step_id in self._escalation_note:
             sc.meta["escalation"] = self._escalation_note[step.step_id]
+            if step.step_id in self._escalation_reason:
+                sc.meta["escalation_reason"] = self._escalation_reason[step.step_id]
         return sc
 
     # -- replan ------------------------------------------------------------
@@ -469,28 +486,34 @@ class RoutedOrchestrator(Orchestrator):
                 return verdict
         return None
 
-    def _escalation_pick(self, step: PlanStep) -> tuple[str, str]:
+    def _escalation_pick(self, step: PlanStep) -> tuple[str, str, str]:
         """The model a re-run of ``step`` moves to. Never one already tried
         for it: the cheapest model scoring above the last one (the closest step
         up on equal cost), else the best untried one. ``"exhausted"`` when every
-        scored model has been tried -- the step keeps its model."""
+        scored model has been tried -- the step keeps its model. The third
+        element explains the pick, for ``debug_trace()``."""
         scores = self._scores.get(step.step_id, {})
         current = step.model.model_id
         tried = set(self._tried.get(step.step_id, [])) | {current}
         untried = {m: q for m, q in scores.items() if m not in tried and math.isfinite(q)}
         if not untried:
-            return current, "exhausted"
+            return current, "exhausted", "exhausted: every scored model has already been tried"
         base = scores.get(current, float("nan"))
         base = base if math.isfinite(base) else -math.inf
         stronger = [m for m, q in untried.items() if q > base]
         if stronger:
             costs = self.agent.router.cost_by_model()
-            return min(stronger, key=lambda m: (costs.get(m, math.inf), untried[m])), "escalated"
-        return max(untried, key=untried.get), "escalated"
+            picked = min(stronger, key=lambda m: (costs.get(m, math.inf), untried[m]))
+            return picked, "escalated", (f"cheapest model scoring above {current} ({base:.3f}): "
+                                         f"{picked} ({untried[picked]:.3f})")
+        picked = max(untried, key=untried.get)
+        return picked, "escalated", (f"no untried model scores above {current} ({base:.3f}); "
+                                     f"best untried: {picked} ({untried[picked]:.3f})")
 
     def _escalate(self, step: PlanStep) -> PlanStep:
-        model_id, outcome = self._escalation_pick(step)
+        model_id, outcome, reason = self._escalation_pick(step)
         self._escalation_note[step.step_id] = outcome
+        self._escalation_reason[step.step_id] = reason
         self._pinned.add(step.step_id)
         profile = self._profile(model_id)
         return replace(
@@ -611,12 +634,20 @@ class PlanOrchestratorBridge:
             self.checker.on_call = agent._use_call
         task = AgentTask(task_id=root_id, parent_task_id=None, root_task_id=root_id,
                          prompt=prompt, depth=depth)
-        result = orch.run(task)
+        try:
+            result = orch.run(task)
+        except RuntimeError:
+            # the run's max_calls ran out inside a helper (synthesizer / judge): a
+            # checked answer from an earlier round is still worth returning, flagged
+            rs = agent._run_state()
+            if orch.best is None or rs.max_calls is None or rs.calls < rs.max_calls:
+                raise
+            agent._run_state().plans.extend(_plan_records(orch, self.budget))
+            return _best_answer(orch, agent, stopped_early="max_calls")
         agent._run_state().plans.extend(_plan_records(orch, self.budget))
         if orch.best is not None:
             # a checked answer wins over an over-budget or failed later round
-            agent._run_state().quality_check = _quality_record(orch)
-            return orch.best["answer"], _all_steps(orch)
+            return _best_answer(orch, agent)
         if task.status is TaskStatus.TERMINATED:
             est = task.plan.budget_estimate() if task.plan is not None else float("nan")
             msg = f"plan over budget: needs ~{est:.6g}, budget remaining {orch.ledger.remaining():.6g}"
@@ -634,7 +665,29 @@ class PlanOrchestratorBridge:
         steps = _all_steps(orch)
         if result.success:
             return result.output, steps
-        return orch.synthesize(prompt, steps), steps
+        return _partial_answer(orch, prompt, steps), steps
+
+
+def _best_answer(orch: RoutedOrchestrator, agent: "AgenticRouter",
+                 stopped_early: Optional[str] = None) -> tuple[str, list[SubCall]]:
+    """The best checked round's answer and steps; ``quality_check`` is recorded
+    on the run (with ``stopped_early`` when the loop was cut short)."""
+    record = _quality_record(orch)
+    if stopped_early is not None:
+        record["stopped_early"] = stopped_early
+    agent._run_state().quality_check = record
+    return orch.best["answer"], _all_steps(orch)
+
+
+def _partial_answer(orch: RoutedOrchestrator, prompt: str, steps: list[SubCall]) -> str:
+    """The answer of a plan that still has failed steps: synthesized from the
+    answer-producing steps that succeeded only -- superseded attempts and
+    ``[error: ...]`` placeholders are not sub-answers. No synthesis call when
+    nothing succeeded."""
+    done = [sc for sc in steps if sc.error is None and not sc.meta.get("superseded")]
+    if not done:
+        return "[error: no step of the plan succeeded]"
+    return done[0].answer if len(done) == 1 else orch.synthesize(prompt, done)
 
 
 def _plan_records(orch: RoutedOrchestrator, budget: float) -> list[dict]:

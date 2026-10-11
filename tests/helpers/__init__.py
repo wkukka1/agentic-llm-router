@@ -16,6 +16,7 @@ from __future__ import annotations
 from helpers.baseline import baseline_cfg
 from helpers.configs import ChanceCfg, FamilyCfg, chance_cfg
 from helpers.faiss_bank import make_faiss_bank
+from helpers.model_bank import make_model_bank
 from helpers.nirt import (
     FakeTrainingData,
     make_split_obs,
@@ -33,6 +34,7 @@ __all__ = [
     "baseline_cfg",
     "chance_cfg",
     "make_faiss_bank",
+    "make_model_bank",
     "make_split_obs",
     "make_store",
     "make_synthetic_irt",

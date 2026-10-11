@@ -35,10 +35,7 @@ the sub-answers already paid for survive; a failing *root* call still raises.
 ``max_calls`` caps the model calls one :meth:`run` may make across the whole
 recursion tree (``max_depth`` alone bounds depth, not fan-out) -- routed calls
 *and* the helper LLMs (``LLMTriage``, ``LLMDecomposer``, ``LLMSynthesizer``,
-and the ``LangChainToolOrchestrator`` tool-agent's own reasoning steps) all
-count against it. The one gap: a tool-agent's reasoning steps are counted but
-not directly enforced mid-reasoning (there's no ``SubCall`` to fail there);
-the limit still bites the next routed call once exhausted.
+``QualityChecker``) all count against it.
 
 ``run()`` is safe to call concurrently on one shared ``AgenticRouter``
 instance -- each call's routing cache and call count live in a context-local
@@ -48,12 +45,14 @@ state (thread- or asyncio-task-isolated), not on the instance.
 from __future__ import annotations
 
 import contextvars
+import hashlib
 import logging
 import math
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable, Generator, Optional
 
 from ..routing.base import RouterModel, RoutingResult
@@ -75,7 +74,6 @@ from .decompose import (
     concat_synthesizer,
     looks_atomic,
 )
-from .orchestrator import RecursiveOrchestrator
 from .result import AgenticResult, SubCall, total_cost
 from .triage import HeuristicTriage, LLMTriage, TriageDecision, best_from_result
 
@@ -123,8 +121,8 @@ class _RunState:
         invocation a run makes -- routed, triage, decompose, synthesize --
         goes through here, not just the routed calls (AGENTICROUTER-003).
         ``enforce=False`` counts without raising, for call sites that can't
-        safely raise mid-call (see ``LangChainToolOrchestrator``). Locked:
-        an orchestrator may run sub-calls on worker threads sharing this state."""
+        safely raise mid-call. Locked: an orchestrator may run sub-calls on
+        worker threads sharing this state."""
         with self._lock:
             if enforce and self.max_calls is not None and self.calls + n > self.max_calls:
                 raise RuntimeError(f"max_calls={self.max_calls} model calls exhausted for this run")
@@ -144,6 +142,25 @@ def _run_sink(sink: Callable[[AgenticResult], None], result: AgenticResult) -> N
         sink(result)
     except Exception:  # pragma: no cover - exercised via the logging test
         logging.getLogger(__name__).exception("AgenticRouter result sink failed")
+
+
+def _write_debug_trace(result: AgenticResult, debug: bool | str) -> None:
+    """Write ``result.debug_trace()`` to disk for ``run(..., debug=...)``.
+    ``debug=True`` auto-names the file under ``debug_traces/``; a string is
+    used as the path verbatim. A write failure is logged, never raised --
+    a debugging aid must not be able to break the request it's observing."""
+    try:
+        path = _debug_trace_path(result) if debug is True else Path(debug)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(result.debug_trace(), encoding="utf-8")
+    except Exception:
+        logging.getLogger(__name__).exception("AgenticRouter debug trace write failed")
+
+
+def _debug_trace_path(result: AgenticResult) -> Path:
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    digest = hashlib.sha1(result.prompt.encode("utf-8")).hexdigest()[:8]
+    return Path("debug_traces") / f"{stamp}-{digest}.txt"
 
 
 @dataclass
@@ -205,7 +222,10 @@ class AgenticRouter:
             clients = ClientRegistry(clients or None)
         self.clients = clients
         self.triage = triage or HeuristicTriage()
-        self.orchestrator = orchestrator or RecursiveOrchestrator()
+        if orchestrator is None:
+            from ..execution.routed import plan_orchestrator
+            orchestrator = plan_orchestrator()
+        self.orchestrator = orchestrator
         self.decomposer = decomposer or NaiveDecomposer()
         self.synthesizer = synthesizer or concat_synthesizer
         self.encoder = encoder
@@ -253,9 +273,9 @@ class AgenticRouter:
         elif s.clients == "langchain":
             clients = ClientRegistry.langchain(router.model_ids)
 
-        def chat(model_id):
+        def chat(model_id, *, provider=None):
             from ..llm.adapters.langchain_adapter import chat_model
-            return chat_model(model_id)
+            return chat_model(model_id, provider=provider)
 
         prompts = s.prompts
         t = s.triage
@@ -265,52 +285,34 @@ class AgenticRouter:
             chat(t.model), fallback=heuristic, prompt=prompts[t.prompt],
             margin=math.inf if t.margin is None else t.margin)
 
-        # "routed" helpers pick their pool model per request through the agent
-        # built at the end of this method (late-bound: called only once it exists)
-        def helper_kw(h, role: str) -> dict:
-            if h.kind == "routed":
-                return {"chat_for": lambda request: agent.helper_call(role, request, h.min_quality)}
-            return {"chat_model": chat(h.model)}
+        from ..execution.budget import ExecutionLimits
+        from ..execution.routed import plan_orchestrator
+        from .quality import QualityChecker
+
+        # one shared model drives decompose + judge + synthesize
+        shared_chat = chat(s.plan.model, provider=s.plan.provider)
 
         d = s.decomposer
-        naive = NaiveDecomposer(max_parts=d.max_parts, min_part_chars=d.min_part_chars)
-        decomposer = naive if d.kind == "naive" else LLMDecomposer(
-            max_parts=d.max_parts, max_prompt_chars=d.max_prompt_chars,
-            fallback=naive, prompt=prompts[d.prompt],
-            plan_prompt=prompts.get(s.plan.planner_prompt), **helper_kw(d, "decompose"))
+        decomposer = LLMDecomposer(
+            chat_model=shared_chat, max_parts=d.max_parts, max_prompt_chars=d.max_prompt_chars,
+            fallback=NaiveDecomposer(max_parts=d.max_parts, min_part_chars=d.min_part_chars),
+            plan_prompt=prompts[s.plan.planner_prompt])
 
         y = s.synthesizer
-        synthesizer = concat_synthesizer if y.kind == "concat" else LLMSynthesizer(
-            max_body_chars=y.max_body_chars, prompt=prompts[y.prompt],
-            **helper_kw(y, "synthesize"))
+        synthesizer = LLMSynthesizer(chat_model=shared_chat, max_body_chars=y.max_body_chars,
+                                     prompt=prompts[y.prompt])
 
-        if s.orchestrator == "plan":
-            from ..execution.budget import ExecutionLimits
-            from ..execution.routed import plan_orchestrator
+        q = s.plan.quality_check
+        checker = QualityChecker(chat_model=shared_chat, prompt=prompts[q.prompt],
+                                 pass_score=q.pass_score)
 
-            budget = math.inf if s.plan.budget is None else s.plan.budget
-            q = s.plan.quality_check
-            checker = None
-            if q.enabled:
-                from .quality import QualityChecker
-                # late-bound like the routed helpers: called only once `agent` exists
-                checker = QualityChecker(
-                    chat_for=lambda request: agent.helper_call("verify", request, q.min_quality),
-                    prompt=prompts[q.prompt], pass_score=q.pass_score)
-            orchestrator = plan_orchestrator(
-                budget=budget, max_workers=s.plan.max_workers, sequential=s.plan.sequential,
-                route_late=s.plan.route_late, checker=checker,
-                length_budgets=s.plan.length_budgets,
-                limits=ExecutionLimits(max_cost=budget, max_depth=s.max_depth,
-                                       max_replans=s.plan.max_replans))
-        elif s.orchestrator == "tool_agent":
-            from .orchestrator import LangChainToolOrchestrator
-
-            orchestrator = LangChainToolOrchestrator(
-                chat(s.tool_agent.model), max_iterations=s.tool_agent.max_iterations,
-                system_prompt=prompts[s.tool_agent.prompt])
-        else:
-            orchestrator = RecursiveOrchestrator()
+        budget = math.inf if s.plan.budget is None else s.plan.budget
+        orchestrator = plan_orchestrator(
+            budget=budget, max_workers=s.plan.max_workers, sequential=s.plan.sequential,
+            route_late=s.plan.route_late, checker=checker,
+            length_budgets=s.plan.length_budgets,
+            limits=ExecutionLimits(max_cost=budget, max_depth=s.max_depth,
+                                   max_replans=s.plan.max_replans))
 
         sink = None
         if s.result_sink:
@@ -351,18 +353,26 @@ class AgenticRouter:
 
         Raises ``LookupError`` when the router has nothing selectable for the
         prompt (e.g. the resolved ``query_id`` has no scores) -- otherwise the
-        pool's first model would silently answer."""
+        pool's first model would silently answer.
+
+        Deliberately scoped to the router's own narrow, dispatchable pool
+        (:attr:`RouterModel.model_ids`) -- a routed call must be something
+        :attr:`clients` can actually reach. See :meth:`score_all_models` for
+        the broader, every-registered-model view; don't widen this method to
+        use it."""
         alpha = self._run_state().alpha
         lam = 0.0 if alpha is not None else self.lam
+        eligible = self.clients.eligible_mask(self.router.model_ids)
         if self._resolver is not None:
-            rr = self.router.route([self._resolver(prompt)], lam=lam, alpha=alpha)
+            rr = self.router.route([self._resolver(prompt)], lam=lam, alpha=alpha, eligible=eligible)
         elif not getattr(self.router, "can_route_text", False):
             raise TypeError(
                 f"{type(self.router).__name__} cannot score raw text; pass "
                 "query_resolver= or use NIRTRouter / KNNRouter"
             )
         else:
-            rr = self.router.route_text([prompt], encoder=self.encoder, lam=lam, alpha=alpha)
+            rr = self.router.route_text([prompt], encoder=self.encoder, lam=lam, alpha=alpha,
+                                        eligible=eligible)
         if rr.any_fallback:
             raise LookupError(
                 f"{self.router.name}: no usable score for this prompt "
@@ -370,13 +380,71 @@ class AgenticRouter:
             )
         return rr
 
-    def decompose(self, prompt: str, depth: int) -> list[str]:
-        """Split ``prompt`` into sub-tasks -- the one path every orchestrator
-        decomposes through, so the policy for *whether* to spend an LLM call
-        on it lives here, not in the decomposer.
+    def score_all_models(
+        self, prompt: str, *, impute_unknown: bool = False, knn_k: int = 10,
+        knn_weighting: str = "similarity",
+    ) -> RoutingResult:
+        """Score ``prompt`` against every model currently *registered in the
+        pool* -- every ``configs/model_profiles.yaml`` entry, unioned with
+        this router's own trained pool -- not just the narrow, dispatchable
+        set :meth:`route_decision` scores. A model with no profile embedding
+        built yet is rendered + embedded on the fly
+        (:mod:`router.routing.model_profiles`), with :attr:`encoder` reused as
+        the embedder (profile and query text share one pathway here, so
+        there's no second model to load); ``impute_unknown=True`` additionally
+        kNN-blends any model with no training observations toward the trained
+        pool's nearest profiles (see that module's caveat docstring before
+        turning this on by default).
 
-        For an :class:`LLMDecomposer` the call is skipped (``[prompt]``, which
-        orchestrators answer directly) when there is nothing to split:
+        Needs a :class:`~router.routing.routers.NIRTRouter` in
+        ``model_params="projected"`` mode (cold-start capable by
+        construction) -- raises ``TypeError`` otherwise.
+
+        Scoring a model here never implies it can be *called*: dispatching
+        still goes through :attr:`clients` (:class:`ClientRegistry`), which
+        raises its own ``LookupError`` for an id with no registered adapter,
+        independently of whether this method can score it.
+        """
+        import numpy as np
+
+        from ..nirt.routing_decision import cost_aware_utility, no_selectable_rows, routing_decision
+        from ..routing import NIRTRouter, model_profiles
+
+        router = self.router
+        if not isinstance(router, NIRTRouter):
+            raise TypeError(
+                f"score_all_models needs a NIRTRouter (cold-start pool scoring), "
+                f"got {type(router).__name__}"
+            )
+        cfg = getattr(router._data, "cfg", None)
+        pool_ids = sorted(set(router.model_ids) | set(model_profiles.list_profiled_model_ids(cfg)))
+        scores = router.predict_pool_scores_text(
+            [prompt], pool_ids, impute_unknown=impute_unknown, knn_k=knn_k,
+            knn_weighting=knn_weighting, encoder=self.encoder, profile_encoder=self.encoder,
+        )
+        mat = scores.to_numpy(np.float64)
+        util = cost_aware_utility(mat, lam=0.0, model_costs=None, eligible=None)
+        return RoutingResult(
+            query_ids=["0"], model_ids=list(scores.columns), scores=mat,
+            selected=routing_decision(mat, lam=0.0, model_costs=None, eligible=None),
+            lam=0.0, fallback=no_selectable_rows(util), alpha=None,
+        )
+
+    def _skip_decomposition(self, prompt: str, depth: int) -> bool:
+        """The gate in :meth:`decompose_plan`: nothing for an LLM decomposer to split."""
+        atomic = not self._is_multipart(prompt)
+        if depth == 0:
+            atomic = atomic and looks_atomic(prompt)
+        return atomic
+
+    def decompose_plan(self, prompt: str, depth: int, *, sequential: bool = False) -> list[SubTask]:
+        """Split ``prompt`` into dependency-aware :class:`SubTask`\\ s --
+        the one path the orchestrator decomposes through, so the policy for
+        *whether* to spend an LLM call on it lives here, not in the decomposer.
+
+        An :class:`LLMDecomposer` plans them (:meth:`LLMDecomposer.plan`), with
+        the call skipped (one atomic ``SubTask``) when there is nothing to
+        split:
 
         * ``depth == 0``: the request :func:`looks_atomic` (one sentence, no
           comma list) *and* has no lexical multi-part marker ("... and then ...").
@@ -384,24 +452,7 @@ class AgenticRouter:
           a decomposer told to make sub-tasks atomic, so a low router score
           alone is no reason to split it again.
 
-        Any other decomposer (``NaiveDecomposer``, a plain callable) is called
-        unchanged."""
-        if isinstance(self.decomposer, LLMDecomposer) and self._skip_decomposition(prompt, depth):
-            return [prompt]
-        return self.decomposer(prompt)
-
-    def _skip_decomposition(self, prompt: str, depth: int) -> bool:
-        """The gate in :meth:`decompose`: nothing for an LLM decomposer to split."""
-        atomic = not self._is_multipart(prompt)
-        if depth == 0:
-            atomic = atomic and looks_atomic(prompt)
-        return atomic
-
-    def decompose_plan(self, prompt: str, depth: int, *, sequential: bool = False) -> list[SubTask]:
-        """:meth:`decompose` with dependencies: :class:`SubTask`\\ s whose
-        ``depends_on`` name the earlier sub-tasks whose results they need. An
-        :class:`LLMDecomposer` plans them (:meth:`LLMDecomposer.plan`) behind
-        the same gate as :meth:`decompose`; any other decomposer gives
+        Any other decomposer (``NaiveDecomposer``, a plain callable) gives
         independent sub-tasks, each depending on the one before when
         ``sequential``."""
         if isinstance(self.decomposer, LLMDecomposer):
@@ -426,11 +477,17 @@ class AgenticRouter:
         Scores are the router's quality prediction for *answering* ``request``
         -- a proxy for model strength, not a measured decomposition skill. They
         come from this run's triage of ``request`` when there is one, so a
-        helper costs no extra routing call."""
+        helper costs no extra routing call.
+
+        Deliberately scoped to :meth:`route_decision`'s narrow pool, like it
+        -- a helper LLM must be something :attr:`clients` can actually call,
+        unlike :meth:`score_all_models`'s broader, every-registered-model
+        view."""
         known = self._run_state().decisions.get(request)
         scores = (known.scores if known is not None and known.scores
                   else self.route_decision(request).row_scores(0))
-        scores = {m: float(q) for m, q in scores.items() if math.isfinite(float(q))}
+        scores = {m: float(q) for m, q in scores.items()
+                  if math.isfinite(float(q)) and self.clients.can_serve(m)}
         if not scores:
             raise LookupError(f"{self.router.name}: no usable score to pick a helper model")
         above = [m for m, q in scores.items() if q >= min_quality]
@@ -480,7 +537,7 @@ class AgenticRouter:
     # execution                                                          #
     # ------------------------------------------------------------------ #
     def run(self, prompt: AgenticInput, *, conversation_id: Optional[str] = None,
-            alpha: Optional[float] = None) -> AgenticResult:
+            alpha: Optional[float] = None, debug: bool | str = False) -> AgenticResult:
         """Triage the request and either answer it directly or orchestrate it.
 
         ``prompt`` is a bare string, a chat message list or a
@@ -495,7 +552,11 @@ class AgenticRouter:
         near ``0`` cost-averse) -- e.g. different end users' cost preferences
         routed through one shared ``AgenticRouter``. Held for the whole call,
         including every sub-task's re-triage inside an orchestrated run. See
-        :meth:`route_decision`."""
+        :meth:`route_decision`.
+
+        ``debug`` writes :meth:`AgenticResult.debug_trace` for this call to a
+        text file: ``True`` auto-names it under ``debug_traces/``, a string is
+        used as the path verbatim. A write failure is logged, never raised."""
         t_start = time.perf_counter()
         req = self._begin(prompt, conversation_id, alpha)
         token = _current_run.set(req.state)
@@ -508,6 +569,8 @@ class AgenticRouter:
             _current_run.reset(token)
         req.state.timings["total"] = time.perf_counter() - t_start
         result = self._result(req, decision, root)
+        if debug:
+            _write_debug_trace(result, debug)
         self._emit(result)
         return result
 
@@ -545,7 +608,8 @@ class AgenticRouter:
             model_id = decision.selected_model_id
             ctx.run(self._use_call)
             expected = self._expected_cost(model_id, req.latest, req.state.history)
-            inner = self.clients.stream(model_id, with_history(req.state.history, req.latest))
+            sent = with_history(req.state.history, req.latest)
+            inner = self.clients.stream(model_id, sent)
             while True:
                 try:
                     chunk = ctx.run(next, inner)
@@ -555,7 +619,8 @@ class AgenticRouter:
                 timings.setdefault("ttft", time.perf_counter() - t_start)
                 yield chunk
             timings.setdefault("ttft", time.perf_counter() - t_start)
-            root = self._leaf(req.latest, model_id, 0, self._quality_of(decision), resp, expected)
+            root = self._leaf(req.latest, model_id, 0, self._quality_of(decision), resp, expected,
+                             sent_prompt=sent)
             timings["dispatch"] = time.perf_counter() - t0
         else:
             root = ctx.run(self._solve, req.latest, 0, decision=decision)
@@ -595,6 +660,7 @@ class AgenticRouter:
             plans=list(req.state.plans),
             helper_calls=list(req.state.helper_calls),
             quality_check=req.state.quality_check,
+            triage_scores=dict(decision.scores),
         )
         if root.mode == "single":
             reason = decision.reason
@@ -673,26 +739,31 @@ class AgenticRouter:
         """Invoke ``model_id`` once, counting it against ``max_calls``. Inside an
         orchestration (``depth > 0``) a failure becomes a failed ``SubCall``; at
         the root it raises. ``generation_kwargs`` (e.g. ``max_tokens``) reach
-        the model's adapter."""
+        the model's adapter. A blank response (no text, no error from the
+        adapter) is treated the same as a raised exception -- the model didn't
+        answer, so this must not read as a successful empty answer."""
         history = self._run_state().history
+        sent = with_history(history, prompt)
         expected: dict = {}
         try:
             self._use_call()
             expected = self._expected_cost(model_id, prompt, history)
-            resp = self.clients.complete(model_id, with_history(history, prompt), **generation_kwargs)
+            resp = self.clients.complete(model_id, sent, **generation_kwargs)
+            if not resp.content or not resp.content.strip():
+                raise RuntimeError(f"{model_id} returned no answer (empty response)")
         except Exception as exc:
             if depth == 0:
                 raise
             return SubCall(
                 prompt=prompt, model_id=model_id, predicted_quality=float(predicted_quality),
                 answer=f"[error: {type(exc).__name__}: {exc}]", mode="single", depth=depth,
-                cost=None, error=repr(exc), meta={**expected, "cost_source": "failed"},
+                cost=None, error=repr(exc), meta={**expected, "cost_source": "failed", "sent_prompt": sent},
             )
-        return self._leaf(prompt, model_id, depth, predicted_quality, resp, expected)
+        return self._leaf(prompt, model_id, depth, predicted_quality, resp, expected, sent_prompt=sent)
 
     @staticmethod
     def _leaf(prompt: str, model_id: str, depth: int, predicted_quality: float,
-              resp, expected: dict) -> SubCall:
+              resp, expected: dict, *, sent_prompt: Optional[str] = None) -> SubCall:
         """The ``SubCall`` for one completed model call -- the single builder
         ``_call_model`` and ``stream`` share.
 
@@ -701,15 +772,19 @@ class AgenticRouter:
         client couldn't price (no profile prices, or no usage from the
         provider) is charged its pre-call estimate instead (``"estimate"``) --
         never silently ``0.0`` (AGENTICROUTER-002) -- and stays ``None`` only
-        when there is no estimate either (``"unknown"``)."""
+        when there is no estimate either (``"unknown"``). ``sent_prompt`` (when
+        it differs from ``prompt``, e.g. history or a length-budget line was
+        prepended/appended) is the text actually sent to the model."""
         cost, source = resp.cost, "actual"
         if cost is None:
             cost = expected.get("expected_cost")
             source = "estimate" if cost is not None else "unknown"
+        meta = {**_call_meta(resp, expected), "cost_source": source}
+        if sent_prompt is not None:
+            meta["sent_prompt"] = sent_prompt
         return SubCall(
             prompt=prompt, model_id=model_id, predicted_quality=float(predicted_quality),
-            answer=resp.content, mode="single", depth=depth, cost=cost,
-            meta={**_call_meta(resp, expected), "cost_source": source},
+            answer=resp.content, mode="single", depth=depth, cost=cost, meta=meta,
         )
 
     def _expected_cost(self, model_id: str, prompt: str, history) -> dict:
@@ -747,26 +822,12 @@ class AgenticRouter:
     def _use_call(self, n: int = 1, *, enforce: bool = True) -> None:
         """Count ``n`` model call(s) against this run's shared budget. Every
         LLM invocation -- routed (``_call_model``) and helper (triage,
-        decompose, synthesize, the LangChain tool-agent's own reasoning) --
-        goes through here (AGENTICROUTER-003)."""
+        decompose, synthesize, judge) -- goes through here (AGENTICROUTER-003)."""
         self._run_state().use_call(n, enforce=enforce)
 
     # ------------------------------------------------------------------ #
     # convenience                                                        #
     # ------------------------------------------------------------------ #
-    def with_langchain_orchestrator(self, llm, **kw) -> "AgenticRouter":
-        """Return a copy that decomposes via a LangChain tool-calling agent."""
-        from .orchestrator import LangChainToolOrchestrator
-
-        clone = self._shallow_copy()
-        clone.orchestrator = LangChainToolOrchestrator(llm, **kw)
-        return clone
-
-    def _shallow_copy(self) -> "AgenticRouter":
-        c = AgenticRouter.__new__(AgenticRouter)
-        c.__dict__.update(self.__dict__)
-        return c
-
     def __repr__(self) -> str:  # pragma: no cover - cosmetic
         return (f"AgenticRouter(router={self.router.name!r}, "
                 f"orchestrator={getattr(self.orchestrator, 'name', '?')!r}, "

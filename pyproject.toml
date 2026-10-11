@@ -40,8 +40,10 @@ labeling = ["openai", "anthropic"]
 # ClientRegistry.anthropic + configs/serve_anthropic.yaml).
 anthropic = ["anthropic>=1.0", "pyyaml"]
 # router.agentic: LLM-driven orchestrator. Core install (echo backends,
-# RecursiveOrchestrator, HeuristicTriage) needs none of this.
-agentic = ["langchain>=0.3", "langchain-core>=0.3"]
+# HeuristicTriage, a single-shot request) needs none of this; an orchestrated
+# request's decompose/judge/synthesize calls through plan.model, which needs
+# LangChain -- langchain-ollama specifically for a local Ollama plan.model.
+agentic = ["langchain>=0.3", "langchain-core>=0.3", "langchain-ollama"]
 # router.llm.adapters.ollama: serve routed calls through a local `ollama serve`
 # (OllamaAdapter, ClientRegistry.ollama). No API key, no LangChain.
 ollama = ["ollama>=0.4"]
@@ -80,8 +82,18 @@ forbidden_modules = ["training", "evaluation"]
 # exception: NIRTDataset.from_config now requires `data` passed in and never
 # resolves it or builds the observation table itself -- that convenience is
 # training.data.nirt.nirt_dataset_from_config's job.)
+#
+# router.routing.model_profiles is the one serving-side bridge into the
+# model-profile schema (configs/model_profiles.yaml) and its kNN-impute
+# machinery -- NIRTRouter.resolve_pool_profile_matrix uses it to score a model
+# outside the trained checkpoint's pool (an ad hoc profile rendered/embedded
+# on the fly, optionally kNN-blended toward the trained pool) without a new
+# checkpoint. All training-side calls are function-local imports, confined to
+# this one file, so the crossing is explicit and easy to audit.
 ignore_imports = [
     "router.routing.routers -> training.data.facade",
+    "router.routing.model_profiles -> training.models.profiles",
+    "router.routing.model_profiles -> training.retrieval.model_bank",
 ]
 
 [[tool.importlinter.contracts]]

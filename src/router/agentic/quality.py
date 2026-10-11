@@ -20,12 +20,22 @@ from .llm_clients import message_text
 __all__ = ["QualityVerdict", "QualityChecker", "parse_verdict"]
 
 _FLAGS = re.IGNORECASE | re.MULTILINE
-_VERDICT_RE = re.compile(r"^[ \t]*VERDICT:[ \t]*(PASS|FAIL)\b", _FLAGS)
-_SCORE_RE = re.compile(r"^[ \t]*SCORE:[ \t]*(\d+(?:\.\d+)?)", _FLAGS)
-_WEAK_RE = re.compile(r"^[ \t]*WEAK_STEPS:[ \t]*(.*)$", _FLAGS)
-_ISSUES_RE = re.compile(r"^[ \t]*ISSUES:[ \t]*(.*)$", _FLAGS)
-_FOLLOW_RE = re.compile(r"^[ \t]*FOLLOW_UPS:[ \t]*(.*)$", _FLAGS)
-_KEY_LINE_RE = re.compile(r"^[ \t]*(VERDICT|SCORE|WEAK_STEPS|FOLLOW_UPS|ISSUES):", re.IGNORECASE)
+# markdown a judge may wrap a key in: "**ISSUES:**", "### VERDICT:", "`SCORE`:"
+_MD = r"[*_#>`]*"
+
+
+def _key(names: str) -> str:
+    """A ``KEY:`` line prefix: markdown around the key and the colon allowed,
+    never a line break (an empty value must not swallow the next line)."""
+    return rf"^[ \t]*{_MD}[ \t]*(?:{names})[ \t]*{_MD}[ \t]*:[ \t]*{_MD}[ \t]*"
+
+
+_VERDICT_RE = re.compile(_key("VERDICT") + r"(PASS|FAIL)\b", _FLAGS)
+_SCORE_RE = re.compile(_key("SCORE") + r"(\d+(?:\.\d+)?)", _FLAGS)
+_WEAK_RE = re.compile(_key("WEAK_STEPS") + r"(.*)$", _FLAGS)
+_ISSUES_RE = re.compile(_key("ISSUES") + r"(.*)$", _FLAGS)
+_FOLLOW_RE = re.compile(_key("FOLLOW_UPS") + r"(.*)$", _FLAGS)
+_KEY_LINE_RE = re.compile(_key("VERDICT|SCORE|WEAK_STEPS|FOLLOW_UPS|ISSUES"), re.IGNORECASE)
 
 
 @dataclass
@@ -67,7 +77,7 @@ def parse_verdict(text: str, *, pass_score: float = 7.0,
     return QualityVerdict(
         passed=verdict.group(1).upper() == "PASS" and score >= pass_score,
         score=score, weak_steps=weak,
-        issues=issues_m.group(1).strip() if issues_m else "",
+        issues=issues_m.group(1).strip().rstrip("*_`").strip() if issues_m else "",
         follow_ups=_follow_ups(text, n_steps), raw=text,
     )
 

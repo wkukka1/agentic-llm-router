@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
+import logging
 
 import numpy as np
 import pandas as pd
 import pytest
 
 from router.agentic import (
+    AgenticResult,
     AgenticRouter,
     ClientRegistry,
     HeuristicTriage,
@@ -18,7 +19,7 @@ from router.agentic import (
     LLMSynthesizer,
     LLMTriage,
     NaiveDecomposer,
-    RecursiveOrchestrator,
+    SubCall,
     TriageDecision,
     guess_provider,
 )
@@ -72,10 +73,58 @@ def test_callable_client_wraps_fn():
 def test_registry_synthesises_unknown_ids():
     reg = ClientRegistry({"known": LLMClient(EchoAdapter("known", prefix="k"))})
     assert reg.get("known").complete("x").content.startswith("[k::known]")
-    # unseen id -> default echo client, cached
-    with pytest.warns(UserWarning, match="no client registered"):
-        made = reg.get("surprise")
+    # unseen id alongside a real client -> refuse the echo placeholder (CLIENTREGISTRY-001)
+    with pytest.raises(LookupError, match="no client registered"):
+        reg.get("surprise")
+
+
+def test_registry_built_with_no_clients_still_synthesises_unknown_ids():
+    # no explicit clients given at all (e.g. AgenticRouter(clients=None), the
+    # all-echo demo config) -> every id is expected to be synthesised, so
+    # this must not raise
+    reg = ClientRegistry()
+    made = reg.get("surprise")
     assert isinstance(made, LLMClient) and reg.get("surprise") is made
+    assert "surprise" in reg.synthesized
+
+
+def test_can_serve_true_for_a_registered_id():
+    reg = ClientRegistry({"known": LLMClient(EchoAdapter("known"))})
+    assert reg.can_serve("known") is True
+
+
+def test_can_serve_true_for_anything_in_a_pure_echo_registry():
+    # no real clients at all -> the echo factory answers anything safely, so
+    # nothing is excluded, and the probe must not synthesise a client (the
+    # whole point of can_serve is a side-effect-free check)
+    reg = ClientRegistry()
+    assert reg.can_serve("surprise") is True
+    assert "surprise" not in reg and "surprise" not in reg.synthesized
+
+
+def test_can_serve_false_for_an_unregistered_id_alongside_real_clients():
+    # the exact CLIENTREGISTRY-001 shape: once the registry holds a real
+    # client, an unregistered id must not be considered servable either --
+    # and the probe itself must not mutate the registry
+    reg = ClientRegistry({"known": LLMClient(EchoAdapter("known"))})
+    assert reg.can_serve("surprise") is False
+    assert "surprise" not in reg and "surprise" not in reg.synthesized
+
+
+def test_can_serve_true_for_a_non_echo_default_factory():
+    # a registry with a real, dynamic default_factory (e.g. .ollama()/.langchain(),
+    # or a caller's own factory) must keep resolving unregistered ids -- that's
+    # the intended behaviour, not a bug this fix should restrict
+    reg = ClientRegistry({"known": LLMClient(EchoAdapter("known"))},
+                         default_factory=lambda mid: LLMClient(EchoAdapter(mid)))
+    assert reg.can_serve("surprise") is True
+
+
+def test_eligible_mask_matches_can_serve_per_id_in_order():
+    reg = ClientRegistry({"a": LLMClient(EchoAdapter("a")), "c": LLMClient(EchoAdapter("c"))})
+    mask = reg.eligible_mask(["a", "b", "c"])
+    assert mask.dtype == bool
+    np.testing.assert_array_equal(mask, [True, False, True])
 
 
 def test_guess_provider():
@@ -214,7 +263,7 @@ def test_llm_decomposer_still_strips_list_markers():
 
 
 # --------------------------------------------------------------------------- #
-# AgenticRouter end to end (echo clients, recursive orchestrator)            #
+# AgenticRouter end to end (echo clients, plan orchestrator)                 #
 # --------------------------------------------------------------------------- #
 def _agent(**kw):
     return AgenticRouter(FakeTextRouter(), ClientRegistry.echo(POOL), **kw)
@@ -228,11 +277,36 @@ def test_single_prompt_goes_straight_to_routed_model():
     assert len(res.steps) == 1 and res.steps[0].mode == "single"
 
 
+def test_run_result_carries_the_full_triage_score_spread():
+    res = _agent().run("What is the capital of France?")
+    assert set(res.triage_scores) == set(POOL)          # every pool model scored, not just the winner
+    assert res.triage_scores[res.selected_model_id] == pytest.approx(res.predicted_quality)
+
+
+def test_route_decision_restricts_to_servable_models():
+    # FakeTextRouter ties fast-small/big-strong/coder at 0.9 for a plain
+    # prompt (argmax -> lowest column index, "fast-small"); with "fast-small"
+    # deliberately unregistered, route_decision must never select it, even
+    # though it ties for the best raw score.
+    reg = ClientRegistry({"big-strong": LLMClient(EchoAdapter("big-strong")),
+                          "coder": LLMClient(EchoAdapter("coder"))})
+    agent = AgenticRouter(FakeTextRouter(), reg)
+    rr = agent.route_decision("a simple question")
+    assert rr.selected_model_ids[0] == "big-strong"
+
+
+def test_run_never_dispatches_to_an_unregistered_model():
+    reg = ClientRegistry({"big-strong": LLMClient(EchoAdapter("big-strong")),
+                          "coder": LLMClient(EchoAdapter("coder"))})
+    res = AgenticRouter(FakeTextRouter(), reg).run("a simple question")
+    assert res.mode == "single" and res.selected_model_id == "big-strong"
+
+
 def test_compound_prompt_is_orchestrated_and_synthesised():
     res = _agent().run("Explain quicksort and then implement it in Rust "
                        "and then analyse the complexity")
     assert res.mode == "orchestrated"
-    assert res.orchestrator == "recursive"
+    assert res.orchestrator == "plan"
     assert len(res.steps) == 3
     assert all(s.mode == "single" for s in res.steps)
     # every sub-answer threads into the final synthesis
@@ -271,90 +345,6 @@ def test_matrix_router_needs_a_resolver():
     # with a resolver mapping text -> an existing query_id it works
     ar2 = AgenticRouter(mr, ClientRegistry.echo(["a", "b"]), query_resolver=lambda t: "q1")
     assert ar2.run("hello").selected_model_id == "a"
-
-
-# --------------------------------------------------------------------------- #
-# LangChain orchestrator (needs langchain)                                    #
-# --------------------------------------------------------------------------- #
-def test_langchain_orchestrator_tools_build_and_recurse():
-    pytest.importorskip("langchain_core")
-    from router.agentic.orchestrator import build_router_tools
-
-    agent = _agent()
-    steps: list = []
-    tools = build_router_tools(agent, depth=0, steps=steps)
-    names = {t.name for t in tools}
-    assert names == {"route_query", "answer_with_model", "route_and_answer"}
-
-    rq = next(t for t in tools if t.name == "route_query")
-    out = rq.invoke({"query": "translate this sentence"})
-    assert "best=" in out and "predicted_quality=" in out
-
-    ra = next(t for t in tools if t.name == "route_and_answer")
-    ans = ra.invoke({"query": "a short question"})
-    assert len(steps) == 1 and steps[0].answer == ans
-
-
-def test_route_query_tool_error_is_returned_not_raised():
-    """LANGCHAINTOOLORCHESTRATOR-001: handle_tool_error=True only catches
-    ToolException -- route_query's LookupError must be converted so a bad
-    prompt becomes an observation, not an executor-aborting crash."""
-    pytest.importorskip("langchain_core")
-    from router.agentic.orchestrator import build_router_tools
-
-    class _FailingAgent:
-        router = SimpleNamespace(model_ids=["a"])
-
-        def route_decision(self, q):
-            raise LookupError("no usable score for this prompt")
-
-    tools = build_router_tools(_FailingAgent(), 0, [])
-    route_query = next(t for t in tools if t.name == "route_query")
-
-    result = route_query.invoke({"query": "x"})
-
-    assert "no usable score for this prompt" in result
-
-
-def test_route_and_answer_tool_error_is_returned_not_raised():
-    """Same bug, via agent._solve (what route_and_answer calls)."""
-    pytest.importorskip("langchain_core")
-    from router.agentic.orchestrator import build_router_tools
-
-    class _FailingAgent:
-        router = SimpleNamespace(model_ids=["a"])
-
-        def _solve(self, prompt, depth):
-            raise TypeError("router can't score raw text")
-
-    steps: list = []
-    tools = build_router_tools(_FailingAgent(), 0, steps)
-    route_and_answer = next(t for t in tools if t.name == "route_and_answer")
-
-    result = route_and_answer.invoke({"query": "x"})
-
-    assert "router can't score raw text" in result
-    assert steps == []  # the failed call must not be recorded as a completed SubCall
-
-
-def test_route_query_reraises_an_undocumented_exception_type():
-    """An exception outside the documented LookupError/TypeError failure
-    modes (e.g. an AttributeError from a real bug) must not be silently
-    swallowed as tool output."""
-    pytest.importorskip("langchain_core")
-    from router.agentic.orchestrator import build_router_tools
-
-    class _BrokenAgent:
-        router = SimpleNamespace(model_ids=["a"])
-
-        def route_decision(self, q):
-            raise AttributeError("something else broke")
-
-    tools = build_router_tools(_BrokenAgent(), 0, [])
-    route_query = next(t for t in tools if t.name == "route_query")
-
-    with pytest.raises(AttributeError, match="something else broke"):
-        route_query.invoke({"query": "x"})
 
 
 # --------------------------------------------------------------------------- #
@@ -418,6 +408,16 @@ def test_helper_model_falls_back_to_the_top_score_when_nothing_clears_it():
     assert (model_id, q) == ("big", pytest.approx(0.95))
 
 
+def test_helper_model_skips_an_unregistered_top_scorer():
+    # "big" (0.95, the top score) is deliberately unregistered -- the
+    # fallback-to-top-score path must skip it and land on "mid" (0.80),
+    # never pick a model clients can't actually call.
+    reg = ClientRegistry({m: LLMClient(CallableAdapter(m, lambda p, **kw: LLMResponse(f"{m}:{p}")))
+                          for m in ["mid", "small"]})
+    model_id, q = _helper_agent(reg).pick_helper_model("anything", min_quality=0.99)
+    assert (model_id, q) == ("mid", pytest.approx(0.80))
+
+
 def test_routed_decomposer_and_synthesizer_run_on_the_picked_pool_model():
     def reply(m):
         def fn(p, **kw):
@@ -443,25 +443,8 @@ def test_routed_decomposer_and_synthesizer_run_on_the_picked_pool_model():
     assert all(h["predicted_quality"] == pytest.approx(0.80) for h in res.helper_calls)
 
 
-def test_from_settings_wires_routed_helpers_to_the_built_agent():
-    from router.agentic.schemas import AgenticRouterSettings, default_prompts
-
-    settings = AgenticRouterSettings(
-        prompts=default_prompts(), warmup=False,
-        decomposer={"kind": "routed", "min_quality": 0.5},
-        synthesizer={"kind": "routed", "min_quality": 0.5},
-    )
-    agent = AgenticRouter.from_settings(settings, router=FakeTextRouter())
-    assert isinstance(agent.decomposer, LLMDecomposer)
-    assert isinstance(agent.synthesizer, LLMSynthesizer)
-
-    res = agent.run("Explain quicksort and then implement it in Rust")
-    assert res.helper_calls and res.helper_calls[0]["role"] == "decompose"
-    assert res.helper_calls[0]["model_id"] in POOL
-
-
 # --------------------------------------------------------------------------- #
-# decomposition policy: AgenticRouter.decompose gates LLM decomposer calls    #
+# decomposition policy: AgenticRouter.decompose_plan gates LLM decomposer calls #
 # --------------------------------------------------------------------------- #
 class _WeakRouter(FakeTextRouter):
     """Every prompt scores 0.3 (< the 0.55 triage threshold), so triage
@@ -518,34 +501,18 @@ def test_root_obvious_multipart_request_is_decomposed():
 
 
 def test_atomic_generated_subtasks_are_not_decomposed_again():
+    """The plan orchestrator's steps are leaves (planned fully up front, never
+    re-triaged or recursively re-decomposed -- see routed.py's module
+    docstring); a generated sub-task that is itself multi-part is answered as
+    written, not split further. (RecursiveOrchestrator used to recurse into
+    a multi-part sub-task via nested agent._solve calls; that behavior no
+    longer exists now that it's been removed.)"""
     prompt = "First, explain quicksort and then implement it in Rust"
     agent, chat = _decomposing_agent({prompt: "Explain quicksort.\nImplement quicksort in Rust."})
     res = agent.run(prompt)
     assert len(chat.requests) == 1                     # weak sub-tasks did not re-enter the LLM
     assert [s.prompt for s in res.steps] == ["Explain quicksort.", "Implement quicksort in Rust."]
     assert all(not s.children for s in res.steps)
-
-
-def test_multipart_generated_subtask_is_decomposed_again():
-    prompt = "First, explain quicksort and then compare it to mergesort"
-    sub = "Explain quicksort and then implement quicksort in Rust."
-    agent, chat = _decomposing_agent({
-        prompt: f"{sub}\nCompare quicksort to mergesort.",
-        sub: "Explain quicksort.\nImplement quicksort in Rust.",
-    })
-    res = agent.run(prompt)
-    assert chat.requests == [prompt, sub]
-    assert len(res.steps[0].children) == 2 and not res.steps[1].children
-
-
-@pytest.mark.parametrize("prompt", [
-    "What is the capital of France?",
-    "Explain quicksort and then implement it in Rust and then analyse the complexity",
-])
-@pytest.mark.parametrize("depth", [0, 1])
-def test_naive_decomposer_passes_through_unchanged(prompt, depth):
-    agent = AgenticRouter(_WeakRouter(), ClientRegistry.echo(POOL))
-    assert agent.decompose(prompt, depth) == NaiveDecomposer()(prompt)
 
 
 def test_unpriced_successful_call_makes_cost_unknown_not_zero():
@@ -809,6 +776,18 @@ def test_conversation_object_input():
     assert res.conversation_id == "c1"
 
 
+def test_single_call_meta_carries_the_sent_prompt_including_history():
+    conv = [{"role": "user", "content": "hello"}, {"role": "assistant", "content": "hi"},
+           {"role": "user", "content": "What is 2+2?"}]
+    sent = []
+    res = AgenticRouter(FakeTextRouter(), _recording_clients(sent)).run(conv)
+    assert res.mode == "single"
+    step = res.steps[0]
+    assert step.prompt == "What is 2+2?"                 # bare latest turn
+    assert step.meta["sent_prompt"] == sent[0]            # the real list sent to the client
+    assert step.meta["sent_prompt"] != step.prompt        # history made them differ
+
+
 def test_orchestrated_subcalls_carry_the_history():
     msgs = [{"role": "user", "content": "I am learning Rust."},
             {"role": "assistant", "content": "Great."},
@@ -989,3 +968,137 @@ def test_routed_helper_call_forwards_generation_kwargs():
         m, lambda p, **kw: (log.append(kw), LLMResponse("ok"))[1])) for m in ["big", "mid", "small"]})
     _helper_agent(reg).helper_call("synthesize", "anything", 0.75)("text", max_tokens=99)
     assert log == [{"max_tokens": 99}]
+
+
+# --------------------------------------------------------------------------- #
+# score_all_models: scoring is broader than, and independent of, dispatch
+# --------------------------------------------------------------------------- #
+def _projected_nirt_router():
+    from helpers import FakeTrainingData, make_synthetic_irt, nirt_cfg, nirt_datasets
+    from router.routing.routers import NIRTRouter
+    from training.nirt.train import fit
+
+    # q_dim=6 matches the profile dim informative_profiles=True produces
+    # (K=2 -> 2+1 signal + 3 noise cols = 6) -- in production both pathways
+    # share one BERT encoder/width, so this keeps the synthetic setup
+    # faithful to that invariant instead of needing two differently-sized
+    # stub encoders in the test below.
+    train_obs, val_obs, q_store, m_store = make_synthetic_irt(
+        n_queries=500, n_models=3, seed=7, q_dim=6, informative_profiles=True,
+    )
+    train_ds, val_ds = nirt_datasets(train_obs, val_obs, q_store, m_store)
+    cfg = nirt_cfg(model_params="projected", dim=2)
+    cfg["train"].update(epochs=10, patience=5, lr=1e-2)
+    res = fit(cfg, datasets=(train_ds, val_ds), save=False, verbose=False)
+    data = FakeTrainingData(profile_store=m_store, query_store=q_store)
+    router = NIRTRouter(res.model, res.model_index, data=data, pathway="irt")
+    return router, q_store
+
+
+def test_score_all_models_includes_a_model_with_no_registered_client(monkeypatch):
+    from router.routing import model_profiles
+
+    router, q_store = _projected_nirt_router()
+    unregistered = "profiled-but-not-dispatchable"
+    # a stand-in for "every configs/model_profiles.yaml entry" -- avoids
+    # needing a real Config just to read the YAML file in this test
+    monkeypatch.setattr(model_profiles, "list_profiled_model_ids",
+                        lambda cfg: router.model_ids + [unregistered])
+    monkeypatch.setattr(model_profiles, "lookup_curated_entry",
+                        lambda cfg, mid: {"feature": "A hypothetical model."} if mid == unregistered else None)
+
+    class _StubEncoder:
+        def encode(self, texts, show_progress: bool = False):
+            return np.stack([
+                np.random.default_rng(abs(hash(t)) % (2**32)).standard_normal(q_store.dim).astype(np.float32)
+                for t in texts
+            ])
+
+    reg = ClientRegistry({m: LLMClient(EchoAdapter(m)) for m in router.model_ids})
+    agent = AgenticRouter(router, reg, encoder=_StubEncoder())
+
+    rr = agent.score_all_models("Explain quicksort.")
+    scores = rr.row_scores(0)
+    assert unregistered in scores and np.isfinite(scores[unregistered])
+    assert set(router.model_ids) <= set(scores)
+
+    # scoring never implies dispatch is possible
+    with pytest.raises(LookupError, match="no client registered"):
+        reg.get(unregistered)
+
+
+def test_score_all_models_rejects_a_non_nirt_router():
+    agent = AgenticRouter(FakeTextRouter(), ClientRegistry())
+    with pytest.raises(TypeError, match="NIRTRouter"):
+        agent.score_all_models("hello")
+
+
+# --------------------------------------------------------------------------- #
+# AgenticResult.debug_trace() / run(..., debug=...)                          #
+# --------------------------------------------------------------------------- #
+def test_debug_trace_includes_header_and_steps():
+    sub = SubCall(prompt="sub prompt", model_id="m1", predicted_quality=0.8,
+                  answer="sub answer", cost=0.01, meta={"latency": 0.1})
+    res = AgenticResult(prompt="top prompt", mode="orchestrated", answer="final answer",
+                        triage_reason="reason", selected_model_id="m0",
+                        predicted_quality=0.9, steps=[sub], orchestrator="plan", cost=0.01)
+    text = res.debug_trace()
+    assert "top prompt" in text and "final answer" in text
+    assert "m1" in text and "sub answer" in text
+
+
+def test_debug_trace_includes_triage_scores_step_comparison_sent_prompt_and_escalation():
+    sub = SubCall(
+        prompt="sub prompt", model_id="m1", predicted_quality=0.8, answer="sub answer", cost=0.01,
+        meta={"step_scores": {"m1": 0.8, "m2": 0.5}, "sent_prompt": "HISTORY\nsub prompt",
+             "escalation_reason": "cheapest model scoring above m0 (0.400): m1 (0.800)"},
+    )
+    res = AgenticResult(prompt="top prompt", mode="orchestrated", answer="final answer",
+                        triage_reason="reason", steps=[sub],
+                        triage_scores={"m0": 0.4, "m1": 0.8, "m2": 0.5})
+    text = res.debug_trace()
+    assert "triage_scores: m1=0.800, m2=0.500, m0=0.400" in text   # ranked, highest first
+    assert "considered: m1=0.800, m2=0.500" in text
+    assert "sent: HISTORY\nsub prompt" in text
+    assert "escalation_reason: cheapest model scoring above m0 (0.400): m1 (0.800)" in text
+
+
+def test_debug_trace_includes_helper_calls_plans_and_quality_check():
+    res = AgenticResult(
+        prompt="p", mode="orchestrated", answer="a", triage_reason="r",
+        helper_calls=[{"role": "decompose", "model_id": "h1", "request": "split this",
+                       "output": "parts", "cost": 0.0, "latency": 0.1}],
+        plans=[{"plan_id": "p0", "revision": 0, "n_steps": 1, "outcome": "ok",
+               "estimated_cost": 0.1, "actual_cost": 0.09}],
+        quality_check={"best_round": 0, "passed": True, "score": 0.9, "status": "ok",
+                       "rounds": [{"plan_id": "p0", "passed": True, "score": 0.9}]},
+    )
+    text = res.debug_trace()
+    assert "split this" in text and "parts" in text
+    assert "p0" in text and "outcome=ok" in text
+    assert "passed=True" in text
+
+
+def test_run_debug_writes_a_trace_file(tmp_path):
+    path = tmp_path / "trace.txt"
+    res = _agent().run("What is the capital of France?", debug=str(path))
+    assert path.exists()
+    text = path.read_text(encoding="utf-8")
+    assert "capital of France" in text
+    assert res.selected_model_id in text
+
+
+def test_run_debug_true_writes_under_debug_traces_dir(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    res = _agent().run("What is the capital of France?", debug=True)
+    files = list((tmp_path / "debug_traces").glob("*.txt"))
+    assert len(files) == 1
+    assert res.selected_model_id in files[0].read_text(encoding="utf-8")
+
+
+def test_run_debug_write_failure_is_logged_not_raised(tmp_path, caplog):
+    (tmp_path / "is_a_dir").mkdir()          # writing a file here must fail
+    with caplog.at_level(logging.ERROR, logger="router.agentic.router"):
+        res = _agent().run("hi", debug=str(tmp_path / "is_a_dir"))
+    assert res.mode == "single"              # run() still succeeds
+    assert "debug trace write failed" in caplog.text

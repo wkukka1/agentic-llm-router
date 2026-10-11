@@ -38,6 +38,31 @@ class SubCall:
         return (n for n in self.walk() if not n.children)
 
 
+def _render_subcall(node: SubCall, indent: int = 0) -> list[str]:
+    pad = "  " * indent
+    lines = [f"{pad}- [{node.mode}] model_id={node.model_id} "
+             f"predicted_quality={node.predicted_quality} cost={node.cost}"]
+    if node.error:
+        lines.append(f"{pad}  error: {node.error}")
+    step_scores = node.meta.get("step_scores")
+    if step_scores:
+        ranked = sorted(step_scores.items(), key=lambda kv: kv[1], reverse=True)
+        lines.append(f"{pad}  considered: " + ", ".join(f"{m}={q:.3f}" for m, q in ranked))
+    lines.append(f"{pad}  prompt: {node.prompt}")
+    sent_prompt = node.meta.get("sent_prompt")
+    if sent_prompt is not None and sent_prompt != node.prompt:
+        lines.append(f"{pad}  sent: {sent_prompt}")
+    lines.append(f"{pad}  answer: {node.answer}")
+    escalation_reason = node.meta.get("escalation_reason")
+    if escalation_reason:
+        lines.append(f"{pad}  escalation_reason: {escalation_reason}")
+    if node.meta:
+        lines.append(f"{pad}  meta: {node.meta}")
+    for child in node.children:
+        lines.extend(_render_subcall(child, indent + 1))
+    return lines
+
+
 def total_cost(nodes: Iterable[SubCall]) -> Optional[float]:
     """Sum ``nodes``' costs (pass ``.leaves()`` -- a branch's own ``cost``
     already includes its descendants, so summing branches double-counts).
@@ -87,6 +112,10 @@ class AgenticResult:
     #: round's verdict (passed, score, weak_steps, issues, follow_ups, status),
     #: best_round, and every round with its escalations / follow-ups
     quality_check: Optional[dict] = None
+    #: every pool model's predicted quality for ``prompt`` at triage time
+    #: (``model_id -> score``) -- the comparison ``triage_reason`` was judged
+    #: against, not just the winner's own score
+    triage_scores: dict = field(default_factory=dict)
 
     def models_used(self) -> list[str]:
         """Models actually invoked. In orchestrated mode ``selected_model_id``
@@ -114,3 +143,57 @@ class AgenticResult:
         n = sum(1 for s in self.steps for _ in s.leaves())
         return (f"orchestrated ({self.orchestrator}) -> {n} sub-call(s) across "
                 f"{self.models_used()}: {self.triage_reason}")
+
+    def debug_trace(self) -> str:
+        """Full human-readable dump of this run: header, the ``steps`` tree,
+        helper calls, plans, and the quality check -- everything
+        ``AgenticResult`` carries for one :meth:`AgenticRouter.run` call. For
+        ``run(..., debug=...)``."""
+        lines: list[str] = []
+        lines.append(f"prompt: {self.prompt!r}")
+        lines.append(f"mode: {self.mode}")
+        lines.append(f"triage_reason: {self.triage_reason}")
+        lines.append(f"selected_model_id: {self.selected_model_id}")
+        lines.append(f"predicted_quality: {self.predicted_quality}")
+        lines.append(f"orchestrator: {self.orchestrator}")
+        lines.append(f"cost: {self.cost}")
+        lines.append(f"timings: {self.timings}")
+        if self.triage_scores:
+            ranked = sorted(self.triage_scores.items(), key=lambda kv: kv[1], reverse=True)
+            lines.append("triage_scores: " + ", ".join(f"{m}={q:.3f}" for m, q in ranked))
+        lines.append(f"answer: {self.answer}")
+        lines.append("")
+        lines.append("=== steps ===")
+        for step in self.steps:
+            lines.extend(_render_subcall(step))
+        if self.helper_calls:
+            lines.append("")
+            lines.append("=== helper_calls ===")
+            for i, hc in enumerate(self.helper_calls):
+                lines.append(f"[{i}] role={hc.get('role')} model_id={hc.get('model_id')} "
+                            f"cost={hc.get('cost')} latency={hc.get('latency')}")
+                lines.append(f"    request: {hc.get('request')}")
+                lines.append(f"    output: {hc.get('output')}")
+        if self.plans:
+            lines.append("")
+            lines.append("=== plans ===")
+            for p in self.plans:
+                lines.append(f"[{p.get('plan_id')}] rev={p.get('revision')} n_steps={p.get('n_steps')} "
+                            f"outcome={p.get('outcome')}")
+                lines.append(f"    estimated: cost={p.get('estimated_cost')} "
+                            f"quality={p.get('estimated_quality')} latency={p.get('estimated_latency')}")
+                lines.append(f"    actual:    cost={p.get('actual_cost')} latency={p.get('actual_latency')}")
+                lines.append(f"    quality_score={p.get('quality_score')} passed={p.get('quality_passed')}")
+        if self.quality_check:
+            lines.append("")
+            lines.append("=== quality_check ===")
+            qc = self.quality_check
+            lines.append(f"best_round={qc.get('best_round')} passed={qc.get('passed')} "
+                        f"score={qc.get('score')} status={qc.get('status')}")
+            if qc.get("issues"):
+                lines.append(f"issues: {qc['issues']}")
+            for r in qc.get("rounds", []):
+                lines.append(f"  round plan_id={r.get('plan_id')} passed={r.get('passed')} "
+                            f"score={r.get('score')} escalated={r.get('escalated')} "
+                            f"follow_ups={r.get('follow_ups')}")
+        return "\n".join(lines)

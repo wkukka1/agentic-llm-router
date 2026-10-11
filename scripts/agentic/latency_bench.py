@@ -159,7 +159,6 @@ def main() -> int:
     p.add_argument("--limit", type=int, default=None, help="conversations to replay")
     p.add_argument("--no-warmup", action="store_true")
     p.add_argument("--stream", action="store_true")
-    p.add_argument("--orchestrator", choices=["recursive", "plan"], default="recursive")
     p.add_argument("--anthropic", action="store_true")
     p.add_argument("--serve-map", default=str(REPO / "configs/serve_anthropic.yaml"))
     p.add_argument("--json", default=None, help="write per-turn rows + summary here")
@@ -176,16 +175,11 @@ def main() -> int:
     router = NIRTRouter.from_run(args.run)
     stages["construct"] = time.perf_counter() - t0
 
-    orchestrator = None
-    if args.orchestrator == "plan":
-        from router.execution.routed import plan_orchestrator
-        orchestrator = plan_orchestrator()
     sink = None
     if args.db:
         from router.tracing.run_store import sqlite_sink
-        sink = sqlite_sink(args.db, router=f"{args.run}/{args.orchestrator}")
-    agent = AgenticRouter(router, build_clients(args, router.model_ids), orchestrator=orchestrator,
-                          result_sink=sink)
+        sink = sqlite_sink(args.db, router=args.run)
+    agent = AgenticRouter(router, build_clients(args, router.model_ids), result_sink=sink)
 
     if hasattr(agent, "warmup") and not args.no_warmup:
         t0 = time.perf_counter()

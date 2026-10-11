@@ -109,3 +109,17 @@ def test_long_original_request_carries_the_truncated_marker():
     checker = QualityChecker(chat, prompt="{original}|{steps}|{answer}")
     checker("x" * 2500, [("t", "a")], "ans")
     assert chat.requests[0].startswith("x" * 2000 + " …[truncated]|")
+
+
+def test_markdown_bold_keys_are_parsed():
+    text = ("**VERDICT:** FAIL\n**SCORE:** 4\n**WEAK_STEPS:** 1\n**FOLLOW_UPS:**\nnone\n"
+            "**ISSUES:** missing part B")
+    v = parse_verdict(text, n_steps=3)
+    assert v.status == "ok" and not v.passed and v.score == 4 and v.weak_steps == [1]
+    assert v.follow_ups == [] and v.issues == "missing part B"
+
+
+def test_bold_key_after_follow_ups_is_not_a_task():
+    text = "VERDICT: FAIL\nSCORE: 4\nWEAK_STEPS: 1\nFOLLOW_UPS:\nnone\n**ISSUES:** missing part B"
+    v = parse_verdict(text, n_steps=3)
+    assert v.follow_ups == [] and v.issues == "missing part B"

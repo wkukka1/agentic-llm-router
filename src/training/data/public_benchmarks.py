@@ -39,12 +39,14 @@ BENCHLM_ATTRIBUTION = "Data from BenchLM.ai (https://benchlm.ai)"
 
 # ``open-llm-leaderboard/contents`` column name -> our benchmark key. Only
 # columns present and non-null for a given row are ever returned -- a missing
-# benchmark is omitted, never fabricated as 0.
+# benchmark is omitted, never fabricated as 0. Verified against a live
+# download (2026-10-07, 4576 rows): the dataset's CURRENT benchmark suite is
+# v3 (IFEval/BBH/MATH Lvl 5/GPQA/MUSR/MMLU-PRO) -- it has no MMLU/GSM8K/ARC/
+# HellaSwag/TruthfulQA/Winogrande columns at all (that was a wrong v1-era
+# assumption from before this was checked against the live schema).
 _HF_LEADERBOARD_COLUMNS = {
-    "MMLU": "mmlu", "GSM8K": "gsm8k", "ARC": "arc", "HellaSwag": "hellaswag",
-    "TruthfulQA": "truthfulqa", "Winogrande": "winogrande",
-    "MMLU-PRO": "mmlu_pro", "GPQA": "gpqa", "MUSR": "musr",
     "IFEval": "ifeval", "BBH": "bbh", "MATH Lvl 5": "math_lvl5",
+    "GPQA": "gpqa", "MUSR": "musr", "MMLU-PRO": "mmlu_pro",
 }
 
 
@@ -58,26 +60,48 @@ def hf_leaderboard_record(row: dict) -> Record:
             continue
         out[key] = {
             "value": float(value), "unit": "percent", "source": "hf_open_llm_leaderboard",
-            "version": "v1", "snapshot_date": None,
+            "version": "v3", "snapshot_date": None,
         }
     return out
 
 
-def benchlm_record(entry: dict) -> Record:
-    """One BenchLM ``models.json`` entry -> ``{key: record}`` for the overall
-    score plus whichever of its category scores are present."""
-    version = entry.get("methodology_version")
-    snapshot = entry.get("snapshot_date")
+# BenchLM's own camelCase category key -> our snake_case convention. Verified
+# against a live download of https://benchlm.ai/data/models.json (2026-10-07):
+# real top-level shape is {"items": [...], "generatedAt": ..., ...}, NOT the
+# {"models": [...]} this module originally (wrongly) assumed.
+_BENCHLM_CATEGORY_KEYS = {
+    "agentic": "agentic", "coding": "coding", "reasoning": "reasoning",
+    "multimodalGrounded": "multimodal_grounded", "knowledge": "knowledge",
+    "multilingual": "multilingual", "instructionFollowing": "instruction_following",
+    "math": "math",
+}
+
+
+def benchlm_record(entry: dict, *, snapshot_date: Optional[str] = None) -> Record:
+    """One BenchLM ``items[]`` entry -> ``{key: record}`` for the overall
+    score plus whichever of its category scores are present.
+
+    The item's own top-level ``displayScore`` is the authoritative overall
+    score (the file's own ``scoreFields.displayScore.role`` is
+    ``"published-overall-score"``) -- NOT ``scores.displayScore`` /
+    ``scores.overallScore``, which the file itself labels
+    ``"legacy-compatibility-score"`` and can disagree with substantially
+    (seen live: 38.49 vs. 54 for the same model). Category scores live
+    under ``scores.displayCategoryScores`` (camelCase keys).
+    """
+    version = entry.get("publicRankingMode")
     out: Record = {}
-    overall = entry.get("overall_score")
+    overall = entry.get("displayScore")
     if overall is not None:
         out["overall"] = {"value": float(overall), "unit": "benchlm_score", "source": "benchlm",
-                           "version": version, "snapshot_date": snapshot}
-    for cat, value in (entry.get("categories") or {}).items():
+                           "version": version, "snapshot_date": snapshot_date}
+    categories = ((entry.get("scores") or {}).get("displayCategoryScores")) or {}
+    for raw_key, value in categories.items():
         if value is None:
             continue
-        out[cat] = {"value": float(value), "unit": "benchlm_score", "source": "benchlm",
-                     "version": version, "snapshot_date": snapshot}
+        key = _BENCHLM_CATEGORY_KEYS.get(raw_key, raw_key)
+        out[key] = {"value": float(value), "unit": "benchlm_score", "source": "benchlm",
+                    "version": version, "snapshot_date": snapshot_date}
     return out
 
 
@@ -120,11 +144,14 @@ def lookup_hf_leaderboard(hf_repo_id: str, *, table_path: Path) -> Optional[Reco
 
 
 def lookup_benchlm(benchlm_slug: str, *, models_path: Path) -> Optional[Record]:
-    """``models_path``: the cached ``https://benchlm.ai/data/models.json`` file."""
+    """``models_path``: the cached ``https://benchlm.ai/data/models.json`` file
+    (real shape: ``{"items": [...], "generatedAt": "<ISO timestamp>", ...}``)."""
     data = json.loads(Path(models_path).read_text(encoding="utf-8"))
-    for entry in data.get("models", []):
+    generated_at = data.get("generatedAt")
+    snapshot_date = generated_at[:10] if generated_at else None
+    for entry in data.get("items", []):
         if entry.get("slug") == benchlm_slug:
-            rec = benchlm_record(entry)
+            rec = benchlm_record(entry, snapshot_date=snapshot_date)
             return rec or None
     return None
 

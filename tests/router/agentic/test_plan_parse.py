@@ -131,14 +131,16 @@ def test_shipped_plan_prompt_formats():
     assert "[after N]" in default_prompts()["plan"].format(prompt="p")
 
 
-def test_planner_prompt_setting_reaches_the_decomposer():
+def test_planner_prompt_setting_reaches_the_decomposer(monkeypatch):
+    import router.llm.adapters.langchain_adapter as lca
     from router.agentic.schemas import AgenticRouterSettings, load_settings
 
+    monkeypatch.setattr(lca, "chat_model", lambda model, **kw: object())
     base = load_settings()
     settings = AgenticRouterSettings.model_validate({
-        **base.model_dump(), "warmup": False, "orchestrator": "plan",
+        **base.model_dump(), "warmup": False,
         "prompts": {**base.prompts, "my_plan": "MY PLAN {prompt}"},
-        "decomposer": {"kind": "routed"}, "plan": {"planner_prompt": "my_plan"},
+        "plan": {**base.plan.model_dump(), "planner_prompt": "my_plan"},
     })
     agent = AgenticRouter.from_settings(settings, router=_WeakRouter())
     assert agent.decomposer.plan_prompt == "MY PLAN {prompt}"
@@ -147,10 +149,11 @@ def test_planner_prompt_setting_reaches_the_decomposer():
 def test_unknown_planner_prompt_is_rejected_for_the_plan_orchestrator():
     from router.agentic.schemas import AgenticRouterSettings, load_settings
 
+    base = load_settings()
     with pytest.raises(ValueError, match="planner_prompt"):
         AgenticRouterSettings.model_validate({
-            **load_settings().model_dump(), "orchestrator": "plan",
-            "plan": {"planner_prompt": "nope"}})
+            **base.model_dump(),
+            "plan": {**base.plan.model_dump(), "planner_prompt": "nope"}})
 
 
 def test_llm_decomposer_plan_with_an_empty_fallback_keeps_the_prompt():
@@ -214,3 +217,15 @@ def test_final_budget_is_sixty_percent_of_the_steps_capped():
     assert derive_final_budget([(100, 200, 300), (200, 400, 600)]) == (180, 360, 540)
     assert derive_final_budget([(1000, 2000, 2000)] * 3) == (1800, 2000, 2000)
     assert derive_final_budget([]) is None
+
+
+def test_unnumbered_preamble_in_a_numbered_plan_is_dropped():
+    text = "Sure, here is the plan\n1. Research the topic X\n2. [after 1] Write a summary of X"
+    assert parse_plan_lines(text) == [SubTask("Research the topic X"),
+                                      SubTask("Write a summary of X", (1,))]
+
+
+def test_trailing_note_in_a_numbered_plan_is_dropped():
+    text = ("1. Explain quicksort.\n2. [after 1] Implement it in Rust.\n\n"
+            "Note: Each sub-task is self-contained and the dependencies are shown.")
+    assert [t.text for t in parse_plan_lines(text)] == ["Explain quicksort.", "Implement it in Rust."]

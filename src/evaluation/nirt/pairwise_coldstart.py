@@ -189,10 +189,18 @@ def pairwise_cold_start_eval(
     for target in target_models:
         battles = _reorient_to_target(raw, target)
         battles = battles[battles["model_b"].isin(warm_ids)]
+        # drop battles whose query was never embedded (the pairwise and
+        # correctness query spaces are built separately -- see
+        # training.nirt.pairwise.build_pairwise_arrays's own n_dropped), not
+        # a crash.
+        n_before = len(battles)
+        battles = battles[battles["query_id"].isin(q_store._index)]
+        n_dropped = n_before - len(battles)
         per_model[target] = _score_one_model(
             model, data, q_store, p_store, target, battles, warm_ids,
             pathway=pathway, profile_id=(profile_override or {}).get(target, target),
         )
+        per_model[target]["n_dropped"] = n_dropped
 
     return {
         "sources": sources,
