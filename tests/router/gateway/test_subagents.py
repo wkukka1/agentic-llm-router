@@ -21,6 +21,7 @@ TOOL = {"name": "Read", "input_schema": {"type": "object", "properties": {"path"
 BILLING = "x-anthropic-billing-header: cc_version=2.1.293; cc_entrypoint=cli; cc_is_subagent=true;"
 MAIN_BILLING = "x-anthropic-billing-header: cc_version=2.1.293; cc_entrypoint=cli;"
 EXPLORE = "You are a file search specialist for Claude Code, Anthropic's official CLI for Claude."
+PLAN = "You are a software architect and planning specialist for Claude Code."
 
 
 def subagent_body(task, system_prompt="You are an agent.", model="claude-opus-5-5", messages=None, **extra):
@@ -60,6 +61,10 @@ def test_definition_beats_builtin_beats_task():
     assert detect(marked, "Find X") == {"role": "reviewer", "source": "definition", "why": "aar-role: reviewer"}
     explore = detect(subagent_body("Review this", system_prompt=EXPLORE), "Review this")
     assert (explore["role"], explore["source"]) == ("explore", "builtin")
+    plan = detect(subagent_body("Find X", system_prompt=PLAN), "Find X")
+    assert (plan["role"], plan["source"]) == ("plan", "builtin")
+    assert role_decision(plan, subagent_body("Find X"), "claude-opus-5-5", load_settings(None), {},
+                         1000)["model"] == "claude-sonnet-5-5"
     unknown = detect(subagent_body("Generate 100 prompts"), "Generate 100 prompts")
     assert unknown == {"role": None, "source": None, "why": None}
 
@@ -238,3 +243,23 @@ def test_allow_upgrade_reaches_the_router_and_is_kept(gateway):
     assert seen == [False, True]
     interceptor.configure(load_settings(None), None)
     assert interceptor.preferences()["allow_upgrade"] is True
+
+
+def test_sessions_sum_plan_usage_and_count_turns_and_subagents():
+    base = {"status": 200, "requested_model": "claude-opus-5-5", "cost_if_strongest_usd": 1.0}
+    records = [
+        {**base, "ts": "2026-10-10T10:00:00+00:00", "claude_session": "s1", "conversation": "c1", "new_turn": True,
+         "routed_model": "claude-sonnet-5-5", "cost_usd": 0.4, "cost_if_requested_usd": 0.8},
+        {**base, "ts": "2026-10-10T10:01:00+00:00", "claude_session": "s1", "conversation": "c2", "new_turn": True,
+         "subagent": True, "routed_model": "claude-haiku-5-5", "cost_usd": 0.01, "cost_if_requested_usd": 0.2},
+        {**base, "ts": "2026-10-10T10:02:00+00:00", "claude_session": "s1", "conversation": "c1", "new_turn": True,
+         "reason": "side request (no tools), not routed", "routed_model": "claude-opus-5-5", "cost_usd": 0.01,
+         "cost_if_requested_usd": None},
+        {**base, "ts": "2026-10-09T09:00:00+00:00", "claude_session": None, "conversation": "c0", "new_turn": True,
+         "routed_model": "claude-opus-5-5", "cost_usd": 0.5, "cost_if_requested_usd": 0.5},
+    ]
+    s1, before = interceptor.summarize_sessions(records)
+    assert (s1["session"], s1["requests"], s1["turns"], s1["subagent_spawns"], s1["rerouted"]) == ("s1", 3, 1, 1, 2)
+    assert s1["cost_usd"] == pytest.approx(0.42) and s1["cost_if_requested_usd"] == pytest.approx(1.01)
+    assert s1["models"] == {"claude-sonnet-5-5": 1, "claude-haiku-5-5": 1, "claude-opus-5-5": 1}
+    assert (before["session"], before["requests"]) == (None, 1)

@@ -824,7 +824,40 @@ def summarize(records: Optional[list[dict]] = None) -> dict:
     strongest = next((r.get("strongest_model") for r in reversed(records) if r.get("strongest_model")),
                      _settings.get("strongest"))
     return {"log": str(log_path()), "strongest_model": strongest, "totals": total, "models": models,
-            "subagents": summarize_subagents(records), "recent": list(reversed(records[-RECENT_RECORDS:]))}
+            "subagents": summarize_subagents(records), "sessions": summarize_sessions(records),
+            "recent": list(reversed(records[-RECENT_RECORDS:]))}
+
+
+#: Claude Code sessions listed on the dashboard, newest first
+SESSION_ROWS = 30
+
+
+def summarize_sessions(records: list[dict]) -> list[dict]:
+    """Plan usage per Claude Code session, against the same work on the
+    models it asked for and on the strongest. Requests logged before the
+    gateway recorded session ids are one row, ``session: None``."""
+    rows: dict = {}
+    for r in records:
+        sid = r.get("claude_session")
+        row = rows.setdefault(sid, {"session": sid, "first_ts": r.get("ts"), "last_ts": r.get("ts"),
+                                    "requests": 0, "turns": 0, "subagent_spawns": set(), "rerouted": 0,
+                                    "models": {}, "cost_usd": 0.0, "cost_if_requested_usd": 0.0,
+                                    "cost_if_strongest_usd": 0.0})
+        row["last_ts"] = r.get("ts") or row["last_ts"]
+        row["requests"] += 1
+        row["turns"] += bool(r.get("new_turn") and not r.get("subagent")
+                             and not (r.get("reason") or "").startswith("side request"))
+        if r.get("subagent"):
+            row["subagent_spawns"].add(r.get("conversation"))
+        row["rerouted"] += r.get("routed_model") != r.get("requested_model")
+        model = r.get("routed_model") or "unknown"
+        row["models"][model] = row["models"].get(model, 0) + 1
+        cost = r.get("cost_usd") or 0.0
+        row["cost_usd"] += cost
+        row["cost_if_requested_usd"] += r["cost_if_requested_usd"] if r.get("cost_if_requested_usd") is not None else cost
+        row["cost_if_strongest_usd"] += r["cost_if_strongest_usd"] if r.get("cost_if_strongest_usd") is not None else cost
+    out = [{**row, "subagent_spawns": len(row["subagent_spawns"])} for row in rows.values()]
+    return sorted(out, key=lambda x: x["last_ts"] or "", reverse=True)[:SESSION_ROWS]
 
 
 def summarize_subagents(records: list[dict]) -> list[dict]:

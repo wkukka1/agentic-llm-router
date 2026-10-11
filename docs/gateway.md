@@ -408,7 +408,7 @@ agent wrote.
 
 1. **Definition.** `aar-gateway code` hands Claude Code six roles
    (`--agents`), each prompt marked `aar-role: <name>`.
-2. **Built-in.** Claude Code's Explore, by its system prompt.
+2. **Built-in.** Claude Code's Explore and Plan, by their system prompts.
 3. **Task keywords**, from the first 400 characters of the task, in priority
    order: root cause/debug/architecture → architect; review/audit → reviewer;
    write tests → tester; propose/plan/design → planner; label/extract/
@@ -423,6 +423,7 @@ A subagent with no role is routed by the general router, like a normal turn.
 | scout | Haiku 5.5 | ≤ 10 bullets, `path:line` + one sentence |
 | extractor | Haiku 5.5 | only the structured result; big results to a file |
 | Explore (built-in) | Haiku 5.5 | Claude Code's own prompt |
+| Plan (built-in) | Sonnet 5.5 | Claude Code's own prompt |
 | reviewer | Sonnet 5.5 | verdict + ≤ 10 one-line findings with severity |
 | planner | Sonnet 5.5 | ≤ 12 steps + ≤ 5 risks, no prose |
 | tester | Sonnet 5.5 | files changed, pass/fail counts, one line per failure |

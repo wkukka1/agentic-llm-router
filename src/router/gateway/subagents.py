@@ -15,7 +15,7 @@ Its role, first match wins:
 1. ``definition`` -- one of :data:`ROLES`, which ``aar-gateway code`` hands to
    Claude Code; their prompts carry ``aar-role: <name>``;
 2. ``builtin`` -- a Claude Code built-in recognised by its system prompt
-   (Explore);
+   (Explore, Plan);
 3. ``task`` -- the task the main agent wrote, by keyword
    (:func:`classify_task`).
 
@@ -33,13 +33,15 @@ from .routing import incompatibility, price_for
 SUBAGENT_MARK = "cc_is_subagent=true"
 _ROLE_MARK = re.compile(r"\baar-role:\s*([a-z-]+)")
 #: Claude Code's built-in subagents, by the start of their system prompt
-_BUILTINS = (("explore", re.compile(r"You are a file search specialist")),)
+#: (read off Claude Code 2.1.293-2.1.296's requests)
+_BUILTINS = (("explore", re.compile(r"You are a file search specialist")),
+             ("plan", re.compile(r"You are a software architect and planning specialist")))
 
 _HAIKU, _SONNET = "claude-haiku-5-5", "claude-sonnet-5-5"
 #: role -> model. ``None`` keeps the model the session asked for.
 DEFAULT_ROLE_MODELS: dict[str, Optional[str]] = {
     "scout": _HAIKU, "extractor": _HAIKU, "explore": _HAIKU,
-    "reviewer": _SONNET, "planner": _SONNET, "tester": _SONNET,
+    "reviewer": _SONNET, "planner": _SONNET, "tester": _SONNET, "plan": _SONNET,
     "architect": None,
 }
 

@@ -26,7 +26,7 @@ interceptor:
 
   # Claude Code subagents (Agent tool spawns) are routed by role before the
   # router above: scout / extractor / Explore -> Haiku 5.5; reviewer / planner /
-  # tester -> Sonnet 5.5; architect keeps the session's model. A role never
+  # tester / Plan -> Sonnet 5.5; architect keeps the session's model. A role never
   # moves a subagent to a pricier model than the session's. Roles come from the
   # agent definitions `aar-gateway code` provides, Claude Code's built-in
   # Explore, or keywords in the task; other subagents go to the router.

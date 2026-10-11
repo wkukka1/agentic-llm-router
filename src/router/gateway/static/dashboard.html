@@ -261,6 +261,17 @@
     </tr></thead><tbody></tbody></table></div></div>
   </section>
 
+  <section aria-labelledby="sessions-h">
+    <div class="sec-head">
+      <h2 id="sessions-h">Your sessions</h2>
+      <span class="hint">Each Claude Code session, newest first · saved = against the models it asked for</span>
+    </div>
+    <div class="card table-box"><div class="scroll"><table id="sessions"><thead><tr>
+      <th class="l">Session</th><th class="l">When</th><th>Turns</th><th>Requests</th><th>Subagents</th>
+      <th class="l">Answered by</th><th>Cost</th><th>As asked</th><th>Saved</th><th>vs strongest</th>
+    </tr></thead><tbody></tbody></table></div></div>
+  </section>
+
   <section aria-labelledby="recent-h">
     <div class="sec-head">
       <h2 id="recent-h">Recent requests</h2>
@@ -488,6 +499,27 @@ async function refresh() {
         <td class="save ${p != null && p < 0 ? "neg" : ""}">${p == null ? "–" : p + "%"}</td>
         <td class="num">${r.cache_hit_rate == null ? "–" : Math.round(100 * r.cache_hit_rate) + "%"}</td></tr>`;
     }).join("") || `<tr><td colspan="9" class="empty">No subagents yet.</td></tr>`);
+
+    const when = (a, b) => {
+      if (!a) return "";
+      const d1 = new Date(a), d2 = new Date(b || a);
+      const day = d1.toLocaleDateString(undefined, {month: "short", day: "numeric"});
+      const t = (d) => d.toLocaleTimeString(undefined, {hour: "2-digit", minute: "2-digit"});
+      return d2 - d1 > 60000 ? `${day} · ${t(d1)}–${t(d2)}` : `${day} · ${t(d1)}`;
+    };
+    const savedCell = (a, b) => {
+      const p = pct(a, b);
+      return `<td class="save ${p != null && p < 0 ? "neg" : ""}">${p == null ? "–" : (p >= 0 ? p + "%" : "+" + (-p) + "% more")}</td>`;
+    };
+    setRows("sessions", (s.sessions || []).map((r) => {
+      const models = Object.entries(r.models).sort((a, b) => b[1] - a[1])
+        .map(([m, n]) => `<span class="m" title="${esc(m)} ×${n}">${swatch(m)}${esc(short(m))}</span>`).join(" ");
+      return `<tr><td class="l num">${r.session ? esc(r.session.slice(0, 8)) : '<span class="muted">before tracking</span>'}</td>
+        <td class="l muted">${esc(when(r.first_ts, r.last_ts))}</td>
+        <td class="num">${num(r.turns)}</td><td class="num">${num(r.requests)}</td><td class="num">${num(r.subagent_spawns)}</td>
+        <td class="l">${models}</td><td class="strong">${usd(r.cost_usd)}</td><td class="num">${usd(r.cost_if_requested_usd)}</td>
+        ${savedCell(r.cost_usd, r.cost_if_requested_usd)}${savedCell(r.cost_usd, r.cost_if_strongest_usd)}</tr>`;
+    }).join("") || `<tr><td colspan="10" class="empty">No sessions yet. Run <code>aar-gateway code</code>.</td></tr>`);
 
     recent = s.recent || [];
     renderRecent();
