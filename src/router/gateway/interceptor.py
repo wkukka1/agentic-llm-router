@@ -419,14 +419,21 @@ def _blocks(content) -> list:
     return [{"type": "text", "text": content}] if isinstance(content, str) else list(content)
 
 
-_REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
+#: text Claude Code itself puts in a user message -- reminders, a background
+#: task finishing, a subagent handing back its report -- never the human's.
+#: Found live: each subagent's hand-back and task notification counted as a
+#: new turn, so one request moved the main conversation Opus -> Haiku ->
+#: Sonnet -> Opus, rewriting its prompt cache each time.
+_REMINDER = re.compile(
+    r"<(system-reminder|task-notification|agent-message)\b[^>]*>.*?</\1>"
+    r"|^\s*Another Claude session sent a message:", re.S | re.M)
 
 
 def human_text(body: Mapping) -> str | None:
     """The new human text that starts a turn, or ``None`` for a tool-loop
-    continuation. Trailing ``system`` messages (Claude Code appends hook
-    output after the user's message) are skipped, and ``<system-reminder>``
-    sections are removed -- they are Claude Code's words, not the human's."""
+    continuation or a message Claude Code wrote itself. Trailing ``system``
+    messages (Claude Code appends hook output after the user's message) are
+    skipped, and Claude Code's own sections (:data:`_REMINDER`) removed."""
     msgs = [m for m in body.get("messages") or [] if m.get("role") != "system"]
     if not msgs or msgs[-1].get("role") != "user":
         return None

@@ -375,7 +375,8 @@ function savedCell(actual, base, cls = "") {
   const p = pct(actual, base);
   if (p == null) return `<td class="save none ${cls}">–</td>`;
   if (p === 0) return `<td class="save none ${cls}">0%</td>`;
-  return `<td class="save ${p < 0 ? "neg" : ""} ${cls}">${p > 0 ? p + "%" : "+" + (-p) + "%"}</td>`;
+  const why = p < 0 ? ` title="Cost more than the model asked for would have: a model that just took over a long conversation writes its cached copy of it once, and the model asked for already had it."` : "";
+  return `<td class="save ${p < 0 ? "neg" : ""} ${cls}"${why}>${p > 0 ? p + "%" : "+" + (-p) + "%"}</td>`;
 }
 
 function saving(pctEl, barsEl, actual, base, baseLabel) {

@@ -223,6 +223,28 @@ def test_a_model_the_upstream_rejects_for_this_client_is_not_tried_again(env):
     assert seen[0] == {} and "claude-haiku-4-5" in seen[1]
 
 
+def test_subagent_hand_backs_and_task_notifications_are_not_new_turns(env):
+    """Found live: with background subagents, Claude Code tells the main agent
+    each one finished with two user messages of its own. Routing each as a new
+    turn moved the main conversation between models mid-task."""
+    client, settings, calls, _ = env
+    asked = []
+    interceptor.configure(settings, lambda body, ctx: asked.append(ctx["human_text"]) or "claude-haiku-4-5")
+    client.post("/v1/messages", json=turn("research the gateway with subagents"), headers=AUTH)
+    hand_back = ('Another Claude session sent a message:\n<agent-message from="a41b9e">\n[Subagent hand-back] '
+                 'The text below is the final report of a subagent.\nsrc/x.py:12\n</agent-message>')
+    notification = ("<task-notification>\n<task-id>a41b9e</task-id>\n<status>completed</status>\n"
+                    "</task-notification>")
+    for text in (hand_back, notification):
+        client.post("/v1/messages", json=turn(text), headers=AUTH)
+    assert asked == ["research the gateway with subagents"]
+    assert [c["model"] for c in calls["anthropic"]] == ["claude-haiku-4-5"] * 3
+    assert [r["reason"] for r in records()[1:]] == ["same turn as the previous request"] * 2
+    client.post("/v1/messages", json=turn([{"type": "text", "text": notification},
+                                           {"type": "text", "text": "now summarise it"}]), headers=AUTH)
+    assert asked[-1] == "now summarise it"  # the human's own words still start a turn
+
+
 def test_a_400_about_the_request_itself_does_not_block_the_model(env):
     """Anthropic answers 400 to a prompt too long for a model: that says
     nothing about the next request, which may be short."""
