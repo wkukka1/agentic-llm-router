@@ -37,9 +37,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from training.data.loaders import routerbench_model_columns
+from training.data.pricing import cost_for
+
 log = logging.getLogger(__name__)
 
-ROUTERBENCH_META = ("sample_id", "prompt", "eval_name", "oracle_model_to_route_to")
 SPROUT_META = ("key", "dataset", "dataset_level", "dataset_idx", "prompt", "golden_answer")
 
 
@@ -104,7 +106,7 @@ def load_routerbench(path: str | Path = "routerbench/routerbench_0shot.pkl") -> 
     correctness is a guess about exactly the quantity being measured.
     """
     raw = pd.read_pickle(path)
-    models = [c for c in raw.columns if "|" not in c and c not in ROUTERBENCH_META]
+    models = routerbench_model_columns(raw)
     cost_cols = [f"{m}|total_cost" for m in models]
     complete = raw[models + cost_cols].notna().all(axis=1)
     raw = raw[complete].reset_index(drop=True)
@@ -121,12 +123,12 @@ def load_routerbench(path: str | Path = "routerbench/routerbench_0shot.pkl") -> 
                             raw[cost_cols].to_numpy(float), models, name="routerbench")
 
 
-def load_sprout(split: str = "test", prices: dict[str, tuple[float, float]] | None = None
+def load_sprout(split: str = "test", prices: dict[str, dict] | None = None
                 ) -> CorrectnessTable:
     """CARROT/SPROUT. 2024-25 pool, judge scores plus per-call token counts.
 
-    ``prices`` maps model -> (USD per 1M input tokens, USD per 1M output
-    tokens). Without it the cost column is NaN: the source prices nothing, and
+    ``prices`` is :func:`training.data.pricing.load_prices` output (an
+    unpriced model stays NaN). Without it the cost column is NaN: the source prices nothing, and
     a made-up price would produce a cost-quality frontier that looks
     authoritative and means nothing.
     """
@@ -139,12 +141,8 @@ def load_sprout(split: str = "test", prices: dict[str, tuple[float, float]] | No
 
     correct = np.column_stack([[cell["score"] for cell in raw[m]] for m in models]).astype(float)
     cost = np.full(correct.shape, np.nan)
-    for j, model in enumerate(models):
-        rate = (prices or {}).get(model)
-        if rate is None:
-            continue
-        per_in, per_out = rate
-        cost[:, j] = [c["num_input_tokens"] * per_in / 1e6 + c["num_output_tokens"] * per_out / 1e6
+    for j, model in enumerate(models if prices else ()):
+        cost[:, j] = [cost_for(model, c["num_input_tokens"], c["num_output_tokens"], prices)
                       for c in raw[model]]
     if prices is None:
         log.info("sprout: no price table given, cost is NaN "
@@ -202,25 +200,6 @@ def load_pool_from_frame(frame: pd.DataFrame, models: list[str], *,
     cost = (frame[cost_columns].to_numpy(float) if cost_columns
             else np.full((len(frame), len(models)), np.nan))
     return CorrectnessTable(prompts, frame[models].to_numpy(float), cost, list(models), name=name)
-
-
-def prices_from_config(path: str | Path = "configs/model_prices.yaml",
-                       ) -> dict[str, tuple[float, float]]:
-    """Read the project's price table into ``model -> (in, out)`` per 1M tokens.
-
-    Uses the repo's own snapshot rather than a second copy of the numbers. Its
-    header is explicit that the prices are approximate and must be re-verified
-    before anything published leans on them; that warning travels with them.
-    """
-    import yaml
-
-    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
-    out: dict[str, tuple[float, float]] = {}
-    for model, entry in (raw.get("prices") or {}).items():
-        if isinstance(entry, dict) and "input_per_1m" in entry and "output_per_1m" in entry:
-            out[model] = (float(entry["input_per_1m"]), float(entry["output_per_1m"]))
-    log.info("prices: %d models from %s (snapshot %s)", len(out), path, raw.get("snapshot_date"))
-    return out
 
 
 def summarise_pool(table: CorrectnessTable) -> str:
