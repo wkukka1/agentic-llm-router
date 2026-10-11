@@ -44,8 +44,19 @@ async def _lifespan(_app: FastAPI):
     _router_status.update(enabled=picker is not None, kind=rcfg.get("kind"),
                           source=rcfg.get("data_config") if rcfg.get("kind") == "knn" else rcfg.get("run"),
                           models=sorted(settings["models"]))
-    yield
-    await interceptor.aclose()
+    pid_file = _pid_file()
+    pid_file.parent.mkdir(parents=True, exist_ok=True)
+    pid_file.write_text(str(os.getpid()))
+    try:
+        yield
+    finally:
+        if pid_file.exists() and pid_file.read_text().strip() == str(os.getpid()):
+            pid_file.unlink()
+        await interceptor.aclose()
+
+
+def _pid_file() -> Path:
+    return interceptor.log_path().parent / "gateway.pid"
 
 
 def _graded_predictor(settings: dict):
@@ -65,6 +76,32 @@ def _graded_predictor(settings: dict):
 app = FastAPI(title="AAR gateway", lifespan=_lifespan)
 
 
+@app.get("/api/events")
+async def events(request: Request):
+    """Server-sent events for the dashboard: ``update`` the moment a request
+    is logged, a comment every 15 s to keep the connection open."""
+    import asyncio
+
+    from fastapi.responses import StreamingResponse
+
+    queue = interceptor.subscribe()
+
+    async def stream():
+        try:
+            yield "retry: 3000\n\n"
+            while not await request.is_disconnected():
+                try:
+                    await asyncio.wait_for(queue.get(), timeout=15)
+                    yield "event: update\ndata: {}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keep-alive\n\n"
+        finally:
+            interceptor.unsubscribe(queue)
+
+    return StreamingResponse(stream(), media_type="text/event-stream",
+                             headers={"cache-control": "no-cache"})
+
+
 @app.get("/health")
 async def health():
     status = dict(_router_status)
@@ -82,6 +119,15 @@ async def stats():
 @app.get("/api/statusline")
 async def statusline(session_id: str = ""):
     return interceptor.session_summary(session_id)
+
+
+@app.post("/api/subagent-spawn")
+async def subagent_spawn(request: Request):
+    """Asked by the ``PreToolUse`` hook (``aar-gateway hook``) before Claude
+    Code spawns a subagent: which model it should run on."""
+    body = await request.json()
+    return interceptor.record_spawn(str(body.get("session_id") or ""), body.get("subagent_type"),
+                                    str(body.get("prompt") or ""), body.get("model"))
 
 
 @app.get("/api/preferences")
@@ -216,11 +262,18 @@ def _claude_command(url: str, claude_args: list[str]) -> tuple[list[str], dict]:
     """
     env = {"ENABLE_TOOL_SEARCH": "true", **os.environ, "ANTHROPIC_BASE_URL": url}
     args = ["claude"]
+    src = str(Path(__file__).resolve().parents[2])
+    run = f"PYTHONPATH={shlex.quote(src)} {shlex.quote(sys.executable)} -m router.gateway.server"
+    settings: dict = {}
     if os.environ.get("AAR_GATEWAY_STATUSLINE", "1") != "0" and not _user_has_statusline():
-        src = str(Path(__file__).resolve().parents[2])
-        command = (f"PYTHONPATH={shlex.quote(src)} {shlex.quote(sys.executable)} "
-                   f"-m router.gateway.server statusline")
-        args += ["--settings", json.dumps({"statusLine": {"type": "command", "command": command}})]
+        settings["statusLine"] = {"type": "command", "command": f"{run} statusline"}
+    if os.environ.get("AAR_GATEWAY_HOOK", "1") != "0":
+        # sets each subagent's model as Claude Code spawns it (see router.gateway.subagents)
+        settings["hooks"] = {"PreToolUse": [{"matcher": "Agent|Task",
+                                             "hooks": [{"type": "command", "command": f"{run} hook",
+                                                        "timeout": 5}]}]}
+    if settings:
+        args += ["--settings", json.dumps(settings)]
     if os.environ.get("AAR_GATEWAY_AGENTS", "1") != "0" and "--agents" not in claude_args:
         from .subagents import agent_definitions
 
@@ -247,6 +300,63 @@ def _agents(argv: list[str]) -> None:
             continue
         path.write_text(agent_markdown(name))
         print(f"wrote  {path}")
+
+
+def _stop() -> None:
+    """Stops the gateway this machine is running, whichever way it was
+    started (``aar-gateway serve``, ``aar-gateway code``, ``python -m ...``)."""
+    import signal
+    import time
+    import urllib.request
+
+    pid_file = _pid_file()
+    try:
+        pid = int(pid_file.read_text().strip())
+    except (OSError, ValueError):
+        print(f"no gateway running (no {pid_file})")
+        return
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pid_file.unlink(missing_ok=True)
+        print("no gateway running (stale pid file removed)")
+        return
+    for _ in range(50):
+        try:
+            urllib.request.urlopen(f"{_base_url()}/health", timeout=0.5)
+        except OSError:
+            print(f"stopped the gateway (pid {pid})")
+            return
+        time.sleep(0.2)
+    print(f"sent stop to pid {pid}; it is still answering on {_base_url()}")
+
+
+def _hook() -> None:
+    """Claude Code's ``PreToolUse`` hook for the Agent tool: asks the gateway
+    which model the subagent should run on and returns the call with
+    ``model`` set. Anything else -- another tool, the gateway down, no
+    decision -- prints nothing, which leaves the call exactly as it was."""
+    import urllib.request
+
+    try:
+        event = json.loads(sys.stdin.read() or "{}")
+    except ValueError:
+        return
+    if event.get("tool_name") not in ("Agent", "Task"):
+        return
+    call = dict(event.get("tool_input") or {})
+    payload = {"session_id": event.get("session_id"), "subagent_type": call.get("subagent_type"),
+               "prompt": call.get("prompt"), "model": call.get("model")}
+    try:
+        req = urllib.request.Request(f"{_base_url()}/api/subagent-spawn", data=json.dumps(payload).encode(),
+                                     headers={"content-type": "application/json"})
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            alias = json.loads(resp.read()).get("alias")
+    except (OSError, ValueError):
+        return
+    if alias:
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
+                                                 "updatedInput": {**call, "model": alias}}}))
 
 
 def _statusline() -> None:
@@ -281,6 +391,12 @@ def main(argv: Optional[list[str]] = None) -> None:
     if argv[:1] == ["statusline"]:
         _statusline()
         return
+    if argv[:1] == ["stop"]:
+        _stop()
+        return
+    if argv[:1] == ["hook"]:
+        _hook()
+        return
     if argv[:1] == ["agents"]:
         _agents(argv[1:])
         return
@@ -291,6 +407,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     sub.add_parser("code", help="run Claude Code through the gateway, starting it if needed; "
                                 "any further arguments go to `claude`")
     sub.add_parser("dashboard", help="open the dashboard in a browser")
+    sub.add_parser("stop", help="stop the running gateway")
     sub.add_parser("statusline", help="Claude Code status-line command (reads its JSON on stdin)")
     sub.add_parser("agents", help="print the subagent roles as --agents JSON; "
                                   "--install [DIR] writes them to ~/.claude/agents")

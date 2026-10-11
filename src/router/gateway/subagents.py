@@ -1,25 +1,39 @@
-"""Claude Code subagents: recognise a spawn, name its role, give it a tier.
+"""Claude Code subagents: what kind of work each one does, and its model.
 
-Claude Code sends a subagent's requests through ``ANTHROPIC_BASE_URL`` like
-the main agent's, as a conversation of their own: its own system prompt and
-tools, and a first message that is the task the main agent wrote. The billing
-line at the top of its system prompt says ``cc_is_subagent=true`` (seen on
-Claude Code 2.1.293; the main agent's does not).
+**Where the model is set.** When the main agent calls the Agent tool, Claude
+Code runs its ``PreToolUse`` hooks first, with the call's ``subagent_type``
+and ``prompt``; a hook may return the call with ``model`` set, and the
+subagent then runs on that model (verified on Claude Code 2.1.296: the
+subagent ran on Haiku 5.5 while the main agent stayed on Sonnet 5.5).
+``aar-gateway code`` installs that hook (``aar-gateway hook``), which asks
+the gateway for :func:`spawn_decision`. This is documented behaviour, so it
+does not break when Claude Code rewords a prompt.
 
-A subagent is the cheapest place to change model: its system prompt and tools
-differ from the main agent's, so it has a prompt cache of its own, and moving
-it never makes the main conversation rewrite its cache.
+**At the gateway, a fallback.** A subagent's requests reach the gateway as a
+conversation of their own. Its system prompt's billing line carries
+``cc_is_subagent=true`` (undocumented, seen on 2.1.293-2.1.296), so the
+gateway can still recognise one the hook didn't see -- without the hook, or a
+spawn the hook could not reach the gateway for -- and route it by
+:func:`role_decision`.
 
-Its role, first match wins:
+**Kinds.** Three, by what the subagent may do, each with a starting tier:
 
-1. ``definition`` -- one of :data:`ROLES`, which ``aar-gateway code`` hands to
-   Claude Code; their prompts carry ``aar-role: <name>``;
-2. ``builtin`` -- a Claude Code built-in recognised by its system prompt
-   (Explore, Plan);
-3. ``task`` -- the task the main agent wrote, by keyword
-   (:func:`classify_task`).
+* ``lookup`` -- read-only, short answer: search, locate, count, extract,
+  label, summarise. Haiku.
+* ``make`` -- produce something: code, tests, a review, a plan. Sonnet.
+* ``judge`` -- hard reasoning: root causes, design trade-offs. The
+  session's own model.
 
-Otherwise it has no role, and the general router picks as for any turn.
+A subagent's kind, first match wins: one of :data:`ROLES` (its
+``subagent_type``, or ``aar-role: <kind>`` in its prompt); Claude Code's
+built-in Explore (a lookup) or Plan (Sonnet, like make); else keywords at the
+start of its task (:func:`classify_task`). Otherwise it has no kind and the
+general router decides, as for any turn. A tier is a ceiling on cost, never
+an upgrade: it never moves a subagent above the session's model.
+
+A subagent is the cheapest place to change model: its system prompt and
+tools differ from the main agent's, so it has a prompt cache of its own, and
+moving it never makes the main conversation rewrite its cache.
 """
 
 from __future__ import annotations
@@ -32,50 +46,43 @@ from .routing import incompatibility, price_for
 
 SUBAGENT_MARK = "cc_is_subagent=true"
 _ROLE_MARK = re.compile(r"\baar-role:\s*([a-z-]+)")
-#: Claude Code's built-in subagents, by the start of their system prompt
-#: (read off Claude Code 2.1.293-2.1.296's requests)
+#: Claude Code's built-in subagents: their ``subagent_type``, and the start of
+#: their system prompt (read off Claude Code 2.1.293-2.1.296's requests)
 _BUILTINS = (("explore", re.compile(r"You are a file search specialist")),
              ("plan", re.compile(r"You are a software architect and planning specialist")))
 
 _HAIKU, _SONNET = "claude-haiku-5-5", "claude-sonnet-5-5"
-#: role -> model. ``None`` keeps the model the session asked for.
+#: role -> model. ``None`` keeps the session's model.
 DEFAULT_ROLE_MODELS: dict[str, Optional[str]] = {
-    "scout": _HAIKU, "extractor": _HAIKU, "explore": _HAIKU,
-    "reviewer": _SONNET, "planner": _SONNET, "tester": _SONNET, "plan": _SONNET,
-    "architect": None,
+    "lookup": _HAIKU, "explore": _HAIKU,
+    "make": _SONNET, "plan": _SONNET,
+    "judge": None,
 }
 
 #: Task keywords, in priority order: a task that asks for a root cause and
-#: also says "find" is an architect's, not a scout's. Only the start of the
-#: task is read -- that is where the main agent states what it wants.
+#: also says "find" is a judge's, and one that opens by asking for something
+#: to be made ("Write 100 prompts ... of the type SUMMARIZE") is a make, whatever
+#: it is about. Only the start of the task is read -- that is where the main
+#: agent states what it wants.
 _TASK_RULES: tuple[tuple[str, re.Pattern], ...] = (
-    ("architect", re.compile(r"\broot[- ]cause|\bdebug|\barchitectur|\brace condition|\bdeadlock")),
-    ("reviewer", re.compile(r"\breview|\baudit\b|\bcritique|\bfind (?:bugs|issues|problems)")),
-    ("tester", re.compile(r"\b(?:write|add|generate) (?:\w+ )?tests?\b|\btest cases?\b")),
-    ("planner", re.compile(r"\bplan (?:for|how|the)\b|\bdesign (?:a|an|the)\b|\bpropose\b|\boutline\b")),
-    ("extractor", re.compile(r"\blabel|\bclassify|\bextract|\bsummari[sz]e|\bcommit message|\bchangelog"
-                             r"|\bconvert\b|\breformat|\btranslate\b")),
-    ("scout", re.compile(r"\bfind\b|\blocate\b|\bsearch\b|\bwhere (?:is|are|does|do)\b|\blist (?:all|every)\b"
-                         r"|\bgrep\b|\bcount\b|\bwhich files?\b|\bexplore\b")),
+    ("judge", re.compile(r"\broot[- ]cause|\bdebug|\barchitectur|\brace condition|\bdeadlock|\btrade-?offs?\b")),
+    ("make", re.compile(r"^(?:please\s+)?(?:write|generate|create|compose|produce|build|implement|add|fix|refactor)\b")),
+    ("make", re.compile(r"\breview|\baudit\b|\bcritique|\bfind (?:bugs|issues|problems)|\b(?:write|add) (?:\w+ )?tests?\b"
+                        r"|\bplan (?:for|how|the)\b|\bdesign (?:a|an|the)\b|\bpropose\b|\boutline\b")),
+    ("lookup", re.compile(r"\bfind\b|\blocate\b|\bsearch\b|\bwhere (?:is|are|does|do)\b|\blist (?:all|every)\b"
+                          r"|\bgrep\b|\bcount\b|\bwhich files?\b|\bexplore\b|\blabel|\bclassify|\bextract"
+                          r"|\bsummari[sz]e|\bcommit message|\bchangelog")),
 )
 TASK_CHARS = 400
-#: A task that opens by asking for something to be made is generation, whatever
-#: it is about ("Write 100 prompts ... of the task type SUMMARIZE" is not
-#: extraction): only the roles ranked above planner may still claim it.
-_MAKES = re.compile(r"^(?:please\s+)?(?:write|generate|create|compose|produce|build|implement)\b")
-_BEFORE_MAKES = ("architect", "reviewer", "tester")
 
 
 def classify_task(task: str) -> Optional[tuple[str, str]]:
-    """``(role, the words that decided it)`` for a subagent's task, or ``None``."""
-    head = (task or "")[:TASK_CHARS].lower()
-    makes = bool(_MAKES.match(head.lstrip()))
-    for role, pattern in _TASK_RULES:
-        if makes and role not in _BEFORE_MAKES:
-            return None
+    """``(kind, the words that decided it)`` for a subagent's task, or ``None``."""
+    head = (task or "")[:TASK_CHARS].lower().lstrip()
+    for kind, pattern in _TASK_RULES:
         found = pattern.search(head)
         if found:
-            return role, found.group(0)
+            return kind, found.group(0).strip()
     return None
 
 
@@ -86,119 +93,155 @@ def _system_text(body: Mapping) -> str:
     return "\n".join(b.get("text", "") for b in system or [] if isinstance(b, Mapping))
 
 
-def detect(body: Mapping, task: Optional[str]) -> Optional[dict]:
-    """``None`` for anything but a subagent; else ``{"role", "source", "why"}``
-    (``role`` may be ``None``: a subagent nothing here recognises)."""
-    system = _system_text(body)
-    if SUBAGENT_MARK not in system:
-        return None
+def identify(subagent_type: Optional[str], task: Optional[str], system: str = "") -> dict:
+    """``{"role", "source", "why"}`` for a subagent (``role`` ``None`` when
+    nothing here recognises it)."""
+    kind = (subagent_type or "").lower()
+    if kind in ROLES:
+        return {"role": kind, "source": "definition", "why": subagent_type}
     found = _ROLE_MARK.search(system)
-    if found:
+    if found and found.group(1) in ROLES:
         return {"role": found.group(1), "source": "definition", "why": found.group(0)}
     for role, pattern in _BUILTINS:
-        if pattern.search(system):
-            return {"role": role, "source": "builtin", "why": pattern.pattern}
+        if kind == role or pattern.search(system):
+            return {"role": role, "source": "builtin", "why": subagent_type or pattern.pattern}
     guessed = classify_task(task or "")
     if guessed:
         return {"role": guessed[0], "source": "task", "why": guessed[1]}
     return {"role": None, "source": None, "why": None}
 
 
-def role_decision(agent: Mapping, body: Mapping, requested: Optional[str], settings: Mapping,
-                  blocked: Mapping[str, str], est_prompt_tokens: int) -> Optional[dict]:
-    """The model for a subagent's turn from its role, or ``None`` to leave it
-    to the general router (no role, or the role's model can't take this
-    request). Never a model pricier than the one the session asked for: a
-    role tier is a ceiling on cost, not an upgrade."""
-    role = agent.get("role")
+def detect(body: Mapping, task: Optional[str]) -> Optional[dict]:
+    """``None`` for anything but a subagent's request; else :func:`identify`."""
+    system = _system_text(body)
+    if SUBAGENT_MARK not in system:
+        return None
+    return identify(None, task, system)
+
+
+def role_model(role: Optional[str], settings: Mapping) -> tuple[bool, Optional[str]]:
+    """``(known, model)`` for a role: ``model`` ``None`` keeps the session's."""
     models = {**DEFAULT_ROLE_MODELS, **((settings.get("subagents") or {}).get("roles") or {})}
     if role is None or role not in models:
+        return False, None
+    return True, canonical_model(models[role]) if models[role] else None
+
+
+def _pricier(settings: Mapping, model: str, than: Optional[str]) -> bool:
+    mine, other = price_for(settings, model), price_for(settings, than)
+    return bool(mine and other and mine["output"] > other["output"])
+
+
+def role_decision(agent: Mapping, body: Mapping, requested: Optional[str], settings: Mapping,
+                  blocked: Mapping[str, str], est_prompt_tokens: int) -> Optional[dict]:
+    """At the gateway: the model for a subagent's turn from its kind, or
+    ``None`` to leave it to the general router (no kind, or the kind's model
+    can't take this request)."""
+    known, target = role_model(agent.get("role"), settings)
+    if not known:
         return None
-    label = f"{role} subagent ({agent['source']}: {agent['why']})"
-    target = models[role]
+    label = f"{agent['role']} subagent ({agent['source']}: {agent['why']})"
     if target is None:
         return {"model": requested, "reason": f"{label}: keeps the session's model"}
-    target = canonical_model(target)
     spec = settings["models"].get(target)
     if spec is None or target in blocked or incompatibility(body, spec) \
             or est_prompt_tokens > spec.get("context_window", float("inf")):
         return None
-    mine, asked = price_for(settings, target), price_for(settings, requested)
-    if not mine or not asked:
+    if not price_for(settings, target) or not price_for(settings, requested):
         return None
-    if mine["output"] > asked["output"]:
+    if _pricier(settings, target, requested):
         return {"model": requested, "reason": f"{label}: {target} would cost more than the session's model"}
     return {"model": target, "reason": f"{label} -> {target}"}
 
 
-#: The roles ``aar-gateway code`` gives Claude Code (``--agents``). Every
-#: prompt ends with an output budget: a subagent's whole answer lands in the
-#: main agent's context, so a long report costs the main conversation on
-#: every request after it. ``model`` pins the tier in Claude Code itself, so
-#: the roles keep their tiers without the gateway too.
+#: what the Agent tool's ``model`` parameter accepts, by model family
+_ALIASES = ("haiku", "sonnet", "opus")
+
+
+def spawn_decision(subagent_type: Optional[str], task: Optional[str], session_model: Optional[str],
+                   settings: Mapping, asked_model: Optional[str] = None) -> dict:
+    """At spawn time (the hook): ``{"role", "source", "why", "model", "alias",
+    "reason"}``. ``alias`` is what to set the Agent call's ``model`` to, or
+    ``None`` to leave the call alone -- no kind, the main agent already chose a
+    model, the kind keeps the session's model, or its model would cost more
+    than the session's."""
+    agent = identify(subagent_type, task)
+    out = {**agent, "model": None, "alias": None}
+    if asked_model:
+        return {**out, "reason": f"the main agent asked for {asked_model}"}
+    known, target = role_model(agent["role"], settings)
+    if not known:
+        return {**out, "reason": "no kind recognised: the gateway's router decides"}
+    if target is None:
+        return {**out, "reason": f"{agent['role']}: keeps the session's model"}
+    if session_model and _pricier(settings, target, session_model):
+        return {**out, "reason": f"{agent['role']}: {target} would cost more than the session's model"}
+    alias = next((a for a in _ALIASES if a in target), None)
+    if alias is None:
+        return {**out, "model": target, "reason": f"{agent['role']}: {target} has no Agent-tool alias; "
+                                                 "the gateway routes it"}
+    return {**out, "model": target, "alias": alias, "reason": f"{agent['role']} -> {target}"}
+
+
+#: The kinds ``aar-gateway code`` gives Claude Code (``--agents``). Each
+#: prompt ends with an output budget -- a subagent's whole answer lands in the
+#: main agent's context and is re-sent with every request after it -- and
+#: lookup and judge are limited to tools that read and run, not edit.
+#: ``model`` pins the tier in Claude Code itself, so the kinds keep their
+#: tiers without the gateway too.
 _BUDGET = ("Your final message is all the main agent sees, and it carries it for the rest of the "
            "conversation: keep it within the budget below. No preamble, no restating the task, no "
            "closing summary.")
+_READ_TOOLS = ["Read", "Grep", "Glob", "Bash", "ToolSearch", "WebFetch", "WebSearch"]
 
 ROLES: dict[str, dict] = {
-    "scout": {
+    "lookup": {
         "model": "haiku",
-        "description": "Finds things in the codebase: where X is defined or used, which files do Y, "
-                       "how many of Z. Read-only. Use for any search or lookup.",
-        "prompt": "You locate code and facts in the repository. Do not change files.\n\n" + _BUDGET +
-                  "\n\nOutput budget: at most 10 bullets, each `path:line` and one sentence. If nothing "
-                  "matches, say so in one line.",
+        "tools": _READ_TOOLS,
+        "description": "Read-only lookups with a short answer: find where something is defined or used, "
+                       "which files do X, count things, extract or label items, summarise a log, draft a "
+                       "commit message. Use for any search or mechanical, checkable task.",
+        "prompt": "You find facts in the repository and do mechanical, checkable work. Never change files; "
+                  "if the task needs a file written, say so instead.\n\n" + _BUDGET +
+                  "\n\nOutput budget: at most 10 bullets, each `path:line` and one sentence, or exactly "
+                  "the structured result asked for. If nothing matches, say so in one line.",
     },
-    "extractor": {
-        "model": "haiku",
-        "description": "Mechanical, checkable work on given text: pull fields out of logs, label or "
-                       "classify items, draft a commit message or changelog, check a lockfile.",
-        "prompt": "You do mechanical extraction and drafting. Follow the requested format exactly.\n\n"
-                  + _BUDGET + "\n\nOutput budget: only the structured result asked for (list, table, "
-                  "JSON or draft text); write large results to the file the task names and reply with "
-                  "its path and a count.",
-    },
-    "reviewer": {
+    "make": {
         "model": "sonnet",
-        "description": "Reviews a diff or code for bugs, risks and missing tests. Read-only.",
-        "prompt": "You review code. Report only real problems, each tied to a line. Do not change files.\n\n"
-                  + _BUDGET + "\n\nOutput budget: one-line verdict, then at most 10 findings, each "
-                  "`severity (high/medium/low) · path:line · problem · fix` on one line.",
+        "description": "Produces something: implements or changes code, writes and runs tests, reviews "
+                       "a diff, or turns a goal into an implementation plan.",
+        "prompt": "You make the change, tests, review or plan asked for, matching the project's existing "
+                  "style.\n\n" + _BUDGET + "\n\nOutput budget: what you changed or concluded, as at most "
+                  "10 one-line items (files touched, tests passed/failed, or findings as "
+                  "`severity · path:line · problem · fix`). No code in the reply unless asked.",
     },
-    "planner": {
-        "model": "sonnet",
-        "description": "Turns a goal into an implementation plan: steps, files touched, risks. Read-only.",
-        "prompt": "You plan changes. Read what you need; do not change files.\n\n" + _BUDGET +
-                  "\n\nOutput budget: a numbered plan of at most 12 steps (each: what, which files), then "
-                  "at most 5 risks or open questions. No prose paragraphs.",
-    },
-    "tester": {
-        "model": "sonnet",
-        "description": "Writes or extends tests for given code and runs them.",
-        "prompt": "You write tests that match the project's existing test style, then run them.\n\n"
-                  + _BUDGET + "\n\nOutput budget: the test files you changed, how many tests pass or "
-                  "fail, and for each failure one line saying why. No test code in the reply.",
-    },
-    "architect": {
+    "judge": {
         "model": "inherit",
-        "description": "Hard reasoning: root-cause debugging, architecture decisions, trade-offs that "
-                       "need the strongest model.",
-        "prompt": "You investigate hard problems: find root causes and weigh designs, with evidence "
-                  "from the code.\n\n" + _BUDGET + "\n\nOutput budget: conclusion first, then at most 8 "
-                  "findings with `path:line` evidence, then the recommended next step.",
+        "tools": _READ_TOOLS,
+        "description": "Hard reasoning that needs the strongest model: root-cause debugging, architecture "
+                       "and design trade-offs. Investigates; does not edit.",
+        "prompt": "You investigate hard problems: find root causes and weigh designs, with evidence from "
+                  "the code. Never change files.\n\n" + _BUDGET + "\n\nOutput budget: conclusion first, "
+                  "then at most 8 findings with `path:line` evidence, then the recommended next step.",
     },
 }
 
 
 def agent_definitions() -> dict[str, dict]:
     """``ROLES`` as Claude Code's ``--agents`` JSON, each prompt marked with
-    its role so the gateway can recognise its requests."""
-    return {name: {"description": r["description"], "model": r["model"],
-                   "prompt": f"{r['prompt']}\n\naar-role: {name}"}
-            for name, r in ROLES.items()}
+    its kind so the gateway can recognise its requests."""
+    out = {}
+    for name, r in ROLES.items():
+        d = {"description": r["description"], "model": r["model"], "prompt": f"{r['prompt']}\n\naar-role: {name}"}
+        if r.get("tools"):
+            d["tools"] = list(r["tools"])
+        out[name] = d
+    return out
 
 
 def agent_markdown(name: str) -> str:
-    """One role as a Claude Code agent file (``~/.claude/agents/<name>.md``)."""
+    """One kind as a Claude Code agent file (``~/.claude/agents/<name>.md``)."""
     d = agent_definitions()[name]
-    return f"---\nname: {name}\ndescription: {d['description']}\nmodel: {d['model']}\n---\n\n{d['prompt']}\n"
+    tools = f"tools: {', '.join(d['tools'])}\n" if d.get("tools") else ""
+    return (f"---\nname: {name}\ndescription: {d['description']}\nmodel: {d['model']}\n{tools}---\n\n"
+            f"{d['prompt']}\n")

@@ -48,9 +48,9 @@ def test_subagent_baseline_prices_each_run_on_its_roles_model(tmp_path):
     (folder / "agent-a1.meta.json").write_text(json.dumps({"agentType": "general-purpose"}))
     (run,) = subagent_runs(tmp_path)
     row = price_run(run, load_settings(None))
-    assert (row["role"], row["source"], row["tiered_model"]) == ("extractor", "task", "claude-haiku-5-5")
+    assert (row["role"], row["source"], row["tiered_model"]) == ("lookup", "task", "claude-haiku-5-5")
     assert 0 < row["tiered_cost_usd"] < row["cost_usd"]
-    assert "extractor" in report([row])
+    assert "lookup" in report([row])
 
 
 def test_only_subagent_tasks_whose_inputs_still_exist_are_replayed(tmp_path):
@@ -65,7 +65,7 @@ def test_only_subagent_tasks_whose_inputs_still_exist_are_replayed(tmp_path):
                  {"type": "assistant", "message": {"model": "claude-sonnet-5-5", "usage": usage}}]
         (folder / f"agent-{name}.jsonl").write_text("\n".join(json.dumps(x) for x in lines))
     (row,) = subagent_turns(tmp_path)
-    assert (row["agent_role"], row["subagent"], row["cwd"]) == ("scout", True, str(tmp_path))
+    assert (row["agent_role"], row["subagent"], row["cwd"]) == ("lookup", True, str(tmp_path))
     mine = {"prompt_hash": "h", "prompt": "my own question"}
     assert pending_turns([row, mine], [], subagents=True) == [row]
     assert pending_turns([row, mine], [], subagents=False) == [mine]

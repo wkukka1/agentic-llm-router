@@ -19,59 +19,93 @@
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 var(--sans); }
-  main { max-width: 1240px; margin: 0 auto; padding: 28px 24px 64px; display: flex; flex-direction: column; gap: 28px; }
+  main { max-width: 1180px; margin: 0 auto; padding: 28px 24px 64px; display: flex; flex-direction: column; gap: 28px; }
   @media (max-width: 600px) { main { padding: 20px 16px 48px; } }
   .mono { font-family: var(--mono); }
   .muted { color: var(--muted); }
+  h1 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+  h2 { margin: 0; font-size: 15px; font-weight: 700; }
+  h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+  .hint { font-size: 12.5px; color: var(--muted); }
 
   header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
   .brand { display: flex; align-items: center; gap: 12px; }
   .logo { width: 36px; height: 36px; border-radius: 10px; background: var(--ink); display: grid; place-items: center; color: var(--bg); }
-  h1 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
-  .tagline { font-size: 12.5px; color: var(--muted); }
-  .chips { display: flex; flex-wrap: wrap; gap: 10px; }
   .chip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: var(--panel);
     border: 1px solid var(--line); font-size: 12.5px; color: var(--ink-2); }
-  .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--good); }
-  .dot.off { background: var(--bad); }
+  .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--good); animation: pulse 2.2s ease-out infinite; }
+  .dot.off { background: var(--bad); animation: none; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(74,222,128,.55); } 70%, 100% { box-shadow: 0 0 0 9px rgba(74,222,128,0); } }
 
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
-  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
-  .kpi { padding: 20px 22px; display: flex; flex-direction: column; gap: 10px; }
-  .eyebrow { font-size: 12.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
-  .big { font-family: var(--mono); font-size: 34px; font-weight: 600; letter-spacing: -0.02em; }
-  .tags { display: flex; flex-wrap: wrap; gap: 8px; }
-  .tag { padding: 3px 9px; border-radius: 6px; background: var(--panel-2); color: var(--ink-2); font-size: 12px; }
-  .tag.blue { background: var(--soft); color: var(--ink); font-weight: 600; }
-  .bars { display: flex; flex-direction: column; gap: 6px; }
-  .bar { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--ink-2); }
-  .bar > span:first-child { width: 78px; }
-  .bar > span:last-child { width: 64px; text-align: right; font-family: var(--mono); }
-  .track { flex: 1; height: 8px; border-radius: 999px; background: var(--track); overflow: hidden; }
-  .fill { height: 8px; border-radius: 999px; background: var(--ink); }
-  .fill.base { background: var(--base); }
-
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; transition: border-color .2s, transform .2s; }
   section { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
   .sec-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
-  h2 { margin: 0; font-size: 15px; font-weight: 700; }
-  .hint { font-size: 12.5px; color: var(--muted); }
+
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
+  .kpi { padding: 20px 22px; display: flex; flex-direction: column; gap: 10px; }
+  .kpi:hover { border-color: #3A3A3A; transform: translateY(-2px); }
+  .eyebrow { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; }
+  .big { font-family: var(--mono); font-size: 34px; font-weight: 600; letter-spacing: -0.02em; }
+  .big.bump { animation: bump .5s ease-out; }
+  @keyframes bump { 30% { color: #FFF; text-shadow: 0 0 18px rgba(237,237,237,.35); } }
+  .bars { display: flex; flex-direction: column; gap: 6px; }
+  .bar { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--ink-2); }
+  .bars .bar > span:first-child { width: 84px; }
+  .bar > span:last-child { width: 64px; text-align: right; font-family: var(--mono); }
+  .track { flex: 1; height: 8px; border-radius: 999px; background: var(--track); overflow: hidden; min-width: 40px; }
+  .fill { height: 8px; border-radius: 999px; background: var(--ink); transition: width .9s cubic-bezier(.2,.8,.2,1); }
+  .fill.base { background: var(--base); }
+  .spark { display: flex; align-items: flex-end; gap: 3px; height: 40px; }
+  .spark i { flex: 1; min-width: 3px; height: 0; border-radius: 2px 2px 0 0; background: #3A3A3A;
+    transition: height .7s cubic-bezier(.2,.8,.2,1), background-color .3s; }
+  .spark i.hot { background: var(--ink); }
+  .spark-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 4px; }
 
   .pref { padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; }
-  .pref-row { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; }
-  .seg { display: inline-flex; padding: 4px; gap: 4px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); }
+  .seg { display: inline-flex; flex-wrap: wrap; padding: 4px; gap: 4px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); }
   .seg button { min-height: 40px; padding: 0 18px; border: 0; border-radius: 9px; background: transparent; color: var(--ink-2);
-    font: 500 13.5px var(--sans); cursor: pointer; }
+    font: 500 13.5px var(--sans); cursor: pointer; transition: background-color .15s, color .15s; }
   .seg button.on { background: var(--ink); color: var(--bg); font-weight: 600; }
+  .pref-row { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; }
+
+  details.more { border-top: 1px solid var(--row); padding-top: 4px; }
+  section > details.more { border-top: 0; padding-top: 0; }
+  details.more > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+    min-height: 40px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+  details.more > summary::-webkit-details-marker { display: none; }
+  details.more > summary svg { transition: transform .2s; }
+  details.more[open] > summary svg { transform: rotate(90deg); }
+  .adv { display: flex; flex-direction: column; gap: 18px; padding: 8px 0 4px; }
+  .adv-block { display: flex; flex-direction: column; gap: 10px; }
+  .adv-block[hidden], .select[hidden] { display: none; }
   .slider { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 13px; color: var(--ink-2); }
   .slider input { width: 220px; accent-color: var(--accent); }
   .slider output { font-family: var(--mono); color: var(--ink); min-width: 40px; }
+  .select { display: inline-flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-2); }
+  select { min-height: 40px; padding: 0 34px 0 12px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel-2)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23A1A1A1' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center;
+    color: var(--ink); font: 500 13px var(--mono); appearance: none; cursor: pointer; }
+  select:hover { border-color: #3A3A3A; }
+  .roles { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+  .role { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px;
+    border: 1px solid var(--row); border-radius: 10px; background: var(--panel-2); }
+  .role > span { font-weight: 600; }
+  .role .changed { font-size: 11px; color: var(--amber); font-weight: 600; margin-left: 6px; }
+  .role select { min-width: 140px; }
+  .toggle { display: flex; align-items: flex-start; gap: 12px; font-size: 13px; cursor: pointer; }
+  .toggle input { appearance: none; flex: none; width: 40px; height: 24px; margin: 0; border-radius: 999px; background: #2E2E2E;
+    position: relative; cursor: pointer; transition: background-color .2s; }
+  .toggle input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 999px;
+    background: var(--muted); transition: transform .2s cubic-bezier(.2,.8,.2,1), background-color .2s; }
+  .toggle input:checked { background: var(--ink); }
+  .toggle input:checked::after { transform: translateX(16px); background: var(--bg); }
 
+  /* tables fit the page: fixed layout, long text cut with "…", minor columns drop on narrow screens */
   .table-box { overflow: hidden; }
-  .scroll { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; font-variant-numeric: tabular-nums; }
   th { background: var(--panel-2); color: var(--muted); font-size: 11.5px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.05em; padding: 11px 12px; text-align: right; white-space: nowrap; }
-  td { padding: 11px 12px; border-top: 1px solid var(--row); text-align: right; white-space: nowrap; }
+    letter-spacing: 0.05em; padding: 11px 10px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  td { padding: 11px 10px; border-top: 1px solid var(--row); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   th:first-child, td:first-child { padding-left: 18px; }
   th:last-child, td:last-child { padding-right: 18px; }
   th.l, td.l { text-align: left; }
@@ -79,20 +113,29 @@
   td.strong { font-family: var(--mono); font-weight: 600; color: var(--ink); }
   td.save { font-family: var(--mono); font-weight: 600; color: var(--good); }
   td.save.neg { color: var(--bad); }
-  td.why { max-width: 320px; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); }
-  td.empty { text-align: left; color: var(--muted); padding: 22px 18px; }
-  .m { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+  td.save.none { color: var(--muted); font-weight: 400; }
+  td.why { color: var(--ink-2); }
+  td.empty { text-align: left; color: var(--muted); padding: 22px 18px; white-space: normal; }
+  .sub-line { display: block; font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+  .m { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; }
   .sw { width: 10px; height: 10px; border-radius: 3px; background: var(--other); flex: none; }
-  .flow { display: inline-flex; align-items: center; gap: 8px; }
+  .flow { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; }
   .flow .asked { color: var(--muted); }
   .pill { padding: 2px 7px; border-radius: 5px; font-size: 11px; font-weight: 600; background: var(--soft); color: var(--ink); }
   .pill.sub { background: var(--violet-soft); color: var(--violet); }
   .pill.fb { background: var(--amber-soft); color: var(--amber); }
   .pill.src { background: transparent; border: 1px solid var(--line); color: var(--ink-2); font-weight: 500; margin-right: 6px; }
-  .share { display: flex; align-items: center; gap: 10px; min-width: 200px; }
-  .share .track { min-width: 90px; }
   .ok { font-family: var(--mono); color: var(--good); }
   .err { font-family: var(--mono); color: var(--bad); font-weight: 600; }
+  .warn { font-family: var(--mono); color: var(--amber); }
+  tbody tr:hover td { background: rgba(237,237,237,.03); }
+  tr.new td { animation: row-in .5s cubic-bezier(.2,.8,.2,1), glow 2.4s ease-out; }
+  @keyframes row-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+  @keyframes glow { from { background: rgba(237,237,237,.09); } to { background: transparent; } }
+  tbody.turn tr { animation: fade-in .28s ease-out both; }
+  @keyframes fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  @media (max-width: 960px) { .hide-md { display: none; } }
+  @media (max-width: 680px) { .hide-sm { display: none; } }
 
   .pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px;
     border-top: 1px solid var(--row); background: var(--panel-2); }
@@ -103,64 +146,13 @@
   .pages button[aria-current="page"] { background: var(--ink); border-color: var(--ink); color: var(--bg); font-weight: 600; }
   .pages button:disabled { opacity: .4; cursor: default; }
   .pages .gap { color: var(--muted); padding: 0 4px; }
-  button:focus-visible, input:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-
-  footer { font-size: 12.5px; color: var(--muted); max-width: 860px; }
-  h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--ink-2); }
-  .sub-block { display: flex; flex-direction: column; gap: 12px; padding-top: 16px; border-top: 1px solid var(--row); }
-  .sub-block[hidden], .select[hidden] { display: none; }
-  .select { display: inline-flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-2); }
-  select { min-height: 40px; padding: 0 34px 0 12px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel-2)
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23A1A1A1' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center;
-    color: var(--ink); font: 500 13px var(--mono); appearance: none; cursor: pointer; transition: border-color .15s; }
-  select:hover { border-color: #3A3A3A; }
-  select:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-  .roles { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
-  .role { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px;
-    border: 1px solid var(--row); border-radius: 10px; background: var(--panel-2); }
-  .role > span { font-weight: 600; }
-  .role .changed { font-size: 11px; color: var(--amber); font-weight: 600; margin-left: 6px; }
-  .role select { min-width: 150px; }
-  .toggle { display: flex; align-items: flex-start; gap: 12px; font-size: 13px; cursor: pointer; }
-  .toggle input { appearance: none; flex: none; width: 40px; height: 24px; margin: 0; border-radius: 999px; background: #2E2E2E;
-    position: relative; cursor: pointer; transition: background-color .2s; }
-  .toggle input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 999px;
-    background: var(--muted); transition: transform .2s cubic-bezier(.2,.8,.2,1), background-color .2s; }
-  .toggle input:checked { background: var(--ink); }
-  .toggle input:checked::after { transform: translateX(16px); background: var(--bg); }
-  .toggle input:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-
-  /* motion: every number, bar and row says when it changed */
-  .dot { animation: pulse 2.2s ease-out infinite; }
-  .dot.off { animation: none; }
-  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(74,222,128,.55); } 70%, 100% { box-shadow: 0 0 0 9px rgba(74,222,128,0); } }
-  .fill { transition: width .9s cubic-bezier(.2,.8,.2,1); }
-  .card { transition: border-color .2s ease, transform .2s ease, background-color .2s ease; }
-  .kpi:hover { border-color: #3A3A3A; transform: translateY(-2px); }
-  tbody tr { transition: background-color .15s ease; }
-  tbody tr:hover td { background: rgba(237,237,237,.03); }
-  tr.new td { animation: row-in .5s cubic-bezier(.2,.8,.2,1), glow 2.4s ease-out; }
-  @keyframes row-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
-  @keyframes glow { from { background: rgba(237,237,237,.09); } to { background: transparent; } }
-  tbody.turn tr { animation: fade-in .28s ease-out both; }
-  tbody.turn tr:nth-child(2) { animation-delay: .02s; } tbody.turn tr:nth-child(3) { animation-delay: .04s; }
-  tbody.turn tr:nth-child(4) { animation-delay: .06s; } tbody.turn tr:nth-child(5) { animation-delay: .08s; }
-  tbody.turn tr:nth-child(n+6) { animation-delay: .1s; }
-  @keyframes fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-  .big.bump { animation: bump .5s ease-out; }
-  @keyframes bump { 30% { color: #FFFFFF; text-shadow: 0 0 18px rgba(237,237,237,.35); } }
-  .loading .big, .loading .bars, .loading .tags, .loading .spark { color: transparent; border-radius: 8px;
+  .loading .big, .loading .bars, .loading .spark { color: transparent; border-radius: 8px;
     background: linear-gradient(90deg, #161616 25%, #222 50%, #161616 75%); background-size: 200% 100%;
     animation: shimmer 1.3s linear infinite; }
   @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
-  .spark { display: flex; align-items: flex-end; gap: 3px; height: 44px; }
-  .spark i { flex: 1; min-width: 3px; height: 0; border-radius: 2px 2px 0 0; background: #3A3A3A;
-    transition: height .7s cubic-bezier(.2,.8,.2,1), background-color .3s; }
-  .spark i.hot { background: var(--ink); }
-  .spark-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 4px; }
-  @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after { animation: none !important; transition: none !important; }
-  }
+  button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  footer { font-size: 12.5px; color: var(--muted); max-width: 860px; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
@@ -169,21 +161,17 @@
     <div class="brand">
       <div class="logo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h6l4 6-4 6H4"/><path d="M14 12h6"/><path d="M17 9l3 3-3 3"/></svg></div>
-      <div><h1>AAR Gateway</h1><div class="tagline">Claude Code, routed on your own login</div></div>
+      <div><h1>AAR Gateway</h1><div class="hint">Claude Code, routed on your own login</div></div>
     </div>
-    <div class="chips">
-      <span class="chip"><span class="dot" id="live-dot"></span><span id="status">loading…</span></span>
-      <span class="chip">Strongest <span class="mono" id="strongest" style="color: var(--ink)">–</span></span>
-    </div>
+    <span class="chip"><span class="dot" id="live-dot"></span><span id="status">connecting…</span></span>
   </header>
 
   <div class="kpis" aria-label="Summary">
     <div class="card kpi">
       <span class="eyebrow">Requests</span>
       <span class="big" id="k-req">–</span>
-      <div class="tags" id="k-req-tags"></div>
       <div><div class="spark" id="spark" role="img" aria-label="Requests per minute, last 30 minutes"></div>
-        <div class="spark-axis"><span>30 min ago</span><span>now</span></div></div>
+        <div class="spark-axis"><span>30 min ago</span><span id="k-req-tags">now</span></div></div>
     </div>
     <div class="card kpi">
       <span class="eyebrow">Plan usage vs no router</span>
@@ -200,76 +188,65 @@
   <section aria-labelledby="pref-h">
     <div class="card pref">
       <div class="sec-head">
-        <h2 id="pref-h">Routing</h2>
-        <span class="hint" id="mode-note"></span>
+        <h2 id="pref-h">Cost preference</h2>
+        <span class="hint" id="pref-note"></span>
       </div>
       <div class="pref-row">
-        <div class="seg" role="group" aria-label="Routing mode">
-          <button type="button" data-mode="auto">Auto</button>
-          <button type="button" data-mode="pin">Pin a model</button>
-          <button type="button" data-mode="off">Off</button>
+        <div class="seg" role="group" aria-label="Cost preference">
+          <button type="button" data-preset="best_quality">Best quality</button>
+          <button type="button" data-preset="balanced">Balanced</button>
+          <button type="button" data-preset="save_more">Save more</button>
         </div>
-        <label class="select" id="pin-box" hidden>Every turn on
-          <select id="pin-model"></select>
-        </label>
+        <span class="hint" id="preset-note"></span>
       </div>
 
-      <div class="sub-block" id="auto-box">
-        <div class="sec-head"><h3>Cost preference</h3><span class="hint" id="pref-note"></span></div>
-        <div class="pref-row">
-          <div class="seg" role="group" aria-label="Presets">
-            <button type="button" data-preset="best_quality">Best quality</button>
-            <button type="button" data-preset="balanced">Balanced</button>
-            <button type="button" data-preset="save_more">Save more</button>
+      <details class="more" id="advanced">
+        <summary><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>Advanced settings</summary>
+        <div class="adv">
+          <div class="adv-block">
+            <div class="sec-head"><h3>Routing</h3><span class="hint" id="mode-note"></span></div>
+            <div class="pref-row">
+              <div class="seg" role="group" aria-label="Routing mode">
+                <button type="button" data-mode="auto">Auto</button>
+                <button type="button" data-mode="pin">Pin a model</button>
+                <button type="button" data-mode="off">Off</button>
+              </div>
+              <label class="select" id="pin-box" hidden>Every turn on <select id="pin-model"></select></label>
+            </div>
           </div>
-          <label class="slider">Quality margin
-            <input type="range" id="margin" min="0" max="0.3" step="0.01">
-            <output id="margin-val" for="margin"></output>
-          </label>
+          <div class="adv-block" id="auto-box">
+            <h3>Fine-tune</h3>
+            <label class="slider">Quality margin
+              <input type="range" id="margin" min="0" max="0.3" step="0.01">
+              <output id="margin-val" for="margin"></output>
+            </label>
+            <label class="toggle"><input type="checkbox" id="allow-upgrade">
+              <span><strong>Let hard turns go up a tier</strong><br>
+              <span class="hint">e.g. a Haiku session sends a hard question to Opus. Off: routing only ever moves you to a cheaper model.</span></span>
+            </label>
+          </div>
+          <div class="adv-block" id="roles-box">
+            <div class="sec-head"><h3>Subagent tiers</h3><span class="hint">Changes are logged as feedback on the defaults</span></div>
+            <div class="roles" id="roles"></div>
+          </div>
         </div>
-        <span class="hint" id="margin-note"></span>
-        <label class="toggle"><input type="checkbox" id="allow-upgrade">
-          <span><strong>Let hard turns go up a tier</strong><br>
-          <span class="hint">e.g. a Haiku session sends a hard question to Opus. Off: routing only ever moves you to a cheaper model.</span></span>
-        </label>
-      </div>
-
-      <div class="sub-block" id="roles-box">
-        <div class="sec-head"><h3>Subagent tiers</h3>
-          <span class="hint">Your changes are logged as feedback on the defaults</span></div>
-        <div class="roles" id="roles"></div>
-      </div>
+      </details>
     </div>
-  </section>
-
-  <section aria-labelledby="models-h">
-    <h2 id="models-h">By model</h2>
-    <div class="card table-box"><div class="scroll"><table id="models"><thead><tr>
-      <th class="l">Model</th><th>Requests</th><th>Rerouted to</th><th>Fallbacks</th>
-      <th>Cache read</th><th>Cache write</th><th>Output</th><th class="l">Share of cost</th>
-    </tr></thead><tbody></tbody></table></div></div>
-  </section>
-
-  <section aria-labelledby="sub-h">
-    <div class="sec-head">
-      <h2 id="sub-h">Subagents</h2>
-      <span class="hint">Role picks the tier · never above the session's model</span>
-    </div>
-    <div class="card table-box"><div class="scroll"><table id="subagents"><thead><tr>
-      <th class="l">Role</th><th class="l">Recognised by</th><th>Spawns</th><th>Requests</th><th class="l">Answered by</th>
-      <th>Cost</th><th>On session model</th><th>Saved</th><th>Cache hit</th>
-    </tr></thead><tbody></tbody></table></div></div>
   </section>
 
   <section aria-labelledby="sessions-h">
     <div class="sec-head">
       <h2 id="sessions-h">Your sessions</h2>
-      <span class="hint">Each Claude Code session, newest first · saved = against the models it asked for</span>
+      <span class="hint">Saved = against the models each session asked for</span>
     </div>
-    <div class="card table-box"><div class="scroll"><table id="sessions"><thead><tr>
-      <th class="l">Session</th><th class="l">When</th><th>Turns</th><th>Requests</th><th>Subagents</th>
-      <th class="l">Answered by</th><th>Cost</th><th>As asked</th><th>Saved</th><th>vs strongest</th>
-    </tr></thead><tbody></tbody></table></div></div>
+    <div class="card table-box"><table id="sessions">
+      <colgroup><col style="width:30%"><col style="width:9%"><col class="hide-sm" style="width:10%">
+        <col class="hide-md" style="width:21%"><col style="width:11%"><col class="hide-sm" style="width:10%"><col style="width:9%"></colgroup>
+      <thead><tr>
+        <th class="l">Session</th><th>Turns</th><th class="hide-sm">Subagents</th><th class="l hide-md">Answered by</th>
+        <th>Cost</th><th class="hide-sm">As asked</th><th>Saved</th>
+      </tr></thead><tbody></tbody></table></div>
   </section>
 
   <section aria-labelledby="recent-h">
@@ -278,10 +255,13 @@
       <span class="hint" id="recent-range"></span>
     </div>
     <div class="card table-box">
-      <div class="scroll"><table id="recent"><thead><tr>
-        <th class="l">Time</th><th class="l">Asked → answered</th><th class="l">Why</th>
-        <th>Tokens</th><th>Cost</th><th>If strongest</th><th>Latency</th><th>Status</th>
-      </tr></thead><tbody></tbody></table></div>
+      <table id="recent">
+        <colgroup><col style="width:10%"><col style="width:34%"><col class="hide-md" style="width:30%">
+          <col style="width:10%"><col style="width:8%"><col class="hide-sm" style="width:8%"></colgroup>
+        <thead><tr>
+          <th class="l">Time</th><th class="l">Asked → answered</th><th class="l hide-md">Why</th>
+          <th>Cost</th><th>Saved</th><th class="hide-sm">Status</th>
+        </tr></thead><tbody></tbody></table>
       <nav class="pager" aria-label="Pages">
         <span class="hint" id="page-label"></span>
         <div class="pages" id="pages"></div>
@@ -289,10 +269,32 @@
     </div>
   </section>
 
+  <section>
+    <details class="more" id="breakdown">
+      <summary><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>Breakdown by model and subagent</summary>
+      <div class="adv">
+        <div class="card table-box"><table id="models">
+          <colgroup><col style="width:26%"><col style="width:12%"><col class="hide-sm" style="width:12%">
+            <col class="hide-md" style="width:13%"><col class="hide-md" style="width:12%"><col style="width:25%"></colgroup>
+          <thead><tr>
+            <th class="l">Model</th><th>Requests</th><th class="hide-sm">Rerouted to</th>
+            <th class="hide-md">Cache read</th><th class="hide-md">Output</th><th>Cost</th>
+          </tr></thead><tbody></tbody></table></div>
+        <div class="card table-box"><table id="subagents">
+          <colgroup><col style="width:22%"><col style="width:10%"><col class="hide-md" style="width:20%">
+            <col style="width:12%"><col class="hide-sm" style="width:13%"><col style="width:10%"><col class="hide-sm" style="width:13%"></colgroup>
+          <thead><tr>
+            <th class="l">Subagent kind</th><th>Spawns</th><th class="l hide-md">Answered by</th>
+            <th>Cost</th><th class="hide-sm">On session model</th><th>Saved</th><th class="hide-sm">Avg report</th>
+          </tr></thead><tbody></tbody></table></div>
+      </div>
+    </details>
+  </section>
+
   <footer>Plan usage is what the same work costs at API prices on each model, the relative price of the models:
     on a Claude subscription nothing is billed per token. Baselines reuse each request's tokens on the other model,
-    adjusted for what it would have had cached. Routing decisions marked "benchmark" come from the 2025 LLMRouterBench
-    router through stand-ins (Opus → GPT-5, Sonnet → Claude Sonnet 4, Haiku → Gemini 2.5 Flash); "your data" from your graded turns.</footer>
+    adjusted for what it would have had cached; a subagent is measured against the session's own model.</footer>
 </main>
 <script>
 const PAGE_SIZE = 12;
@@ -302,15 +304,19 @@ const num = (x) => (x || 0).toLocaleString();
 const compact = (x) => { x = x || 0; return x >= 1e6 ? (x / 1e6).toFixed(1) + "M" : x >= 1e4 ? Math.round(x / 1e3) + "k" : x.toLocaleString(); };
 const pct = (a, b) => (b > 0 ? Math.round(100 * (1 - a / b)) : null);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const short = (m) => String(m ?? "?").replace(/^claude-/, "");
 const tier = (m) => { m = String(m || ""); return m.includes("opus") ? "var(--opus)" : m.includes("sonnet") ? "var(--sonnet)"
   : m.includes("haiku") ? "var(--haiku)" : "var(--other)"; };
 const swatch = (m) => `<span class="sw" style="background:${tier(m)}"></span>`;
 const ARROW = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--other)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>';
 const CHEV = (d) => `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
-let prefs = null, recent = [], page = 0, seen = null, lastTables = {};
+const PRESET_NOTES = {best_quality: "Stays on the stronger model unless a cheaper one is almost as good",
+  balanced: "Cheaper models when they're predicted close in quality (default)",
+  save_more: "Prefers cheaper models more often; gives up a little more quality"};
 const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let prefs = null, recent = [], page = 0, seen = null, lastTables = {};
 
-/* counts a number up (or down) to its new value, then flashes it once */
+/* counts a number to its new value, then flashes it once */
 function tween(el, to, fmt) {
   const from = el._v ?? 0;
   el._v = to;
@@ -325,7 +331,7 @@ function tween(el, to, fmt) {
   el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump");
 }
 
-/* rebuilds a table body only when its rows changed, so bars grow instead of blinking */
+/* rebuilds a table body only when its rows changed; bars grow on first load */
 function setRows(id, html) {
   if (lastTables[id] === html) return;
   const first = lastTables[id] === undefined;
@@ -333,25 +339,15 @@ function setRows(id, html) {
   const body = $(id).tBodies[0];
   body.innerHTML = html;
   const grow = () => body.querySelectorAll(".fill[data-w]").forEach((f) => { f.style.width = f.dataset.w; });
-  first ? requestAnimationFrame(grow) : grow();  // grow on first load; afterwards just update
+  first ? requestAnimationFrame(grow) : grow();
 }
 
-function renderSpark(records) {
-  const el = $("spark"), now = Date.now(), buckets = new Array(30).fill(0);
-  for (const r of records) {
-    const age = (now - new Date(r.ts).getTime()) / 60000;
-    if (age >= 0 && age < 30) buckets[29 - Math.floor(age)]++;
-  }
-  const max = Math.max(1, ...buckets);
-  if (el.children.length !== 30) el.innerHTML = buckets.map(() => "<i></i>").join("");
-  [...el.children].forEach((bar, i) => {
-    bar.style.height = Math.max(buckets[i] ? 8 : 2, Math.round(100 * buckets[i] / max)) + "%";
-    bar.classList.toggle("hot", i >= 27 && buckets[i] > 0);
-    bar.title = `${buckets[i]} request${buckets[i] === 1 ? "" : "s"}`;
-  });
+function savedCell(actual, base, cls = "") {
+  const p = pct(actual, base);
+  if (p == null) return `<td class="save none ${cls}">–</td>`;
+  if (p === 0) return `<td class="save none ${cls}">0%</td>`;
+  return `<td class="save ${p < 0 ? "neg" : ""} ${cls}">${p > 0 ? p + "%" : "+" + (-p) + "%"}</td>`;
 }
-
-const rowKey = (r) => `${r.ts}|${r.conversation}|${r.status}|${r.cost_usd}|${r.latency_s}`;
 
 function saving(pctEl, barsEl, actual, base, baseLabel) {
   const p = pct(actual, base);
@@ -373,10 +369,37 @@ function saving(pctEl, barsEl, actual, base, baseLabel) {
   requestAnimationFrame(() => { a.querySelector(".fill").style.width = w + "%"; b.querySelector(".fill").style.width = wb + "%"; });
 }
 
-const short = (m) => String(m).replace(/^claude-/, "");
+function renderSpark(records) {
+  const el = $("spark"), now = Date.now(), buckets = new Array(30).fill(0);
+  for (const r of records) {
+    const age = (now - new Date(r.ts).getTime()) / 60000;
+    if (age >= 0 && age < 30) buckets[29 - Math.floor(age)]++;
+  }
+  const max = Math.max(1, ...buckets);
+  if (el.children.length !== 30) el.innerHTML = buckets.map(() => "<i></i>").join("");
+  [...el.children].forEach((bar, i) => {
+    bar.style.height = Math.max(buckets[i] ? 8 : 2, Math.round(100 * buckets[i] / max)) + "%";
+    bar.classList.toggle("hot", i >= 27 && buckets[i] > 0);
+    bar.title = `${buckets[i]} request${buckets[i] === 1 ? "" : "s"}`;
+  });
+}
+
+const rowKey = (r) => `${r.ts}|${r.conversation}|${r.status}|${r.cost_usd}|${r.latency_s}`;
 
 function renderPrefs() {
   if (!prefs) return;
+  const m = prefs.quality_margin;
+  let preset = null;
+  document.querySelectorAll("[data-preset]").forEach((b) => {
+    const on = prefs.mode === "auto" && prefs.presets[b.dataset.preset] === m;
+    if (on) preset = b.dataset.preset;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-pressed", on);
+  });
+  $("preset-note").textContent = prefs.mode !== "auto"
+    ? `Routing is ${prefs.mode === "off" ? "off" : "pinned to " + short(prefs.pinned_model)} (Advanced settings)`
+    : (preset ? PRESET_NOTES[preset] : `Custom margin ${m.toFixed(2)} (Advanced settings)`);
+  $("pref-note").textContent = prefs.router_enabled ? "" : "The router is off in the gateway config";
   document.querySelectorAll("[data-mode]").forEach((b) => {
     const on = prefs.mode === b.dataset.mode;
     b.classList.toggle("on", on);
@@ -384,46 +407,43 @@ function renderPrefs() {
   });
   const pin = $("pin-model");
   if (pin.options.length !== prefs.models.length)
-    pin.innerHTML = prefs.models.map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join("");
+    pin.innerHTML = prefs.models.map((x) => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
   pin.value = prefs.pinned_model || prefs.strongest_model || prefs.models[0];
   $("pin-box").hidden = prefs.mode !== "pin";
-  $("allow-upgrade").checked = !!prefs.allow_upgrade;
   $("auto-box").hidden = prefs.mode !== "auto";
   $("roles-box").hidden = prefs.mode !== "auto";
-  $("mode-note").textContent = {
-    auto: "The router picks a model for every turn you type",
+  $("mode-note").textContent = {auto: "The router picks a model for every turn you type",
     pin: "Every agent turn and subagent goes to the pinned model",
-    off: "Every request keeps the model Claude Code asked for",
-  }[prefs.mode] || "";
-  if (!document.activeElement || !document.activeElement.closest("#roles")) {
-    $("roles").innerHTML = prefs.roles.map((r) => {
-      const label = (m) => m == null ? "session's model" : short(m);
-      const value = !r.overridden ? "default" : (r.model == null ? "session" : r.model);
-      const opt = (v, text) => `<option value="${esc(v)}"${v === value ? " selected" : ""}>${esc(text)}</option>`;
-      const opts = [opt("default", `default · ${label(r.default)}`), ...prefs.models.map((m) => opt(m, short(m))),
-        opt("session", "session's model")];
-      return `<div class="role"><span>${esc(r.role)}${r.overridden ? '<span class="changed">changed</span>' : ""}</span>
-        <select data-role="${esc(r.role)}" aria-label="Tier for ${esc(r.role)}">${opts.join("")}</select></div>`;
-    }).join("");
-  }
-  const m = prefs.quality_margin;
-  document.querySelectorAll("[data-preset]").forEach((b) => {
-    const on = prefs.presets[b.dataset.preset] === m;
-    b.classList.toggle("on", on);
-    b.setAttribute("aria-pressed", on);
-  });
+    off: "Every request keeps the model Claude Code asked for"}[prefs.mode] || "";
   $("margin").value = m;
   $("margin-val").textContent = m.toFixed(2);
-  $("margin-note").textContent = `Gives up to ${m.toFixed(2)} predicted quality to reach a cheaper model.`;
-  $("pref-note").textContent = prefs.router_enabled
-    ? `Applies to every new turn · per session: ANTHROPIC_CUSTOM_HEADERS="${prefs.header}: 0.1"`
-    : "The router is off (interceptor.router.enabled), so turns keep the model you picked.";
+  $("allow-upgrade").checked = !!prefs.allow_upgrade;
+  if (!document.activeElement || !document.activeElement.closest("#roles")) {
+    $("roles").innerHTML = prefs.roles.map((r) => {
+      const label = (x) => x == null ? "session's model" : short(x);
+      const value = !r.overridden ? "default" : (r.model == null ? "session" : r.model);
+      const opt = (v, text) => `<option value="${esc(v)}"${v === value ? " selected" : ""}>${esc(text)}</option>`;
+      const opts = [opt("default", `default · ${label(r.default)}`), ...prefs.models.map((x) => opt(x, short(x))),
+        opt("session", "session's model")];
+      return `<div class="role"><span>${esc(r.role)}${r.overridden ? '<span class="changed">changed</span>' : ""}</span>
+        <select data-role="${esc(r.role)}" aria-label="Tier for ${esc(r.role)} subagents">${opts.join("")}</select></div>`;
+    }).join("");
+  }
 }
 
 async function setPref(body) {
   const r = await fetch("/api/preferences", {method: "POST", headers: {"content-type": "application/json"},
     body: JSON.stringify(body)});
   if (r.ok) { prefs = await r.json(); renderPrefs(); }
+}
+
+/* 429/529 are Anthropic asking to slow down (busy plan or service); Claude
+   Code retries them itself, so they aren't failures of the request */
+function statusCell(status) {
+  if (status === 200) return '<span class="ok">200</span>';
+  if (status === 429 || status === 529)
+    return `<span class="warn" title="Rate limited by Anthropic. Claude Code retries these automatically.">${status === 429 ? "busy" : "overloaded"}</span>`;
+  return `<span class="err" title="The request failed">${esc(status)}</span>`;
 }
 
 function renderRecent(turning) {
@@ -438,18 +458,17 @@ function renderRecent(turning) {
     const moved = r.routed_model !== r.requested_model && !r.fallback;
     const src = r.quality_source ? (r.quality_source.startsWith("graded") ? "your data" : "benchmark") : "";
     const fresh = seen && !seen.has(rowKey(r));
-    return `<tr${fresh ? ' class="new"' : ""}>
-      <td class="l num">${esc(r.ts ? new Date(r.ts).toLocaleTimeString() : "")}</td>
-      <td class="l"><span class="flow"><span class="asked">${esc(r.requested_model)}</span>${ARROW}
-        <span class="m">${swatch(r.routed_model)}${esc(r.routed_model)}</span>
-        ${moved ? '<span class="pill">routed</span>' : ""}
-        ${r.subagent ? `<span class="pill sub">subagent${r.agent_role ? " · " + esc(r.agent_role) : ""}</span>` : ""}
+    const detail = `${num(tokens)} tokens · ${r.latency_s == null ? "–" : r.latency_s.toFixed(1) + "s"} · if strongest ${usd(r.cost_if_strongest_usd)}`;
+    return `<tr${fresh ? ' class="new"' : ""} title="${esc(detail)}">
+      <td class="l num">${esc(r.ts ? new Date(r.ts).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}) : "")}</td>
+      <td class="l"><span class="flow"><span class="asked">${esc(short(r.requested_model))}</span>${ARROW}
+        <span class="m">${swatch(r.routed_model)}${esc(short(r.routed_model))}</span>
+        ${r.subagent ? `<span class="pill sub">${esc(r.agent_role || "subagent")}</span>` : moved ? '<span class="pill">routed</span>' : ""}
         ${r.fallback ? '<span class="pill fb">fallback</span>' : ""}</span></td>
-      <td class="l why" title="${esc(r.reason)}">${src ? `<span class="pill src">${src}</span>` : ""}${esc(r.reason)}</td>
-      <td class="num">${num(tokens)}</td><td class="strong">${usd(r.cost_usd)}</td><td class="num">${usd(r.cost_if_strongest_usd)}</td>
-      <td class="num">${r.latency_s == null ? "–" : r.latency_s.toFixed(1) + "s"}</td>
-      <td>${r.status === 200 ? '<span class="ok">200</span>' : `<span class="err">${esc(r.status)}</span>`}</td></tr>`;
-  }).join("") || `<tr><td colspan="8" class="empty">Nothing yet. Run <code>aar-gateway code</code>.</td></tr>`;
+      <td class="l why hide-md" title="${esc(r.reason)}">${src ? `<span class="pill src">${src}</span>` : ""}${esc(r.reason)}</td>
+      <td class="strong">${usd(r.cost_usd)}</td>${savedCell(r.cost_usd, r.cost_if_requested_usd)}
+      <td class="hide-sm">${statusCell(r.status)}</td></tr>`;
+  }).join("") || `<tr><td colspan="6" class="empty">Nothing yet. Run <code>aar-gateway code</code>.</td></tr>`;
 
   $("page-label").textContent = `Page ${page + 1} of ${pages}`;
   const shown = [...new Set([0, pages - 1, page - 1, page, page + 1])].filter((i) => i >= 0 && i < pages).sort((a, b) => a - b);
@@ -462,64 +481,56 @@ function renderRecent(turning) {
   $("pages").innerHTML = html;
 }
 
+const when = (a, b) => {
+  if (!a) return "";
+  const d1 = new Date(a), d2 = new Date(b || a);
+  const day = d1.toLocaleDateString(undefined, {month: "short", day: "numeric"});
+  const t = (d) => d.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+  return d2 - d1 > 60000 ? `${day} · ${t(d1)}–${t(d2)}` : `${day} · ${t(d1)}`;
+};
+
 async function refresh() {
   try {
     const [s, p] = await Promise.all([fetch("/stats").then((r) => r.json()),
       prefs ? Promise.resolve(prefs) : fetch("/api/preferences").then((r) => r.json())]);
     prefs = p; renderPrefs();
     const t = s.totals;
-    $("strongest").textContent = s.strongest_model || "–";
     tween($("k-req"), t.requests, (v) => num(Math.round(v)));
-    $("k-req-tags").innerHTML = `<span class="tag blue">${num(t.rerouted)} rerouted</span>
-      <span class="tag">${num(t.fallbacks)} fell back</span><span class="tag">${num(t.errors)} errors</span>
-      ${t.subagent_requests ? `<span class="tag">${num(t.subagent_requests)} from subagents</span>` : ""}`;
-    $("k-strong-label").textContent = `Plan usage vs always ${s.strongest_model || "strongest"}`;
-    saving($("k-asked-pct"), $("k-asked-bars"), t.cost_usd, t.cost_if_requested_usd, "As asked");
+    $("k-req-tags").textContent = `now · ${num(t.rerouted)} rerouted`;
+    $("k-strong-label").textContent = `Plan usage vs always ${s.strongest_model ? short(s.strongest_model) : "strongest"}`;
+    saving($("k-asked-pct"), $("k-asked-bars"), t.cost_usd, t.cost_if_requested_usd, "No router");
     saving($("k-strong-pct"), $("k-strong-bars"), t.cost_usd, t.cost_if_strongest_usd, "All strongest");
+
+    setRows("sessions", (s.sessions || []).map((r) => {
+      const models = Object.entries(r.models).sort((a, b) => b[1] - a[1])
+        .map(([m, n]) => `<span class="m" title="${esc(m)} ×${n}">${swatch(m)}${esc(short(m))}</span>`).join(" ");
+      const name = r.session ? esc(r.session.slice(0, 8)) : "before session tracking";
+      return `<tr><td class="l"><span>${esc(when(r.first_ts, r.last_ts))}</span><span class="sub-line mono">${name}</span></td>
+        <td class="num">${num(r.turns)}</td><td class="num hide-sm">${num(r.subagent_spawns)}</td>
+        <td class="l hide-md">${models}</td><td class="strong">${usd(r.cost_usd)}</td>
+        <td class="num hide-sm">${usd(r.cost_if_requested_usd)}</td>${savedCell(r.cost_usd, r.cost_if_requested_usd)}</tr>`;
+    }).join("") || `<tr><td colspan="7" class="empty">No sessions yet. Run <code>aar-gateway code</code>.</td></tr>`);
 
     const models = Object.entries(s.models).sort((a, b) => b[1].cost_usd - a[1].cost_usd);
     const totalCost = models.reduce((a, [, r]) => a + r.cost_usd, 0);
     setRows("models", models.map(([m, r]) => {
       const share = totalCost > 0 ? Math.round(100 * r.cost_usd / totalCost) : 0;
-      return `<tr><td class="l"><span class="m">${swatch(m)}${esc(m)}</span></td><td class="num">${num(r.requests)}</td>
-        <td class="num">${num(r.rerouted)}</td><td class="num">${num(r.fallbacks)}</td>
-        <td class="num">${compact(r.cache_read_input_tokens)}</td><td class="num">${compact(r.cache_creation_input_tokens)}</td>
-        <td class="num">${compact(r.output_tokens)}</td>
-        <td class="l"><div class="share"><div class="track"><div class="fill" data-w="${share}%" style="width:0;background:${tier(m)}"></div></div>
-          <span class="mono">${usd(r.cost_usd)}</span></div></td></tr>`;
-    }).join("") || `<tr><td colspan="8" class="empty">No requests yet. Run <code>aar-gateway code</code>.</td></tr>`);
+      return `<tr><td class="l"><span class="m">${swatch(m)}${esc(short(m))}</span></td><td class="num">${num(r.requests)}</td>
+        <td class="num hide-sm">${num(r.rerouted)}</td><td class="num hide-md">${compact(r.cache_read_input_tokens)}</td>
+        <td class="num hide-md">${compact(r.output_tokens)}</td>
+        <td><div class="bar"><div class="track"><div class="fill" data-w="${share}%" style="width:0;background:${tier(m)}"></div></div>
+          <span>${usd(r.cost_usd)}</span></div></td></tr>`;
+    }).join("") || `<tr><td colspan="6" class="empty">No requests yet.</td></tr>`);
 
-    const how = {definition: "role definition", builtin: "built-in agent", task: "task keywords"};
+    const how = {definition: "role definition", builtin: "built-in agent", task: "task keywords", hook: "set at spawn"};
     setRows("subagents", (s.subagents || []).map((r) => {
-      const p = pct(r.cost_usd, r.cost_if_requested_usd);
-      const models = Object.entries(r.models).map(([m, n]) => `<span class="m">${swatch(m)}${esc(m)} <span class="muted">×${n}</span></span>`).join(" ");
-      return `<tr><td class="l"><strong>${esc(r.role)}</strong></td><td class="l muted">${esc(how[r.source] || "–")}</td>
-        <td class="num">${num(r.spawns)}</td><td class="num">${num(r.requests)}</td><td class="l">${models}</td>
-        <td class="strong">${usd(r.cost_usd)}</td><td class="num">${usd(r.cost_if_requested_usd)}</td>
-        <td class="save ${p != null && p < 0 ? "neg" : ""}">${p == null ? "–" : p + "%"}</td>
-        <td class="num">${r.cache_hit_rate == null ? "–" : Math.round(100 * r.cache_hit_rate) + "%"}</td></tr>`;
-    }).join("") || `<tr><td colspan="9" class="empty">No subagents yet.</td></tr>`);
-
-    const when = (a, b) => {
-      if (!a) return "";
-      const d1 = new Date(a), d2 = new Date(b || a);
-      const day = d1.toLocaleDateString(undefined, {month: "short", day: "numeric"});
-      const t = (d) => d.toLocaleTimeString(undefined, {hour: "2-digit", minute: "2-digit"});
-      return d2 - d1 > 60000 ? `${day} · ${t(d1)}–${t(d2)}` : `${day} · ${t(d1)}`;
-    };
-    const savedCell = (a, b) => {
-      const p = pct(a, b);
-      return `<td class="save ${p != null && p < 0 ? "neg" : ""}">${p == null ? "–" : (p >= 0 ? p + "%" : "+" + (-p) + "% more")}</td>`;
-    };
-    setRows("sessions", (s.sessions || []).map((r) => {
-      const models = Object.entries(r.models).sort((a, b) => b[1] - a[1])
-        .map(([m, n]) => `<span class="m" title="${esc(m)} ×${n}">${swatch(m)}${esc(short(m))}</span>`).join(" ");
-      return `<tr><td class="l num">${r.session ? esc(r.session.slice(0, 8)) : '<span class="muted">before tracking</span>'}</td>
-        <td class="l muted">${esc(when(r.first_ts, r.last_ts))}</td>
-        <td class="num">${num(r.turns)}</td><td class="num">${num(r.requests)}</td><td class="num">${num(r.subagent_spawns)}</td>
-        <td class="l">${models}</td><td class="strong">${usd(r.cost_usd)}</td><td class="num">${usd(r.cost_if_requested_usd)}</td>
-        ${savedCell(r.cost_usd, r.cost_if_requested_usd)}${savedCell(r.cost_usd, r.cost_if_strongest_usd)}</tr>`;
-    }).join("") || `<tr><td colspan="10" class="empty">No sessions yet. Run <code>aar-gateway code</code>.</td></tr>`);
+      const models = Object.entries(r.models).map(([m]) => `<span class="m">${swatch(m)}${esc(short(m))}</span>`).join(" ");
+      return `<tr><td class="l"><strong>${esc(r.role)}</strong><span class="sub-line">${esc(how[r.source] || "unrecognised")}</span></td>
+        <td class="num">${num(r.spawns)}</td><td class="l hide-md">${models}</td>
+        <td class="strong">${usd(r.cost_usd)}</td><td class="num hide-sm">${usd(r.cost_if_requested_usd)}</td>
+        ${savedCell(r.cost_usd, r.cost_if_requested_usd)}
+        <td class="num hide-sm">${r.avg_report_tokens == null ? "–" : num(r.avg_report_tokens) + " tok"}</td></tr>`;
+    }).join("") || `<tr><td colspan="7" class="empty">No subagents yet.</td></tr>`);
 
     recent = s.recent || [];
     renderRecent();
@@ -527,31 +538,46 @@ async function refresh() {
     renderSpark(recent);
     $("main").classList.remove("loading");
     $("live-dot").classList.remove("off");
-    $("status").textContent = "Live · updated " + new Date().toLocaleTimeString();
+    $("status").textContent = "Live · " + new Date().toLocaleTimeString();
   } catch (e) {
     $("live-dot").classList.add("off");
     $("status").textContent = "Gateway not reachable";
   }
 }
 
+/* live: the gateway announces each logged request and the page refreshes
+   then (coalesced); a slow poll is the safety net if the stream drops */
+let pending = null;
+const soon = () => { clearTimeout(pending); pending = setTimeout(refresh, 250); };
+function connect() {
+  const events = new EventSource("/api/events");
+  events.addEventListener("update", soon);
+  events.onerror = () => { $("live-dot").classList.add("off"); $("status").textContent = "Reconnecting…"; };
+  events.onopen = () => soon();
+}
+
+document.querySelectorAll("[data-preset]").forEach((b) => b.addEventListener("click", async () => {
+  if (prefs && prefs.mode !== "auto") await setPref({mode: "auto"});
+  setPref({preset: b.dataset.preset});
+}));
 document.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () =>
   setPref({mode: b.dataset.mode, pinned_model: b.dataset.mode === "pin" ? $("pin-model").value : undefined})));
-$("allow-upgrade").addEventListener("change", (e) => setPref({allow_upgrade: e.target.checked}));
 $("pin-model").addEventListener("change", (e) => setPref({mode: "pin", pinned_model: e.target.value}));
+$("allow-upgrade").addEventListener("change", (e) => setPref({allow_upgrade: e.target.checked}));
+$("margin").addEventListener("input", (e) => { $("margin-val").textContent = parseFloat(e.target.value).toFixed(2); });
+$("margin").addEventListener("change", (e) => setPref({quality_margin: parseFloat(e.target.value)}));
 $("roles").addEventListener("change", (e) => {
   const sel = e.target.closest("select[data-role]");
   if (sel) setPref({role: sel.dataset.role, model: sel.value}).then(() => sel.blur());
 });
-document.querySelectorAll("[data-preset]").forEach((b) =>
-  b.addEventListener("click", () => setPref({preset: b.dataset.preset})));
-$("margin").addEventListener("input", (e) => { $("margin-val").textContent = parseFloat(e.target.value).toFixed(2); });
-$("margin").addEventListener("change", (e) => setPref({quality_margin: parseFloat(e.target.value)}));
 $("pages").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-page]");
   if (b && !b.disabled) { page = parseInt(b.dataset.page, 10); renderRecent(true); }
 });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) soon(); });
 refresh();
-setInterval(refresh, 5000);
+connect();
+setInterval(refresh, 30000);
 </script>
 </body>
 </html>

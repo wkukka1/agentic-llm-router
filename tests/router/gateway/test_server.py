@@ -52,7 +52,7 @@ def test_an_existing_status_line_is_left_alone(monkeypatch, tmp_path):
     (tmp_path / ".claude" / "settings.json").write_text(json.dumps({"statusLine": {"type": "command"}}))
     monkeypatch.setenv("HOME", str(tmp_path))
     args, _ = server._claude_command("http://x", [])
-    assert "--settings" not in args
+    assert "statusLine" not in json.loads(args[args.index("--settings") + 1])
 
 
 def test_a_users_own_tool_search_setting_wins(monkeypatch, tmp_path):

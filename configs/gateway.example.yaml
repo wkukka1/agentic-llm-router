@@ -24,15 +24,14 @@ interceptor:
   # work. Local only; never the conversation, tool results or credentials.
   capture_prompts: false
 
-  # Claude Code subagents (Agent tool spawns) are routed by role before the
-  # router above: scout / extractor / Explore -> Haiku 5.5; reviewer / planner /
-  # tester / Plan -> Sonnet 5.5; architect keeps the session's model. A role never
-  # moves a subagent to a pricier model than the session's. Roles come from the
-  # agent definitions `aar-gateway code` provides, Claude Code's built-in
-  # Explore, or keywords in the task; other subagents go to the router.
+  # Claude Code subagents (Agent tool spawns) get a model by kind, set at
+  # spawn time by the PreToolUse hook `aar-gateway code` installs (and at the
+  # gateway for any it missed): lookup / Explore -> Haiku 5.5; make / Plan ->
+  # Sonnet 5.5; judge keeps the session's model. Never above the session's
+  # model. See docs/gateway.md, "Subagents".
   subagents:
     enabled: true
-    roles: {}                     # e.g. {reviewer: claude-opus-5-5, architect: null}
+    roles: {}                     # e.g. {make: claude-opus-5-5, lookup: claude-sonnet-5-5}
 
   router:
     enabled: true                 # needs `pip install -e ".[research]"` and the pool's data

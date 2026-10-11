@@ -27,7 +27,7 @@ from typing import Optional
 from router.gateway.config import load_settings
 from router.gateway.pricing import cost_usd
 from router.gateway.routing import price_for
-from router.gateway.subagents import ROLES, classify_task, role_decision
+from router.gateway.subagents import identify, role_decision
 
 from .history import PROJECTS_DIR
 
@@ -89,14 +89,9 @@ def subagent_turns(projects_dir: Path = PROJECTS_DIR) -> list[dict]:
 
 
 def role_of(run: dict) -> dict:
-    agent_type = (run.get("agent_type") or "").lower()
-    if agent_type in ROLES:
-        return {"role": agent_type, "source": "definition", "why": agent_type}
-    if agent_type == "explore":
-        return {"role": "explore", "source": "builtin", "why": "Explore"}
-    found = classify_task(run["task"])
-    return ({"role": found[0], "source": "task", "why": found[1]} if found
-            else {"role": None, "source": None, "why": None})
+    """The kind the gateway would give it -- the same rules, from its agent
+    type and task."""
+    return identify(run.get("agent_type"), run["task"])
 
 
 def price_run(run: dict, settings: dict) -> dict:

@@ -31,6 +31,7 @@ which needs a full ``RoutingDecision``/``PromptSignals`` per request.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -49,7 +50,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from .config import load_settings
 from .pricing import canonical_model, cost_usd
 from .routing import ModelPicker, price_for, unavailable_reason
-from .subagents import DEFAULT_ROLE_MODELS, detect as detect_subagent, role_decision
+from .subagents import DEFAULT_ROLE_MODELS, detect as detect_subagent, role_decision, spawn_decision
 from .translate import (OpenAIStreamTranslator, anthropic_to_openai, iter_openai_sse,
                         openai_to_anthropic)
 
@@ -91,6 +92,11 @@ def _update_profile(profile: dict, usage: Mapping) -> dict:
 _config_roles: dict = {}
 ROUTING_MODES = ("auto", "off", "pin")
 
+#: subagent task hash -> the decision the spawn hook got (``record_spawn``),
+#: so the subagent's own requests are labelled with it
+_spawns: "OrderedDict[str, dict]" = OrderedDict()
+_MAX_SPAWNS = 500
+
 #: Claude Code session id -> running totals, for its status line
 _cc_sessions: "OrderedDict[str, dict]" = OrderedDict()
 #: (model, client user-agent) -> why the upstream rejected that model for
@@ -107,6 +113,7 @@ def configure(settings: dict, picker: Optional[ModelPicker]) -> None:
     _prefixes.clear()
     _warm.clear()
     _blocked.clear()
+    _spawns.clear()
     for r in read_records()[-500:]:  # seed the default profile from past agent traffic
         side = (r.get("reason") or "").startswith("side request")
         if r.get("status") == 200 and r.get("lane") == "anthropic" and not side:
@@ -153,6 +160,30 @@ def preferences() -> dict:
             "models": list(_settings["models"]),
             "roles": [{"role": r, "model": _settings["subagents"]["roles"].get(r, d), "default": d,
                        "overridden": r in overrides} for r, d in defaults.items()]}
+
+
+def _task_key(task: str) -> str:
+    return hashlib.sha1(_REMINDER.sub("", task or "").strip().encode()).hexdigest()[:16]
+
+
+def record_spawn(session_id: str, subagent_type: Optional[str], task: str,
+                 asked_model: Optional[str] = None) -> dict:
+    """The model for a subagent Claude Code is about to spawn (asked by the
+    ``PreToolUse`` hook, ``aar-gateway hook``). Kept, so the subagent's own
+    requests are labelled with it when they arrive. Respects the dashboard:
+    routing off or pinned leaves the spawn alone."""
+    routing = _settings.get("routing") or {}
+    if routing.get("mode") in ("off", "pin") or not _settings["subagents"].get("enabled", True):
+        decision = {"role": None, "source": None, "why": None, "model": None, "alias": None,
+                    "reason": f"routing {routing.get('mode')}: spawn left as asked"}
+    else:
+        session_model = (_cc_sessions.get(session_id) or {}).get("requested")
+        decision = spawn_decision(subagent_type, task, session_model, _settings, asked_model)
+    _spawns[_task_key(task)] = decision
+    _spawns.move_to_end(_task_key(task))
+    while len(_spawns) > _MAX_SPAWNS:
+        _spawns.popitem(last=False)
+    return decision
 
 
 def overrides_path() -> Path:
@@ -339,6 +370,36 @@ def _append_record(record: dict) -> None:
         pass
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record) + "\n")
+    _notify()
+
+
+#: open dashboard streams (``GET /api/events``): (their event loop, queue)
+_listeners: set = set()
+
+
+def subscribe() -> "asyncio.Queue":
+    """A queue that gets an item each time a request is logged."""
+    queue: asyncio.Queue = asyncio.Queue(maxsize=1)
+    _listeners.add((asyncio.get_running_loop(), queue))
+    return queue
+
+
+def unsubscribe(queue: "asyncio.Queue") -> None:
+    for entry in [e for e in _listeners if e[1] is queue]:
+        _listeners.discard(entry)
+
+
+def _offer(queue: "asyncio.Queue") -> None:
+    if not queue.full():  # one pending "something changed" is enough
+        queue.put_nowait(True)
+
+
+def _notify() -> None:
+    for loop, queue in list(_listeners):
+        try:
+            loop.call_soon_threadsafe(_offer, queue)
+        except RuntimeError:  # that loop is gone
+            _listeners.discard((loop, queue))
 
 
 def _blocks(content) -> list:
@@ -434,6 +495,7 @@ class _SSEUsageTap:
     def __init__(self):
         self._buf = b""
         self.usage: dict = {}
+        self.stop_reason: Optional[str] = None
 
     def feed(self, chunk: bytes) -> None:
         self._buf += chunk
@@ -452,6 +514,7 @@ class _SSEUsageTap:
             self.usage.update((payload.get("message") or {}).get("usage") or {})
         elif payload.get("type") == "message_delta":
             self.usage.update({k: v for k, v in (payload.get("usage") or {}).items() if v is not None})
+            self.stop_reason = (payload.get("delta") or {}).get("stop_reason") or self.stop_reason
 
 
 class _Turn:
@@ -468,10 +531,14 @@ class _Turn:
         self.shared_before = _shared_tokens(self.sig)
         self.session = dict(_sessions.get(self.key) or {})
         self.human = human_text(body)
+        self.stop_reason: Optional[str] = None
         # a subagent's role comes from its task, which only its first request
         # carries as new text; later requests reuse what that one found
         self.agent = (self.session["agent"] if self.human is None and "agent" in self.session
                       else detect_subagent(body, self.human))
+        spawned = _spawns.get(_task_key(self.human)) if self.agent and self.human else None
+        if spawned and spawned.get("role"):  # the spawn hook already decided this one
+            self.agent = {"role": spawned["role"], "source": "hook", "why": spawned.get("why")}
         self.decision: dict = {"reason": "client's choice"}
         self.fallback = False
         self.attempted: Optional[str] = None
@@ -486,6 +553,11 @@ class _Turn:
         conversation's previous prefix, or at least the system prompt and
         tools any recent request with the same prefix cached."""
         usage = dict(usage or {})
+        # a subagent's baseline is the session's own model: what it would have
+        # run on with no routing, even when its tier was set at spawn time
+        asked = self.requested
+        if self.agent:
+            asked = (_cc_sessions.get(self.claude_session) or {}).get("requested") or self.requested
         prev_tokens = self.session.get("prompt_tokens") or 0
         baseline = _warm_usage(usage, max(prev_tokens, self.shared_before))
         strongest = _settings.get("strongest")
@@ -505,16 +577,17 @@ class _Turn:
                 _sessions.popitem(last=False)
         d = self.decision
         cost = cost_usd(price_for(_settings, self.target), usage)
-        cost_asked = cost_usd(price_for(_settings, self.requested), baseline)
+        cost_asked = cost_usd(price_for(_settings, asked), baseline)
         if self.claude_session and status == 200:
             tot = _cc_sessions.setdefault(self.claude_session, {"cost_usd": 0.0, "cost_if_requested_usd": 0.0,
                                                                 "requests": 0, "rerouted": 0})
             tot["requests"] += 1
             tot["cost_usd"] += cost or 0.0
             tot["cost_if_requested_usd"] += cost_asked if cost_asked is not None else (cost or 0.0)
-            if self.body.get("tools") or "model" not in tot:  # the agent's model, not side requests
+            if (self.body.get("tools") and not self.agent) or "model" not in tot:
+                # the main agent's model: not side requests, not subagents
                 tot.update(model=self.target, requested=self.requested)
-            tot["rerouted"] += self.target != self.requested
+            tot["rerouted"] += self.target != asked
             _cc_sessions.move_to_end(self.claude_session)
             while len(_cc_sessions) > _MAX_SESSIONS:
                 _cc_sessions.popitem(last=False)
@@ -526,6 +599,9 @@ class _Turn:
             "subagent": self.agent is not None,
             "agent_role": (self.agent or {}).get("role"),
             "role_source": (self.agent or {}).get("source"),
+            "baseline_model": asked if asked != self.requested else None,
+            # a subagent's final answer -- all the main agent gets back
+            "report_tokens": usage.get("output_tokens") if self.agent and self.stop_reason == "end_turn" else None,
             "requested_model": self.requested,
             "routed_model": self.target,
             "lane": lane,
@@ -639,19 +715,20 @@ async def _relay_anthropic(upstream: httpx.Response, on_done) -> Response:
                     yield chunk
             finally:
                 await upstream.aclose()
-                on_done(upstream.status_code, tap.usage)
+                on_done(upstream.status_code, tap.usage, tap.stop_reason)
 
         return StreamingResponse(relay(), status_code=upstream.status_code, headers=headers)
 
     content = await upstream.aread()
     await upstream.aclose()
-    usage = None
+    usage = stop_reason = None
     if upstream.status_code == 200:
         try:
-            usage = json.loads(content).get("usage")
+            message = json.loads(content)
+            usage, stop_reason = message.get("usage"), message.get("stop_reason")
         except (ValueError, AttributeError):
             pass
-    on_done(upstream.status_code, usage)
+    on_done(upstream.status_code, usage, stop_reason)
     return Response(content, status_code=upstream.status_code, headers=headers)
 
 
@@ -682,7 +759,11 @@ async def _via_anthropic_unguarded(turn: _Turn) -> Response:
         turn.decision = {**turn.decision, "reason": f"fell back: {turn.attempted} returned "
                                                     f"{upstream.status_code}: {detail[:160]}"}
         upstream = await _send_anthropic(turn.request, "v1/messages", turn.raw)
-    return await _relay_anthropic(upstream, lambda status, usage: turn.finish(status, usage, "anthropic"))
+    def done(status: int, usage: Optional[Mapping], stop_reason: Optional[str] = None) -> None:
+        turn.stop_reason = stop_reason
+        turn.finish(status, usage, "anthropic")
+
+    return await _relay_anthropic(upstream, done)
 
 
 def _error(status: int, message: str) -> JSONResponse:
@@ -773,14 +854,33 @@ async def forward(request: Request, path: str) -> Response:
         upstream = await _send_anthropic(request, path, raw)
     except httpx.HTTPError as exc:
         return _unreachable(None, "Anthropic API", exc, "anthropic")
-    return await _relay_anthropic(upstream, lambda status, usage: None)
+    return await _relay_anthropic(upstream, lambda status, usage, stop_reason=None: None)
+
+
+#: the request log as parsed so far: a dashboard refresh parses only the
+#: lines appended since the last one, not the whole file
+_log_cache: dict = {"key": None, "offset": 0, "partial": b"", "records": []}
 
 
 def read_records() -> list[dict]:
     path = log_path()
-    if not path.exists():
+    try:
+        st = path.stat()
+    except FileNotFoundError:
+        _log_cache.update(key=None, offset=0, partial=b"", records=[])
         return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    key = (str(path), st.st_ino)
+    if _log_cache["key"] != key or st.st_size < _log_cache["offset"]:  # new, rotated or rewritten
+        _log_cache.update(key=key, offset=0, partial=b"", records=[])
+    if st.st_size > _log_cache["offset"]:
+        with path.open("rb") as f:
+            f.seek(_log_cache["offset"])
+            data = f.read()
+        _log_cache["offset"] += len(data)
+        lines = (_log_cache["partial"] + data).split(b"\n")
+        _log_cache["partial"] = lines.pop()  # an unfinished last line waits for the rest
+        _log_cache["records"].extend(json.loads(line) for line in lines if line.strip())
+    return list(_log_cache["records"])
 
 
 #: newest requests sent to the dashboard, which pages through them
@@ -872,7 +972,7 @@ def summarize_subagents(records: list[dict]) -> list[dict]:
         row = rows.setdefault(role, {"role": role, "source": r.get("role_source"), "conversations": set(),
                                      "requests": 0, "models": {}, "cost_usd": 0.0,
                                      "cost_if_requested_usd": 0.0, "cache_read_input_tokens": 0,
-                                     "prompt_tokens": 0, "latency_s": 0.0})
+                                     "prompt_tokens": 0, "latency_s": 0.0, "reports": []})
         row["conversations"].add(r.get("conversation"))
         row["requests"] += 1
         model = r.get("routed_model") or "unknown"
@@ -882,9 +982,13 @@ def summarize_subagents(records: list[dict]) -> list[dict]:
         row["cache_read_input_tokens"] += r.get("cache_read_input_tokens") or 0
         row["prompt_tokens"] += _prompt_tokens(r)
         row["latency_s"] += r.get("latency_s") or 0.0
+        if r.get("report_tokens") is not None:
+            row["reports"].append(r["report_tokens"])
     out = []
     for row in rows.values():
         spawns = len(row.pop("conversations"))
+        reports = row.pop("reports")
+        row["avg_report_tokens"] = round(sum(reports) / len(reports)) if reports else None
         prompt = row["prompt_tokens"]
         out.append({**row, "spawns": spawns,
                     "cache_hit_rate": row["cache_read_input_tokens"] / prompt if prompt else None})

@@ -186,51 +186,55 @@ ANTHROPIC_CUSTOM_HEADERS="x-aar-quality-margin: 0.1" aar-gateway code
 
 ## Dashboard
 
-`/dashboard` reads `GET /stats`. One JSON line per request goes to
-`AAR_GATEWAY_LOG` (default `~/.aar-gateway/requests.jsonl`), recording:
+`aar-gateway dashboard` opens `http://127.0.0.1:8787/dashboard`. It shows:
 
-* the asked-for and routed model, and why;
-* predicted quality;
-* tokens: input, cache read, cache write, output;
-* latency, status, and whether it fell back;
-* three costs:
-    * **cost**: what this request cost at API prices;
-  * **if no router**: the same request on the model Claude Code asked for;
-  * **if always strongest**: the same request on `interceptor.strongest`.
+* **Plan usage** against no router and against always the strongest model,
+  with requests per minute over the last 30 minutes.
+* **Cost preference**: Best quality, Balanced (the default) or Save more.
+* **Your sessions**: each Claude Code session's cost, what it would have cost
+  on the models it asked for, and the saving.
+* **Recent requests**, 12 a page: the model asked for and the one that
+  answered, why, cost and saving. Hover a row for tokens and latency.
+* Collapsed: **Advanced settings** (below) and a **breakdown** by model and
+  by subagent kind, including the average size of what each kind reports
+  back.
 
-The dashboard and the status line show the result as **plan usage**: percent
-less (or more) than without the router, and than always using the strongest
-model. On a subscription the dollars are never billed. Scaling by API price
-gives the relative cost of the same work on each model, which is the best
-available proxy for how much of the plan it used. The dollars are still
-shown, in small print.
+It is live: the gateway pushes an event the moment it logs a request
+(`GET /api/events`), and the page refreshes then; a 30-second poll is only a
+safety net. Re-reading the log parses just the lines added since the last
+read. Tables fit the page width; minor columns drop out on narrow screens.
 
-The two baselines reuse this request's token counts, adjusted for what that
-model would have had cached if it had served all the traffic. On a Claude
-subscription nothing is billed per token, so read the dollars as plan usage.
-Prices are in [`router/gateway/pricing.py`](../src/router/gateway/pricing.py)
-(Anthropic API rates, including each model's own cache-read rate) and can be
-overridden per model.
+**What is logged.** One JSON line per request in `AAR_GATEWAY_LOG` (default
+`~/.aar-gateway/requests.jsonl`): the asked-for and routed model and why,
+tokens (input, cache read, cache write, output), latency, status, fallback,
+and three costs: this request at API prices, the same on the model asked for
+(for a subagent, the session's own model), and on `interceptor.strongest`.
+The baselines reuse the request's token counts, adjusted for what that model
+would have had cached. Never headers, credentials or prompt text.
 
-### Switching routing yourself
+**Plan usage, not dollars.** On a subscription nothing is billed per token.
+Scaling by API price gives the relative cost of the same work on each model,
+the best available proxy for how much of the plan it used. Prices are in
+[`router/gateway/pricing.py`](../src/router/gateway/pricing.py).
 
-The dashboard's Routing card:
+### Advanced settings
 
-* **Auto** (default): the router picks per turn, within your cost preference.
-  * **Let hard turns go up a tier** (off by default): the router may pick a
-    model pricier than the one you asked for, e.g. a Haiku session sends a
-    hard question to Opus. Off, routing only ever moves you to a cheaper model.
-  * **Subagent tiers**: change any role's model (or "session's model");
-    "default" undoes it.
-* **Pin a model**: every agent turn and subagent goes to the model you pick,
-  even a pricier one. A request the pinned model can't take keeps the model
-  Claude Code asked for.
-* **Off**: every request keeps the model Claude Code asked for.
+* **Routing**: Auto (default), Pin a model (every agent turn and subagent on
+  the model you pick, even a pricier one; a request it can't take keeps the
+  model Claude Code asked for), or Off (every request as asked).
+* **Quality margin**: the number behind the three presets.
+* **Let hard turns go up a tier** (off by default): the router may pick a
+  model pricier than the one asked for, e.g. a Haiku session sends a hard
+  question to Opus. Off, routing only ever saves.
+* **Subagent tiers**: each kind's model, or "session's model"; "default"
+  undoes it.
 
 Choices apply from the next turn and survive restarts
 (`~/.aar-gateway/preferences.json`). Each change is also appended to
-`~/.aar-gateway/overrides.jsonl`: if a role keeps being moved up, its default
+`~/.aar-gateway/overrides.jsonl`: if a kind keeps being moved up, its default
 tier is wrong.
+
+`aar-gateway stop` stops the running gateway, however it was started.
 
 ## Other models (API keys, Ollama)
 
@@ -392,81 +396,86 @@ Known limits:
 
 ## Subagents
 
-Claude Code's subagents (Agent tool spawns) go through the gateway like
-everything else, as conversations of their own. Each gets a fresh context
-and returns only its final message to the main agent, so the work that
-fills a context window can run on a cheaper model without the main
-conversation paying for it. [`subagents.py`](../src/router/gateway/subagents.py)
-gives each one a tier by role.
+Claude Code's subagents (Agent tool spawns) each run in a fresh context and
+return only their final message to the main agent, so the work that fills a
+context window can run on a cheaper model without the main conversation
+paying for it. [`subagents.py`](../src/router/gateway/subagents.py) gives
+each one a tier.
 
-**How a subagent is recognised.** Its system prompt starts with Claude
-Code's billing line, which carries `cc_is_subagent=true` (seen on Claude Code
-2.1.293; the main agent's does not). Its first message is the task the main
-agent wrote.
+**Where the model is set: at spawn time.** Before Claude Code runs any tool
+it runs its `PreToolUse` hooks with the call's input. `aar-gateway code`
+installs one for the Agent tool (`aar-gateway hook`). It sends the call's
+`subagent_type` and `prompt` to the gateway (`POST /api/subagent-spawn`) and
+returns the call with `model` set (`haiku`, `sonnet` or `opus`). Claude Code
+then starts the subagent on that model. Verified on Claude Code 2.1.296: the
+subagent ran on Haiku 5.5 while the main agent stayed on Opus 5.5.
 
-**Its role**, first match wins:
+* If the gateway is down, the call's tool isn't Agent, or there's no
+  decision, the hook prints nothing and the call goes ahead unchanged.
+* A `model` the main agent set itself is left alone.
+* Routing Off or Pin (dashboard) leaves spawns alone.
+* `AAR_GATEWAY_HOOK=0` stops `aar-gateway code` from installing the hook.
 
-1. **Definition.** `aar-gateway code` hands Claude Code six roles
-   (`--agents`), each prompt marked `aar-role: <name>`.
-2. **Built-in.** Claude Code's Explore and Plan, by their system prompts.
-3. **Task keywords**, from the first 400 characters of the task, in priority
-   order: root cause/debug/architecture → architect; review/audit → reviewer;
-   write tests → tester; propose/plan/design → planner; label/extract/
-   summarize/commit message → extractor; find/locate/search/explore → scout.
-   A task that opens with write/generate/create/build is generation and
-   gets no keyword role below tester.
+**At the gateway, a fallback.** A subagent's requests carry
+`cc_is_subagent=true` in their system prompt's billing line (undocumented,
+seen on 2.1.293–2.1.296). A subagent the hook didn't see is still
+recognised there and routed the same way. One it did see is labelled "set
+at spawn".
 
-A subagent with no role is routed by the general router, like a normal turn.
+**Three kinds**, by what the subagent may do:
 
-| Role | Tier | Output budget in its prompt |
-|---|---|---|
-| scout | Haiku 5.5 | ≤ 10 bullets, `path:line` + one sentence |
-| extractor | Haiku 5.5 | only the structured result; big results to a file |
-| Explore (built-in) | Haiku 5.5 | Claude Code's own prompt |
-| Plan (built-in) | Sonnet 5.5 | Claude Code's own prompt |
-| reviewer | Sonnet 5.5 | verdict + ≤ 10 one-line findings with severity |
-| planner | Sonnet 5.5 | ≤ 12 steps + ≤ 5 risks, no prose |
-| tester | Sonnet 5.5 | files changed, pass/fail counts, one line per failure |
-| architect | session's model | conclusion, ≤ 8 findings with evidence, next step |
+| Kind | Tools | Tier | Output budget in its prompt |
+|---|---|---|---|
+| `lookup` | read and run, no edits | Haiku 5.5 | ≤ 10 bullets of `path:line` + one sentence, or the exact structured result |
+| `make` | all | Sonnet 5.5 | ≤ 10 one-line items: files touched, tests, findings |
+| `judge` | read and run, no edits | session's model | conclusion, ≤ 8 findings with evidence, next step |
+| Explore (built-in) | Claude Code's | Haiku 5.5 | Claude Code's |
+| Plan (built-in) | Claude Code's | Sonnet 5.5 | Claude Code's |
+
+A subagent's kind, first match wins:
+
+1. Its `subagent_type` is one of ours.
+2. It's Claude Code's Explore or Plan.
+3. Keywords at the start of its task:
+   * root cause, debug, architecture, trade-offs → judge;
+   * a task opening with write/generate/create/build/implement/fix/refactor,
+     or asking to review, write tests, plan, design or propose → make;
+   * find, locate, search, list, count, extract, label, summarise → lookup.
+
+No match: the general router decides, as for any turn.
 
 **Rules.**
 
-* A role is a ceiling on cost, never an upgrade. A Sonnet-tier role in a
-  Haiku session stays on Haiku.
-* If the role's model can't take the request (it rejects its settings, is
-  blocked for this Claude Code version, or the prompt doesn't fit), the
-  general router decides instead.
-* The subagent's tool loop stays on the model its first request got.
+* A tier is a ceiling on cost, never an upgrade: it never moves a subagent
+  above the session's model.
+* Each subagent's tool loop stays on the model its first request got.
 * Moving a subagent never costs the main conversation a cache rewrite: its
   system prompt and tools differ, so its prompt cache is separate.
+* A subagent's saving is measured against the session's own model, not the
+  model the hook set.
+* Each subagent's final report is logged (`report_tokens`): it's what the
+  main agent carries for the rest of the conversation, and the number that
+  says whether the output budgets work.
 
 **The definitions work without the gateway too.** Each pins its tier with
 Claude Code's own `model:` field. `aar-gateway agents --install` writes them
-to `~/.claude/agents/` (existing files are kept), and `aar-gateway agents`
-prints them as `--agents` JSON. `AAR_GATEWAY_AGENTS=0` stops `aar-gateway
-code` from passing them; passing your own `--agents` does the same.
+to `~/.claude/agents/` (existing files are kept); `aar-gateway agents` prints
+them as `--agents` JSON. `AAR_GATEWAY_AGENTS=0`, or passing your own
+`--agents`, stops `aar-gateway code` from adding them.
 
-**Config.** `interceptor.subagents.roles` maps a role to a model (`null`
+**Config.** `interceptor.subagents.roles` maps a kind to a model (`null`
 keeps the session's); `enabled: false` routes subagents like any turn.
-
-**What it shows.** Every request is logged with `subagent`, `agent_role` and
-`role_source`. The dashboard's Subagents table shows, per role: spawns,
-requests, the models that answered, cost against the session's model, and
-cache-hit rate.
 
 **Baseline from subagents you already ran.** `aar-gateway-subagents` reads
 Claude Code's own subagent transcripts
-(`~/.claude/projects/*/<session>/subagents/`), gives each the role the
+(`~/.claude/projects/*/<session>/subagents/`), gives each the kind the
 gateway would, and prices its recorded tokens on the model it ran on and on
-the role's model. This measures usage, not quality: whether the cheaper
-model's answers would have been as good is for grading to show.
+the kind's model. This measures usage, not quality.
 
 **Grading subagent tasks.** `aar-gateway-grade --from-subagents --subagents
-only --n 10` adds past subagent tasks that can still be replayed (their
-folder and every file their task names still exist) and grades them on each
-tier, like your own messages. Tasks that read deleted scratch files are
-skipped. With `capture_prompts: true`, the gateway also captures each new
-subagent's task, tagged with its role, so the pool grows on its own.
+only --n 10` adds past subagent tasks that can still be replayed and grades
+them on each tier. With `capture_prompts: true`, the gateway also captures
+each new subagent's task, tagged with its kind.
 
 ## Configuration
 
