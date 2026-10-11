@@ -39,6 +39,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from evaluation.nirt.routing import oracle_choice
 from training.prompt_decomposition.data.pools import CorrectnessTable
 
 log = logging.getLogger(__name__)
@@ -140,7 +141,7 @@ def build_report(table: CorrectnessTable, groupings: list[str], *,
                           float(test.correct[:, best].mean()), float(test.cost[:, best].mean()))
     # The oracle takes the best score per prompt; among ties, the cheapest.
     top = test.correct.max(axis=1, keepdims=True)
-    cheapest_top = np.where(test.correct == top, test.cost, np.inf).argmin(axis=1)
+    cheapest_top = oracle_choice(test.correct, test.cost, tol=0.0, model_ids=None)
     rows = np.arange(len(cheapest_top))
     oracle = RouterResult("oracle (per prompt)", float(top.mean()),
                           float(test.cost[rows, cheapest_top].mean()))

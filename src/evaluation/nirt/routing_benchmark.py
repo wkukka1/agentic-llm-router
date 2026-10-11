@@ -23,6 +23,7 @@ from typing import Mapping, Sequence
 import numpy as np
 import pandas as pd
 
+from evaluation.nirt.routing import oracle_choice
 from router.nirt.routing_decision import routing_decision
 
 REFERENCE_MODELS = {"routerbench": "gpt-4-1106-preview", "irt_router": "gpt_4o"}
@@ -95,7 +96,7 @@ def source_picks(Y: np.ndarray, C: np.ndarray, models: Sequence[str], reference:
         return Y[qi, sel], C[qi, sel], sel == ri
 
     def cheapest_at_max(U):   # argmax U, ties to the cheapest model (not the first column)
-        return np.where(U >= U.max(1, keepdims=True) - _TIE, C, np.inf).argmin(1)
+        return oracle_choice(U, C, tol=_TIE, model_ids=None)
 
     picks = {"reference": take(np.full(len(Y), ri)),
              "oracle_best_quality": take(cheapest_at_max(Y)),
