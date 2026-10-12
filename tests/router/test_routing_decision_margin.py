@@ -113,7 +113,7 @@ class TestItReachesTheRouter:
     survive the trip and the result has to say which rule actually ran."""
 
     def _router(self):
-        from tests.router.test_router_pipeline import FakeTextRouter
+        from helpers.fake_router import FakeTextRouter
 
         return FakeTextRouter()
 
@@ -199,7 +199,7 @@ class TestPerRequestOnTheLivePath:
 
     def _router(self, margin=0.0):
         from router.agentic.router import AgenticRouter
-        from tests.router.test_router_pipeline import FakeTextRouter
+        from helpers.fake_router import FakeTextRouter
 
         return AgenticRouter(FakeTextRouter(), margin=margin)
 
