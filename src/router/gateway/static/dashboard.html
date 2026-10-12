@@ -147,7 +147,27 @@
   tbody.turn tr { animation: fade-in .28s ease-out both; }
   @keyframes fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
   @media (max-width: 960px) { .hide-md { display: none; } }
-  @media (max-width: 680px) { .hide-sm { display: none; } }
+  @media (max-width: 680px) {
+    .hide-sm { display: none; }
+    /* phones: tighter cells, smaller headers, the numbers get the room */
+    th { font-size: 10.5px; letter-spacing: 0.02em; padding: 9px 6px; }
+    td { padding: 10px 6px; }
+    th:first-child, td:first-child { padding-left: 12px; }
+    th:last-child, td:last-child { padding-right: 12px; }
+    td.l { white-space: normal; }
+    .flow { flex-wrap: wrap; row-gap: 4px; }
+    .flow .asked, .flow .arr { display: none; }
+    #recent col:nth-child(1) { width: 21% !important; }
+    #recent col:nth-child(2) { width: 41% !important; }
+    #recent col:nth-child(4) { width: 22% !important; }
+    #recent col:nth-child(5) { width: 16% !important; }
+    #sessions col:nth-child(1) { width: 42% !important; }
+    #sessions col:nth-child(2) { width: 15% !important; }
+    #sessions col:nth-child(5) { width: 25% !important; }
+    #sessions col:nth-child(7) { width: 18% !important; }
+    .seg[aria-label="Cost preference"] { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
+    .seg[aria-label="Cost preference"] button { padding: 0 6px; }
+  }
 
   .pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px;
     border-top: 1px solid var(--row); background: var(--panel-2); }
@@ -333,7 +353,7 @@ let showAllSessions = false;
 const tier = (m) => { m = String(m || ""); return m.includes("opus") ? "var(--opus)" : m.includes("sonnet") ? "var(--sonnet)"
   : m.includes("haiku") ? "var(--haiku)" : "var(--other)"; };
 const swatch = (m) => `<span class="sw" style="background:${tier(m)}"></span>`;
-const ARROW = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--other)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>';
+const ARROW = '<svg class="arr" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--other)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>';
 const CHEV = (d) => `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
 const PRESET_NOTES = {best_quality: "Stays on the stronger model unless a cheaper one is almost as good",
   balanced: "Cheaper models when they're predicted close in quality (default)",
