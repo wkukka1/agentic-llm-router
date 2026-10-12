@@ -86,3 +86,18 @@ def test_a_prompt_whose_grading_failed_entirely_is_tried_again():
     assert [t["prompt_hash"] for t in g.pending_turns(turns, failed)] == ["a", "b"]
     scored = failed + [{"prompt_hash": "a", "model": "h", "score": 0.7}]
     assert [t["prompt_hash"] for t in g.pending_turns(turns, scored)] == ["b"]
+
+
+def test_grading_stops_when_the_plans_usage_limit_is_reached(tmp_path, monkeypatch):
+    turns = tmp_path / "turns.jsonl"
+    turns.write_text("".join(json.dumps({"prompt_hash": f"h{i}", "prompt": f"p{i}"}) + "\n" for i in range(6)))
+    graded_calls = []
+
+    def limited(turn, tiers, judge_model, *, timeout, rng):
+        graded_calls.append(turn["prompt_hash"])
+        return [{"prompt_hash": turn["prompt_hash"], "prompt": turn["prompt"], "model": m, "score": None,
+                 "error": "RuntimeError: claude exited 1: Claude AI usage limit reached|1760000000"}
+                for m in tiers]
+    monkeypatch.setattr(g, "grade_turn", limited)
+    g.grade(6, workers=1, turns_file=turns, out_file=tmp_path / "graded.jsonl")
+    assert len(graded_calls) == 1  # stopped after the first, instead of failing all six

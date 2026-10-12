@@ -37,7 +37,7 @@ import re
 import sys
 import tempfile
 from collections.abc import Iterable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -213,14 +213,36 @@ def grade(n: int, *, tiers: tuple[str, ...] = DEFAULT_TIERS, judge_model: str = 
         return grade_turn(turn, tiers, judge_model, timeout=timeout, rng=random.Random(seed + i))
 
     out_file.parent.mkdir(parents=True, exist_ok=True)
+    # submitted a few at a time (never the whole list up front), so a usage
+    # limit stops the run instead of failing every prompt still queued
+    pending = list(enumerate(todo))
+    limited = False
     with ThreadPoolExecutor(max_workers=max(workers, 1)) as pool:
-        for rows in pool.map(one, enumerate(todo)):
-            with out_file.open("a", encoding="utf-8") as f:
-                for r in rows:
-                    f.write(json.dumps(r) + "\n")
-            written.extend(rows)
-            print(f"  {rows[0]['prompt'][:60]!r}: " + ", ".join(_fmt(r) for r in rows), file=sys.stderr)
+        running = {pool.submit(one, item) for item in pending[:max(workers, 1)]}
+        pending = pending[max(workers, 1):]
+        while running:
+            done, running = wait(running, return_when=FIRST_COMPLETED)
+            for future in done:
+                rows = future.result()
+                with out_file.open("a", encoding="utf-8") as f:
+                    for r in rows:
+                        f.write(json.dumps(r) + "\n")
+                written.extend(rows)
+                print(f"  {rows[0]['prompt'][:60]!r}: " + ", ".join(_fmt(r) for r in rows), file=sys.stderr)
+                if all(r["score"] is None and _LIMIT.search(r.get("error") or "") for r in rows):
+                    limited = True
+            if limited:
+                pending = []
+            elif pending:
+                running.add(pool.submit(one, pending.pop(0)))
+    if limited:
+        print("stopped: the plan's usage limit was reached -- run again after it resets; "
+              "prompts not graded yet are picked up then", file=sys.stderr)
     return written
+
+
+#: what the claude CLI says when the subscription's usage window is used up
+_LIMIT = re.compile(r"usage limit|rate limit|limit reached|resets? at|too many requests|\b429\b", re.I)
 
 
 def _fmt(row: dict) -> str:
