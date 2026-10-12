@@ -17,14 +17,17 @@ Claude Code ──► gateway (127.0.0.1:8787) ──► router picks a model fo
 ## Quick start
 
 ```bash
-pip install -e ".[gateway,research]"          # research = the trained router
-mkdir -p ~/.aar-gateway
-cp configs/gateway.example.yaml ~/.aar-gateway/config.yaml   # found there by default
+uv tool install "agentic-llm-router[gateway] @ git+https://github.com/wkukka1/agentic-llm-router"
+aar-gateway setup --router router-llmrouterbench.npz   # the router file + a config
 
 aar-gateway code          # starts the gateway if needed, then runs Claude Code through it
 aar-gateway dashboard     # opens http://127.0.0.1:8787/dashboard
 aar-gateway doctor        # if anything looks wrong
 ```
+
+From a checkout instead: `pip install -e ".[gateway]"` (add `research` to
+build router files or run the data pipeline). The router file is described
+under [The router file](#the-router-file).
 
 The config is `AAR_GATEWAY_CONFIG` if set, else `~/.aar-gateway/config.yaml`
 if it exists, else the defaults (router off).
