@@ -10,10 +10,10 @@ for the hard ones — and sends the request on your own login. Subagents
 of work they do. A local dashboard shows what it saved.
 
 In our own use so far: **30–50% less plan usage** than always using the model
-we picked, and **~97% less** on search subagents moved to Haiku. On graded
-test prompts it keeps about 95% of Opus's answer quality at a third less
-usage; a perfect router could save over half at no loss, and closing that gap
-is the work in progress. Your own numbers show up on the dashboard as you work.
+we picked, and **~97% less** on search subagents moved to Haiku. On 198 graded
+test prompts it keeps about 94% of Opus's answer quality at 39% less usage; a
+perfect router could save 59% at no loss, and closing that gap is the work in
+progress. Your own numbers show up on the dashboard as you work.
 
 ## What you need
 

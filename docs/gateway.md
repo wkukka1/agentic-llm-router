@@ -458,23 +458,25 @@ python -m evaluation.gateway.pool_eval --graded ~/.cache/aar/routing-pool/graded
     --router-file ~/.aar-gateway/router.npz --by-source
 ```
 
-On the first 123 pool prompts (margin 0.05):
+On the 198-prompt pool (119 LMArena, 79 SWE-bench Verified; margin 0.05):
 
 | Policy | Quality | vs mix | Matches best | vs always Opus |
 |---|---|---|---|---|
-| always Opus 5.5 | 0.879 | — | 92% | — |
-| always Sonnet 5.5 | 0.807 | — | 72% | −55% usage |
-| always Haiku 5.5 | 0.720 | — | 50% | −95% usage |
-| benchmark router (today) | 0.839 | +0.004 | 80% | −33% usage |
-| kNN on the graded pool (leave-one-out) | 0.850 | +0.002 | 85% | −24% usage |
-| oracle (cheapest tier that matched the best) | 0.874 | +0.070 | 100% | −56% usage |
+| always Opus 5.5 | 0.883 | — | 92% | — |
+| always Sonnet 5.5 | 0.805 | — | 72% | −56% usage |
+| always Haiku 5.5 | 0.749 | — | 56% | −95% usage |
+| benchmark router (today) | 0.828 | −0.002 | 77% | −39% usage |
+| kNN on the graded pool (leave-one-out) | 0.839 | −0.005 | 81% | −29% usage |
+| oracle (cheapest tier that matched the best) | 0.880 | +0.079 | 100% | −59% usage |
 
-Today's router keeps ~95% of always-Opus quality at a third less usage, but
-it sits on the random-mix line: it isn't yet predicting *which* prompts can
-go cheaper (Haiku matched the best answer on 62 of 123; the router sent it
-10). The oracle shows the headroom: 56% less usage at no loss. The benchmark
-stand-ins and 123 graded prompts don't carry that signal; a larger graded
-set is the next step.
+Today's router keeps ~94% of always-Opus quality at 39% less usage, but it
+sits on the random-mix line: it isn't yet predicting *which* prompts can go
+cheaper. Haiku matched the best answer on 110 of 198 prompts; the router
+sent it 21. The oracle shows the headroom: 59% less usage at no loss. A
+leave-one-out classifier on the benchmark router's predictions, prompt
+length and source found almost no signal either (AUC 0.57 for "Haiku is
+enough", 0.55 for Sonnet). The next steps are a much larger graded set, or
+answering cheap first and escalating on a quality check.
 
 Known limits:
 
