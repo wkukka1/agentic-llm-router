@@ -15,7 +15,7 @@ from __future__ import annotations
 import abc
 import enum
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
 
 
 class ArtifactFormat(enum.Enum):
@@ -171,6 +171,70 @@ class MLPArtifactPayload(ArtifactPayload):
             query_pathway=state.get("query_pathway"),
             query_features=state.get("query_features"),
         )
+
+
+@dataclass
+class KNNArtifactPayload(ArtifactPayload):
+    """A kNN router as plain data: the training queries' embeddings and their
+    per-model scores. A prompt's predicted quality per model is the mean score
+    of its ``k`` nearest training queries (cosine) -- what
+    :class:`~router.routing.routers.KNNRouter` computes from the full
+    training data, without needing that data.
+
+    This is what makes the gateway installable on its own: LLMRouterBench's
+    8,602 training queries are ~7 MB as an ``.npz`` (embeddings in float16),
+    against gigabytes for the dataset, and ``encoder`` names a model the
+    ``fastembed`` backend serves without PyTorch.
+
+    ``scores`` are column-mean imputed (a query a model never saw gets that
+    model's mean), as in :func:`router.nirt.baselines_infer._fit_knn`.
+    ``model_costs`` is each model's mean training cost, for
+    ``RouterModel.default_model_costs``."""
+
+    embeddings: Any                 # [N, d] unit vectors (float16 on disk)
+    scores: Any                     # [N, M] float32
+    model_ids: list[str]
+    k: int
+    encoder: dict[str, Any]         # EncoderConfig fields: backend, model_name, normalize, max_seq_length
+    model_costs: Optional[list[float]] = None
+
+    def to_state(self) -> dict[str, Any]:
+        return {"format": "knn", "embeddings": self.embeddings, "scores": self.scores,
+                "model_ids": self.model_ids, "k": self.k, "encoder": self.encoder,
+                "model_costs": self.model_costs}
+
+    @classmethod
+    def from_state(cls, state: dict[str, Any]) -> "KNNArtifactPayload":
+        return cls(embeddings=state["embeddings"], scores=state["scores"], model_ids=list(state["model_ids"]),
+                   k=int(state["k"]), encoder=dict(state["encoder"]), model_costs=state.get("model_costs"))
+
+    def save(self, path, *, meta: Optional[dict[str, Any]] = None) -> None:
+        """One compressed ``.npz``: the two arrays plus a JSON header."""
+        import json
+
+        import numpy as np
+
+        header = {"format": "knn", "model_ids": self.model_ids, "k": self.k, "encoder": self.encoder,
+                  "model_costs": self.model_costs, **(meta or {})}
+        np.savez_compressed(path, embeddings=np.asarray(self.embeddings, dtype=np.float16),
+                            scores=np.asarray(self.scores, dtype=np.float32),
+                            header=np.frombuffer(json.dumps(header).encode(), dtype=np.uint8))
+
+    @classmethod
+    def load(cls, path) -> tuple["KNNArtifactPayload", dict[str, Any]]:
+        """``(payload, header)`` from a file :meth:`save` wrote."""
+        import json
+
+        import numpy as np
+
+        with np.load(path, allow_pickle=False) as z:
+            header = json.loads(z["header"].tobytes().decode())
+            if header.get("format") != "knn":
+                raise ValueError(f"{path} is not a kNN router file (format={header.get('format')!r})")
+            payload = cls(embeddings=z["embeddings"].astype(np.float32), scores=z["scores"].astype(np.float32),
+                          model_ids=list(header["model_ids"]), k=int(header["k"]),
+                          encoder=dict(header["encoder"]), model_costs=header.get("model_costs"))
+        return payload, header
 
 
 @dataclass

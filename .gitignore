@@ -46,3 +46,7 @@ configs/gateway.yaml
 # LLMRouterBench result tarball, extracted (6.5 GB; scripts/data/download_llmrouterbench.py)
 evaluations/LLMRouterBench/results
 evaluations/LLMRouterBench/results.nosync/
+
+# a link to data kept outside iCloud (e.g. ~/.cache/aar/processed), and build output
+data/processed
+build/

@@ -5,6 +5,7 @@ gateway process.
     aar-gateway start | stop | restart  the gateway in the background
     aar-gateway status                  running? router loaded? where are its files?
     aar-gateway logs [-n N] [-f]        the gateway's own log
+    aar-gateway setup [--router FILE|URL]   first-time setup: router file + config
     aar-gateway doctor                  check the setup, with a fix for each problem
     aar-gateway config                  which config is in use
     aar-gateway dashboard               open the dashboard
@@ -34,6 +35,9 @@ import time
 from pathlib import Path
 
 SERVICE_LABEL = "com.aar.gateway"
+#: where ``aar-gateway setup`` gets the router file when not given one
+#: (``AAR_GATEWAY_ROUTER_URL`` overrides); empty until a release hosts one
+DEFAULT_ROUTER_URL = ""
 WINDOWS = os.name == "nt"
 
 
@@ -218,6 +222,80 @@ def _logs(lines: int, follow: bool) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# setup                                                                       #
+# --------------------------------------------------------------------------- #
+CONFIG_TEMPLATE = """# AAR gateway config, written by `aar-gateway setup`.
+# Every option is explained in configs/gateway.example.yaml in the repository,
+# and in docs/gateway.md.
+interceptor:
+  # true: keep the messages you type (locally, never sent anywhere) so
+  # `aar-gateway-grade` can learn which model suits your own work
+  capture_prompts: false
+  router:
+    enabled: {enabled}
+    kind: knn
+    artifact: {artifact}      # the router file
+    margin: 0.05              # cost preference; change it from the dashboard
+"""
+
+
+def _fetch_router(source: str, target: Path) -> dict:
+    """Copy or download a router file to ``target``, checking it loads.
+    Returns its header."""
+    from ..models.artifacts import KNNArtifactPayload
+
+    tmp = target.with_suffix(".part")
+    if source.startswith(("http://", "https://")):
+        import urllib.request
+
+        print(f"downloading the router from {source} ...")
+        with urllib.request.urlopen(source, timeout=120) as resp, tmp.open("wb") as out:
+            shutil.copyfileobj(resp, out)
+    else:
+        path = Path(source).expanduser()
+        if not path.exists():
+            raise SystemExit(f"no router file at {path}")
+        shutil.copyfile(path, tmp)
+    try:
+        payload, header = KNNArtifactPayload.load(tmp)
+    except Exception as exc:  # noqa: BLE001 -- anything unreadable is not a router file
+        tmp.unlink(missing_ok=True)
+        raise SystemExit(f"{source} is not a router file this gateway can load: {exc}") from exc
+    tmp.replace(target)
+    print(f"router installed: {target} ({header.get('n_queries', len(payload.scores))} training prompts, "
+          f"{len(payload.model_ids)} models, k={payload.k})")
+    return header
+
+
+def _setup(router: str | None, force: bool) -> int:
+    """Everything a new user needs: the router file and a config that uses it."""
+    home = _home()
+    home.mkdir(parents=True, exist_ok=True)
+    router_file = home / "router.npz"
+    source = router or os.environ.get("AAR_GATEWAY_ROUTER_URL") or DEFAULT_ROUTER_URL
+    if source:
+        _fetch_router(source, router_file)
+    elif router_file.exists():
+        print(f"router already installed: {router_file}")
+    else:
+        print("no router file to install yet: the gateway will forward every request to the model you\n"
+              "asked for until you run `aar-gateway setup --router <file or URL>`.")
+    config = home / "config.yaml"
+    if config.exists() and not force:
+        print(f"kept your config: {config}  (--force rewrites it)")
+    else:
+        config.write_text(CONFIG_TEMPLATE.format(enabled="true" if router_file.exists() else "false",
+                                                 artifact=json.dumps(str(router_file))))
+        print(f"wrote {config}")
+    if _healthy(_base_url()):
+        print("restarting the running gateway so it picks this up ...")
+        _stop()
+        _ensure_running(_base_url(), quiet=True)
+    print()
+    return _doctor()
+
+
+# --------------------------------------------------------------------------- #
 # doctor                                                                      #
 # --------------------------------------------------------------------------- #
 def _doctor() -> int:
@@ -251,6 +329,12 @@ def _doctor() -> int:
                f"put one at {_home() / 'config.yaml'} (see configs/gateway.example.yaml) or set AAR_GATEWAY_CONFIG")
     except Exception as exc:  # noqa: BLE001 -- doctor reports whatever is wrong
         report(False, "config", f"{cfg}: {exc}", "fix the error above, or move the file away to use the defaults")
+
+    artifact = (settings or {}).get("router", {}).get("artifact")
+    if artifact:
+        path = Path(artifact).expanduser()
+        report(path.exists(), "router file", str(path) if path.exists() else f"{path} is missing",
+               "aar-gateway setup --router <file or URL>")
 
     url = _base_url()
     health = _get(url + "/health")
@@ -539,6 +623,9 @@ def main(argv: list[str] | None = None) -> int:
     logs = sub.add_parser("logs", help="the gateway's log")
     logs.add_argument("-n", type=int, default=50, help="lines to show (default 50)")
     logs.add_argument("-f", "--follow", action="store_true", help="keep printing new lines")
+    setup = sub.add_parser("setup", help="install the router and write a config (first-time setup)")
+    setup.add_argument("--router", help="a router file or URL (default: the published one)")
+    setup.add_argument("--force", action="store_true", help="rewrite an existing config")
     sub.add_parser("doctor", help="check the setup, with a fix for each problem")
     sub.add_parser("config", help="which config file is in use")
     sub.add_parser("dashboard", help="open the dashboard in a browser")
@@ -571,6 +658,8 @@ def main(argv: list[str] | None = None) -> int:
         return _logs(args.n, args.follow)
     if args.command == "doctor":
         return _doctor()
+    if args.command == "setup":
+        return _setup(args.router, args.force)
     if args.command == "config":
         cfg = _config_path()
         print(cfg if cfg else f"none -- using the defaults (router off). Put a config at "

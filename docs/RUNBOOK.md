@@ -101,6 +101,20 @@ appear here (see `d.pairwise()` for those). Full pipeline numbers:
 
 ---
 
+### 1.1 The gateway's router file
+
+The gateway serves the kNN router from one small file, so its users need none
+of this data. Build it from a pool with retrieval embeddings:
+
+```bash
+python scripts/routing/export_knn_router.py --config configs/llmrouterbench.yaml \
+    --k 25 --dataset llmrouterbench --out router-llmrouterbench.npz
+```
+
+(~6 MB for LLMRouterBench; [docs/gateway.md](gateway.md#the-router-file).)
+
+---
+
 ## 2. Train the NIRT model
 
 This is the main model. Defaults live in [`configs/nirt.yaml`](../configs/nirt.yaml)

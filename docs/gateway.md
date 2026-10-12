@@ -29,6 +29,32 @@ aar-gateway doctor        # if anything looks wrong
 The config is `AAR_GATEWAY_CONFIG` if set, else `~/.aar-gateway/config.yaml`
 if it exists, else the defaults (router off).
 
+## The router file
+
+The gateway serves its router from one small file: the training prompts'
+embeddings and their per-model scores
+([`KNNArtifactPayload`](../src/router/models/artifacts.py)). A prompt's
+predicted quality per model is the mean score of its 25 nearest training
+prompts. For LLMRouterBench that is 8,602 prompts × 13 models, **6.1 MB**.
+It needs no training data and no PyTorch: the text encoder
+(`all-MiniLM-L6-v2`) runs on `fastembed` (ONNX), which gives the same vectors
+as sentence-transformers (cosine 1.0000, the longest prompts included). On
+500 held-out test prompts the file's predictions match the full `KNNRouter`
+exactly (largest difference 0.0; same top model on all 500).
+
+```bash
+# build it (needs the pool's processed data and retrieval embeddings)
+python scripts/routing/export_knn_router.py --config configs/llmrouterbench.yaml \
+    --k 25 --dataset llmrouterbench --out router-llmrouterbench.npz
+
+# use it
+aar-gateway setup --router router-llmrouterbench.npz
+```
+
+`setup` copies (or downloads) the file to `~/.aar-gateway/router.npz`, checks
+it loads, and writes `interceptor.router.artifact` into a new config. In any
+config, `router.artifact` takes precedence over `data_config`.
+
 ## Managing the gateway
 
 | Command | What it does |
@@ -38,6 +64,7 @@ if it exists, else the defaults (router off).
 | `aar-gateway logs [-n 50] [-f]` | the gateway's own log; `-f` follows it |
 | `aar-gateway doctor` | checks Claude Code, the config, the router, the port and the log folder, with a fix for each problem |
 | `aar-gateway config` | which config file is in use |
+| `aar-gateway setup [--router FILE\|URL] [--force]` | install the router file and write a config (existing configs are kept without `--force`) |
 | `aar-gateway service install` / `uninstall` / `status` | start at login: a LaunchAgent on macOS, a systemd user unit on Linux; restarted if it crashes, not after `stop` |
 | `aar-gateway serve` | the gateway in the foreground |
 

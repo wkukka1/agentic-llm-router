@@ -64,10 +64,10 @@ def _graded_predictor(settings: dict):
     rcfg = settings["router"]
     if not rcfg.get("enabled") or not rcfg.get("use_graded", True):
         return None
-    from ..embeddings.encoder import EncoderConfig, TextEncoder
+    from ..embeddings.encoder import EncoderConfig, TextEncoder, light_backend
     from .graded import graded_predictor
 
-    encoder = TextEncoder(EncoderConfig(name="gateway-graded"))
+    encoder = TextEncoder(EncoderConfig(name="gateway-graded", backend=light_backend()))
     return graded_predictor(interceptor.log_path().parent / "graded.jsonl", encoder.encode,
                             min_prompts=int(rcfg.get("min_graded_prompts", 20)))
 

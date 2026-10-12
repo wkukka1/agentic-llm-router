@@ -18,25 +18,29 @@ numbers show up on the dashboard as you work.
 * [Claude Code](https://claude.com/claude-code), installed and logged in
   (a Claude subscription or an API key both work)
 * macOS or Linux (Windows is supported in the code but not yet tested)
-* Python 3.11 or newer — or [uv](https://docs.astral.sh/uv/), which brings its own
 
 ## Install
 
 ```bash
-git clone https://github.com/wkukka1/agentic-llm-router.git
-cd agentic-llm-router
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[gateway,research]"
+# 1. uv, a fast Python installer that brings its own Python (skip if you have it)
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-mkdir -p ~/.aar-gateway
-cp configs/gateway.example.yaml ~/.aar-gateway/config.yaml
-aar-gateway doctor          # checks everything, with a fix for anything missing
+# 2. the gateway, in its own isolated environment
+uv tool install "agentic-llm-router[gateway] @ git+https://github.com/wkukka1/agentic-llm-router"
+
+# 3. first-time setup: installs the router and writes ~/.aar-gateway/config.yaml
+aar-gateway setup --router <router file or URL>
 ```
 
-The router learns from benchmark data. If that data isn't on your machine yet,
-the gateway still works but forwards every request to the model you asked
-for; `aar-gateway doctor` tells you which it is. Building the data:
-[docs/RUNBOOK.md](docs/RUNBOOK.md).
+The router is one ~6 MB file (`router-llmrouterbench.npz`). Get it from the
+maintainers, or build it yourself from the benchmark data:
+`scripts/routing/export_knn_router.py` ([docs/RUNBOOK.md](docs/RUNBOOK.md)).
+Without it the gateway still works, but sends every request to the model you
+asked for. `aar-gateway setup` ends by running `aar-gateway doctor`, which
+checks everything and says how to fix anything missing.
+
+Later: `uv tool upgrade agentic-llm-router` updates it; `uv tool uninstall
+agentic-llm-router` removes it (your settings stay in `~/.aar-gateway`).
 
 ## Use it
 
@@ -74,6 +78,7 @@ each kind of subagent uses. Changes apply from your next message.
 | `aar-gateway start` / `stop` / `restart` | run or stop the gateway in the background |
 | `aar-gateway logs -f` | follow the gateway's log |
 | `aar-gateway doctor` | check your setup |
+| `aar-gateway setup` | install the router and write a config |
 | `aar-gateway service install` | start the gateway automatically at login |
 
 ## What it never does
