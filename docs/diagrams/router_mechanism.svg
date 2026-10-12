@@ -1,0 +1,234 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-30 -30 1210 1800" width="1210" height="1800">
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#1e1e1e" />
+    </marker>
+  </defs>
+  <rect x="-30" y="-30" width="1210" height="1800" fill="#ffffff" />
+  <rect x="540" y="170" width="450" height="1204" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="10" y="170" width="430" height="1204" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="30" y="10" width="1110" height="140" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="60" y="46" width="150" height="84" rx="8" ry="8" fill="#dee2e6" stroke="#495057" stroke-width="2" opacity="1" />
+  <rect x="240" y="46" width="320" height="84" rx="8" ry="8" fill="#a5d8ff" stroke="#1971c2" stroke-width="2" opacity="1" />
+  <rect x="600" y="46" width="170" height="84" rx="8" ry="8" fill="#dee2e6" stroke="#495057" stroke-width="2" opacity="1" />
+  <rect x="810" y="46" width="310" height="84" rx="8" ry="8" fill="#dee2e6" stroke="#495057" stroke-width="2" opacity="1" />
+  <rect x="60" y="220" width="360" height="104" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="560" y="220" width="360" height="104" rx="8" ry="8" fill="#d0bfff" stroke="#7048e8" stroke-width="2" opacity="1" />
+  <rect x="60" y="384" width="360" height="104" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="560" y="384" width="360" height="104" rx="8" ry="8" fill="#ffffff" stroke="#adb5bd" stroke-width="2" opacity="1" stroke-dasharray="8 4" />
+  <rect x="60" y="548" width="360" height="164" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="560" y="548" width="360" height="164" rx="8" ry="8" fill="#d0bfff" stroke="#7048e8" stroke-width="2" opacity="1" />
+  <rect x="60" y="772" width="360" height="144" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="560" y="772" width="360" height="144" rx="8" ry="8" fill="#d0bfff" stroke="#7048e8" stroke-width="2" opacity="1" />
+  <rect x="60" y="976" width="360" height="144" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="560" y="976" width="360" height="144" rx="8" ry="8" fill="#d0bfff" stroke="#7048e8" stroke-width="2" opacity="1" />
+  <rect x="60" y="1180" width="360" height="164" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="560" y="1180" width="360" height="164" rx="8" ry="8" fill="#d0bfff" stroke="#7048e8" stroke-width="2" opacity="1" />
+  <rect x="250" y="1454" width="520" height="148" rx="8" ry="8" fill="#ffec99" stroke="#f08c00" stroke-width="2" opacity="1" />
+  <rect x="410" y="1662" width="200" height="68" rx="8" ry="8" fill="#dee2e6" stroke="#495057" stroke-width="2" opacity="1" />
+  <polyline points="210,88 238,88" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="770,88 808,88" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="520,130 520,160 430,160 430,436 422,436" fill="none" stroke="#2f9e44" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="520,130 520,160 430,160 430,630 422,630" fill="none" stroke="#2f9e44" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="240,488 240,546" fill="none" stroke="#2f9e44" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="240,712 240,770" fill="none" stroke="#2f9e44" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="240,916 240,974" fill="none" stroke="#2f9e44" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="60,272 32,272 32,844 58,844" fill="none" stroke="#2f9e44" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="32,844 32,1262 58,1262" fill="none" stroke="#2f9e44" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="640,130 640,200 480,200 480,272 422,272" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="900,130 900,190 800,190 800,218" fill="none" stroke="#7048e8" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="548,130 548,630 558,630" fill="none" stroke="#7048e8" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="740,712 740,770" fill="none" stroke="#7048e8" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="740,916 740,974" fill="none" stroke="#7048e8" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="920,272 945,272 945,844 922,844" fill="none" stroke="#7048e8" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="740,130 740,150 970,150 970,1262 922,1262" fill="none" stroke="#7048e8" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="420,1048 450,1048 450,1452" fill="none" stroke="#2f9e44" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="300,1344 300,1452" fill="none" stroke="#2f9e44" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="560,1048 530,1048 530,1452" fill="none" stroke="#7048e8" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="680,1344 680,1452" fill="none" stroke="#7048e8" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="510,1602 510,1660" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <text x="552" y="193" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="15" fill="#343a40" text-anchor="start">
+    <tspan x="552" dy="0">IRT-Router (paper, K = 25)  ·  IRTRouterModel, router/nirt/model.py</tspan>
+  </text>
+  <text x="22" y="193" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="15" fill="#343a40" text-anchor="start">
+    <tspan x="22" dy="0">ZOIB NIRT router (ours)  ·  BaselineNIRT, training/nirt/baseline/model.py</tspan>
+  </text>
+  <text x="42" y="33" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="15" fill="#343a40" text-anchor="start">
+    <tspan x="42" dy="0">Inputs (computed once per query; every candidate m is scored)</tspan>
+  </text>
+  <text x="135" y="94" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#495057" text-anchor="middle">
+    <tspan x="135" dy="0">Query text q</tspan>
+  </text>
+  <text x="400" y="74" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#1971c2" text-anchor="middle">
+    <tspan x="400" dy="0">TextEncoder</tspan>
+    <tspan x="400" dy="20">e_q ∈ ℝ^768 (BERT, mean-pool)</tspan>
+    <tspan x="400" dy="20">router/embeddings/encoder.py</tspan>
+  </text>
+  <text x="685" y="84" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#495057" text-anchor="middle">
+    <tspan x="685" dy="0">Candidate LLM m</tspan>
+    <tspan x="685" dy="20">(29-model pool)</tspan>
+  </text>
+  <text x="965" y="74" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#495057" text-anchor="middle">
+    <tspan x="965" dy="0">Profile text → e_m ∈ ℝ^768</tspan>
+    <tspan x="965" dy="20">store: model_profile__irt</tspan>
+    <tspan x="965" dy="20">(same TextEncoder)</tspan>
+  </text>
+  <text x="490" y="312" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#495057" text-anchor="middle">
+    <tspan x="490" dy="0">ability θ</tspan>
+  </text>
+  <text x="490" y="476" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#495057" text-anchor="middle">
+    <tspan x="490" dy="0">topic</tspan>
+  </text>
+  <text x="490" y="700" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#495057" text-anchor="middle">
+    <tspan x="490" dy="0">a, b heads</tspan>
+  </text>
+  <text x="490" y="904" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#495057" text-anchor="middle">
+    <tspan x="490" dy="0">logit z</tspan>
+  </text>
+  <text x="490" y="1108" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#495057" text-anchor="middle">
+    <tspan x="490" dy="0">quality</tspan>
+  </text>
+  <text x="490" y="1332" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#495057" text-anchor="middle">
+    <tspan x="490" dy="0">cost</tspan>
+  </text>
+  <text x="240" y="258" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="240" dy="0">Ability  θ_m = Θ[m] ∈ ℝ^8</tspan>
+    <tspan x="240" dy="20">(free learned row per LLM)</tspan>
+    <tspan x="240" dy="20">BaselineNIRT.latent_ability</tspan>
+  </text>
+  <text x="740" y="258" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#7048e8" text-anchor="middle">
+    <tspan x="740" dy="0">Ability  θ_m = σ(W_θ e_m) ∈ ℝ^25</tspan>
+    <tspan x="740" dy="20">(projected from the profile)</tspan>
+    <tspan x="740" dy="20">IRTRouterModel.latent_ability</tspan>
+  </text>
+  <text x="240" y="412" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="240" dy="0">Topic  r_q = softmax(cos(e_q, μ_c) / τ)</tspan>
+    <tspan x="240" dy="20">(soft membership in C clusters)</tspan>
+    <tspan x="240" dy="20">taxonomy/relevance.py</tspan>
+    <tspan x="240" dy="20">· relevance_from_embeddings</tspan>
+  </text>
+  <text x="740" y="442" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#adb5bd" text-anchor="middle">
+    <tspan x="740" dy="0">no topic signal</tspan>
+  </text>
+  <text x="240" y="586" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="240" dy="0">Discrimination / difficulty</tspan>
+    <tspan x="240" dy="20">a_q = softplus(f_a(e_q))</tspan>
+    <tspan x="240" dy="20">        ⊙ σ(W_r r_q + b_r)</tspan>
+    <tspan x="240" dy="20">b_q = f_b(e_q)     (MLP, hidden 64)</tspan>
+    <tspan x="240" dy="20">DiscriminationHead, DifficultyHead</tspan>
+    <tspan x="240" dy="20">router/nirt/components.py</tspan>
+  </text>
+  <text x="740" y="606" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#7048e8" text-anchor="middle">
+    <tspan x="740" dy="0">Linear heads, no topic gate</tspan>
+    <tspan x="740" dy="20">a_q = W_a e_q</tspan>
+    <tspan x="740" dy="20">b_q = w_b · e_q</tspan>
+    <tspan x="740" dy="20">nirt/model.py · _query_head</tspan>
+  </text>
+  <text x="240" y="810" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="240" dy="0">Latent logit</tspan>
+    <tspan x="240" dy="20">z = a_q·θ_m − b_q</tspan>
+    <tspan x="240" dy="20">     + γ·g([a_q, θ_m, a_q⊙θ_m, r_q])</tspan>
+    <tspan x="240" dy="20">(γ starts at 0 → pure IRT)</tspan>
+    <tspan x="240" dy="20">InteractionLayer (components.py)</tspan>
+  </text>
+  <text x="740" y="820" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#7048e8" text-anchor="middle">
+    <tspan x="740" dy="0">Latent logit</tspan>
+    <tspan x="740" dy="20">z = a_q·θ_m − b_q</tspan>
+    <tspan x="740" dy="20">(no interaction term)</tspan>
+    <tspan x="740" dy="20">IRTRouterModel.forward</tspan>
+  </text>
+  <text x="240" y="1004" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="240" dy="0">ZOIB response head</tspan>
+    <tspan x="240" dy="20">π = softmax(f_π[e_q, θ_m])</tspan>
+    <tspan x="240" dy="20">μ = σ(z),   κ = softplus(f_κ) + ε</tspan>
+    <tspan x="240" dy="20">Ŷ = E[Y] = π_1 + π_c · μ</tspan>
+    <tspan x="240" dy="20">baseline/continuous_zoib.py</tspan>
+    <tspan x="240" dy="20">· ZOIBResponseHead.mean</tspan>
+  </text>
+  <text x="740" y="1024" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#7048e8" text-anchor="middle">
+    <tspan x="740" dy="0">Bernoulli head</tspan>
+    <tspan x="740" dy="20">p = σ(z)</tspan>
+    <tspan x="740" dy="20">soft-BCE training</tspan>
+    <tspan x="740" dy="20">training/nirt/train.py · fit</tspan>
+  </text>
+  <text x="240" y="1208" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="240" dy="0">Length cost head (detached input)</tspan>
+    <tspan x="240" dy="20">P(b) = softmax(log prior_m</tspan>
+    <tspan x="240" dy="20">             + h([e_q, θ_m]))</tspan>
+    <tspan x="240" dy="20">Ĉ = p_in·L_in + p_out·Σ_b P(b)·v_b</tspan>
+    <tspan x="240" dy="20">OutputLengthHead (components.py)</tspan>
+    <tspan x="240" dy="20">prices: tokens.fit_token_prices</tspan>
+    <tspan x="240" dy="20">(NNLS on train cells)</tspan>
+  </text>
+  <text x="740" y="1248" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#7048e8" text-anchor="middle">
+    <tspan x="740" dy="0">Static cost</tspan>
+    <tspan x="740" dy="20">C(m) = mean train cost of m</tspan>
+    <tspan x="740" dy="20">(same value for every query)</tspan>
+  </text>
+  <text x="434" y="372" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#2f9e44" text-anchor="start">
+    <tspan x="434" dy="0">e_q</tspan>
+  </text>
+  <text x="434" y="536" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#2f9e44" text-anchor="start">
+    <tspan x="434" dy="0">e_q</tspan>
+  </text>
+  <text x="248" y="520" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#2f9e44" text-anchor="start">
+    <tspan x="248" dy="0">r_q gates a_q</tspan>
+  </text>
+  <text x="248" y="744" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#2f9e44" text-anchor="start">
+    <tspan x="248" dy="0">a_q, b_q</tspan>
+  </text>
+  <text x="248" y="948" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#2f9e44" text-anchor="start">
+    <tspan x="248" dy="0">z → μ = σ(z)</tspan>
+  </text>
+  <text x="16" y="262" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#2f9e44" text-anchor="start">
+    <tspan x="16" dy="0">θ_m</tspan>
+  </text>
+  <text x="14" y="1280" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="12" fill="#2f9e44" text-anchor="start">
+    <tspan x="14" dy="0">no grad</tspan>
+  </text>
+  <text x="488" y="220" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="start">
+    <tspan x="488" dy="0">index m</tspan>
+  </text>
+  <text x="808" y="210" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#7048e8" text-anchor="start">
+    <tspan x="808" dy="0">e_m</tspan>
+  </text>
+  <text x="552" y="618" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#7048e8" text-anchor="start">
+    <tspan x="552" dy="0">e_q</tspan>
+  </text>
+  <text x="748" y="744" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#7048e8" text-anchor="start">
+    <tspan x="748" dy="0">a_q, b_q</tspan>
+  </text>
+  <text x="950" y="262" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#7048e8" text-anchor="start">
+    <tspan x="950" dy="0">θ_m</tspan>
+  </text>
+  <text x="976" y="1248" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#7048e8" text-anchor="start">
+    <tspan x="976" dy="0">per-model avg</tspan>
+  </text>
+  <text x="456" y="1428" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#2f9e44" text-anchor="start">
+    <tspan x="456" dy="0">Ŷ_qm</tspan>
+  </text>
+  <text x="308" y="1428" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#2f9e44" text-anchor="start">
+    <tspan x="308" dy="0">Ĉ_qm</tspan>
+  </text>
+  <text x="536" y="1428" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#7048e8" text-anchor="start">
+    <tspan x="536" dy="0">p_qm</tspan>
+  </text>
+  <text x="688" y="1428" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#7048e8" text-anchor="start">
+    <tspan x="688" dy="0">C(m)</tspan>
+  </text>
+  <text x="510" y="1484" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#f08c00" text-anchor="middle">
+    <tspan x="510" dy="0">Decide</tspan>
+    <tspan x="510" dy="20">m̂(q) = argmax_m [ quality_qm − λ · cost_qm ]</tspan>
+    <tspan x="510" dy="20">non-finite cells → −∞;  exact ties → first column</tspan>
+    <tspan x="510" dy="20">λ = 0: best predicted quality; larger λ: cheaper</tspan>
+    <tspan x="510" dy="20">router/nirt/routing_decision.py</tspan>
+    <tspan x="510" dy="20">· cost_aware_utility, routing_decision</tspan>
+  </text>
+  <text x="518" y="1636" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="start">
+    <tspan x="518" dy="0">m̂</tspan>
+  </text>
+  <text x="510" y="1692" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#495057" text-anchor="middle">
+    <tspan x="510" dy="0">Send q to m̂</tspan>
+    <tspan x="510" dy="20">(LLM call)</tspan>
+  </text>
+</svg>

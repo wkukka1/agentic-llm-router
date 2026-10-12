@@ -591,6 +591,91 @@ classDiagram
     Orchestrator ..> AgentTask : creates
     Orchestrator ..> Agent : spawns (depth bounded)
 
+    class RoutedOrchestrator {
+        +OptimizationObjective objective
+        +LLMRegistry registry
+        +int maxWorkers
+        +boolean sequential
+        +plan(AgentTask task) Plan
+        +execute(Plan plan) ExecutionResult
+        +replan(Plan plan) Plan
+    }
+
+    class PlanOrchestratorBridge {
+        +float budget
+        +ExecutionLimits limits
+        +run(String prompt, agent, int depth) answer_and_subcalls
+    }
+
+    note for RoutedOrchestrator "Concrete Orchestrator (router.execution.routed). Plans by routing all sub-prompts in one batch, runs independent steps in parallel, replans failed steps onto their next-best model. Every model call goes through router.agentic.AgenticRouter (shared max_calls, history)."
+    note for PlanOrchestratorBridge "Adapter: AgenticRouter(orchestrator=plan_orchestrator(...)) drives a RoutedOrchestrator per request with a fresh BudgetLedger."
+
+    Orchestrator <|-- RoutedOrchestrator
+    RoutedOrchestrator --> RouterPlanForecaster : forecasts with
+    PlanOrchestratorBridge ..> RoutedOrchestrator : creates per request
+    PlanOrchestratorBridge ..> BudgetLedger : creates per request
+    PlanOrchestratorBridge ..> AgentTask : creates
+
+
+    %% =========================================================
+    %% SERVING :: AGENTIC SETTINGS   (router/agentic/schemas.py)
+    %%   Pydantic models loaded from configs/agentic.yaml;
+    %%   AgenticRouter.from_settings() builds the router from them.
+    %% =========================================================
+
+    class AgenticRouterSettings {
+        +Map~String,String~ prompts
+        +String run
+        +String clients
+        +int maxDepth
+        +int maxCalls
+        +String orchestrator
+        +String resultSink
+    }
+
+    class TriageSettings {
+        +String kind
+        +float qualityThreshold
+        +float margin
+        +String prompt
+        +String model
+    }
+
+    class DecomposerSettings {
+        +String kind
+        +int maxParts
+        +String prompt
+        +String model
+    }
+
+    class SynthesizerSettings {
+        +String kind
+        +int maxBodyChars
+        +String prompt
+        +String model
+    }
+
+    class PlanSettings {
+        +float budget
+        +int maxWorkers
+        +boolean sequential
+        +int maxReplans
+    }
+
+    class ToolAgentSettings {
+        +String model
+        +int maxIterations
+        +String prompt
+    }
+
+    note for AgenticRouterSettings "Pydantic models (extra keys forbidden, immutable). prompts maps a name to a str.format template - the only copy of every LLM prompt; each helper names the prompt it sends. AgenticRouter.from_settings() builds the router run, clients, helpers, orchestrator and result sink."
+
+    AgenticRouterSettings *-- TriageSettings
+    AgenticRouterSettings *-- DecomposerSettings
+    AgenticRouterSettings *-- SynthesizerSettings
+    AgenticRouterSettings *-- PlanSettings
+    AgenticRouterSettings *-- ToolAgentSettings
+
 
     %% =========================================================
     %% SERVING :: EXECUTION LIMITS / BUDGET   (execution/budget.py)
@@ -613,6 +698,7 @@ classDiagram
         +float spent
         +remaining() float
         +reserve(String taskId, float amount) boolean
+        +resize(String taskId, float amount) boolean
         +commit(String taskId, float actual)
         +release(String taskId)
     }
@@ -674,6 +760,8 @@ classDiagram
         +int estimatedOutputTokens
         +float estimatedCost
         +List~String~ dependencies
+        +float predictedQuality
+        +List~String~ alternatives
     }
 
     class PlanStatus {
@@ -717,6 +805,15 @@ classDiagram
     PlanForecaster ..> CostForecast : produces
     PlanForecaster ..> PlanScore : produces
     PlanForecaster ..> OptimizationObjective : applies
+
+    class RouterPlanForecaster {
+        +RouterModel router
+        +Map latencyTable
+        +float defaultLatency
+    }
+
+    PlanForecaster <|-- RouterPlanForecaster
+    RouterPlanForecaster --> RouterModel : fallback cost from
 
 
     %% =========================================================
@@ -991,7 +1088,14 @@ equivalents are documented elsewhere and look quite different in shape:
   this one), and one of two orchestrators (`RecursiveOrchestrator`,
   `LangChainToolOrchestrator`) that share no common base. It's a flat
   triage → single-or-decompose → synthesize flow: no `AgentTask` tree, no
-  `Plan`/`PlanForecaster`, no `BudgetLedger`, no execution limits. See
+  `Plan`/`PlanForecaster`, no `BudgetLedger`, no execution limits — unless
+  it is given the plan orchestrator (`router.execution.routed.plan_orchestrator()`,
+  a `PlanOrchestratorBridge` over `RoutedOrchestrator`), which plans, forecasts
+  with `RouterPlanForecaster`, reserves on a per-request `BudgetLedger`, runs
+  independent steps in parallel and replans failures. `run`/`stream` accept a
+  conversation (message list) as well as a bare prompt. Its settings and
+  prompts load from `configs/agentic.yaml` (`router.agentic.schemas`,
+  `AgenticRouter.from_settings()`). See
   [`docs/agentic_router.md`](agentic_router.md).
 - **Model definitions and response heads** — `NIRTModel`/`IRTRouterModel`
   (`nn.Module`s chosen by `build_model(cfg)` on an orientation string) and the

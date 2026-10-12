@@ -143,9 +143,7 @@ class Router:
         row = result.score_frame().iloc[0]
         finite = row[np.isfinite(row.to_numpy(np.float64))]
         prior = float(finite.mean()) if len(finite) else float("nan")
-        pool_costs = self.router_model.default_model_costs
-        cost_of = (dict(zip(self.router_model.model_ids, map(float, pool_costs)))
-                   if pool_costs is not None else {})
+        cost_of = self.router_model.cost_by_model()
         # a candidate outside the pool has no entry in ``cost_of``; price it at the
         # pool max (pessimistic, same choice as ``_mean_train_costs``) so it stays on
         # the router's USD/query scale -- the profile's per-token price is ~1000x smaller

@@ -53,3 +53,21 @@ def test_predict_cost_for_context_never_zeroes_input_tokens_on_a_short_prompt():
     )
     # even a tiny prompt must still cost something, not divide-to-zero
     assert model.predict_cost_for_context(profile, context) > 0
+
+
+def test_price_tokens_unknown_is_never_free():
+    from router.llm.cost import price_tokens
+
+    assert price_tokens(10, 2, 1.0, 5.0) == 20.0
+    assert price_tokens(None, None, 1.0, 5.0) is None          # no usage at all
+    assert price_tokens(10, 2, None, 5.0) is None              # used side unpriced
+    assert price_tokens(0, 2, None, 5.0) == 10.0               # unused side may be unpriced
+
+
+def test_estimate_call_cost_with_explicit_tokens():
+    from router.llm.cost import estimate_call_cost
+
+    model = LLMProfile(name="m", provider="x", model_id="m",
+                       input_cost_per_token=1.0, output_cost_per_token=2.0)
+    assert estimate_call_cost(model, input_tokens=3, output_tokens=4) == (11.0, "profile")
+    assert estimate_call_cost(model, 40, output_tokens=0) == (10.0, "profile")   # 40 chars -> 10 tokens

@@ -5,8 +5,8 @@ import pytest
 
 from router.config import Config
 from training.data import schemas
+from training.data.normalize import render_response
 from evaluation.data.judge_responses import (
-    _render_response,
     duplicated_routerbench_query_ids,
     load_routerbench_response_text,
     response_text_lookup,
@@ -95,10 +95,10 @@ def test_duplicate_prompts_are_dropped(tmp_path):
     ("['a', 'b']", "a\n\nb"),
     ("plain text", "plain text"),
 ])
-def test_render_response(raw, expected):
-    assert _render_response(raw) == expected
+def testrender_response(raw, expected):
+    assert render_response(raw) == expected
 
 
 def test_render_response_survives_deep_nesting():
     raw = "[" * 10_000 + "]" * 10_000
-    assert _render_response(raw) == raw
+    assert render_response(raw) == raw

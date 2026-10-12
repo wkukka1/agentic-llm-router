@@ -33,6 +33,16 @@ def _blocks(content) -> list:
     return [{"type": "text", "text": content}] if isinstance(content, str) else list(content)
 
 
+#: text Claude Code itself puts in a user message -- reminders, a background
+#: task finishing, a subagent handing back its report -- never the human's.
+#: Found live: each subagent's hand-back and task notification counted as a
+#: new turn, so one request moved the main conversation Opus -> Haiku ->
+#: Sonnet -> Opus, rewriting its prompt cache each time.
+REMINDER = re.compile(
+    r"<(system-reminder|task-notification|agent-message)\b[^>]*>.*?</\1>"
+    r"|^\s*Another Claude session sent a message:", re.S | re.M)
+
+
 def untranslatable_reason(body: Mapping, *, max_tools: int | None = None) -> str | None:
     """``None`` if ``body`` survives translation intact, else why not."""
     tools = body.get("tools") or []

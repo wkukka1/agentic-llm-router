@@ -22,6 +22,7 @@ from collections.abc import Sequence
 import numpy as np
 import pandas as pd
 
+from evaluation.nirt.routing import oracle_choice
 from evaluation.routing.oracle import routing_evaluation
 
 log = logging.getLogger(__name__)
@@ -89,8 +90,7 @@ def margin_sweep(pred: np.ndarray, true: np.ndarray, cost: np.ndarray,
                  "cost_per_1k": fixed["mean_selected_cost_per_1k"], "regret": fixed["mean_regret"],
                  "oracle_hit": fixed["oracle_hit_rate_any_best"], "top_model_share": 1.0})
 
-    top = true.max(axis=1, keepdims=True)
-    cheapest_best = np.where(true >= top, cost, np.inf).argmin(axis=1)
+    cheapest_best = oracle_choice(true, cost, tol=0.0, model_ids=None)
     orc = score_selection(cheapest_best, true, cost, model_ids, query_ids=query_ids,
                           strategy="oracle")
     rows.append({"policy": "oracle (cheapest correct)", "quality": orc["mean_selected_quality"],

@@ -86,6 +86,11 @@ class TestItRefusesWhatItCannotDo:
         assert picked != 1        # the unpriced candidate
         assert picked == 0        # the dearer but priced one, on quality
 
+    def test_per_cell_costs(self):
+        """A [Q, M] cost matrix (predicted per-query cost) picks per row."""
+        costs = np.array([[1.0, 0.1, 0.01], [1.0, 2.0, 0.01], [0.5, 0.5, 0.1]])
+        assert routing_decision(PRED, model_costs=costs, margin=0.1).tolist() == [1, 0, 2]
+
 
 class TestMaskingStillHolds:
     def test_an_ineligible_model_is_never_selected(self):
@@ -108,7 +113,7 @@ class TestItReachesTheRouter:
     survive the trip and the result has to say which rule actually ran."""
 
     def _router(self):
-        from tests.router.test_router_pipeline import FakeTextRouter
+        from helpers.fake_router import FakeTextRouter
 
         return FakeTextRouter()
 
@@ -138,8 +143,8 @@ class TestTheTwoImplementationsAgree:
 
     Two implementations of one rule is exactly the bug that corrupted the
     offline baselines (a private copy in `policy_eval` had drifted to
-    cost-breaking ties at margin=0). The policy cannot simply delegate -- it
-    ranks objects, not a matrix -- so the agreement is pinned here instead.
+    cost-breaking ties at margin=0). The policy now delegates to
+    `routing_decision` on a one-row matrix; the agreement is still pinned here.
     """
 
     def _decide(self, margin, pred, costs):
@@ -194,7 +199,7 @@ class TestPerRequestOnTheLivePath:
 
     def _router(self, margin=0.0):
         from router.agentic.router import AgenticRouter
-        from tests.router.test_router_pipeline import FakeTextRouter
+        from helpers.fake_router import FakeTextRouter
 
         return AgenticRouter(FakeTextRouter(), margin=margin)
 

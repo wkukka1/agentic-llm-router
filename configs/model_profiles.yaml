@@ -19,6 +19,20 @@ version: 1
 defaults:
   modality: [text]
 
+# -- public-benchmark fields (see src/training/data/public_benchmarks.py +
+# training.models.profiles.resolve_benchmarks for the full five-tier
+# precedence) --
+#   arena_name:         -> Chatbot Arena Elo, pinned to the 2023-12-15 snapshot
+#                          (lmarena-ai/chatbot-arena-leaderboard HF Space).
+#                          NOT the model's own canonical_id -- the leaderboard's
+#                          own Model-column string (verified by directly
+#                          fetching leaderboard_table_20231215.csv).
+#   hf_repo_id:         -> HF Open LLM Leaderboard (open-weight models only).
+#   benchlm_slug:       -> BenchLM.ai (verified via its own /models directory;
+#                          its slugs do not follow our canonical_id convention).
+#   openlm_scores: / model_card_scores: / benchmark_scores: -> hand-transcribed
+#     (OpenLM.ai has no API/export; model cards are definitionally hand-read).
+
 profiles:
   # ---- RouterBench candidates (have dense correctness data) ----
   gpt-4-1106-preview:
@@ -32,6 +46,14 @@ profiles:
     release: "2023-11"
     input_price_per_1k: 0.01
     output_price_per_1k: 0.03
+    # Arena row for this checkpoint is labelled "GPT-4-Turbo", not
+    # "gpt-4-1106-preview" -- verified by fetching the CSV directly.
+    arena_name: "GPT-4-Turbo"
+    strengths:
+      - "Strong general reasoning and broad world knowledge for its era"
+      - "Reliable instruction following relative to GPT-3.5-class models"
+    weaknesses:
+      - "Superseded on most benchmarks by later 2024+ frontier releases"
 
   gpt-3.5-turbo-1106:
     feature: >-
@@ -94,6 +116,13 @@ profiles:
     params_b: 47
     context_window: 32768
     release: "2023-12"
+    hf_repo_id: "mistralai/Mixtral-8x7B-Instruct-v0.1"
+    arena_name: "Mixtral-8x7b-Instruct-v0.1"
+    strengths:
+      - "Strong reasoning-per-parameter via sparse MoE routing"
+      - "Fast inference relative to dense 70B-class models"
+    weaknesses:
+      - "Weaker multi-step math than contemporary dense 70B models"
 
   mistral-7b-instruct:
     feature: >-
@@ -155,6 +184,17 @@ profiles:
       writing and comprehension.
     context_window: 100000
     release: "2023-07"
+    arena_name: "Claude-2.0"
+    # MMLU value is the Arena leaderboard's OWN bundled MMLU column for this
+    # row (leaderboard_table_20231215.csv) -- tagged with its real source,
+    # not mislabelled as an independently-verified model-card figure.
+    benchmark_scores:
+      mmlu: {value: 78.5, unit: percent, source: lmarena_hf, snapshot_date: "2023-12-15"}
+    strengths:
+      - "Strong writing quality and long-document comprehension"
+      - "200K-adjacent long context for its era (100K)"
+    weaknesses:
+      - "Weaker mathematical/multi-step reasoning than contemporary GPT-4-class models"
   gemini-pro:
     feature: >-
       Gemini Pro is Google's proprietary multimodal model, a capable generalist
@@ -177,3 +217,173 @@ profiles:
       conversations (33B parameters).
     params_b: 33
     release: "2023-08"
+
+  vicuna-13b:
+    feature: >-
+      Vicuna 13B is an open-weight Llama-based chat model fine-tuned on
+      user-shared ShareGPT conversations (13B parameters), from the same
+      lmsys family as Vicuna 33B at a smaller scale.
+    params_b: 13
+    release: "2023-06"
+    arena_name: "Vicuna-13B"
+    strengths:
+      - "Capable small-model generalist for its era, good at casual chat"
+    weaknesses:
+      - "Weak at math, code and multi-step reasoning relative to larger models"
+      - "No instruction-tuning beyond ShareGPT-style conversational fine-tuning"
+
+  # ---- Modern LLMRouterBench pool (configs/model_registry.yaml) ----
+  # NOT yet loaded into responses.parquet and have ZERO pairwise battle data
+  # in this repo -- these profiles are built for "profile coverage /
+  # deployment readiness" only, never scored in any of E0-E6. BenchLM
+  # "overall" scores below are directly fetched and confirmed; its
+  # per-category sub-benchmark breakdown did NOT turn out to follow one
+  # consistent flat {category: value} shape across every model page (some
+  # categories list several named sub-benchmarks, not one number), so only
+  # "overall" is relied on numerically here -- named sub-benchmarks are
+  # folded into strengths/weaknesses as prose citations instead of invented
+  # single numbers. hf_repo_id values below are standard HF repo-naming
+  # conventions for these releases, NOT independently re-verified against
+  # the live open-llm-leaderboard/contents dataset this session -- confirm
+  # before trusting a specific number pulled through that path.
+  claude-sonnet-4:
+    feature: >-
+      Claude Sonnet 4 is Anthropic's mid-tier proprietary model in the
+      Claude 4 generation, balancing capability and cost for everyday
+      agentic and coding workloads.
+    context_window: 200000
+    release: "2025-05"
+    benchlm_slug: "claude-4-sonnet"   # benchlm.ai/models/claude-4-sonnet, overall 38.49
+    strengths:
+      - "Strong coding performance for its cost tier (SWE-bench Verified 72.7%, BenchLM)"
+      - "Large 200K context window"
+    weaknesses:
+      - "Weaker on raw knowledge/hard-reasoning benchmarks than flagship Opus-tier models"
+
+  deepseek-v3-0324:
+    feature: >-
+      DeepSeek-V3-0324 is DeepSeek's open-weight mixture-of-experts model
+      (a March 2024 checkpoint update of DeepSeek-V3), competitive with
+      proprietary frontier models on many benchmarks at open-weight cost.
+    context_window: 128000
+    release: "2024-03"
+    hf_repo_id: "deepseek-ai/DeepSeek-V3-0324"
+    benchlm_slug: "deepseek-v3-0324"   # exact slug match, overall 36.72
+    strengths:
+      - "Strong multilingual performance (MMLU-ProX 70.5%, BenchLM)"
+      - "Open-weight, deployable at a fraction of proprietary frontier cost"
+    weaknesses:
+      - "Mixed knowledge-benchmark results (GPQA Diamond 65.5% vs. weaker Omniscience scores)"
+
+  gemini-2.5-pro:
+    feature: >-
+      Gemini 2.5 Pro is Google's proprietary flagship multimodal model, with
+      a 1M-token context window and strong coding and reasoning performance.
+    context_window: 1000000
+    release: "2025-03"
+    benchlm_slug: "gemini-2-5-pro"   # overall 49.5
+    strengths:
+      - "Strong coding (SWE-bench Verified 63.8%, BenchLM) and reasoning (AA-LCR 69.0%)"
+      - "1M-token context window; strong multimodal grounding (AA-MMMU-Pro 74.9%)"
+    weaknesses:
+      - "Weak on frontier math benchmarks (FrontierMath v2 Tiers 1-3: 14.1%, BenchLM)"
+
+  gemini-2.5-flash:
+    feature: >-
+      Gemini 2.5 Flash is Google's proprietary fast/cheap multimodal model,
+      the lower-latency sibling of Gemini 2.5 Pro.
+    context_window: 1000000
+    release: "2025-03"
+    benchlm_slug: "gemini-2-5-flash"   # overall 42.32
+    strengths:
+      - "Fast, low-cost generalist with a 1M-token context window"
+    weaknesses:
+      - "Markedly weaker than Gemini 2.5 Pro on agentic tasks (tau2-bench 14.9% vs. 54.1%)"
+
+  gpt-5:
+    feature: >-
+      GPT-5 is OpenAI's proprietary flagship model (medium reasoning
+      effort), used in the LLMRouterBench performance-cost pool as
+      "GPT-5-medium".
+    release: "2025-08"
+    # Proprietary -- confirmed absent from both BenchLM and the HF Open LLM
+    # Leaderboard (neither will ever index a closed API model). No public
+    # third-party aggregate number independently confirmed this session;
+    # left without benchmark_scores rather than guess one.
+    strengths:
+      - "OpenAI's flagship-generation model at the time of its release"
+    weaknesses: []
+
+  gpt-5-chat:
+    feature: >-
+      GPT-5 Chat is OpenAI's proprietary chat-optimised GPT-5 variant.
+    release: "2025-08"
+    strengths: []
+    weaknesses: []
+
+  deepseek-v3.1-terminus:
+    feature: >-
+      DeepSeek-V3.1 Terminus is DeepSeek's open-weight updated V3.1
+      checkpoint, refining instruction-following and reducing
+      language-mixing issues from earlier V3.1 releases.
+    release: "2025-09"
+    hf_repo_id: "deepseek-ai/DeepSeek-V3.1-Terminus"
+    strengths: []
+    weaknesses: []
+
+  deepseek-r1-0528:
+    feature: >-
+      DeepSeek-R1-0528 is DeepSeek's open-weight reasoning model (a May
+      2025 checkpoint update of DeepSeek-R1), trained with large-scale
+      reinforcement learning for chain-of-thought reasoning.
+    release: "2025-05"
+    hf_repo_id: "deepseek-ai/DeepSeek-R1-0528"
+    strengths:
+      - "Strong chain-of-thought reasoning from large-scale RL training"
+    weaknesses: []
+
+  qwen3-235b-a22b-2507:
+    feature: >-
+      Qwen3-235B-A22B-2507 is Alibaba's open-weight mixture-of-experts model
+      (235B total / 22B active parameters), a July 2025 checkpoint update
+      of Qwen3-235B-A22B.
+    release: "2025-07"
+    hf_repo_id: "Qwen/Qwen3-235B-A22B-Instruct-2507"
+    strengths: []
+    weaknesses: []
+
+  qwen3-235b-a22b-thinking-2507:
+    feature: >-
+      Qwen3-235B-A22B-Thinking-2507 is the reasoning/"thinking"-mode variant
+      of Qwen3-235B-A22B-2507.
+    release: "2025-07"
+    hf_repo_id: "Qwen/Qwen3-235B-A22B-Thinking-2507"
+    strengths: []
+    weaknesses: []
+
+  glm-4.6:
+    feature: >-
+      GLM-4.6 is Zhipu AI's open-weight large language model, the latest in
+      the GLM-4 series at the time of its release.
+    release: "2025-09"
+    hf_repo_id: "zai-org/GLM-4.6"
+    strengths: []
+    weaknesses: []
+
+  kimi-k2-0905:
+    feature: >-
+      Kimi K2-0905 is Moonshot AI's open-weight mixture-of-experts model, a
+      September 2025 checkpoint update of Kimi K2.
+    release: "2025-09"
+    hf_repo_id: "moonshotai/Kimi-K2-Instruct-0905"
+    strengths: []
+    weaknesses: []
+
+  intern-s1:
+    feature: >-
+      Intern-S1 is Shanghai AI Laboratory's open-weight multimodal
+      reasoning model from the InternLM family.
+    release: "2025-07"
+    hf_repo_id: "internlm/Intern-S1"
+    strengths: []
+    weaknesses: []

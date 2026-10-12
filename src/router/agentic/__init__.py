@@ -5,9 +5,10 @@ LLM orchestrator.
 router's own predicted-quality signal:
 
 * the best model can handle it -> call that model's client and return the answer;
-* it is compound / the best model is predicted to struggle -> hand it to an
-  orchestrator that decomposes the request and routes each sub-task recursively
-  (the router is exposed to the orchestrator as a tool), then synthesizes.
+* it is compound / the best model is predicted to struggle -> hand it to the
+  plan orchestrator, which decomposes the request via an LLM, routes and runs
+  each sub-task (the router is exposed to it as a tool), judges the result,
+  repairs/replans on a failed check, then synthesizes one answer.
 
 ```python
 from router.routing import NIRTRouter
@@ -18,18 +19,19 @@ print(ar.run("What is 2+2?").summary())                                # single
 print(ar.run("Summarise transformers, then implement attention in NumPy "
              "and analyse its complexity.").summary())                 # orchestrated
 
-# real models + an LLM-driven orchestrator
-from langchain.chat_models import init_chat_model
-llm = init_chat_model("gpt-4o-mini", model_provider="openai")
+# real models, routed through the plan orchestrator (decompose -> execute -> judge)
+from router.execution.routed import plan_orchestrator
 ar = AgenticRouter(NIRTRouter.from_run("nirt-2d-projected"),
                    clients=ClientRegistry.langchain(["gpt-4o", "claude-3-5-sonnet-latest"]),
-                   ).with_langchain_orchestrator(llm)
+                   orchestrator=plan_orchestrator(budget=0.05))
 ```
 
-See ``docs/agentic_router.md``. LangChain is an optional dependency (the
-``agentic`` extra); the defaults (echo clients, `RecursiveOrchestrator`,
-`HeuristicTriage`, `NaiveDecomposer`) need nothing beyond the core install.
-Clients are :class:`~router.llm.client.LLMClient`\\ s wrapping a
+See ``docs/agentic_router.md``. The defaults (echo clients, the plan
+orchestrator with ``HeuristicTriage``/``NaiveDecomposer``) need nothing beyond
+the core install for a request simple enough that triage answers it directly;
+an orchestrated request calls through to the LLM configured as ``plan.model``
+(:meth:`AgenticRouter.from_settings`), which needs LangChain (the ``agentic``
+extra). Clients are :class:`~router.llm.client.LLMClient`\\ s wrapping a
 :class:`~router.llm.adapters.base.ProviderAdapter` (``EchoAdapter``/
 ``CallableAdapter``/``LangChainAdapter`` in :mod:`router.llm.adapters`) --
 build one directly and pass it to :meth:`ClientRegistry.register` for a
@@ -38,6 +40,7 @@ custom client.
 
 from __future__ import annotations
 
+from ..execution.routed import PlanOrchestratorBridge, plan_orchestrator
 from .llm_clients import (
     ClientRegistry,
     LLMClient,
@@ -49,11 +52,6 @@ from .decompose import (
     LLMSynthesizer,
     NaiveDecomposer,
     concat_synthesizer,
-)
-from .orchestrator import (
-    LangChainToolOrchestrator,
-    RecursiveOrchestrator,
-    build_router_tools,
 )
 from .result import AgenticResult, SubCall
 from .router import AgenticRouter
@@ -77,8 +75,7 @@ __all__ = [
     "LLMDecomposer",
     "concat_synthesizer",
     "LLMSynthesizer",
-    # orchestrators
-    "RecursiveOrchestrator",
-    "LangChainToolOrchestrator",
-    "build_router_tools",
+    # orchestrator
+    "plan_orchestrator",
+    "PlanOrchestratorBridge",
 ]

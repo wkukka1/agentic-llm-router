@@ -11,6 +11,7 @@ score (relevance gate ~ 1, interaction gamma = 0).
 
 from __future__ import annotations
 
+import math
 from typing import Optional
 
 import torch
@@ -125,3 +126,90 @@ class LengthHead(nn.Module):
 
     def forward(self, e_q) -> torch.Tensor:
         return self.net(e_q).squeeze(-1)
+
+
+class CostHead(nn.Module):
+    """Expected-execution-cost probe: ``feats -> (cost_mu, cost_log_sigma)``, a
+    Gaussian over ``log USD``. Estimates ``E[C | q, m]`` ex ante (output length is
+    unknown before generation), via the lognormal mean ``exp(mu + sigma^2 / 2)``.
+    The caller detaches ``feats``, so this head never shapes the quality trunk."""
+
+    LOG_SIGMA_MIN, LOG_SIGMA_MAX = -5.0, 3.0
+    _HALF_LOG_2PI = 0.5 * math.log(2 * math.pi)
+
+    def __init__(self, in_dim: int, hidden: Optional[int], *, init_mu: float):
+        super().__init__()
+        self.net = mlp(in_dim, 2, hidden)
+        # input standardisation (identity until set_standardization): the IRT
+        # latent is only defined up to scale, so the probe should not depend on it
+        self.register_buffer("feat_mean", torch.zeros(in_dim))
+        self.register_buffer("feat_std", torch.ones(in_dim))
+        last = self.net[-1] if isinstance(self.net, nn.Sequential) else self.net
+        with torch.no_grad():   # mu starts at exactly init_mu for every input
+            last.weight[0].zero_()
+            last.bias[0] = float(init_mu)
+
+    @torch.no_grad()
+    def set_standardization(self, mean: torch.Tensor, std: torch.Tensor) -> None:
+        """Fix the input mean / std (computed from TRAIN-split features)."""
+        self.feat_mean.copy_(mean)
+        self.feat_std.copy_(std.clamp_min(1e-6))
+
+    def forward(self, feats: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        out = self.net((feats - self.feat_mean) / self.feat_std)
+        return out[:, 0], out[:, 1].clamp(self.LOG_SIGMA_MIN, self.LOG_SIGMA_MAX)
+
+    def nll(self, log_c: torch.Tensor, mu: torch.Tensor, log_sigma: torch.Tensor) -> torch.Tensor:
+        """Per-row Gaussian NLL of ``log_c`` (constant included, so it is a true NLL)."""
+        return (log_sigma + 0.5 * (log_c - mu) ** 2 * torch.exp(-2 * log_sigma)
+                + self._HALF_LOG_2PI)
+
+    def train_loss(self, log_c: torch.Tensor, mu: torch.Tensor, log_sigma: torch.Tensor,
+                   beta: float = 0.5) -> torch.Tensor:
+        """Per-row beta-NLL (Seitzer et al. 2022): the NLL weighted by a detached
+        ``sigma^(2 beta)``. Plain NLL lets a large learned sigma starve the mean
+        of gradient; ``beta=0`` recovers it. Report :meth:`nll`, train on this."""
+        return self.nll(log_c, mu, log_sigma) * torch.exp(2 * beta * log_sigma).detach()
+
+    @staticmethod
+    def expected_cost(mu: torch.Tensor, log_sigma: torch.Tensor) -> torch.Tensor:
+        return torch.exp(mu + 0.5 * torch.exp(2 * log_sigma))
+
+
+class OutputLengthHead(nn.Module):
+    """Output-length classifier over fixed token-count buckets:
+    ``logits = log_prior_m + f(feats)``. ``log_prior_m`` is the model's train-split
+    bucket distribution (passed per row); ``f``'s last layer starts at zero, so the
+    head begins as exactly that per-model prior and learns only the query-specific
+    correction. ``E[L_out] = softmax(logits) . bucket_values`` -- and because cost
+    is linear in tokens, ``p_in * L_in + p_out * E[L_out]`` is the EXACT expected
+    cost under the predicted distribution. ``feats`` are detached by the caller."""
+
+    def __init__(self, in_dim: int, hidden: Optional[int], bucket_values):
+        super().__init__()
+        values = torch.as_tensor(bucket_values, dtype=torch.float32)
+        self.n_buckets = int(values.numel())
+        self.net = mlp(in_dim, self.n_buckets, hidden)
+        self.register_buffer("bucket_values", values)
+        self.register_buffer("feat_mean", torch.zeros(in_dim))
+        self.register_buffer("feat_std", torch.ones(in_dim))
+        last = self.net[-1] if isinstance(self.net, nn.Sequential) else self.net
+        with torch.no_grad():
+            last.weight.zero_()
+            last.bias.zero_()
+
+    @torch.no_grad()
+    def set_standardization(self, mean: torch.Tensor, std: torch.Tensor) -> None:
+        self.feat_mean.copy_(mean)
+        self.feat_std.copy_(std.clamp_min(1e-6))
+
+    def forward(self, feats: torch.Tensor, log_prior: torch.Tensor) -> torch.Tensor:
+        return log_prior.to(feats.dtype) + self.net((feats - self.feat_mean) / self.feat_std)
+
+    def nll(self, labels: torch.Tensor, logits: torch.Tensor) -> torch.Tensor:
+        """Per-row cross-entropy of the observed bucket."""
+        return F.cross_entropy(logits, labels.long(), reduction="none")
+
+    def expected_length(self, logits: torch.Tensor) -> torch.Tensor:
+        return F.softmax(logits, dim=-1) @ self.bucket_values
+

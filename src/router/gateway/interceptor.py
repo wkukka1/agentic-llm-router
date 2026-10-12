@@ -52,7 +52,14 @@ from .pricing import canonical_model, cost_usd
 from .routing import ModelPicker, price_for, unavailable_reason
 from .subagents import DEFAULT_ROLE_MODELS, role_decision, spawn_decision
 from .subagents import detect as detect_subagent
-from .translate import OpenAIStreamTranslator, anthropic_to_openai, iter_openai_sse, openai_to_anthropic
+from .translate import REMINDER as _REMINDER
+from .translate import (
+    OpenAIStreamTranslator,
+    _blocks,
+    anthropic_to_openai,
+    iter_openai_sse,
+    openai_to_anthropic,
+)
 
 _REQUEST_HOP_HEADERS = {"host", "content-length", "connection", "accept-encoding",
                         "transfer-encoding", "keep-alive"}
@@ -411,22 +418,6 @@ def _notify() -> None:
             loop.call_soon_threadsafe(_offer, queue)
         except RuntimeError:  # that loop is gone
             _listeners.discard((loop, queue))
-
-
-def _blocks(content) -> list:
-    if content is None:
-        return []
-    return [{"type": "text", "text": content}] if isinstance(content, str) else list(content)
-
-
-#: text Claude Code itself puts in a user message -- reminders, a background
-#: task finishing, a subagent handing back its report -- never the human's.
-#: Found live: each subagent's hand-back and task notification counted as a
-#: new turn, so one request moved the main conversation Opus -> Haiku ->
-#: Sonnet -> Opus, rewriting its prompt cache each time.
-_REMINDER = re.compile(
-    r"<(system-reminder|task-notification|agent-message)\b[^>]*>.*?</\1>"
-    r"|^\s*Another Claude session sent a message:", re.S | re.M)
 
 
 def human_text(body: Mapping) -> str | None:

@@ -30,7 +30,7 @@ from typing import Optional, Sequence
 import numpy as np
 import pandas as pd
 
-from router.nirt.routing_decision import routing_decision
+from router.nirt.routing_decision import linear_cost, routing_decision
 
 
 # --------------------------------------------------------------------------- #
@@ -286,14 +286,6 @@ def pareto(
 # Reward(alpha) and AIQ  -- scalars comparable to IRT-Router / RouterBench     #
 # --------------------------------------------------------------------------- #
 _trapz = getattr(np, "trapezoid", getattr(np, "trapz", None))
-
-
-def linear_cost(value, pool_mean_costs) -> np.ndarray:
-    """Map a cost onto ``[0, 1]`` by the candidate pool's per-model mean-cost range."""
-    c = np.asarray(pool_mean_costs, dtype=np.float64)
-    lo, hi = float(c.min()), float(c.max())
-    v = np.asarray(value, dtype=np.float64)
-    return np.zeros_like(v) if hi <= lo else np.clip((v - lo) / (hi - lo), 0.0, 1.0)
 
 
 def reward(quality, policy_mean_cost, alpha: float, *, pool_mean_costs) -> float:

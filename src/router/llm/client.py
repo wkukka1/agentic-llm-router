@@ -13,9 +13,11 @@ from __future__ import annotations
 
 import importlib
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+
+from .cost import price_tokens
 
 if TYPE_CHECKING:  # pragma: no cover - type hints only, not a runtime import
     from .adapters.base import Prompt, ProviderAdapter
@@ -58,22 +60,50 @@ class LLMClient:
             resp.cost = self.price(resp.input_tokens, resp.output_tokens)
         return resp
 
-    def stream(self, prompt: Prompt, **generation_kwargs) -> Iterator[str]:
-        return self._adapter.stream(prompt, **generation_kwargs)
+    def stream(self, prompt: Prompt, *,
+               on_done: Callable[[LLMResponse], None] | None = None,
+               **generation_kwargs) -> Generator[str, None, LLMResponse]:
+        """Yield the adapter's text chunks as they arrive; when the stream ends,
+        build the final :class:`LLMResponse` -- the adapter's generator return
+        value when it has one (usage included), else the joined chunks -- with
+        ``latency`` and ``meta["ttft"]`` (time to first chunk) filled in and
+        priced like :meth:`complete`. That response is the generator's return
+        value and is also passed to ``on_done``: bookkeeping hangs off the end
+        of the stream, never in front of the first token."""
+        t0 = time.perf_counter()
+        ttft: float | None = None
+        chunks: list[str] = []
+        it = self._adapter.stream(prompt, **generation_kwargs)
+        while True:
+            try:
+                chunk = next(it)
+            except StopIteration as stop:
+                resp = stop.value
+                break
+            if ttft is None:
+                ttft = time.perf_counter() - t0
+            chunks.append(chunk)
+            yield chunk
+        if not isinstance(resp, LLMResponse):
+            resp = LLMResponse(content="".join(chunks))
+        if resp.latency is None:
+            resp.latency = time.perf_counter() - t0
+        resp.meta = {**(resp.meta or {}), "ttft": ttft if ttft is not None else resp.latency}
+        if resp.cost is None:
+            resp.cost = self.price(resp.input_tokens, resp.output_tokens)
+        if on_done is not None:
+            on_done(resp)
+        return resp
 
     def price(self, input_tokens: int | None, output_tokens: int | None) -> float | None:
         """``in * input_cost_per_token + out * output_cost_per_token``, or
         ``None`` without a profile or token counts, or when the price for a
         side that was actually used (a nonzero token count) is unset -- an
         unpriced profile must not be indistinguishable from a free one."""
-        if self.profile is None or (input_tokens is None and output_tokens is None):
+        if self.profile is None:
             return None
-        in_price = self.profile.input_cost_per_token
-        out_price = self.profile.output_cost_per_token
-        if (input_tokens and in_price is None) or (output_tokens and out_price is None):
-            return None
-        return float((input_tokens or 0) * (in_price or 0.0)
-                     + (output_tokens or 0) * (out_price or 0.0))
+        return price_tokens(input_tokens, output_tokens,
+                            self.profile.input_cost_per_token, self.profile.output_cost_per_token)
 
 
 #: serving provider -> ``"module:Class"``; imported lazily so importing the
@@ -90,6 +120,7 @@ _ADAPTERS: dict[str, str] = {
     "openai": "router.llm.adapters.openai:OpenAIAdapter",
     "anthropic": "router.llm.adapters.anthropic:AnthropicAdapter",
     "google": "router.llm.adapters.google:GoogleAdapter",
+    "ollama": "router.llm.adapters.ollama:OllamaAdapter",
 }
 
 AdapterSpec = str | type

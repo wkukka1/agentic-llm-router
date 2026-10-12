@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import numpy as np
+import pandas as pd
 
 from router.config import Config, require_choice
 
@@ -37,6 +38,12 @@ class BaselineArrays:
     r_q: Optional[np.ndarray] = None
     nbr: Optional[np.ndarray] = None
     cost: Optional[np.ndarray] = None
+    price_feats: Optional[np.ndarray] = None    # (n, 2) log input/output $/1M, cost-probe ablation
+    cost_offset: Optional[np.ndarray] = None    # (n,) train per-model mean log cost (residual probe)
+    in_tokens: Optional[np.ndarray] = None      # (n,) input tokens (known before routing)
+    out_tokens: Optional[np.ndarray] = None     # (n,) realized output tokens (length-head label)
+    length_prior: Optional[np.ndarray] = None   # (n, n_buckets) per-model log bucket prior
+    token_price: Optional[np.ndarray] = None    # (n, 2) USD per token [p_in, p_out]
     meta: dict = field(default_factory=dict)
 
     def __len__(self) -> int:
@@ -201,8 +208,54 @@ def build_arrays(
 # --------------------------------------------------------------------------- #
 # shared inference                                                            #
 # --------------------------------------------------------------------------- #
+# USD per query standing in for a genuine $0 (a free API, e.g. glm_4_flash) so its
+# log is finite. ~18x below the cheapest paid call in the data ($1.84e-6).
+# Usage-accounting gaps are imputed or NaN upstream (pricing.impute_missing_usage),
+# never 0, so they are never mistaken for free calls.
+FREE_COST_FLOOR = 1e-7
+
+
+def log_cost(cost: Optional[np.ndarray], n: int) -> np.ndarray:
+    """``log(max(cost, FREE_COST_FLOOR))`` where finite and >= 0, else NaN
+    (missing / unpriced cells)."""
+    if cost is None:
+        return np.full(n, np.nan, np.float32)
+    c = np.asarray(cost, np.float64)
+    ok = np.isfinite(c) & (c >= 0)
+    return np.where(ok, np.log(np.where(ok, np.maximum(c, FREE_COST_FLOOR), 1.0)),
+                    np.nan).astype(np.float32)
+
+
+def cost_offset_table(model_ids, cost) -> dict:
+    """``{"per_model": {model_id: mean log cost}, "default": global mean log cost}``
+    over finite non-negative costs (0 floored). Callers pass the TRAIN split only -- this table
+    is the residual probe's fixed baseline and is stored in the checkpoint."""
+    lc = log_cost(cost, len(model_ids))
+    ok = np.isfinite(lc)
+    if not ok.any():
+        raise ValueError("cost.residual: the train split has no finite positive cost")
+    s = pd.Series(lc[ok].astype(np.float64)).groupby(np.asarray(model_ids).astype(str)[ok]).mean()
+    return {"per_model": {str(k): float(v) for k, v in s.items()},
+            "default": float(lc[ok].astype(np.float64).mean())}
+
+
+def attach_cost_offset(arr: BaselineArrays, model_cfg: dict) -> BaselineArrays:
+    """Fill ``arr.cost_offset`` from a residual checkpoint's ``cost_offsets`` table
+    (no-op for a non-residual model). Models absent from the table -- never seen
+    with a cost in training -- get the global train mean."""
+    from dataclasses import replace
+
+    table = (model_cfg or {}).get("cost_offsets")
+    if not (model_cfg or {}).get("cost_residual") or table is None:
+        return arr
+    pm, default = table["per_model"], float(table["default"])
+    off = np.array([pm.get(str(m), default) for m in arr.model_ids], dtype=np.float32)
+    return replace(arr, cost_offset=off)
+
+
 def to_tensors(arr: BaselineArrays, *, model_params: str, use_relevance: bool, use_warmup: bool):
-    """``BaselineArrays`` -> dict of torch tensors (``e_q, ref, y, y_soft, r_q, nbr``)."""
+    """``BaselineArrays`` -> dict of torch tensors (``e_q, ref, y, y_soft, r_q, nbr,
+    log_cost, price_feats``)."""
     import torch
 
     ref = arr.e_m if model_params == "projected" else arr.midx
@@ -213,6 +266,30 @@ def to_tensors(arr: BaselineArrays, *, model_params: str, use_relevance: bool, u
         "y_soft": torch.from_numpy(arr.y_soft),
         "r_q": torch.from_numpy(arr.r_q) if use_relevance and arr.r_q is not None else None,
         "nbr": torch.from_numpy(arr.nbr) if use_warmup and arr.nbr is not None else None,
+        "log_cost": torch.from_numpy(log_cost(arr.cost, len(arr.y))),
+        "price_feats": (torch.from_numpy(np.asarray(arr.price_feats, np.float32))
+                        if arr.price_feats is not None else None),
+        "cost_offset": (torch.from_numpy(np.asarray(arr.cost_offset, np.float32))
+                        if arr.cost_offset is not None else None),
+        **_length_tensors(arr),
+    }
+
+
+def _length_tensors(arr: BaselineArrays) -> dict:
+    """Length-mode cost head inputs (all ``None`` when the arrays carry none)."""
+    import torch
+
+    from .length import length_labels
+
+    def opt(x, dtype):
+        return torch.from_numpy(np.ascontiguousarray(x, dtype)) if x is not None else None
+
+    return {
+        "length_label": (torch.from_numpy(length_labels(arr.out_tokens))
+                         if arr.out_tokens is not None else None),
+        "length_prior": opt(arr.length_prior, np.float32),
+        "in_tokens": opt(arr.in_tokens, np.float64),
+        "token_price": opt(arr.token_price, np.float64),
     }
 
 
@@ -225,12 +302,16 @@ def batched_forward(model, source, *, fields=("proba",), batch: int = 16384, dev
     ``proba`` (``head.as_probability``), ``mean`` / ``std`` / ``lower`` / ``upper``
     (predictive; ``lower``/``upper`` at central ``level``), ``nll`` (needs ``y``),
     and any response-head param name (``sigma``, ``kappa``, ``pi0``, ...).
+    Cost probe (``use_cost_head`` models): ``cost_mu`` / ``cost_log_sigma`` (log-USD)
+    and ``cost`` (expected USD, the lognormal mean).
 
     ``extra_levels`` adds ``lower@<lv>`` / ``upper@<lv>`` for more central levels.
     Every interval of a batch (both ends, every level) comes from ONE Monte
     Carlo draw for the sampling heads, under a fixed ``seed``, so ``lower`` and
     ``upper`` are consistent and reproducible."""
     import torch
+
+    from router.nirt.components import CostHead
 
     from .response_head import ResponseHead
 
@@ -253,9 +334,13 @@ def batched_forward(model, source, *, fields=("proba",), batch: int = 16384, dev
         torch.manual_seed(seed)
         for i in range(0, n, batch):
             sl = slice(i, i + batch)
+            pf, co, lp = t.get("price_feats"), t.get("cost_offset"), t.get("length_prior")
             o = model(t["e_q"][sl].to(device), t["ref"][sl].to(device),
                       t["r_q"][sl].to(device) if t["r_q"] is not None else None,
-                      t["nbr"][sl].to(device) if t["nbr"] is not None else None)
+                      t["nbr"][sl].to(device) if t["nbr"] is not None else None,
+                      pf[sl].to(device) if pf is not None else None,
+                      co[sl].to(device) if co is not None else None,
+                      lp[sl].to(device) if lp is not None else None)
             r = o.response
             iv: dict[float, tuple] = {}
             if levels:
@@ -277,8 +362,28 @@ def batched_forward(model, source, *, fields=("proba",), batch: int = 16384, dev
                     v = iv[float(level)][0 if f == "lower" else 1]
                 elif f == "nll":
                     v = head.nll(yt[sl].to(device), r)
-                elif f in ("logit", "base_irt", "a_q", "b_q"):
+                elif f in ("logit", "base_irt", "a_q", "b_q", "cost_mu", "cost_log_sigma"):
                     v = getattr(o, f)
+                    if v is None:
+                        raise ValueError(f"field {f!r} unavailable: model has no cost head")
+                elif f == "cost" and o.length_logits is not None:
+                    # exact expected cost under the predicted length distribution
+                    if t.get("in_tokens") is None or t.get("token_price") is None:
+                        raise ValueError("length-mode 'cost' needs in_tokens and token_price "
+                                         "(attach_tokens + attach_length_inputs)")
+                    e_len = model.cost_head.expected_length(o.length_logits).double()
+                    tp = t["token_price"][sl].to(device)
+                    v = t["in_tokens"][sl].to(device) * tp[:, 0] + e_len * tp[:, 1]
+                elif f == "expected_length":
+                    if o.length_logits is None:
+                        raise ValueError("field 'expected_length' needs a length-mode cost head")
+                    v = model.cost_head.expected_length(o.length_logits)
+                elif f == "length_logits":
+                    v = o.length_logits
+                elif f == "cost":
+                    if o.cost_mu is None:
+                        raise ValueError("field 'cost' unavailable: model has no cost head")
+                    v = CostHead.expected_cost(o.cost_mu, o.cost_log_sigma)
                 else:
                     v = r.params[f]
                 acc[f].append(v.cpu().numpy())
@@ -310,6 +415,15 @@ def checkpoint_matrix(ckpt, cfg: Config, split: str, field: str = "proba", *,
         use_warmup=model.use_warmup, model_index=blob["model_index"],
         relevance_dim=model.relevance_dim if model.use_relevance else None,
     )
+    ev = attach_cost_offset(ev, blob["model_cfg"])
+    if blob["model_cfg"].get("cost_mode") == "length":
+        from training.data.facade import load_training_data
+        from training.data.tokens import cell_token_table
+
+        from .length import attach_length_inputs, attach_tokens
+
+        ev = attach_length_inputs(
+            attach_tokens(ev, cell_token_table(load_training_data(cfg), cfg)), blob["model_cfg"])
     v = batched_forward(model, ev, fields=(field,), level=level)[field]
     return pivot_qm(
         pd.DataFrame({"query_id": ev.query_ids, "model_id": ev.model_ids, field: v}), field

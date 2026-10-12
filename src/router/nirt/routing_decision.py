@@ -18,6 +18,53 @@ from typing import Optional
 import numpy as np
 
 
+def linear_cost(value, pool_mean_costs) -> np.ndarray:
+    """Map a cost onto ``[0, 1]`` by the candidate pool's per-model mean-cost
+    range: ``(value - min) / (max - min)``, clipped. ``0`` when every pool
+    model costs the same (no range to normalize against).
+
+    The one normalization an alpha-blended reward (IRT-Router's ``alpha *
+    quality - (1 - alpha) * cost``) and :func:`alpha_to_lam`-driven routing
+    both need -- shared here so ``evaluation.nirt.routing.reward`` (offline
+    policy scoring) and live routing agree on the same scale."""
+    c = np.asarray(pool_mean_costs, dtype=np.float64)
+    lo, hi = float(c.min()), float(c.max())
+    v = np.asarray(value, dtype=np.float64)
+    return np.zeros_like(v) if hi <= lo else np.clip((v - lo) / (hi - lo), 0.0, 1.0)
+
+
+def alpha_to_lam(alpha: float) -> float:
+    """The cost weight ``lam`` whose ``argmax[pred - lam * C]`` agrees with
+    the IRT-Router reward's ``argmax[alpha * pred - (1 - alpha) * C]`` for any
+    fixed query (both constant-positive-rescale the same ordering): ``lam =
+    (1 - alpha) / alpha``. ``alpha = 1`` -> ``lam = 0`` (quality-only);
+    ``alpha`` close to ``0`` -> a very large ``lam`` (near cost-only).
+
+    ``alpha`` must be in ``(0, 1]`` -- ``0`` would need an infinite ``lam``."""
+    a = float(alpha)
+    if not 0.0 < a <= 1.0:
+        raise ValueError(f"alpha must be in (0, 1], got {alpha}")
+    return (1.0 - a) / a
+
+
+def cost_matrix(model_costs, shape: tuple) -> np.ndarray:
+    """``model_costs`` as a ``[Q, M]`` array for a ``shape == (Q, M)`` score
+    matrix. Accepts exactly ``(M,)`` (per-model ``C(m)``, broadcast over queries)
+    or exactly ``(Q, M)`` (per-cell ``C(q, m)``); anything else raises rather than
+    broadcasting silently -- a 1-D array is always read as per-model, even when
+    ``Q == M``."""
+    c = np.asarray(model_costs, np.float64)
+    q, m = shape
+    if c.ndim == 1 and c.shape == (m,):
+        return np.broadcast_to(c[None, :], (q, m))
+    if c.ndim == 2 and c.shape == (q, m):
+        return c
+    raise ValueError(
+        f"model_costs has shape {c.shape}; expected ({m},) per-model or ({q}, {m}) per-cell "
+        f"for a {q}x{m} score matrix"
+    )
+
+
 def cost_aware_utility(
     pred: np.ndarray,
     *,
@@ -25,12 +72,13 @@ def cost_aware_utility(
     model_costs: Optional[np.ndarray] = None,
     eligible: Optional[np.ndarray] = None,
 ) -> np.ndarray:
-    """``[Q, M]`` utility ``pred - lam * C(m)``, non-finite cells and ineligible
+    """``[Q, M]`` utility ``pred - lam * C``, non-finite cells and ineligible
     candidates masked to ``-inf``.
 
-    ``model_costs`` is a length-``M`` per-model cost vector ``C(m)`` (the spec's
-    cost-aware router uses the model cost, not a per-cell cost). ``eligible`` is
-    an optional ``[Q, M]`` bool mask -- ineligible cells are never selected.
+    ``model_costs`` is either a length-``M`` per-model vector ``C(m)`` or a
+    ``[Q, M]`` per-cell matrix ``C(q, m)`` (e.g. a predicted expected cost), see
+    :func:`cost_matrix`. ``eligible`` is an optional ``[Q, M]`` bool mask --
+    ineligible cells are never selected.
 
     The one place the router's cost-aware utility formula is defined --
     :func:`routing_decision` (the served decision rule) and
@@ -39,10 +87,11 @@ def cost_aware_utility(
     this instead of reimplementing ``pred - lam * C``.
     """
     util = np.asarray(pred, np.float64).copy()
+    C = cost_matrix(model_costs, util.shape) if model_costs is not None else None
     # a missing prediction (no observation for that cell) must never be picked
     util[~np.isfinite(util)] = -np.inf
-    if lam and model_costs is not None:
-        util = util - lam * np.asarray(model_costs, np.float64)[None, :]
+    if lam and C is not None:
+        util = util - lam * C
         # re-mask: a NaN / inf cost yields a NaN utility, which argmax would pick
         util[~np.isfinite(util)] = -np.inf
     if eligible is not None:
@@ -98,14 +147,14 @@ def routing_decision(
             "cheapest candidate within the margin, and without prices there is no "
             "cheapest. Pass model_costs, or use margin=0 for plain argmax."
         )
-    costs = np.asarray(model_costs, np.float64)
+    costs = cost_matrix(model_costs, util.shape)   # [M] or per-cell [Q, M]
     # a model with no usable price can still be selected, but never *because* it
     # looked cheap: treat it as the dearest rather than letting NaN win a sort
     costs = np.where(np.isfinite(costs), costs, np.inf)
     within = util >= util.max(axis=1, keepdims=True) - margin
     # -inf cells are never `within` (their utility is not finite), so masked and
     # ineligible candidates stay unselectable exactly as under argmax
-    effective = np.where(within, costs[None, :], np.inf)
+    effective = np.where(within, costs, np.inf)
     columns = np.broadcast_to(np.arange(util.shape[1]), util.shape)
     # primary key last: cheapest, then highest utility, then lowest column index
     # -- so a cost tie falls back to argmax's own answer rather than to chance

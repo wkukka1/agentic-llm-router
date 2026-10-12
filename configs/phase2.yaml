@@ -54,6 +54,20 @@ train:
   device: cpu
   grad_clip: 5.0                  # max grad-norm for the NLL losses (continuous heads only)
 
+# Expected-cost probe: predicts E[log USD | q, m] from the DETACHED quality
+# representation [e_q, theta_m]; the quality path stays bit-identical. Trained
+# jointly with beta-NLL, then refit on the frozen quality-best representation
+# (probe_*), early-stopped on validation cost NLL. Off by default.
+# cost:
+#   enabled: true
+#   weight: 1.0
+#   hidden: 64
+#   beta: 0.5                    # beta-NLL; 0 = plain Gaussian NLL (starves the mean)
+#   probe_epochs: 50
+#   probe_patience: 5
+#   # probe_lr / probe_batch_size default to train.lr / train.batch_size
+#   model_price_features: false  # ablation: + log $/1M in/out; needs every model priced
+
 # per-response-model settings; the train script merges the selected one into `response`.
 response_models:
   bernoulli:

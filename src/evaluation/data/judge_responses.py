@@ -18,35 +18,15 @@ matches the gold label -- those (query_id, model_id) pairs are dropped here.
 
 from __future__ import annotations
 
-import ast
 import warnings
 
 import pandas as pd
 
 from training.data.loaders import routerbench_model_columns, routerbench_query_ids
 from training.data.model_registry import canonical_model_id
-from training.data.normalize import sanitize_text
+from training.data.normalize import render_response
 
 _KEY = ["query_id", "model_id"]
-
-
-def _render_response(raw: object) -> str:
-    """Unwrap RouterBench's ``str(list[str])`` response storage.
-
-    Unlike ``render_prompt``, only a list whose elements are all ``str`` is
-    unwrapped, so an answer that is itself a list literal (``"[1, 2, 3]"``) is
-    kept verbatim; any parse failure (including deep nesting) falls back to the
-    raw text.
-    """
-    s = str(raw)
-    if len(s) >= 2 and s[0] == "[" and s[-1] == "]":
-        try:
-            parsed = ast.literal_eval(s)
-        except Exception:
-            parsed = None
-        if isinstance(parsed, (list, tuple)) and all(isinstance(t, str) for t in parsed):
-            return sanitize_text("\n\n".join(parsed))
-    return sanitize_text(s)
 
 
 def _load_all_rows(cfg, shot: str) -> pd.DataFrame:
@@ -76,7 +56,7 @@ def _load_all_rows(cfg, shot: str) -> pd.DataFrame:
         frames.append(pd.DataFrame({
             "query_id": query_id,
             "model_id": canonical_model_id(m),
-            "response_text": wide[resp_col].map(_render_response),
+            "response_text": wide[resp_col].map(render_response),
         }))
     if not frames:
         return pd.DataFrame(columns=["query_id", "model_id", "response_text"])

@@ -1,0 +1,12 @@
+{
+  "lanes": [
+    { "groups": ["g_math"] },
+    { "groups": ["g_data", "g_train", "g_checkpoint_serve"] },
+    { "groups": ["g_narrow"] },
+    { "groups": ["g_knn", "g_profiles"] },
+    { "groups": ["g_broad"] },
+    { "groups": ["g__standalone"] },
+    { "groups": ["g_eval"] }
+  ],
+  "standalone": ["n_forwardpool", "n_scoresout"]
+}

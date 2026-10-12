@@ -82,6 +82,20 @@ class BudgetLedger:
             self._reservations[task_id] = self._reservations.get(task_id, 0.0) + amount
             return True
 
+    def resize(self, task_id: str, amount: float) -> bool:
+        """Atomically replace ``task_id``'s hold (none counts as ``0``) with
+        ``amount``. ``False`` -- and the existing hold left exactly as it was --
+        when ``amount`` exceeds what is free plus that hold. One locked step,
+        so no sibling can take the old hold in between (ORCHESTRATOR-001: a
+        separate ``release`` + ``reserve`` left that window open)."""
+        amount = _amount(amount, "resize amount")
+        with self._lock:
+            current = self._reservations.get(task_id, 0.0)
+            if amount > self.remaining() + current:
+                return False
+            self._reservations[task_id] = amount
+            return True
+
     def commit(self, task_id: str, actual: float) -> None:
         actual = _amount(actual, "committed cost")
         with self._lock:

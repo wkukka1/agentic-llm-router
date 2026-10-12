@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import abc
 import enum
+import math
 import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Mapping, Optional, Sequence
@@ -43,7 +44,13 @@ from typing import TYPE_CHECKING, ClassVar, Mapping, Optional, Sequence
 import numpy as np
 import pandas as pd
 
-from ..nirt.routing_decision import cost_aware_utility, no_selectable_rows, routing_decision
+from ..nirt.routing_decision import (
+    alpha_to_lam,
+    cost_aware_utility,
+    linear_cost,
+    no_selectable_rows,
+    routing_decision,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - type hints only, not a runtime import
     from ..constraints import RoutingConstraints
@@ -81,7 +88,10 @@ class RoutingResult:
     quality the selection was allowed to give up to reach a cheaper model
     (``0`` = plain argmax, and likewise ``0`` when no cost vector resolved).
     Both record what was *applied*, not what was asked for, so a result can be
-    read back without knowing how it was called.
+    read back without knowing how it was called. ``alpha`` is the
+    IRT-Router-style reward blend requested of :meth:`RouterModel.route`
+    (``None`` for an ordinary ``lam``-driven or quality-only route -- ``lam``
+    still records the equivalent weight that was actually applied).
     """
 
     query_ids: list[str]
@@ -91,6 +101,7 @@ class RoutingResult:
     lam: float = 0.0
     model_costs: Optional[np.ndarray] = None
     fallback: Optional[np.ndarray] = None
+    alpha: Optional[float] = None
     margin: float = 0.0
 
     @property
@@ -125,6 +136,10 @@ class RoutingResult:
         """The full ``[query_id x model_id]`` predicted-quality matrix."""
         return pd.DataFrame(self.scores, index=self.query_ids, columns=self.model_ids)
 
+    def row_scores(self, i: int = 0) -> dict[str, float]:
+        """``{model_id: predicted quality}`` for query row ``i`` (NaN kept)."""
+        return dict(zip(self.model_ids, map(float, np.asarray(self.scores, dtype=np.float64)[i])))
+
 
 # --------------------------------------------------------------------------- #
 # helpers                                                                     #
@@ -156,6 +171,27 @@ def _resolve_costs(
     bad = [m for m, c in zip(model_ids, arr) if not np.isfinite(c)]
     if bad:
         raise ValueError(f"model_costs must be finite; non-finite for {bad}")
+    return arr
+
+
+def _align_cost_frame(frame: pd.DataFrame, query_ids: Sequence[str],
+                      model_ids: Sequence[str]) -> np.ndarray:
+    """A ``[query_id x model_id]`` cost frame as a dense ``[Q, M]`` array in
+    exactly this row / column order. Missing rows, columns or non-finite cells
+    raise: a silently misaligned ``[Q, M]`` cost would route every query wrong."""
+    frame = frame.copy()
+    frame.index = [str(q) for q in frame.index]
+    frame.columns = [str(m) for m in frame.columns]
+    ids, cols = [str(q) for q in query_ids], [str(m) for m in model_ids]
+    miss_q = [q for q in ids if q not in frame.index]
+    miss_m = [m for m in cols if m not in frame.columns]
+    if miss_q or miss_m:
+        raise ValueError(f"cost matrix is missing queries {miss_q[:5]} / models {miss_m[:5]}")
+    arr = frame.loc[ids, cols].to_numpy(np.float64)
+    if not np.isfinite(arr).all():
+        r, c = np.nonzero(~np.isfinite(arr))
+        raise ValueError(f"cost matrix has {len(r)} non-finite cells, e.g. "
+                         f"{[(ids[i], cols[j]) for i, j in zip(r[:5], c[:5])]}")
     return arr
 
 
@@ -254,12 +290,62 @@ class RouterModel(abc.ABC):
         """
         raise NotImplementedError(f"{type(self).__name__} does not support load()")
 
+    def warmup(self) -> dict[str, float]:
+        """Pay every lazy, first-request cost now (call once at startup), so no
+        routed request does disk I/O or model loading. Returns seconds per stage.
+
+        The default resolves :attr:`default_model_costs` and, for a
+        text-capable router, runs one throwaway :meth:`route_text` -- which
+        loads the encoder and any stores the scorer reads. Subclasses add
+        finer-grained stages before delegating here."""
+        import time
+
+        timings: dict[str, float] = {}
+        t0 = time.perf_counter()
+        _ = self.default_model_costs
+        timings["costs"] = time.perf_counter() - t0
+        if self.can_route_text:
+            t0 = time.perf_counter()
+            self.route_text(["warmup"])
+            timings["route_text"] = time.perf_counter() - t0
+        return timings
+
+    def cost_by_model(self) -> dict[str, float]:
+        """``{model_id: per-query cost}`` from :attr:`default_model_costs`, for
+        every pool model with a finite cost (empty when the router has none) --
+        the one lookup callers use to price a pool model on the router's scale."""
+        costs = self.default_model_costs
+        if costs is None:
+            return {}
+        return {m: float(c) for m, c in zip(self._model_ids, costs) if math.isfinite(float(c))}
+
     @property
     def default_model_costs(self) -> Optional[np.ndarray]:
         """Per-model cost vector used when :meth:`route` is called without an
         explicit ``model_costs`` (``None`` -> quality-only unless a cost is
         passed). Data-backed routers override this with a real cost signal."""
         return None
+
+    def predict_costs(self, query_ids: Sequence[str]) -> Optional[pd.DataFrame]:
+        """Predicted expected cost ``E[C | q, m]`` (USD) as a ``[query_id x
+        model_id]`` frame, or ``None`` when this router has no per-cell cost
+        model (routing then uses :attr:`default_model_costs`)."""
+        return None
+
+    def decision_costs(self, query_ids: Sequence[str], model_costs=None) -> Optional[np.ndarray]:
+        """The cost a :meth:`route` call on ``query_ids`` selects with: explicit
+        ``model_costs`` (a per-model spec, or a ``[query_id x model_id]`` frame),
+        else :meth:`predict_costs`, else :attr:`default_model_costs`. Returns
+        ``[M]``, ``[Q, M]`` or ``None``."""
+        ids = [str(q) for q in query_ids]
+        if isinstance(model_costs, pd.DataFrame):
+            return _align_cost_frame(model_costs, ids, self._model_ids)
+        if model_costs is not None:
+            return _resolve_costs(model_costs, self._model_ids)
+        predicted = self.predict_costs(ids)
+        if predicted is not None:
+            return _align_cost_frame(predicted, ids, self._model_ids)
+        return self.default_model_costs
 
     # -- the one thing a subclass must provide ------------------------------
     @abc.abstractmethod
@@ -293,16 +379,12 @@ class RouterModel(abc.ABC):
         scores: pd.DataFrame,
         *,
         lam: float,
-        model_costs,
+        costs: Optional[np.ndarray],
         eligible,
+        alpha: Optional[float] = None,
         margin: float = 0.0,
     ) -> RoutingResult:
         scores = scores.reindex(columns=self._model_ids).astype(np.float64)
-        costs = (
-            _resolve_costs(model_costs, self._model_ids)
-            if model_costs is not None
-            else self.default_model_costs
-        )
         if lam and costs is None:
             warnings.warn(
                 f"{self.name}: lam={lam} requested but no model cost vector resolved; "
@@ -339,28 +421,75 @@ class RouterModel(abc.ABC):
             lam=float(lam),
             model_costs=costs,
             fallback=no_selectable_rows(util),
+            alpha=alpha,
             margin=float(margin),
         )
+
+    def _resolve_alpha(
+        self, alpha: Optional[float], lam: float, costs: Optional[np.ndarray],
+    ) -> tuple[float, Optional[np.ndarray]]:
+        """``alpha`` -> ``(lam, costs)`` for :meth:`_route_from_scores`.
+
+        The IRT-Router reward ``argmax[alpha*pred - (1-alpha)*linear_cost(C)]``
+        is the same ordering as ``lam``-routing on ``linear_cost``-normalized
+        costs with ``lam = alpha_to_lam(alpha)`` (both constant-positive-rescale
+        the per-query utility) -- so alpha-routing reuses the exact same
+        decision rule, just with a different ``(lam, costs)`` pair. The
+        normalization range is always the pool's :attr:`default_model_costs`
+        (IRT-Router's ``pool_mean_costs``), even when ``costs`` itself is a
+        per-cell predicted cost -- a stable scale across calls, not one that
+        shifts with whichever queries are in this batch.
+        """
+        if alpha is None:
+            return lam, costs
+        if lam:
+            raise ValueError("RouterModel.route(): pass either lam or alpha, not both")
+        pool = self.default_model_costs
+        if pool is None:
+            raise ValueError(
+                f"{self.name}: alpha={alpha} requested but this router has no "
+                "default_model_costs to normalize against"
+            )
+        if costs is None:
+            raise ValueError(
+                f"{self.name}: alpha={alpha} requested but no model cost vector "
+                "resolved for this call"
+            )
+        return alpha_to_lam(alpha), linear_cost(costs, pool)
 
     def route(
         self,
         query_ids: Sequence[str],
         *,
         lam: float = 0.0,
+        alpha: Optional[float] = None,
         model_costs: Optional[Sequence[float] | Mapping[str, float] | np.ndarray] = None,
         eligible: Optional[pd.DataFrame | np.ndarray] = None,
         margin: float = 0.0,
     ) -> RoutingResult:
         """Pick one model per query.
 
-        ``lam`` weights cost in the utility ``pred - lam * C(m)`` (``lam = 0`` ->
-        quality-only). ``model_costs`` overrides :attr:`default_model_costs`;
-        ``eligible`` is an optional ``[Q x M]`` bool mask of selectable cells
-        (a DataFrame is aligned by label, an array is taken positionally).
+        ``lam`` weights cost in the utility ``pred - lam * C`` (``lam = 0`` ->
+        quality-only). ``C`` is :meth:`decision_costs`: ``model_costs`` if given
+        (per-model, or a ``[query_id x model_id]`` frame), else
+        :meth:`predict_costs`, else :attr:`default_model_costs`. ``eligible`` is
+        an optional ``[Q x M]`` bool mask of selectable cells (a DataFrame is
+        aligned by label, an array is taken positionally).
+
+        ``alpha`` (mutually exclusive with ``lam``) picks instead by the
+        IRT-Router-style reward blend ``alpha * quality - (1 - alpha) *
+        linear_cost(C)``, ``alpha`` in ``(0, 1]`` -- ``1.0`` is quality-only,
+        values near ``0`` are increasingly cost-averse. See
+        :func:`router.nirt.routing_decision.alpha_to_lam`.
         """
+        # quality-only routing never needs (possibly expensive) predicted costs
+        costs = (self.decision_costs(query_ids, model_costs)
+                 if lam or margin or alpha is not None or model_costs is not None
+                 else self.default_model_costs)
+        lam, costs = self._resolve_alpha(alpha, lam, costs)
         return self._route_from_scores(
-            self.aligned_scores(query_ids),
-            lam=lam, model_costs=model_costs, eligible=eligible, margin=margin,
+            self.aligned_scores(query_ids), lam=lam, costs=costs, eligible=eligible,
+            alpha=alpha, margin=margin,
         )
 
     def __call__(self, *args, **kwargs) -> RoutingResult:
@@ -374,6 +503,7 @@ class RouterModel(abc.ABC):
         *,
         encoder=None,
         lam: float = 0.0,
+        alpha: Optional[float] = None,
         model_costs: Optional[Sequence[float] | Mapping[str, float] | np.ndarray] = None,
         eligible: Optional[pd.DataFrame | np.ndarray] = None,
         margin: float = 0.0,
@@ -381,14 +511,24 @@ class RouterModel(abc.ABC):
         """:meth:`route`, but from raw prompt text (via :meth:`predict_scores_text`).
 
         ``RoutingResult.query_ids`` are the positional indices ``"0"``, ``"1"``,
-        ... of the input list.
+        ... of the input list. ``alpha`` is as in :meth:`route`. Costs resolve
+        the same way :meth:`route` does (:meth:`decision_costs`, keyed by those
+        positional ids) -- a router with no text-aware :meth:`predict_costs`
+        override (every router today) falls straight through to
+        :attr:`default_model_costs`, same as before; this just stops
+        live-text routing from being permanently unable to use a per-cell
+        cost model should one ever be added.
         """
         scores = self.predict_scores_text(list(texts), encoder=encoder)
         scores = scores.copy()
         scores.index = [str(i) for i in range(len(scores))]
-        return self._route_from_scores(
-            scores, lam=lam, model_costs=model_costs, eligible=eligible, margin=margin,
-        )
+        # quality-only routing never needs (possibly expensive) predicted costs
+        costs = (self.decision_costs(list(scores.index), model_costs)
+                 if lam or margin or alpha is not None or model_costs is not None
+                 else self.default_model_costs)
+        lam, costs = self._resolve_alpha(alpha, lam, costs)
+        return self._route_from_scores(scores, lam=lam, costs=costs, eligible=eligible,
+                                       alpha=alpha, margin=margin)
 
     # Oracle-relative evaluation needs ground truth and lives in
     # evaluation.routing.oracle.evaluate_router(router, true_df, cost_df, lam)

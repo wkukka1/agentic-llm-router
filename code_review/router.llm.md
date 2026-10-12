@@ -1,177 +1,94 @@
 # Code review: router.llm
 
-**Files reviewed:** 9 (237 lines) · **Context-only:** `src/router/agentic/llm_clients.py`, `src/router/router.py`, `configs/model_registry.yaml`, `src/training/data/model_registry.py`
-**Summary:** 9 findings: 4 correctness, 4 design, 1 performance · 8 confirmed, 1 suspected
+**Files reviewed:** 5 (290 lines): `adapters/fakes.py` (48, new) · `adapters/langchain_adapter.py` (126, new) · `adapters/openai.py` (25) · `cost.py` (53, new) · `registry.py` (38)
+**Context-only:** `adapters/base.py`, `adapters/anthropic.py`, `adapters/google.py`, `adapters/__init__.py`, `client.py`, `profile.py`, `llm/__init__.py`, `router/context.py`, `router/routing/base.py`, `router/models/registry.py`, `router/agentic/llm_clients.py`, `router/agentic/router.py`
+**Summary:** 4 findings: 3 correctness, 1 design · 2 confirmed, 2 plausible
 
 | ID | Location | Category | Severity | Confidence |
 |----|----------|----------|----------|------------|
-| RL-01 | `src/router/llm/client.py:56-69` | correctness | medium | confirmed |
-| RL-02 | `src/router/llm/client.py:54-68` | correctness | medium | suspected |
-| RL-03 | `src/router/llm/__init__.py:1-14` | design | low | confirmed |
-| RL-04 | `src/router/llm/adapters/base.py:13-20` | design | low | confirmed |
-| RL-05 | `src/router/llm/adapters/anthropic.py:19-27` | correctness | low | confirmed |
-| RL-06 | `src/router/llm/registry.py:21-22` | correctness | low | confirmed |
-| RL-07 | `src/router/llm/client.py:22-28` | design | low | confirmed |
-| RL-08 | `src/router/llm/adapters/openai.py:18-21` | design | low | confirmed |
-| RL-09 | `src/router/llm/client.py:56-69` | performance | low | confirmed |
+| RL-01 | `src/router/llm/adapters/langchain_adapter.py:83-95` | correctness | high | confirmed |
+| RL-02 | `src/router/llm/adapters/langchain_adapter.py:20-33` | correctness | medium | confirmed |
+| RL-03 | `src/router/llm/adapters/langchain_adapter.py:98-104` | correctness | medium | plausible |
+| RL-04 | `src/router/llm/adapters/fakes.py`, `langchain_adapter.py` | design | low | plausible |
 
 ---
 
-## src/router/llm/__init__.py
+## src/router/llm/adapters/langchain_adapter.py
 
-### RL-03: LLM profile/client/adapter layer is scaffolding, not wired `:1-14`
-**Category:** design · **Severity:** low · **Confidence:** confirmed
+### RL-01: `complete`/`stream` silently drop `generation_kwargs` on the one adapter that makes real network calls `:83-95`
+**Category:** correctness · **Severity:** high · **Confidence:** confirmed
 
 ```python
-1:  """LLM infrastructure: profiles, a registry, a client interface, and provider
-2:  adapters. Scaffolding for the production router design -- see
+83:    def complete(self, prompt: Prompt, **generation_kwargs) -> LLMResponse:
+84:        msg = self._model().invoke(prompt)
+85:        in_tok, out_tok = self._tokens(getattr(msg, "usage_metadata", None))
+86:        return LLMResponse(
+...
+92:    def stream(self, prompt: Prompt, **generation_kwargs) -> Iterator[str]:
+93:        for chunk in self._model().stream(prompt):
+94:            yield message_text(chunk)
 ```
 
-**What breaks:** Nothing today. `LLMClientFactory`, `LLMClient`, and all adapters are unreachable from live code, and every adapter raises `NotImplementedError`. `LLMProfile` and `LLMRegistry` are used by `RoutingPipeline` (`src/router/router.py:35,63`) for candidate lists only, never for dispatch.
-**Evidence:** Ran `grep -rn "router\.llm\|LLMClientFactory\|LLMRegistry\|ProviderAdapter" src scripts tests configs docs` (excluding the package). Hits: `router/router.py:14,35,48,63,110`, `routing/base.py:178` (docstring), `tests/router/test_router_pipeline.py:15-16,45-96` (profile and registry only), `docs/architecture.md:231-237`. By design.
-**Direction:** Keep as-is. The findings below are the things to fix when you implement the adapters.
+**What breaks:** `ProviderAdapter` (`adapters/base.py:18-20`) documents `generation_kwargs` as the per-call channel for `max_tokens`, `temperature`, `stop`, etc. — and `adapters/anthropic.py`'s docstring explicitly relies on that contract ("take `max_tokens` from `generation_kwargs`"). `LangChainAdapter` — the module docstring's own words, "the one `ProviderAdapter` that actually reaches a network today" — accepts `**generation_kwargs` in both `complete` and `stream` but never forwards it to `self._model().invoke(...)`/`.stream(...)`. Any caller that does `LLMClient(LangChainAdapter(...)).complete(prompt, temperature=0, max_tokens=200)` — exactly the call shape the interface invites — gets a real, billed API call made with whatever defaults the underlying chat model happens to have, silently ignoring the caller's temperature/max_tokens/stop. No exception, no warning.
+**Evidence:** Compared against `adapters/base.py`'s `ProviderAdapter.complete(self, prompt, **generation_kwargs)` contract and `adapters/anthropic.py`'s docstring. Confirmed no forwarding exists in either method body. This behavior is carried over unchanged from the pre-refactor `LangChainClient.invoke` (`git diff main...HEAD -- src/router/agentic/llm_clients.py`, old `invoke(self, prompt, **kw): msg = self._model().invoke(prompt)`), so it is not a new regression from this branch, but the migration was an opportunity to fix it and didn't. Today's only call site (`router/agentic/router.py:208`, `self.clients.complete(model_id, prompt)`) never passes generation kwargs, so it isn't exercised on the current live path — but nothing stops a direct caller (or a future agentic feature that does pass `temperature=`) from silently losing cost/determinism control on a real paid endpoint.
+**Direction:** Forward the kwargs: `self._model().invoke(prompt, **generation_kwargs)` and `self._model().stream(prompt, **generation_kwargs)`.
 
 ---
 
-## src/router/llm/client.py
-
-### RL-01: `client_for` drops profile pricing and client kwargs, so `LLMResponse.cost` can only be 0.0 `:56-69`
+### RL-02: `guess_provider`'s token-start-only matching produces confirmed wrong guesses against this repo's own model ids `:20-33`
 **Category:** correctness · **Severity:** medium · **Confidence:** confirmed
 
 ```python
-56:    def client_for(self, profile: "LLMProfile", *, api_key: Optional[str] = None) -> LLMClient:
-69:        return LLMClient(Adapter(profile.model_id, api_key=api_key))
+20:    _PROVIDER_HINTS = [
+21:        ("gpt", "openai"), ("o1", "openai"), ("o3", "openai"), ("davinci", "openai"),
+22:        ("claude", "anthropic"),
+23:        ("gemini", "google_genai"), ("palm", "google_genai"), ("bison", "google_genai"),
+24:        ("mistral", "mistralai"), ("mixtral", "mistralai"),
+25:        ("llama", "groq"), ("command", "cohere"), ("qwen", "together"),
+...
+29:    def guess_provider(model_id: str) -> Optional[str]:
+...
+35:        low = str(model_id).lower()
+36:        for needle, provider in _PROVIDER_HINTS:
+37:            if re.search(rf"(?:^|[^a-z0-9]){re.escape(needle)}", low):
+38:                return provider
 ```
 
-**What breaks:** The adapter receives only `model_id` and `api_key`. `LLMProfile.input_cost_per_token` / `output_cost_per_token` (profile.py:16-17) never reach the adapter or `LLMClient`, and `LLMClient.complete` (lines 39-40) passes the adapter's response through without computing cost from tokens. A correctly implemented adapter therefore has no way to fill `cost`, which stays at its `0.0` default (line 27). Once `ExecutionResult.actual_cost` is filled from `LLMResponse.cost`, every `BudgetLedger.commit` records zero spend and the budget never binds. Adapter `**client_kwargs` (timeout, base_url, max_tokens) are also unreachable through the factory.
-**Evidence:** Traced `LLMProfile` -> `client_for` (line 69) -> `Adapter.__init__(model, *, api_key, **client_kwargs)` (e.g. `adapters/openai.py:18-21`) -> `LLMClient.complete` (line 40). No other path carries the profile. No tests touch `LLMClientFactory` (`grep -rn "LLMClientFactory" tests` returns nothing).
-**Direction:** Have `LLMClient` hold the profile and compute `cost = in_tok*input_cost_per_token + out_tok*output_cost_per_token` after the adapter returns. Let `client_for` accept and forward `**client_kwargs`.
+**What breaks:** The regex anchors only the *start* of a hint token (`(?:^|[^a-z0-9])gpt`), never its end, so any id that merely *starts with* a hint's characters after a boundary matches — not just ids equal to or hyphen-joined with the hint. Using this codebase's own `configs/model_registry.yaml`:
+- `gpt4all-13b-snoozy` (provider `nomic`) → matches the `"gpt"` hint → `guess_provider` returns `"openai"`.
+- `llama2-70b-steerlm-chat` (provider `nvidia`) and `code-llama-34b-instruct` (provider `meta`) → match `"llama"` → both return `"groq"`.
 
-### RL-02: Provider allow-list covers only 3 providers; most of the configured model pool would raise `:54-68`
-**Category:** correctness · **Severity:** medium · **Confidence:** suspected
+`ClientRegistry.langchain(model_ids)` (`router/agentic/llm_clients.py:79-90`) calls this as its default provider resolution when a pool id has no explicit `provider=`/`model=` override, and then hands the guessed provider straight to `init_chat_model(model_provider=...)`. For `gpt4all-13b-snoozy` this means a real OpenAI API call is attempted for a model OpenAI doesn't serve, using whatever OpenAI credentials are configured — a wrong-provider dispatch, not just a cosmetic label error.
+**Evidence:** Traced hint list against `configs/model_registry.yaml` provider fields (`nomic`, `nvidia`, `meta` for the ids above) and the `guess_provider` regex logic by hand.
+**Direction:** Require a token boundary on both ends (`rf"(?:^|[^a-z0-9]){re.escape(needle)}(?:$|[^a-z0-9])"`), or restrict hints to whole family prefixes with an explicit separator (`gpt-`, `gpt3`, `gpt4`) rather than a bare `"gpt"`/`"llama"` substring.
+
+---
+
+### RL-03: partial per-call pricing silently prices the unset side at 0 instead of falling back to profile-based pricing `:98-104`
+**Category:** correctness · **Severity:** medium · **Confidence:** plausible
 
 ```python
-54:    _PROVIDERS = {"openai", "anthropic", "google"}
-64:        else:
-65:            raise ValueError(
+98:    @staticmethod
+99:    def _tokens(usage) -> tuple[Optional[int], Optional[int]]:
+...
+102:    def _cost(self, in_tok: Optional[int], out_tok: Optional[int]) -> Optional[float]:
+103:        in_price, out_price = self._prices
+104:        if (in_tok is None and out_tok is None) or (in_price is None and out_price is None):
+105:            return None
+106:        return float((in_tok or 0) * (in_price or 0.0) + (out_tok or 0) * (out_price or 0.0))
 ```
 
-**What breaks:** `configs/model_registry.yaml` tags models with providers such as `meta`, `mistralai`, `zhipu`, `deepseek`, `databricks`, `tii`, `lmsys`, `stanford`, `microsoft`, `01-ai` (e.g. lines 105, 118-131), and the loader defaults to `"unknown"` (`src/training/data/model_registry.py:59`). If `LLMProfile.provider` is populated from that registry, `client_for` raises `ValueError` for most of the RouterBench/Arena candidate pool. The live `ClientRegistry` falls back to a default factory instead (`llm_clients.py:183-187`). The two-place provider list (the `_PROVIDERS` set plus the if-chain) can also drift apart.
-**Evidence:** Ran `grep -rhn "provider:" configs` to collect provider values. Suspected because no code currently builds `LLMProfile`s from `model_registry.yaml`. Maintainer question: will `LLMProfile.provider` come from `model_registry.yaml`'s `provider` field (the model author) or from the serving provider (openai/anthropic/google/together/...)? If the latter, document that the two vocabularies differ.
-**Direction:** Separate "model author" from "serving provider" on `LLMProfile`. Drive dispatch from a single dict `{provider: adapter import path}`, with a configurable fallback adapter (e.g. an OpenAI-compatible endpoint).
-
-### RL-07: `LLMResponse` uses 0 defaults that can't distinguish "unknown" from "free" `:22-28`
-**Category:** design · **Severity:** low · **Confidence:** confirmed
-
-```python
-25:    input_tokens: int = 0
-26:    output_tokens: int = 0
-27:    cost: float = 0.0
-```
-
-**What breaks:** An adapter whose provider omits usage metadata (common in streaming) returns tokens=0 and cost=0.0, which is indistinguishable from a genuinely free call. The same goes for `latency=0.0`: `LLMClient` never times the call, so latency is 0 unless every adapter measures it. Downstream budget and forecast calibration would silently learn "free and instant".
-**Evidence:** Read lines 22-43. `LLMClient.complete` / `stream` are pure delegation with no timing.
-**Direction:** Use `Optional[...] = None` for usage, cost, and latency, and measure latency once in `LLMClient` around the adapter call.
-
-### RL-09: A new adapter (SDK client) is constructed on every `client_for` call `:56-69`
-**Category:** performance · **Severity:** low · **Confidence:** confirmed
-
-```python
-69:        return LLMClient(Adapter(profile.model_id, api_key=api_key))
-```
-
-**What breaks:** Once adapters create real SDK clients (HTTP connection pools, auth setup), resolving a client per request rebuilds that per call. The working `ClientRegistry.get` caches per `model_id` (`llm_clients.py:183-187`).
-**Evidence:** `LLMClientFactory` holds no cache (lines 46-69).
-**Direction:** Memoize clients by `(provider, model_id, api_key)` in the factory, or resolve them once per registry entry.
+**What breaks:** `_cost` only returns `None` (triggering `LLMClient.complete`'s profile-based fallback pricing, `client.py:51-52`) when *both* `input_cost_per_token` and `output_cost_per_token` are unset. If a caller supplies only one price (e.g. copies `input_cost_per_token` from a price table that only had prompt pricing, or forgets `output_cost_per_token`), the adapter still returns a concrete (non-`None`) cost — with the missing side silently treated as free (`out_price or 0.0`) — rather than returning `None` and letting the `LLMProfile`-based price (if a profile is attached) fill the gap. This is the same shape as the "pricing dropped" issue the task flagged to check for recurrence: here it's not dropped to zero total, but a real (nonzero) yet systematically *under*-priced cost is produced with no signal that anything is missing.
+**Evidence:** Read `client.py:46-53` (`LLMClient.complete`: only calls `self.price(...)` when `resp.cost is None`) alongside this method. This exact logic (single `usage` arg version) also existed pre-refactor in `router/agentic/llm_clients.py`'s old `LangChainClient._cost`, so it's a persisting gap rather than a new one; flagged because the migration was the natural point to fix it and the task explicitly asked to check for recurrence of this class of bug.
+**Direction:** Either require both prices to be set together (raise/warn if exactly one is given), or return `None` when either price is missing so `LLMClient` can fall back to the profile's price for that model instead of assuming the unset side is free.
 
 ---
 
-## src/router/llm/profile.py
+## src/router/llm/adapters/fakes.py, src/router/llm/adapters/langchain_adapter.py
 
-No findings. (Note for the `router.router` reviewer, outside this slice: `router.py:98` feeds `output_cost_per_token`, a per-token price, into `ModelScore.expected_cost` as if it were a per-request cost.)
+### RL-04: no dedicated unit tests for the two new adapter modules `:-`
+**Category:** design · **Severity:** low · **Confidence:** plausible
 
----
-
-## src/router/llm/registry.py
-
-### RL-06: `register` silently overwrites an existing profile with the same `model_id` `:21-22`
-**Category:** correctness · **Severity:** low · **Confidence:** confirmed
-
-```python
-21:    def register(self, profile: LLMProfile) -> None:
-22:        self._profiles[profile.model_id] = profile
-```
-
-**What breaks:** Profiles are keyed only by `model_id`. The same model served by two providers (e.g. a Llama model via `together` and via `groq`, each with different pricing) collapses to whichever was registered last, with no error. `RoutingPipeline.build_context` (`router.py:63`) then lists one candidate with the wrong price.
-**Evidence:** Read lines 17-28. `tests/router/test_router_pipeline.py:45-96` registers unique ids only.
-**Direction:** Raise on duplicate `model_id` (or require an explicit `replace=True`), or key by `(provider, model_id)`.
-
----
-
-## src/router/llm/adapters/__init__.py
-
-No findings.
-
----
-
-## src/router/llm/adapters/base.py
-
-### RL-04: The adapter interface carries only a bare prompt string, and `stream` returns a finished response `:13-20`
-**Category:** design · **Severity:** low · **Confidence:** confirmed
-
-```python
-15:    def complete(self, prompt: str) -> "LLMResponse":
-19:    def stream(self, prompt: str) -> "LLMResponse":
-```
-
-**What breaks:** The interface has no way to pass a system prompt, a message history, `max_tokens`, `temperature`, or stop sequences. `RoutingRequest.conversation` exists (`router.py:61`) but can't reach a provider through `LLMClient.complete(prompt)`. `stream` has the same return type as `complete` (a single `LLMResponse`), so an implementation can't actually yield incremental chunks. Implementers will either buffer the whole stream or break the signature.
-**Evidence:** Read `base.py:13-20` and `client.py:39-43`. The live client already accepts `**kw` (`llm_clients.py:50`).
-**Direction:** Accept `messages` plus generation kwargs in `complete`, and make `stream` return an `Iterator[str]` (or chunk objects) with the final usage exposed separately.
-
----
-
-## src/router/llm/adapters/anthropic.py
-
-### RL-05: Anthropic's required `max_tokens` has no path through the factory `:19-27`
-**Category:** correctness · **Severity:** low · **Confidence:** confirmed
-
-```python
-19:    def __init__(self, model: str, *, api_key: Optional[str] = None, **client_kwargs):
-24:    def complete(self, prompt: str) -> LLMResponse:
-```
-
-**What breaks:** The Anthropic Messages API rejects requests without `max_tokens`. The only channel for it is `client_kwargs`, which `LLMClientFactory.client_for` never forwards (`client.py:69`), and `complete(prompt)` takes no per-call kwargs. An implementation wired through the factory must hard-code a token cap or fail on the first call.
-**Evidence:** Traced `client.py:56-69` -> `AnthropicAdapter.__init__`. Specific instance of RL-01/RL-04.
-**Direction:** Resolved by forwarding `client_kwargs` (RL-01) or per-call generation kwargs (RL-04). Otherwise, default `max_tokens` from `LLMProfile.context_window`, or from a config value.
-
----
-
-## src/router/llm/adapters/google.py
-
-No findings beyond RL-08 (the duplicated constructor, which this file shares).
-
----
-
-## src/router/llm/adapters/openai.py
-
-### RL-08: Identical constructors copy-pasted across all three adapters `:18-21`
-**Category:** design · **Severity:** low · **Confidence:** confirmed
-
-```python
-18:    def __init__(self, model: str, *, api_key: Optional[str] = None, **client_kwargs):
-19:        self.model = model
-20:        self.api_key = api_key
-```
-
-**What breaks:** The same 4-line `__init__` appears in `openai.py:18-21`, `anthropic.py:19-22`, and `google.py:12-15`, while `ProviderAdapter` (base.py:13) has none. Any change to the construction contract, such as adding `profile` (RL-01), must be made three times, and `LLMClientFactory` assumes all three accept the same signature.
-**Evidence:** Ran `grep -rn "def __init__(self, model: str" src`: exactly those three hits.
-**Direction:** Move the constructor into `ProviderAdapter`.
-
----
-
-## Checked and ruled out
-- `registry.py:27` defining a method named `list` whose return annotation is `list[LLMProfile]`: with `from __future__ import annotations`, the annotation is never evaluated in class scope, and `get_type_hints` resolves `list` from module globals. No runtime issue.
-- `client.py:57` calling `profile.provider.lower()` on a `None` provider: `LLMProfile.provider` is a required str field, and every in-repo construction passes one.
-- `client.py` lazy adapter imports: the adapters import only `..client` / `.base`, so there is no circular import (`client.py` imports the adapter base only under TYPE_CHECKING).
-- `registry.py:24-25` `get` raising a bare `KeyError`: acceptable for a lookup, and `RoutingPipeline` uses `list()` only.
-- Import-linter: `router.llm` imports nothing outside `router`; no violation.
+**What breaks:** `tests/router/llm/` contains only `test_cost.py`; there is no `tests/router/llm/adapters/` suite. `EchoAdapter`/`CallableAdapter`/`LangChainAdapter` are exercised only indirectly through `tests/router/agentic/test_agentic_router.py` and `tests/router/test_review_fixes.py`, which cover the agentic-facing behavior (via `ClientRegistry`) but never call `LangChainAdapter.complete`/`.stream` with `generation_kwargs`, never test `_cost`'s partial-price branch, and never test `guess_provider` against the repo's own registry ids — which is exactly how RL-01/RL-02/RL-03 above went unnoticed.
+**Evidence:** `find tests/router/llm -type f` → only `test_cost.py`; grepped `EchoAdapter|CallableAdapter|LangChainAdapter|guess_provider` and found all references live under `tests/router/agentic/`.
+**Direction:** Add a `tests/router/llm/adapters/test_langchain_adapter.py` (with a stub `chat_model` object, no real `langchain` dependency needed) covering: `generation_kwargs` forwarding, the partial-price `_cost` branch, and a couple of `guess_provider` cases pulled from `configs/model_registry.yaml`.

@@ -1,0 +1,494 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-40 -40 6940.5 2804" width="6940.5" height="2804">
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#1e1e1e" />
+    </marker>
+  </defs>
+  <rect x="-40" y="-40" width="6940.5" height="2804" fill="#ffffff" />
+  <rect x="0" y="0" width="943" height="1302" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="1288" y="0" width="758" height="302" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="1103" y="422" width="1128" height="504" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="1288" y="1046" width="758" height="682" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="2391" y="0" width="388" height="634" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="3974.5" y="0" width="1488" height="754" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="2949" y="1268" width="855.5" height="1456" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="2939" y="0" width="875.5" height="1148" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="6102.5" y="0" width="758" height="1240" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="404" y="64" width="320" height="156" rx="8" ry="8" fill="#a5d8ff" stroke="#1971c2" stroke-width="2" opacity="1" />
+  <rect x="219" y="326" width="320" height="132" rx="8" ry="8" fill="#a5d8ff" stroke="#1971c2" stroke-width="2" opacity="1" />
+  <rect x="34" y="588" width="320" height="132" rx="8" ry="8" fill="#a5d8ff" stroke="#1971c2" stroke-width="2" opacity="1" />
+  <rect x="404" y="564" width="320" height="180" rx="8" ry="8" fill="#a5d8ff" stroke="#1971c2" stroke-width="2" opacity="1" />
+  <rect x="219" y="814" width="320" height="204" rx="8" ry="8" fill="#a5d8ff" stroke="#1971c2" stroke-width="2" opacity="1" />
+  <rect x="219" y="1088" width="320" height="180" rx="8" ry="8" fill="#a5d8ff" stroke="#1971c2" stroke-width="2" opacity="1" />
+  <rect x="589" y="290" width="320" height="204" rx="8" ry="8" fill="#ffc9c9" stroke="#e03131" stroke-width="2" opacity="1" />
+  <rect x="1322" y="64" width="320" height="204" rx="8" ry="8" fill="#ffd8a8" stroke="#e8590c" stroke-width="2" opacity="1" />
+  <rect x="1692" y="88" width="320" height="156" rx="8" ry="8" fill="#ffd8a8" stroke="#e8590c" stroke-width="2" opacity="1" />
+  <rect x="1507" y="486" width="320" height="156" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="1137" y="712" width="320" height="180" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="1507" y="724" width="320" height="156" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="1877" y="724" width="320" height="156" rx="8" ry="8" fill="#ffd8a8" stroke="#e8590c" stroke-width="2" opacity="1" />
+  <rect x="1507" y="1110" width="320" height="156" rx="8" ry="8" fill="#d0bfff" stroke="#7048e8" stroke-width="2" opacity="1" />
+  <rect x="1507" y="1336" width="320" height="132" rx="8" ry="8" fill="#d0bfff" stroke="#7048e8" stroke-width="2" opacity="1" />
+  <rect x="1322" y="1538" width="320" height="156" rx="8" ry="8" fill="#d0bfff" stroke="#7048e8" stroke-width="2" opacity="1" />
+  <rect x="1692" y="1538" width="320" height="156" rx="8" ry="8" fill="#d0bfff" stroke="#7048e8" stroke-width="2" opacity="1" />
+  <rect x="2425" y="64" width="320" height="156" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="2425" y="290" width="320" height="132" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="2425" y="492" width="320" height="108" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="4553.5" y="64" width="320" height="180" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="4008.5" y="350" width="310" height="108" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="4368.5" y="314" width="320" height="180" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="4738.5" y="326" width="320" height="156" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="4368.5" y="564" width="320" height="156" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="5108.5" y="338" width="320" height="132" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="5622.5" y="0" width="320" height="180" rx="8" ry="8" fill="#d0bfff" stroke="#7048e8" stroke-width="2" opacity="1" />
+  <rect x="5622.5" y="250" width="320" height="132" rx="8" ry="8" fill="#dee2e6" stroke="#495057" stroke-width="2" opacity="1" />
+  <rect x="3080.5" y="1332" width="320" height="204" rx="8" ry="8" fill="#ffd8a8" stroke="#e8590c" stroke-width="2" opacity="1" />
+  <rect x="3095.5" y="1606" width="290" height="84" rx="8" ry="8" fill="#ffd8a8" stroke="#e8590c" stroke-width="2" opacity="1" />
+  <rect x="3080.5" y="1796" width="320" height="156" rx="8" ry="8" fill="#ffd8a8" stroke="#e8590c" stroke-width="2" opacity="1" />
+  <rect x="2983" y="2058" width="320" height="156" rx="8" ry="8" fill="#ffd8a8" stroke="#e8590c" stroke-width="2" opacity="1" />
+  <rect x="3275.5" y="2284" width="320" height="180" rx="8" ry="8" fill="#ffd8a8" stroke="#e8590c" stroke-width="2" opacity="1" />
+  <rect x="3275.5" y="2534" width="320" height="156" rx="8" ry="8" fill="#ffd8a8" stroke="#e8590c" stroke-width="2" opacity="1" />
+  <rect x="3450.5" y="1760" width="320" height="228" rx="8" ry="8" fill="#d0bfff" stroke="#7048e8" stroke-width="2" opacity="1" />
+  <rect x="3080.5" y="886" width="320" height="228" rx="8" ry="8" fill="#d0bfff" stroke="#7048e8" stroke-width="2" opacity="1" />
+  <rect x="3060.5" y="612" width="320" height="204" rx="8" ry="8" fill="#ffec99" stroke="#f08c00" stroke-width="2" opacity="1" />
+  <rect x="2973" y="362" width="320" height="180" rx="8" ry="8" fill="#ffec99" stroke="#f08c00" stroke-width="2" opacity="1" />
+  <rect x="3430.5" y="636" width="320" height="156" rx="8" ry="8" fill="#ffec99" stroke="#f08c00" stroke-width="2" opacity="1" />
+  <rect x="3090.5" y="88" width="320" height="180" rx="8" ry="8" fill="#ffec99" stroke="#f08c00" stroke-width="2" opacity="1" />
+  <rect x="3460.5" y="64" width="320" height="228" rx="8" ry="8" fill="#ffec99" stroke="#f08c00" stroke-width="2" opacity="1" />
+  <rect x="6141.5" y="64" width="310" height="132" rx="8" ry="8" fill="#dee2e6" stroke="#495057" stroke-width="2" opacity="1" />
+  <rect x="6136.5" y="266" width="320" height="156" rx="8" ry="8" fill="#dee2e6" stroke="#495057" stroke-width="2" opacity="1" />
+  <rect x="6506.5" y="266" width="320" height="156" rx="8" ry="8" fill="#dee2e6" stroke="#495057" stroke-width="2" opacity="1" />
+  <rect x="6321.5" y="492" width="320" height="180" rx="8" ry="8" fill="#dee2e6" stroke="#495057" stroke-width="2" opacity="1" />
+  <rect x="6321.5" y="742" width="320" height="132" rx="8" ry="8" fill="#dee2e6" stroke="#495057" stroke-width="2" opacity="1" />
+  <rect x="6321.5" y="944" width="320" height="108" rx="8" ry="8" fill="#dee2e6" stroke="#495057" stroke-width="2" opacity="1" />
+  <rect x="6321.5" y="1122" width="320" height="84" rx="8" ry="8" fill="#dee2e6" stroke="#495057" stroke-width="2" opacity="1" />
+  <polyline points="506.28,220 427.84000000000003,326" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="621.72,220 673.52,290" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="332.3969465648855,458 240.6030534351145,588" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="425.6030534351145,458 500.4503816793893,564" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="240.6030534351145,720 306.9770992366412,814" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="500.4503816793893,744 451.0229007633588,814" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="379,1018 379,1088" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1529.4120603015076,268 1630.7437185929648,486" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1703.2562814070352,486 1815.7437185929648,244" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1507,502.7851314596555 724,203.21486854034453" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1545.7394957983192,642 1436.9159663865546,712" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1375.5377358490566,712 1783.933962264151,244" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1667,642 1667,724" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1788.2605042016808,642 1915.7394957983192,724" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1962.2331606217617,880 1741.7668393782383,1110" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1584.7495219885277,1110 646.2504780114723,220" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1667,1266 1667,1336" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1497.2669902912621,268 1657.121359223301,1336" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1609.943925233645,1468 1549.429906542056,1538" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1724.056074766355,1468 1784.570093457944,1538" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1735.4550669216062,1110 2516.544933078394,220" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="2585,220 2585,290" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="2585,422 2585,492" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="2745,523.182173573104 5622.5,112.81782642689598" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="2745,142.90204369274136 4553.5,153.09795630725864" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="4553.5,226.72727272727272 4282.3,350" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="4646.9,244 4595.1,314" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="4780.1,244 4840.78,326" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="4873.5,226.07207207207207 5121.98,338" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="4472.2959183673465,494 3681.691836734694,1760" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="4738.5,382.05825242718447 3410.5,199.94174757281553" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="4246.31512605042,458 4408.878151260505,564" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="4528.5,494 4528.5,564" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="4777.23949579832,482 4649.76050420168,564" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="4688.5,571.5693779904307 5622.5,160.4306220095694" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="5782.5,180 5782.5,250" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="3240.5,1536 3240.5,1606" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="3240.5,1690 3240.5,1796" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="3211.4732824427483,1952 3172.0267175572517,2058" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="3238.861344537815,2214 3324.890756302521,2284" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="3270.92,1952 3400.4,2284" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="3435.5,2464 3435.5,2534" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="3406.094414893617,2534 2609.88164893617,422" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="3461.217391304348,2534 4145.695652173913,458" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="3450.5,1963.668449197861 3282.179389312977,2058" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="3570.6,1988 3467,2284" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="3227.632867132867,816 3232.527972027972,886" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="3060.5,663.5657175726201 1642,216.4342824273799" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="3290.156488549618,542 3454.297709923664,636" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="3495.0454545454545,792 3380.0104895104896,886" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="3211.905109489051,268 3171.594890510949,362" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="3307.589552238806,268 3541.0223880597014,636" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="3460.5,267.92820512820515 3293,362.07179487179485" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="3614.1194029850744,292 3594.865671641791,636" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="6296.5,196 6296.5,266" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="6357.13025210084,422 6411.542016806723,492" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="6510.703921568627,422 3770.5,1793.8952879581152" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="6605.86974789916,422 6551.457983193277,492" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="6321.5,559.4065012233485 3780.5,200.59349877665153" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="6321.5,590.7570667759115 539,907.2429332240885" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1827,1175.371481981514 6321.5,820.6285180184858" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="6481.5,672 6481.5,742" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="6481.5,874 6481.5,944" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="6481.5,1052 6481.5,1122" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <text x="10" y="23" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="15" fill="#495057" text-anchor="start">
+    <tspan x="10" dy="0">The math + classes (router/nirt/model.py)</tspan>
+  </text>
+  <text x="1298" y="23" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="15" fill="#495057" text-anchor="start">
+    <tspan x="1298" dy="0">Data packing (router/data/nirt.py)</tspan>
+  </text>
+  <text x="1113" y="445" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="15" fill="#495057" text-anchor="start">
+    <tspan x="1113" dy="0">Training (training/nirt/train.py)</tspan>
+  </text>
+  <text x="1298" y="1069" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="15" fill="#495057" text-anchor="start">
+    <tspan x="1298" dy="0">Checkpoint + prediction math (checkpoint.py / predict.py)</tspan>
+  </text>
+  <text x="2401" y="23" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="15" fill="#495057" text-anchor="start">
+    <tspan x="2401" dy="0">NIRTRouter: narrow/legacy pool-scoring path</tspan>
+  </text>
+  <text x="3984.5" y="23" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="15" fill="#495057" text-anchor="start">
+    <tspan x="3984.5" dy="0">NIRTRouter: NEW broad-pool scoring path (this session)</tspan>
+  </text>
+  <text x="2959" y="1291" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="15" fill="#495057" text-anchor="start">
+    <tspan x="2959" dy="0">Model pool via model-profile construction (training/models/profiles.py + configs/model_profiles.yaml)</tspan>
+  </text>
+  <text x="2949" y="23" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="15" fill="#495057" text-anchor="start">
+    <tspan x="2949" dy="0">kNN imputation, CONSOLIDATED: one shared primitive, two consumers, two callers</tspan>
+  </text>
+  <text x="6112.5" y="23" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="15" fill="#495057" text-anchor="start">
+    <tspan x="6112.5" dy="0">Modern-pool generalization eval (zero-observation models)</tspan>
+  </text>
+  <text x="564" y="118" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#1971c2" text-anchor="middle">
+    <tspan x="564" dy="0">build_model(model_cfg, n_models,</tspan>
+    <tspan x="564" dy="20">query_dim, profile_dim)</tspan>
+    <tspan x="564" dy="20">picks class by model_cfg['orientation']</tspan>
+    <tspan x="564" dy="20">(default: query_latent)</tspan>
+  </text>
+  <text x="379" y="378" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#1971c2" text-anchor="middle">
+    <tspan x="379" dy="0">NIRTModel (orientation=query_latent)</tspan>
+    <tspan x="379" dy="20">PRIMARY -- this project's own/default</tspan>
+    <tspan x="379" dy="20">theta_q = query_head(e_q)</tspan>
+  </text>
+  <text x="194" y="640" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#1971c2" text-anchor="middle">
+    <tspan x="194" dy="0">latent_query(e_q) -&gt; theta_q</tspan>
+    <tspan x="194" dy="20">Linear or MLP head (query_head)</tspan>
+    <tspan x="194" dy="20">optional BatchNorm whitening (P7b)</tspan>
+  </text>
+  <text x="564" y="620" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#1971c2" text-anchor="middle">
+    <tspan x="564" dy="0">Model side (a_m, b_m)</tspan>
+    <tspan x="564" dy="20">EITHER free: nn.Embedding(n_models,dim)</tspan>
+    <tspan x="564" dy="20">(transductive -- can't score unseen model)</tspan>
+    <tspan x="564" dy="20">OR projected: a_head/b_head MLP-or-Linear</tspan>
+    <tspan x="564" dy="20">on profile e_m (cold-start capable)</tspan>
+  </text>
+  <text x="379" y="872" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#1971c2" text-anchor="middle">
+    <tspan x="379" dy="0">score(theta,a,b) -&gt; logit</tspan>
+    <tspan x="379" dy="20">scalar: logit = a_m . theta_q - b_m</tspan>
+    <tspan x="379" dy="20">vector: logit = sum_k a_mk(theta_qk-b_mk)</tspan>
+    <tspan x="379" dy="20">+ optional interaction residual (P2c),</tspan>
+    <tspan x="379" dy="20">gamma init 0</tspan>
+    <tspan x="379" dy="20">y_hat = sigmoid(logit)  (predict_proba)</tspan>
+  </text>
+  <text x="379" y="1144" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#1971c2" text-anchor="middle">
+    <tspan x="379" dy="0">center_discrimination (optional)</tspan>
+    <tspan x="379" dy="20">_center_discrimination /</tspan>
+    <tspan x="379" dy="20">set_discrimination_reference</tspan>
+    <tspan x="379" dy="20">subtracts pool-mean a_ref from every a_m</tspan>
+    <tspan x="379" dy="20">-- lossless for within-query ranking</tspan>
+  </text>
+  <text x="749" y="348" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e03131" text-anchor="middle">
+    <tspan x="749" dy="0">IRTRouterModel (orientation=model_latent)</tspan>
+    <tspan x="749" dy="20">ALTERNATE / comparison only</tspan>
+    <tspan x="749" dy="20">(IRT-Router paper, Song et al. ACL'25)</tspan>
+    <tspan x="749" dy="20">theta_m=[sigmoid] theta_head(e_m)</tspan>
+    <tspan x="749" dy="20">a_q,b_q = a_head(e_q), b_head(e_q)</tspan>
+    <tspan x="749" dy="20">logit = a_q . theta_m - b_q</tspan>
+  </text>
+  <text x="1482" y="122" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e8590c" text-anchor="middle">
+    <tspan x="1482" dy="0">NIRTDataset (router/data/nirt.py)</tspan>
+    <tspan x="1482" dy="20">joins obs table to query_store +</tspan>
+    <tspan x="1482" dy="20">profile_store BY ID at access time</tspan>
+    <tspan x="1482" dy="20">{query_embedding e_q, model_embedding e_m</tspan>
+    <tspan x="1482" dy="20">OR model index, target}</tspan>
+    <tspan x="1482" dy="20">IDENTICAL shape at train and serve time</tspan>
+  </text>
+  <text x="1852" y="142" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e8590c" text-anchor="middle">
+    <tspan x="1852" dy="0">_pack(dataset, model_index)</tspan>
+    <tspan x="1852" dy="20">(training/nirt/train.py)</tspan>
+    <tspan x="1852" dy="20">materialize into contiguous</tspan>
+    <tspan x="1852" dy="20">(q, m, y, midx, qgroup) arrays</tspan>
+  </text>
+  <text x="1667" y="540" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="1667" dy="0">fit(nirt_cfg, datasets=(train_ds,val_ds))</tspan>
+    <tspan x="1667" dy="20">(training/nirt/train.py)</tspan>
+    <tspan x="1667" dy="20">-&gt; RunResult(model, model_index,</tspan>
+    <tspan x="1667" dy="20">history, val_metrics, path)</tspan>
+  </text>
+  <text x="1297" y="768" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="1297" dy="0">model_index: model_id -&gt; int row</tspan>
+    <tspan x="1297" dy="20">built from EVERY id seen across</tspan>
+    <tspan x="1297" dy="20">BOTH train_ds and val_ds (not just</tspan>
+    <tspan x="1297" dy="20">train!) when model_params='projected';</tspan>
+    <tspan x="1297" dy="20">train-only ids when 'free'</tspan>
+  </text>
+  <text x="1667" y="778" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="1667" dy="0">Loss step</tspan>
+    <tspan x="1667" dy="20">soft_bce / mse / hard_bce</tspan>
+    <tspan x="1667" dy="20">+ P5 routing-aware:</tspan>
+    <tspan x="1667" dy="20">pairwise / listwise / bce_pairwise</tspan>
+  </text>
+  <text x="2037" y="778" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e8590c" text-anchor="middle">
+    <tspan x="2037" dy="0">runs_dir/&lt;name&gt;/model.pt + run.json</tspan>
+    <tspan x="2037" dy="20">state_dict, config, model_index,</tspan>
+    <tspan x="2037" dy="20">query_dim, profile_dim</tspan>
+    <tspan x="2037" dy="20">format='nirt'</tspan>
+  </text>
+  <text x="1667" y="1164" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#7048e8" text-anchor="middle">
+    <tspan x="1667" dy="0">load_run(name) (router/nirt/checkpoint.py)</tspan>
+    <tspan x="1667" dy="20">build_model(cfg) + load_state_dict</tspan>
+    <tspan x="1667" dy="20">-&gt; (model, config, model_index)</tspan>
+    <tspan x="1667" dy="20">serving code never imports a trainer</tspan>
+  </text>
+  <text x="1667" y="1388" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#7048e8" text-anchor="middle">
+    <tspan x="1667" dy="0">predict_dataset(model, dataset,</tspan>
+    <tspan x="1667" dy="20">model_index) (router/nirt/predict.py)</tspan>
+    <tspan x="1667" dy="20">-- no ground truth involved</tspan>
+  </text>
+  <text x="1482" y="1592" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#7048e8" text-anchor="middle">
+    <tspan x="1482" dy="0">pool_centering contextmanager</tspan>
+    <tspan x="1482" dy="20">projected mode: centres on the</tspan>
+    <tspan x="1482" dy="20">DATASET'S WHOLE model pool as pool_ref</tspan>
+    <tspan x="1482" dy="20">(set_discrimination_reference)</tspan>
+  </text>
+  <text x="1852" y="1592" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#7048e8" text-anchor="middle">
+    <tspan x="1852" dy="0">free-mode guard</tspan>
+    <tspan x="1852" dy="20">every model id must already be in</tspan>
+    <tspan x="1852" dy="20">model_index, else ValueError --</tspan>
+    <tspan x="1852" dy="20">cannot score a model outside training</tspan>
+  </text>
+  <text x="2585" y="118" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="2585" dy="0">NIRTRouter.from_run() / .from_artifact()</tspan>
+    <tspan x="2585" dy="20">NARROW / legacy path (unchanged)</tspan>
+    <tspan x="2585" dy="20">fixes the pool to the checkpoint's</tspan>
+    <tspan x="2585" dy="20">OWN trained model_index</tspan>
+  </text>
+  <text x="2585" y="342" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="2585" dy="0">_pool_refs()</tspan>
+    <tspan x="2585" dy="20">builds the [M,p] profile matrix OR</tspan>
+    <tspan x="2585" dy="20">[M] index vector ONCE, cached</tspan>
+  </text>
+  <text x="2585" y="542" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="2585" dy="0">predict_scores / predict_scores_text</tspan>
+    <tspan x="2585" dy="20">-&gt; _score_embeddings</tspan>
+  </text>
+  <text x="4713.5" y="120" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="4713.5" dy="0">resolve_pool_profile_matrix(pool_ids,</tspan>
+    <tspan x="4713.5" dy="20">impute_unknown=False, knn_k=10, ...)</tspan>
+    <tspan x="4713.5" dy="20">NEW broad-pool path (this session) --</tspan>
+    <tspan x="4713.5" dy="20">scores an ARBITRARY pool, not just</tspan>
+    <tspan x="4713.5" dy="20">this run's trained model_ids</tspan>
+  </text>
+  <text x="4163.5" y="400" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="4163.5" dy="0">1. existing row in the</tspan>
+    <tspan x="4163.5" dy="20">already-built profile store</tspan>
+  </text>
+  <text x="4528.5" y="370" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="4528.5" dy="0">2. else render + embed ON THE FLY</tspan>
+    <tspan x="4528.5" dy="20">via embed_ad_hoc_profile</tspan>
+    <tspan x="4528.5" dy="20">(caller-supplied or curated entry)</tspan>
+    <tspan x="4528.5" dy="20">no retraining -- projected mode was</tspan>
+    <tspan x="4528.5" dy="20">already cold-start capable</tspan>
+  </text>
+  <text x="4898.5" y="380" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="4898.5" dy="0">3. if impute_unknown=True and the id</tspan>
+    <tspan x="4898.5" dy="20">has ZERO training observations,</tspan>
+    <tspan x="4898.5" dy="20">additionally kNN-blend toward</tspan>
+    <tspan x="4898.5" dy="20">the trained pool</tspan>
+  </text>
+  <text x="4528.5" y="618" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="4528.5" dy="0">predict_pool_scores_text</tspan>
+    <tspan x="4528.5" dy="20">feeds the resulting [pool,p] matrix</tspan>
+    <tspan x="4528.5" dy="20">through the SAME _forward_pool helper</tspan>
+    <tspan x="4528.5" dy="20">the narrow path uses</tspan>
+  </text>
+  <text x="5268.5" y="390" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="5268.5" dy="0">raises ValueError if</tspan>
+    <tspan x="5268.5" dy="20">model_params != 'projected'</tspan>
+    <tspan x="5268.5" dy="20">(free mode has no escape hatch)</tspan>
+  </text>
+  <text x="5782.5" y="56" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#7048e8" text-anchor="middle">
+    <tspan x="5782.5" dy="0">_forward_pool(e_q, refs, pool_ref)</tspan>
+    <tspan x="5782.5" dy="20">SHARED pure forward-pass helper --</tspan>
+    <tspan x="5782.5" dy="20">both NIRTRouter paths converge here:</tspan>
+    <tspan x="5782.5" dy="20">same math, only the profile-matrix</tspan>
+    <tspan x="5782.5" dy="20">source differs</tspan>
+  </text>
+  <text x="5782.5" y="302" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#495057" text-anchor="middle">
+    <tspan x="5782.5" dy="0">[N x model] predicted P(correct)</tspan>
+    <tspan x="5782.5" dy="20">(narrow pool or arbitrary</tspan>
+    <tspan x="5782.5" dy="20">broad pool, same shape)</tspan>
+  </text>
+  <text x="3240.5" y="1390" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e8590c" text-anchor="middle">
+    <tspan x="3240.5" dy="0">configs/model_profiles.yaml</tspan>
+    <tspan x="3240.5" dy="20">profiles: {model_id: {feature,</tspan>
+    <tspan x="3240.5" dy="20">benchmark_scores/hf_repo_id/</tspan>
+    <tspan x="3240.5" dy="20">arena_name/benchlm_slug,</tspan>
+    <tspan x="3240.5" dy="20">strengths, weaknesses, params_b,</tspan>
+    <tspan x="3240.5" dy="20">context_window, ...}}</tspan>
+  </text>
+  <text x="3240.5" y="1654" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e8590c" text-anchor="middle">
+    <tspan x="3240.5" dy="0">load_profile_entries(cfg)</tspan>
+  </text>
+  <text x="3240.5" y="1850" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e8590c" text-anchor="middle">
+    <tspan x="3240.5" dy="0">build_model_profiles(cfg)</tspan>
+    <tspan x="3240.5" dy="20">(training/models/profiles.py)</tspan>
+    <tspan x="3240.5" dy="20">per model: resolve_benchmarks +</tspan>
+    <tspan x="3240.5" dy="20">render_profile_text -&gt; profile_text</tspan>
+  </text>
+  <text x="3143" y="2112" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e8590c" text-anchor="middle">
+    <tspan x="3143" dy="0">resolve_benchmarks(entry, cfg)</tspan>
+    <tspan x="3143" dy="20">merges HF Open LLM Leaderboard /</tspan>
+    <tspan x="3143" dy="20">Chatbot Arena Elo / BenchLM /</tspan>
+    <tspan x="3143" dy="20">manual YAML public sources</tspan>
+  </text>
+  <text x="3435.5" y="2340" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e8590c" text-anchor="middle">
+    <tspan x="3435.5" dy="0">render_profile_text(model_id, entry,</tspan>
+    <tspan x="3435.5" dy="20">stats, include_empirical, benchmarks)</tspan>
+    <tspan x="3435.5" dy="20">curated text + optional</tspan>
+    <tspan x="3435.5" dy="20">empirical addendum (project-data,</tspan>
+    <tspan x="3435.5" dy="20">leakage-sensitive)</tspan>
+  </text>
+  <text x="3435.5" y="2588" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e8590c" text-anchor="middle">
+    <tspan x="3435.5" dy="0">build_profile_embeddings(cfg)</tspan>
+    <tspan x="3435.5" dy="20">embeds profile_text via the 'irt'</tspan>
+    <tspan x="3435.5" dy="20">pathway encoder -&gt; persistent</tspan>
+    <tspan x="3435.5" dy="20">model_profile__irt EmbeddingStore</tspan>
+  </text>
+  <text x="3610.5" y="1820" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#7048e8" text-anchor="middle">
+    <tspan x="3610.5" dy="0">render_zero_shot_profile_text(cfg,</tspan>
+    <tspan x="3610.5" dy="20">model_id, entry) -- NEW shared helper</tspan>
+    <tspan x="3610.5" dy="20">wraps resolve_benchmarks +</tspan>
+    <tspan x="3610.5" dy="20">render_profile_text(include_empirical=</tspan>
+    <tspan x="3610.5" dy="20">False); ONE function, TWO callers</tspan>
+    <tspan x="3610.5" dy="20">(no empirical addendum: zero</tspan>
+    <tspan x="3610.5" dy="20">project observations)</tspan>
+  </text>
+  <text x="3240.5" y="946" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#7048e8" text-anchor="middle">
+    <tspan x="3240.5" dy="0">QueryBank.neighbor_weighted_mean</tspan>
+    <tspan x="3240.5" dy="20">(vecs, store, k, weighting)</tspan>
+    <tspan x="3240.5" dy="20">(training/retrieval/query_bank.py)</tspan>
+    <tspan x="3240.5" dy="20">THE ONE weighting primitive:</tspan>
+    <tspan x="3240.5" dy="20">cosine-sim-weighted mean of k nearest,</tspan>
+    <tspan x="3240.5" dy="20">max(cos,0) normalized; falls back</tspan>
+    <tspan x="3240.5" dy="20">to a plain mean if all weights vanish</tspan>
+  </text>
+  <text x="3220.5" y="670" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#f08c00" text-anchor="middle">
+    <tspan x="3220.5" dy="0">Query-side consumer (pre-existing)</tspan>
+    <tspan x="3220.5" dy="20">build_knn_imputed_store</tspan>
+    <tspan x="3220.5" dy="20">(training/retrieval/knn_impute.py)</tspan>
+    <tspan x="3220.5" dy="20">replaces a query's e_q with its</tspan>
+    <tspan x="3220.5" dy="20">k-nearest TRAIN-query blend</tspan>
+    <tspan x="3220.5" dy="20">-&gt; data.query_pathway override</tspan>
+  </text>
+  <text x="3133" y="418" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#f08c00" text-anchor="middle">
+    <tspan x="3133" dy="0">build_model_bank(store,</tspan>
+    <tspan x="3133" dy="20">trained_model_ids) -&gt; QueryBank</tspan>
+    <tspan x="3133" dy="20">(training/retrieval/model_bank.py)</tspan>
+    <tspan x="3133" dy="20">in-memory FAISS flat-IP,</tspan>
+    <tspan x="3133" dy="20">no disk persistence (pool is tiny)</tspan>
+  </text>
+  <text x="3590.5" y="690" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#f08c00" text-anchor="middle">
+    <tspan x="3590.5" dy="0">knn_impute_model(bank, raw_vec,</tspan>
+    <tspan x="3590.5" dy="20">store, k, weighting)</tspan>
+    <tspan x="3590.5" dy="20">Model-side consumer (NEW this session) --</tspan>
+    <tspan x="3590.5" dy="20">SINGLE implementation after the merge</tspan>
+  </text>
+  <text x="3250.5" y="144" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#f08c00" text-anchor="middle">
+    <tspan x="3250.5" dy="0">impute_unknown_profile()</tspan>
+    <tspan x="3250.5" dy="20">(router/routing/model_profiles.py)</tspan>
+    <tspan x="3250.5" dy="20">falls back to raw_vec if 0</tspan>
+    <tspan x="3250.5" dy="20">neighbours found</tspan>
+    <tspan x="3250.5" dy="20">CALLER (a): live serving</tspan>
+  </text>
+  <text x="3620.5" y="124" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#f08c00" text-anchor="middle">
+    <tspan x="3620.5" dy="0">_knn_impute_profile_store()</tspan>
+    <tspan x="3620.5" dy="20">(evaluation/nirt/modern_pool.py)</tspan>
+    <tspan x="3620.5" dy="20">POST-MERGE: now calls</tspan>
+    <tspan x="3620.5" dy="20">build_model_bank / knn_impute_model --</tspan>
+    <tspan x="3620.5" dy="20">old brute-force reimplementation</tspan>
+    <tspan x="3620.5" dy="20">is GONE</tspan>
+    <tspan x="3620.5" dy="20">CALLER (b): offline eval</tspan>
+  </text>
+  <text x="6296.5" y="116" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#495057" text-anchor="middle">
+    <tspan x="6296.5" dy="0">lmarena-ai/</tspan>
+    <tspan x="6296.5" dy="20">arena-human-preference-140k</tspan>
+    <tspan x="6296.5" dy="20">(external HF dataset)</tspan>
+  </text>
+  <text x="6296.5" y="320" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#495057" text-anchor="middle">
+    <tspan x="6296.5" dy="0">filter_modern_pool_battles</tspan>
+    <tspan x="6296.5" dy="20">7 frontier models,</tspan>
+    <tspan x="6296.5" dy="20">MODERN_POOL_ALIASES</tspan>
+    <tspan x="6296.5" dy="20">(zero project observations anywhere)</tspan>
+  </text>
+  <text x="6666.5" y="320" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#495057" text-anchor="middle">
+    <tspan x="6666.5" dy="0">modern_pool_profile_texts()</tspan>
+    <tspan x="6666.5" dy="20">(training/data/modern_pool_battles.py)</tspan>
+    <tspan x="6666.5" dy="20">NOW via the shared</tspan>
+    <tspan x="6666.5" dy="20">render_zero_shot_profile_text</tspan>
+  </text>
+  <text x="6481.5" y="548" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#495057" text-anchor="middle">
+    <tspan x="6481.5" dy="0">score_run_on_modern_pool</tspan>
+    <tspan x="6481.5" dy="20">(evaluation/nirt/modern_pool.py)</tspan>
+    <tspan x="6481.5" dy="20">embeds battle queries + 7 profiles;</tspan>
+    <tspan x="6481.5" dy="20">pairwise_logit_diff -&gt; Bradley-Terry</tspan>
+    <tspan x="6481.5" dy="20">win probabilities vs coin-flip baseline</tspan>
+  </text>
+  <text x="6481.5" y="794" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#495057" text-anchor="middle">
+    <tspan x="6481.5" dy="0">sweep_projected_runs</tspan>
+    <tspan x="6481.5" dy="20">every checkpoint under runs_dir,</tspan>
+    <tspan x="6481.5" dy="20">grouped by pathway</tspan>
+  </text>
+  <text x="6481.5" y="994" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#495057" text-anchor="middle">
+    <tspan x="6481.5" dy="0">scripts/nirt/</tspan>
+    <tspan x="6481.5" dy="20">modern_pool_generalization.py CLI</tspan>
+  </text>
+  <text x="6481.5" y="1170" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#495057" text-anchor="middle">
+    <tspan x="6481.5" dy="0">modern_pool_generalization.json</tspan>
+  </text>
+  <text x="467.06" y="269.5" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="467.06" dy="0">orientation=</tspan>
+    <tspan x="467.06" dy="17.5">query_latent (default)</tspan>
+  </text>
+  <text x="647.62" y="251.5" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="647.62" dy="0">orientation=</tspan>
+    <tspan x="647.62" dy="17.5">model_latent</tspan>
+  </text>
+  <text x="1580.0778894472362" y="382.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1580.0778894472362" dy="0">(train_ds, val_ds)</tspan>
+  </text>
+  <text x="1115.5" y="670.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1115.5" dy="0">reconstruct</tspan>
+  </text>
+  <text x="4076.99387755102" y="1132.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="4076.99387755102" dy="0">embed_ad_hoc_profile</tspan>
+  </text>
+  <text x="3007.9880319148933" y="1474.5" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="3007.9880319148933" dy="0">persistent store</tspan>
+    <tspan x="3007.9880319148933" dy="17.5">NIRTRouter reads from</tspan>
+  </text>
+  <text x="3518.8" y="2141.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="3518.8" dy="0">include_empirical=False</tspan>
+  </text>
+  <text x="2351.25" y="436.5" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="2351.25" dy="0">data.query_pathway</tspan>
+    <tspan x="2351.25" dy="17.5">override</tspan>
+  </text>
+  <text x="5051" y="376.5" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="5051" dy="0">optional knn_k</tspan>
+    <tspan x="5051" dy="17.5">blend step</tspan>
+  </text>
+  <text x="3430.25" y="736.75" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="3430.25" dy="0">pairwise_logit_diff:</tspan>
+    <tspan x="3430.25" dy="17.5">model.score() twice,</tspan>
+    <tspan x="3430.25" dy="17.5">shared theta</tspan>
+  </text>
+  <text x="4074.25" y="994.5" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="4074.25" dy="0">every checkpoint</tspan>
+    <tspan x="4074.25" dy="17.5">under runs_dir</tspan>
+  </text>
+</svg>

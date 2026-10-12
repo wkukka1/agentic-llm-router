@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from router.llm.adapters.langchain_adapter import LangChainAdapter, guess_provider
+from router.llm.adapters.langchain_adapter import LangChainAdapter, chat_model, guess_provider
 
 
 class _StubChatModel:
@@ -88,6 +88,46 @@ def test_guess_provider_allows_a_trailing_version_number_after_the_hint():
     assert guess_provider("yolo1") is None
     assert guess_provider("claude-3-5-sonnet") == "anthropic"
     assert guess_provider("some-random-model") is None
+
+
+def test_chat_model_forwards_an_explicit_provider(monkeypatch):
+    """An explicit provider= (e.g. "ollama" for a local tag guess_provider
+    can't identify) must reach init_chat_model as model_provider=, not be
+    overridden by guess_provider's own inference."""
+    pytest.importorskip("langchain")
+    import langchain.chat_models
+
+    captured = {}
+
+    def fake_init_chat_model(name, *, model_provider=None, **kw):
+        captured["name"] = name
+        captured["model_provider"] = model_provider
+        return _StubChatModel()
+
+    monkeypatch.setattr(langchain.chat_models, "init_chat_model", fake_init_chat_model)
+
+    chat_model("deepseek-llm:7b-chat", provider="ollama")
+
+    assert captured == {"name": "deepseek-llm:7b-chat", "model_provider": "ollama"}
+
+
+def test_chat_model_falls_back_to_guess_provider_when_omitted(monkeypatch):
+    """No provider= given -- existing guess_provider-based inference must be
+    unchanged by the new provider= parameter."""
+    pytest.importorskip("langchain")
+    import langchain.chat_models
+
+    captured = {}
+
+    def fake_init_chat_model(name, *, model_provider=None, **kw):
+        captured["model_provider"] = model_provider
+        return _StubChatModel()
+
+    monkeypatch.setattr(langchain.chat_models, "init_chat_model", fake_init_chat_model)
+
+    chat_model("claude-haiku-4-5")
+
+    assert captured["model_provider"] == guess_provider("claude-haiku-4-5") == "anthropic"
 
 
 def test_model_forwards_api_key_to_init_chat_model(monkeypatch):

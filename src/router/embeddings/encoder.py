@@ -10,7 +10,7 @@ Two backends, selected per *pathway* in ``configs/phase0.yaml -> embedding``:
   and a model's ability vector live in one text space (and a cold-start model
   can be placed from its profile alone).
 
-Inference is deterministic (eval mode, ``torch.no_grad``, fixed seeds, no
+Inference is deterministic (eval mode, ``torch.no_grad``, seeded model load, no
 dropout). Phase 0 does **not** fine-tune anything here.
 
 ``EmbeddingStore`` persists ``query_id -> vector`` (or ``model_id -> vector``) as
@@ -19,11 +19,11 @@ a float32 ``.npy`` matrix + a parquet id index + a JSON manifest.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
-import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional, Sequence
 
@@ -92,6 +92,32 @@ class EncoderConfig:
         return hashlib.sha1(json.dumps(fields, sort_keys=True).encode()).hexdigest()[:12]
 
 
+@contextlib.contextmanager
+def _scoped_seed(seed: int):
+    """Seed ``random`` / numpy / torch (CPU + CUDA) for the body, then restore
+    the caller's generator states -- so a one-time seeded model load leaves no
+    trace on the application's RNG streams."""
+    import random
+
+    py_state, np_state = random.getstate(), np.random.get_state()
+    try:
+        import torch
+    except ImportError:  # pragma: no cover - torch is a hard dependency in practice
+        torch = None
+    try:
+        if torch is None:
+            _seed_everything(seed, deterministic_algorithms=False)
+            yield
+        else:
+            devices = list(range(torch.cuda.device_count())) if torch.cuda.is_available() else []
+            with torch.random.fork_rng(devices=devices):
+                _seed_everything(seed, deterministic_algorithms=False)
+                yield
+    finally:
+        random.setstate(py_state)
+        np.random.set_state(np_state)
+
+
 class TextEncoder:
     def __init__(self, cfg: EncoderConfig):
         self.cfg = cfg
@@ -121,13 +147,15 @@ class TextEncoder:
     @property
     def model(self):
         if self._model is None:
-            # no deterministic-algorithms switch: that is process-wide and this
-            # also runs on the serving path next to training / GPU jobs
-            _seed_everything(self.cfg.seed, deterministic_algorithms=False)
-            self._model = (
-                self._load_bert() if self.cfg.backend == "bert"
-                else self._load_sentence_transformer()
-            )
+            # seeded for a reproducible load, but inside a saved/restored RNG
+            # scope: this also runs on the serving path, and the process-global
+            # generators belong to the application (TEXTENCODER-001). No
+            # deterministic-algorithms switch either -- that is process-wide.
+            with _scoped_seed(self.cfg.seed):
+                self._model = (
+                    self._load_bert() if self.cfg.backend == "bert"
+                    else self._load_sentence_transformer()
+                )
         return self._model
 
     @property
@@ -151,8 +179,10 @@ class TextEncoder:
         Streaming -- never accumulates the full matrix in memory. ``start_row``
         is the absolute row index (``_start_offset`` + local offset), so callers
         can resume a partial build.
+        No reseed here: inference is eval-mode + ``no_grad`` with no dropout, so
+        the vectors don't depend on RNG state, and reseeding the process-global
+        generators per call pinned every caller's random stream (TEXTENCODER-001).
         """
-        _seed_everything(self.cfg.seed, deterministic_algorithms=False)
         bs = int(batch_size or self.cfg.batch_size)
         texts = [("" if t is None else str(t)) for t in texts]
         rng = range(0, len(texts), bs)
@@ -484,7 +514,6 @@ def build_store(
     ppath = d / EmbeddingStore.PROGRESS
     vpath = d / EmbeddingStore.MATRIX
 
-    # already finished?
     if not force and EmbeddingStore.exists(d):
         man = json.loads(EmbeddingStore._resolve(d, EmbeddingStore.MANIFEST).read_text("utf-8"))
 

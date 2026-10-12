@@ -18,9 +18,10 @@ import re
 from collections.abc import Iterable
 from pathlib import Path
 
+from router.gateway.translate import REMINDER as _REMINDER
+
 PROJECTS_DIR = Path.home() / ".claude" / "projects"
 MIN_CHARS = 20
-_REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
 _TEMP_PROJECTS = ("-private-tmp", "-private-var-folders", "-tmp-")
 
 

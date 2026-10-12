@@ -70,9 +70,10 @@ def _sprout(args):
     the train split -- which is also the paper's headline baseline.
     """
     from router.embeddings.encoder import EncoderConfig, TextEncoder
-    from training.prompt_decomposition.data.pools import load_pool, prices_from_config
+    from training.data.pricing import load_prices
+    from training.prompt_decomposition.data.pools import load_pool
 
-    pool = load_pool("sprout", split=args.split, prices=prices_from_config())
+    pool = load_pool("sprout", split=args.split, prices=load_prices())
     priced = np.isfinite(pool.cost).all(axis=0)
     if not priced.all():
         dropped = [m for m, p in zip(pool.models, priced) if not p]

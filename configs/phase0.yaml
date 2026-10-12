@@ -126,6 +126,25 @@ profiles:
     language_zh: [chinese, chid, c-eval, cmmlu, ceval]
     chat: [mtbench, mt-bench, alpaca]
 
+# Public (non-project) benchmark score sources for the richer LLM profiles --
+# see training.data.public_benchmarks. Never derived from this project's own
+# response data, so none of this can leak into a zero-shot cold-start test.
+public_benchmarks:
+  benchlm_local_path: data/raw/public_benchmarks/benchlm_models.json
+  hf_leaderboard_local_path: data/raw/public_benchmarks/hf_open_llm_leaderboard_contents.json
+  # Dated Chatbot Arena leaderboard snapshots, hosted on the
+  # lmarena-ai/chatbot-arena-leaderboard HF Space. Each key is the
+  # snapshot_date passed to arena_elo_rating(); (revision, filename) is an
+  # explicit, human-verified pair -- never guessed from the date string, since
+  # the Space's filenames don't follow a fixed naming rule across every
+  # release. Verified directly (WebFetch) 2026-10-07: this file's Arena Elo
+  # column matches the model names/values in configs/model_profiles.yaml's
+  # Arena-pool entries.
+  arena_snapshots:
+    "2023-12-15":
+      filename: leaderboard_table_20231215.csv
+      revision: main   # TODO: pin to the exact commit SHA once confirmed, for reproducibility
+
 clustering:
   # Query embedding pathway to cluster (retrieval = MiniLM, full corpus).
   pathway: retrieval
@@ -228,4 +247,12 @@ split:
   force_warm:
     - yi-34b-chat
     - code-llama-34b-instruct
-  force_cold: []
+  # Richer-profiles / pairwise-generalization workstream: force mixtral cold
+  # so it becomes a THIRD Arena-battle-tested cold model (3,545 of its own
+  # chatbot_arena rows) AND the gpt4_judge case study's one held-out side in
+  # a single move (gpt-4-1106-preview, its only gpt4_judge opponent, stays
+  # warm). Regenerating splits removes its correctness rows from train/val/
+  # test entirely -- any existing `projected` NIRT checkpoint needs retraining
+  # before evaluation.nirt.pairwise_coldstart's numbers for it mean anything.
+  force_cold:
+    - mixtral-8x7b-instruct

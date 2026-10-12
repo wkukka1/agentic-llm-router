@@ -103,7 +103,8 @@ class FakeTrainingData:
     """
 
     def __init__(self, observations=None, *, query_store=None, profile_store=None,
-                 feature_store=None, battles=None, query_dim=None):
+                 feature_store=None, battles=None, query_dim=None,
+                 warm_models=None, cold_models=None, cfg=None):
         if query_dim and query_store is None and observations is not None:
             qids = sorted(observations["query_id"].unique())
             mat = np.random.default_rng(0).standard_normal((len(qids), query_dim))
@@ -113,6 +114,11 @@ class FakeTrainingData:
         self._query_store = query_store
         self._profile_store = profile_store
         self._feature_store = feature_store
+        self._warm_models = list(warm_models) if warm_models is not None else []
+        self._cold_models = list(cold_models) if cold_models is not None else []
+        # a NIRTRouter's ad hoc/cold-start pool-scoring path reads `data.cfg`
+        # (router.routing.model_profiles) -- None unless a test needs it.
+        self.cfg = cfg
 
     def nirt_observations(self):
         return self.observations
@@ -129,6 +135,12 @@ class FakeTrainingData:
     def pairwise(self, source=None, split=None, models="all"):
         df = self._battles
         return df[df["source"] == source].copy() if source else df.copy()
+
+    def warm_model_ids(self):
+        return list(self._warm_models)
+
+    def cold_start_model_ids(self):
+        return list(self._cold_models)
 
 
 def nirt_cfg(**model_over):

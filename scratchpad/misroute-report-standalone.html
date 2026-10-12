@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where NIRT Misroutes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+html{-webkit-text-size-adjust:100%}img{max-width:100%}[hidden]{display:none!important}
+
+  :root {
+    --paper:        #f4f5f2;
+    --panel:        #fbfbf9;
+    --panel-sunk:   #eceee9;
+    --ink:          #1b1f24;
+    --slate:        #55606d;
+    --faint:        #8a94a0;
+    --rule:         #d9ddd6;
+    --rule-strong:  #c3c8bf;
+    --accent:       #4739a8;   /* structural: NIRT series, active state, rules of emphasis */
+    --accent-soft:  #ece9fa;
+    --oracle:       #0f766e;   /* semantic: oracle / what was achievable */
+    --oracle-soft:  #d8ece9;
+    --regret:       #b0431d;   /* semantic: regret / routing error */
+    --regret-soft:  #f4e0d6;
+    --shadow:       0 1px 2px rgba(27,31,36,.05), 0 8px 24px -12px rgba(27,31,36,.14);
+    color-scheme: light;
+  }
+  :root:not([data-theme="light"]) {
+    @media (prefers-color-scheme: dark) {
+      --paper:       #14171b;
+      --panel:       #1b1f25;
+      --panel-sunk:  #23282f;
+      --ink:         #e7e9e6;
+      --slate:       #a7b0bb;
+      --faint:       #6d7883;
+      --rule:        #2e343c;
+      --rule-strong: #3c434c;
+      --accent:      #9d92ec;
+      --accent-soft: #262247;
+      --oracle:      #4cc4b6;
+      --oracle-soft: #143430;
+      --regret:      #e0855f;
+      --regret-soft: #3a2118;
+      --shadow:      0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.55);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:       #14171b;
+    --panel:       #1b1f25;
+    --panel-sunk:  #23282f;
+    --ink:         #e7e9e6;
+    --slate:       #a7b0bb;
+    --faint:       #6d7883;
+    --rule:        #2e343c;
+    --rule-strong: #3c434c;
+    --accent:      #9d92ec;
+    --accent-soft: #262247;
+    --oracle:      #4cc4b6;
+    --oracle-soft: #143430;
+    --regret:      #e0855f;
+    --regret-soft: #3a2118;
+    --shadow:      0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.55);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-size: 17px;
+    line-height: 1.62;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 78ch; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
+  @media (max-width: 640px) { .wrap { padding: 2.5rem 1.1rem 4rem; } }
+
+  h1, h2, h3, .ui { font-family: "IBM Plex Sans", system-ui, sans-serif; }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+  /* ---- header ---- */
+  header { margin-bottom: 3.5rem; }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .74rem; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--regret); margin: 0 0 1rem;
+  }
+  h1 {
+    font-size: clamp(2.1rem, 6vw, 3.1rem); font-weight: 600; line-height: 1.05;
+    letter-spacing: -.02em; margin: 0 0 1rem; text-wrap: balance;
+  }
+  .verdict {
+    font-size: 1.18rem; color: var(--slate); margin: 0 0 1.75rem; max-width: 62ch;
+    text-wrap: pretty;
+  }
+  .verdict b { color: var(--ink); font-weight: 500; }
+  .runstrip {
+    font-family: "IBM Plex Mono", monospace; font-size: .8rem; color: var(--faint);
+    border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+    padding: .7rem 0; display: flex; flex-wrap: wrap; gap: .4rem 1.6rem;
+  }
+  .runstrip span { white-space: nowrap; }
+  .runstrip b { color: var(--slate); font-weight: 500; }
+
+  /* ---- stat row ---- */
+  .stats {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+    background: var(--rule); border: 1px solid var(--rule);
+    margin: 2.5rem 0 3rem; border-radius: 3px; overflow: hidden;
+  }
+  @media (max-width: 640px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+  .stat { background: var(--panel); padding: 1.1rem 1rem 1.15rem; }
+  .stat .n {
+    font-family: "IBM Plex Mono", monospace; font-size: 1.68rem; font-weight: 500;
+    letter-spacing: -.02em; display: block; font-variant-numeric: tabular-nums;
+  }
+  .stat .n.bad { color: var(--regret); }
+  .stat .l {
+    font-family: "IBM Plex Sans", sans-serif; font-size: .76rem; color: var(--slate);
+    margin-top: .3rem; line-height: 1.3; display: block;
+  }
+
+  section { margin: 3.25rem 0; }
+  h2 {
+    font-size: 1.42rem; font-weight: 600; letter-spacing: -.01em;
+    margin: 0 0 .35rem; text-wrap: balance;
+  }
+  h2 .num {
+    font-family: "IBM Plex Mono", monospace; font-size: .8rem; color: var(--accent);
+    margin-right: .7rem; font-weight: 500;
+  }
+  .lede { color: var(--slate); font-size: .96rem; margin: 0 0 1.4rem; max-width: 64ch; }
+  p { max-width: 68ch; }
+  p + p { margin-top: 1rem; }
+  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+
+  /* ---- figure shell ---- */
+  figure {
+    margin: 1.75rem 0; padding: 1.5rem; background: var(--panel);
+    border: 1px solid var(--rule); border-radius: 4px; box-shadow: var(--shadow);
+  }
+  figure.flush { padding: 1.5rem 1.25rem; }
+  figcaption {
+    font-family: "IBM Plex Sans", sans-serif; font-size: .8rem; color: var(--slate);
+    margin-top: 1rem; line-height: 1.45;
+  }
+  .scroll { overflow-x: auto; }
+
+  /* ---- utilization chart (SVG) ---- */
+  .legend {
+    display: flex; gap: 1.4rem; font-family: "IBM Plex Sans", sans-serif;
+    font-size: .78rem; color: var(--slate); margin-bottom: 1rem; flex-wrap: wrap;
+  }
+  .legend i { width: .8rem; height: .8rem; border-radius: 2px; display: inline-block;
+    vertical-align: -1px; margin-right: .4rem; }
+
+  /* ---- bar table (severity / dataset / confusion) ---- */
+  table { border-collapse: collapse; width: 100%; font-size: .87rem; }
+  .datatable { font-family: "IBM Plex Sans", sans-serif; }
+  .datatable th {
+    text-align: left; font-weight: 500; font-size: .72rem; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--faint); padding: 0 .8rem .55rem;
+    border-bottom: 1px solid var(--rule-strong); white-space: nowrap;
+  }
+  .datatable td {
+    padding: .5rem .8rem; border-bottom: 1px solid var(--rule);
+    font-variant-numeric: tabular-nums; vertical-align: middle;
+  }
+  .datatable td.name { font-family: "IBM Plex Mono", monospace; font-size: .82rem; white-space: nowrap; }
+  .datatable tr:last-child td { border-bottom: none; }
+  .datatable .num { text-align: right; font-family: "IBM Plex Mono", monospace; }
+  .bar-cell { width: 40%; min-width: 130px; }
+  .bar { height: 15px; border-radius: 2px; background: var(--regret); display: block; }
+  .bar.o { background: var(--oracle); }
+  .bar.a { background: var(--accent); }
+  .bar-track { background: var(--panel-sunk); border-radius: 2px; }
+
+  .pill {
+    font-family: "IBM Plex Mono", monospace; font-size: .72rem; padding: .1rem .45rem;
+    border-radius: 3px; background: var(--regret-soft); color: var(--regret); white-space: nowrap;
+  }
+  .pill.ok { background: var(--oracle-soft); color: var(--oracle); }
+
+  /* ---- diagnosis callout ---- */
+  .diag {
+    border-left: 3px solid var(--accent); background: var(--accent-soft);
+    padding: 1.25rem 1.5rem; border-radius: 0 4px 4px 0; margin: 1.75rem 0;
+  }
+  .diag h3 { margin: 0 0 .5rem; font-size: 1rem; }
+  .diag p { margin: 0; font-size: .95rem; }
+  .diag p + p { margin-top: .7rem; }
+  .eq {
+    font-family: "IBM Plex Mono", monospace; font-size: .9rem; background: var(--panel-sunk);
+    padding: .15rem .4rem; border-radius: 3px; white-space: nowrap;
+  }
+  .next { display: grid; gap: .1rem; margin-top: 1rem; }
+  .next li {
+    list-style: none; font-family: "IBM Plex Sans", sans-serif; font-size: .9rem;
+    padding: .55rem 0; border-bottom: 1px solid var(--rule); display: flex; gap: .8rem;
+  }
+  .next li:last-child { border-bottom: none; }
+  .next .k { color: var(--accent); font-family: "IBM Plex Mono", monospace; font-size: .8rem;
+    flex-shrink: 0; padding-top: .1rem; }
+  ul.plain { padding-left: 1.1rem; }
+  ul.plain li { margin: .35rem 0; }
+
+  footer {
+    margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid var(--rule);
+    font-family: "IBM Plex Mono", monospace; font-size: .76rem; color: var(--faint);
+    line-height: 1.7;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .bar, .barfill { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Routing diagnostic &middot; oracle comparison</p>
+    <h1>Where NIRT Misroutes</h1>
+    <p class="verdict">On RouterBench test the NIRT router has collapsed to a
+      near-constant policy: it sends <b>98.5% of queries to GPT&#8209;4</b>, the
+      single best-on-average model. Its accuracy against the oracle is
+      <b>indistinguishable from &mdash; fractionally worse than &mdash; an
+      unconditional &ldquo;always GPT&#8209;4&rdquo; rule.</b></p>
+    <div class="runstrip mono">
+      <span><b>run</b> nirt-2d-projected</span>
+      <span><b>orientation</b> query_latent</span>
+      <span><b>K</b> 2</span>
+      <span><b>split</b> test &middot; 7,354 q</span>
+      <span><b>pool</b> 11 models</span>
+      <span><b>target</b> y_soft (chance-corrected)</span>
+    </div>
+  </header>
+
+  <div class="stats">
+    <div class="stat">
+      <span class="n">82.1%</span>
+      <span class="l">any-best hit rate<br>(selected attains the top score)</span>
+    </div>
+    <div class="stat">
+      <span class="n bad">1,320</span>
+      <span class="l">mis-routed queries<br>(regret &gt; 0.02) &mdash; 17.9%</span>
+    </div>
+    <div class="stat">
+      <span class="n bad">0.127</span>
+      <span class="l">mean routing regret<br>vs 0.127 for &ldquo;always GPT-4&rdquo;</span>
+    </div>
+    <div class="stat">
+      <span class="n">$5.67</span>
+      <span class="l">cost / 1k queries<br>oracle reaches the same quality at $1.50</span>
+    </div>
+  </div>
+
+  <p>Every model in the pool sees the same estimator: NIRT predicts
+    <span class="eq">E[Y | q, m]</span> for each candidate, then routes to
+    <span class="eq">argmax<sub>m</sub></span>. The <b>oracle</b> is the cheapest
+    model that actually attains each query&rsquo;s best observed score &mdash;
+    an evaluation target only, never seen in training. <b>Regret</b> is the
+    quality the router left on the table: <span class="eq">max<sub>m</sub> y(q,m)
+    &minus; y(q, m&#770;)</span>. Total regret across the split is
+    <b>936 quality-points</b>; the sections below account for where it comes from.</p>
+
+  <section>
+    <h2><span class="num ui">01</span>The router uses one model</h2>
+    <p class="lede">NIRT&rsquo;s selections against how often each model is
+      <em>a</em> best option for the query. The pool is diverse &mdash; every
+      model is the (tie-inclusive) best on 35&ndash;82% of queries &mdash; but
+      the router never learns to reach for any of them.</p>
+    <figure class="flush">
+      <div class="legend ui">
+        <span><i style="background:var(--accent)"></i>times NIRT routes here</span>
+        <span><i style="background:var(--oracle)"></i>times this model is a best option</span>
+      </div>
+      <div class="scroll">
+        <svg viewBox="0 0 720 336" width="100%" style="min-width:560px" role="img"
+             aria-label="Bar chart. NIRT routes to gpt-4-1106-preview on 7,240 of 7,354 queries and to every other model between 0 and 52 times. Yet each model is individually a best option on 2,634 to 6,036 queries.">
+          <!-- plot area x 182..702 maps 0..8000  (k = 0.065) -->
+          <g font-family="IBM Plex Mono, monospace" font-size="10" fill="var(--faint)">
+            <line x1="182" y1="8" x2="182" y2="290" stroke="var(--rule-strong)"/>
+            <line x1="312" y1="8" x2="312" y2="290" stroke="var(--rule)"/>
+            <line x1="442" y1="8" x2="442" y2="290" stroke="var(--rule)"/>
+            <line x1="572" y1="8" x2="572" y2="290" stroke="var(--rule)"/>
+            <line x1="702" y1="8" x2="702" y2="290" stroke="var(--rule)"/>
+            <text x="312" y="305" text-anchor="middle">2,000</text>
+            <text x="442" y="305" text-anchor="middle">4,000</text>
+            <text x="572" y="305" text-anchor="middle">6,000</text>
+            <text x="702" y="305" text-anchor="middle">8,000</text>
+            <text x="442" y="326" text-anchor="middle" fill="var(--slate)">queries (split total 7,354)</text>
+            <text x="716" y="326" text-anchor="end" fill="var(--slate)">routed here</text>
+          </g>
+          <g font-family="IBM Plex Mono, monospace" font-size="10.5">
+            <!-- row height 25, first baseline 24 -->
+            <g transform="translate(0,12)">
+              <text x="174" y="13" text-anchor="end" fill="var(--ink)">gpt-4-1106-preview</text>
+              <rect x="182" y="4" width="392.3" height="7" fill="var(--oracle)"/>
+              <rect x="182" y="2.5" width="470.6" height="11" fill="var(--accent)"/>
+              <text x="716" y="12" text-anchor="end" fill="var(--accent)">7,240</text>
+            </g>
+            <g transform="translate(0,37)">
+              <text x="174" y="13" text-anchor="end" fill="var(--ink)">yi-34b-chat</text>
+              <rect x="182" y="4" width="332.2" height="7" fill="var(--oracle)"/>
+              <rect x="182" y="2.5" width="3.4" height="11" fill="var(--accent)"/>
+              <text x="716" y="12" text-anchor="end" fill="var(--faint)">52</text>
+            </g>
+            <g transform="translate(0,62)">
+              <text x="174" y="13" text-anchor="end" fill="var(--ink)">claude-v1</text>
+              <rect x="182" y="4" width="325.5" height="7" fill="var(--oracle)"/>
+              <rect x="182" y="2.5" width="1" height="11" fill="var(--accent)"/>
+              <text x="716" y="12" text-anchor="end" fill="var(--faint)">12</text>
+            </g>
+            <g transform="translate(0,87)">
+              <text x="174" y="13" text-anchor="end" fill="var(--ink)">gpt-3.5-turbo-1106</text>
+              <rect x="182" y="4" width="323.8" height="7" fill="var(--oracle)"/>
+              <text x="716" y="12" text-anchor="end" fill="var(--faint)">0</text>
+            </g>
+            <g transform="translate(0,112)">
+              <text x="174" y="13" text-anchor="end" fill="var(--ink)">claude-instant-v1</text>
+              <rect x="182" y="4" width="302.3" height="7" fill="var(--oracle)"/>
+              <rect x="182" y="2.5" width="3.3" height="11" fill="var(--accent)"/>
+              <text x="716" y="12" text-anchor="end" fill="var(--faint)">50</text>
+            </g>
+            <g transform="translate(0,137)">
+              <text x="174" y="13" text-anchor="end" fill="var(--ink)">claude-v2</text>
+              <rect x="182" y="4" width="294.7" height="7" fill="var(--oracle)"/>
+              <text x="716" y="12" text-anchor="end" fill="var(--faint)">0</text>
+            </g>
+            <g transform="translate(0,162)">
+              <text x="174" y="13" text-anchor="end" fill="var(--ink)">mixtral-8x7b-instruct</text>
+              <rect x="182" y="4" width="288.8" height="7" fill="var(--oracle)"/>
+              <text x="716" y="12" text-anchor="end" fill="var(--faint)">0</text>
+            </g>
+            <g transform="translate(0,187)">
+              <text x="174" y="13" text-anchor="end" fill="var(--ink)">wizardlm-13b-v1.2</text>
+              <rect x="182" y="4" width="236.0" height="7" fill="var(--oracle)"/>
+              <text x="716" y="12" text-anchor="end" fill="var(--faint)">0</text>
+            </g>
+            <g transform="translate(0,212)">
+              <text x="174" y="13" text-anchor="end" fill="var(--ink)">llama-2-70b-chat</text>
+              <rect x="182" y="4" width="228.7" height="7" fill="var(--oracle)"/>
+              <text x="716" y="12" text-anchor="end" fill="var(--faint)">0</text>
+            </g>
+            <g transform="translate(0,237)">
+              <text x="174" y="13" text-anchor="end" fill="var(--ink)">mistral-7b-instruct</text>
+              <rect x="182" y="4" width="189.4" height="7" fill="var(--oracle)"/>
+              <text x="716" y="12" text-anchor="end" fill="var(--faint)">0</text>
+            </g>
+            <g transform="translate(0,262)">
+              <text x="174" y="13" text-anchor="end" fill="var(--ink)">code-llama-34b-instruct</text>
+              <rect x="182" y="4" width="171.2" height="7" fill="var(--oracle)"/>
+              <text x="716" y="12" text-anchor="end" fill="var(--faint)">0</text>
+            </g>
+          </g>
+        </svg>
+      </div>
+      <figcaption>The teal bar for every model clears 2,600 queries; the indigo
+        routing bar clears 4 for only three of them. Raising latent dimension to
+        <span class="mono">K=16</span> (<span class="mono">rb-nirt-nopref-v2</span>)
+        spreads the picks slightly &mdash; GPT-4 down to 84% &mdash; with no change
+        in regret (0.126).</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2><span class="num ui">02</span>The errors are total, not marginal</h2>
+    <p class="lede">Regret among the 1,320 mis-routes is sharply bimodal. A third
+      are near-misses; the rest are complete &mdash; the router picked a model
+      that scored ~0 where another scored ~1.</p>
+    <figure>
+      <table class="datatable">
+        <thead><tr><th>regret band</th><th class="num">queries</th><th class="bar-cell">share of all 936 regret-points</th><th class="num">points</th></tr></thead>
+        <tbody>
+          <tr><td class="name">0.10 &ndash; 0.25</td><td class="num">464</td>
+            <td class="bar-cell"><span class="bar-track" style="display:block"><span class="bar" style="width:12.4%"></span></span></td><td class="num">116</td></tr>
+          <tr><td class="name">0.25 &ndash; 0.50</td><td class="num">62</td>
+            <td class="bar-cell"><span class="bar-track" style="display:block"><span class="bar" style="width:3.3%"></span></span></td><td class="num">31</td></tr>
+          <tr><td class="name">0.50 &ndash; 0.90</td><td class="num">18</td>
+            <td class="bar-cell"><span class="bar-track" style="display:block"><span class="bar" style="width:1.4%"></span></span></td><td class="num">14</td></tr>
+          <tr><td class="name">0.90 &ndash; 1.00</td><td class="num">776</td>
+            <td class="bar-cell"><span class="bar-track" style="display:block"><span class="bar" style="width:82.9%"></span></span></td><td class="num">776</td></tr>
+        </tbody>
+      </table>
+      <figcaption><b>776 queries &mdash; 59% of the mis-routes &mdash; carry 83% of
+        all regret</b>, each one a case where the router had a model that aced the
+        query and chose one that failed it outright. On <b>86%</b> of the regret
+        mass, some pool model scored &ge; 0.8; the capability was there to be
+        used.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2><span class="num ui">03</span>It concentrates on a few task types</h2>
+    <p class="lede">Regret by dataset. Two multiple-choice benchmarks &mdash;
+      HellaSwag and grade-school math &mdash; account for 41% of it. These are
+      exactly the tasks where GPT-4 has idiosyncratic wrong answers a smaller
+      model happens to get right.</p>
+    <figure>
+      <div class="scroll">
+      <table class="datatable">
+        <thead><tr><th>dataset</th><th class="num">queries</th><th class="num">any-best</th><th class="bar-cell">regret mass</th><th class="num">share</th></tr></thead>
+        <tbody>
+          <tr><td class="name">hellaswag</td><td class="num">1,976</td><td class="num">87.6%</td>
+            <td class="bar-cell"><span class="bar-track" style="display:block"><span class="bar" style="width:100%"></span></span></td><td class="num">26.3%</td></tr>
+          <tr><td class="name">grade-school-math</td><td class="num">1,586</td><td class="num">68.9%</td>
+            <td class="bar-cell"><span class="bar-track" style="display:block"><span class="bar" style="width:57.3%"></span></span></td><td class="num">15.1%</td></tr>
+          <tr><td class="name">mmlu-professional-law</td><td class="num">300</td><td class="num">74.3%</td>
+            <td class="bar-cell"><span class="bar-track" style="display:block"><span class="bar" style="width:31.3%"></span></span></td><td class="num">8.2%</td></tr>
+          <tr><td class="name">winogrande</td><td class="num">250</td><td class="num">81.6%</td>
+            <td class="bar-cell"><span class="bar-track" style="display:block"><span class="bar" style="width:18.7%"></span></span></td><td class="num">4.9%</td></tr>
+          <tr><td class="name">consensus_summary</td><td class="num">80</td><td class="num"><span class="pill">22.5%</span></td>
+            <td class="bar-cell"><span class="bar-track" style="display:block"><span class="bar" style="width:13.4%"></span></span></td><td class="num">3.5%</td></tr>
+          <tr><td class="name">mmlu-high-school-mathematics</td><td class="num">58</td><td class="num">60.3%</td>
+            <td class="bar-cell"><span class="bar-track" style="display:block"><span class="bar" style="width:9.3%"></span></span></td><td class="num">2.5%</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <figcaption>Free-form <span class="mono">accuracy</span> tasks route worse
+        overall (69.7% any-best) than <span class="mono">mc_accuracy</span>
+        (86.8%), but MC carries more regret by sheer volume.
+        <span class="mono">consensus_summary</span> is the worst-served slice at
+        22.5%.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2><span class="num ui">04</span>Every wrong turn goes the same direction</h2>
+    <p class="lede">On mis-routed queries: how often each model was
+      <em>wrongly picked</em> vs how often it was a best option the router
+      <em>passed over</em>.</p>
+    <figure>
+      <div class="scroll">
+      <table class="datatable">
+        <thead><tr><th>model</th><th class="num">wrongly picked</th><th class="num">wrongly skipped</th><th class="num">net</th></tr></thead>
+        <tbody>
+          <tr><td class="name">gpt-4-1106-preview</td><td class="num">1,304</td><td class="num">10</td><td class="num"><span class="pill">+1,294</span></td></tr>
+          <tr><td class="name">claude-instant-v1</td><td class="num">8</td><td class="num">567</td><td class="num"><span class="pill ok">&minus;559</span></td></tr>
+          <tr><td class="name">claude-v1</td><td class="num">8</td><td class="num">583</td><td class="num"><span class="pill ok">&minus;575</span></td></tr>
+          <tr><td class="name">claude-v2</td><td class="num">0</td><td class="num">557</td><td class="num"><span class="pill ok">&minus;557</span></td></tr>
+          <tr><td class="name">yi-34b-chat</td><td class="num">0</td><td class="num">516</td><td class="num"><span class="pill ok">&minus;516</span></td></tr>
+          <tr><td class="name">gpt-3.5-turbo-1106</td><td class="num">0</td><td class="num">486</td><td class="num"><span class="pill ok">&minus;486</span></td></tr>
+          <tr><td class="name">mixtral-8x7b-instruct</td><td class="num">0</td><td class="num">411</td><td class="num"><span class="pill ok">&minus;411</span></td></tr>
+          <tr><td class="name">&hellip; 4 more</td><td class="num">0</td><td class="num">241&ndash;376</td><td class="num" style="color:var(--faint)">&minus;</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <figcaption>GPT-4 is the wrong pick <b>1,304 times</b> and the missed pick
+        only 10. The heaviest single swap is
+        <span class="mono">mistral-7b-instruct &rarr; gpt-4</span> (300 queries,
+        224 regret-points), followed by
+        <span class="mono">wizardlm-13b</span> and
+        <span class="mono">yi-34b &rarr; gpt-4</span>. There is no compensating
+        error in the other direction.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2><span class="num ui">05</span>The right model is usually its second choice</h2>
+    <p class="lede">On mis-routes, where NIRT ranked the best model it could have
+      picked, within its own 11-way predicted ordering.</p>
+    <figure>
+      <table class="datatable">
+        <thead><tr><th>NIRT rank of the best available model</th><th class="num">queries</th><th class="bar-cell"></th><th class="num">% of misroutes</th></tr></thead>
+        <tbody>
+          <tr><td class="name">#2 &mdash; just behind GPT-4</td><td class="num">651</td>
+            <td class="bar-cell"><span class="bar-track" style="display:block"><span class="bar a" style="width:100%"></span></span></td><td class="num">49.3%</td></tr>
+          <tr><td class="name">#3</td><td class="num">211</td>
+            <td class="bar-cell"><span class="bar-track" style="display:block"><span class="bar a" style="width:32.4%"></span></span></td><td class="num">16.0%</td></tr>
+          <tr><td class="name">#4 &ndash; #5</td><td class="num">204</td>
+            <td class="bar-cell"><span class="bar-track" style="display:block"><span class="bar a" style="width:31.3%"></span></span></td><td class="num">15.5%</td></tr>
+          <tr><td class="name">#6 &ndash; #8</td><td class="num">191</td>
+            <td class="bar-cell"><span class="bar-track" style="display:block"><span class="bar a" style="width:29.3%"></span></span></td><td class="num">14.5%</td></tr>
+          <tr><td class="name">#9 &ndash; #11</td><td class="num">63</td>
+            <td class="bar-cell"><span class="bar-track" style="display:block"><span class="bar a" style="width:9.7%"></span></span></td><td class="num">4.8%</td></tr>
+        </tbody>
+      </table>
+      <figcaption>Half the time the router has the right model ranked #2 &mdash;
+        it isn&rsquo;t blind to it, it just never noses it ahead of GPT-4. Median
+        rank of that model is 3 of 11. Its predicted scores are compressed:
+        within-query spread is <span class="mono">0.14</span> against a true
+        spread of <span class="mono">0.35</span>, so GPT-4&rsquo;s flat
+        ~<span class="mono">0.80</span> ceiling wins the argmax almost
+        everywhere.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2><span class="num ui">06</span>Diagnosis</h2>
+    <div class="diag">
+      <h3>The objective rewards calibration, not ranking</h3>
+      <p>NIRT is trained with per-cell <span class="eq">soft_bce</span> on
+        <span class="eq">y(q,m)</span>. That loss is minimised by getting each
+        model&rsquo;s <em>marginal</em> probability right &mdash; and the
+        lowest-loss way to do that, given a weak
+        <span class="eq">&theta;<sub>q</sub></span>, is to output each
+        model&rsquo;s base rate. GPT-4&rsquo;s base rate is highest, so
+        <span class="eq">argmax<sub>m</sub></span> picks it every time.</p>
+      <p>In the logit <span class="eq">a<sub>m</sub>&middot;&theta;<sub>q</sub>
+        &minus; b<sub>m</sub></span>, the per-model bias
+        <span class="eq">b<sub>m</sub></span> dominates and the query term barely
+        moves the ordering. Going from <span class="mono">K=2</span> to
+        <span class="mono">K=16</span> adds latent capacity but not ranking
+        signal &mdash; regret is unchanged &mdash; so the bottleneck is the
+        training target, not the model size.</p>
+    </div>
+    <p>The router already <em>contains</em> the information (Section 05): it
+      just needs a loss that is paid to order models <em>within</em> a query.</p>
+    <ul class="next">
+      <li><span class="k">P5</span> Switch to a routing-aware loss &mdash;
+        <span class="mono">pairwise</span> / <span class="mono">listwise</span> /
+        <span class="mono">bce_pairwise</span> with
+        <span class="mono">sampler=query</span> &mdash; and select on
+        <span class="mono">val_metric=regret</span>, not BCE.</li>
+      <li><span class="k">check</span> Track <span class="mono">any-best hit
+        rate</span> and the selected-model mix during training; a healthy router
+        should spread across the pool the way the teal bars do.</li>
+      <li><span class="k">data</span> Over-weight the bimodal tail &mdash;
+        HellaSwag, grade-school-math, MMLU-law &mdash; where a cheap model beats
+        GPT-4; those queries are the entire regret budget.</li>
+      <li><span class="k">cost</span> Even a correct quality router should be run
+        cost-aware (<span class="mono">&lambda;&gt;0</span>): the oracle matches
+        its quality at <span class="mono">$1.50/1k</span> against
+        <span class="mono">$5.67</span>.</li>
+    </ul>
+  </section>
+
+  <footer>
+    nirt-2d-projected &middot; RouterBench test &middot; 7,354 queries &middot; 11-model pool<br>
+    scripts/nirt/route_eval.py --run nirt-2d-projected --split test --per-query-model<br>
+    scripts/nirt/misroute_analysis.py --run nirt-2d-projected --split test<br>
+    oracle = cheapest model attaining each query&rsquo;s max observed y_soft; tie-inclusive; evaluation-only.
+  </footer>
+</div>
+</body>
+</html>

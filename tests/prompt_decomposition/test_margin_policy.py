@@ -80,6 +80,12 @@ class TestSelection:
         d = MarginRoutingPolicy().decide(_context(), [])
         assert d.selected_model_id is None and d.confidence == 0.0
 
+    def test_an_unpriced_model_never_wins_on_price(self):
+        scores = _scores()
+        scores[1].expected_cost = float("nan")    # `mid`: inside the margin, unpriced
+        d = MarginRoutingPolicy(margin=0.02).decide(_context(), scores)
+        assert d.selected_model_id == "strong"
+
     def test_a_negative_margin_is_refused(self):
         with pytest.raises(ValueError, match="margin must be >= 0"):
             MarginRoutingPolicy(margin=-0.1)

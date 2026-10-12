@@ -7,7 +7,7 @@ onto the adapter-based :class:`~router.llm.client.LLMClient` contract.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 
 from ..client import LLMResponse
 from .base import Prompt, ProviderAdapter
@@ -26,8 +26,12 @@ class EchoAdapter(ProviderAdapter):
         snippet = " ".join(str(prompt).split())[:160]
         return LLMResponse(content=f"[{self.prefix}::{self.model}] {snippet}", cost=0.0)
 
-    def stream(self, prompt: Prompt, **generation_kwargs) -> Iterator[str]:
-        yield self.complete(prompt, **generation_kwargs).content
+    def stream(self, prompt: Prompt, **generation_kwargs) -> Generator[str, None, LLMResponse]:
+        # one chunk; the full response (usage, cost) is the generator's return
+        # value, as real adapters return it -- see LLMClient.stream
+        resp = self.complete(prompt, **generation_kwargs)
+        yield resp.content
+        return resp
 
 
 class CallableAdapter(ProviderAdapter):
@@ -44,5 +48,9 @@ class CallableAdapter(ProviderAdapter):
             return out
         return LLMResponse(content=str(out))
 
-    def stream(self, prompt: Prompt, **generation_kwargs) -> Iterator[str]:
-        yield self.complete(prompt, **generation_kwargs).content
+    def stream(self, prompt: Prompt, **generation_kwargs) -> Generator[str, None, LLMResponse]:
+        # one chunk; the full response (usage, cost) is the generator's return
+        # value, as real adapters return it -- see LLMClient.stream
+        resp = self.complete(prompt, **generation_kwargs)
+        yield resp.content
+        return resp

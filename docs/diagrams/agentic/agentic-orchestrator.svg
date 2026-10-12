@@ -1,0 +1,454 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-180 -40 3430 3628" width="3430" height="3628">
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#1e1e1e" />
+    </marker>
+  </defs>
+  <rect x="-180" y="-40" width="3430" height="3628" fill="#ffffff" />
+  <rect x="30" y="0" width="2930" height="222" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="30" y="499" width="575" height="446" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="30" y="723" width="1160" height="622" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="30" y="1350" width="1363" height="694" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="820" y="1550" width="380" height="694" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="1215" y="1550" width="1160" height="1246" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="425" y="2774" width="1168" height="774" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="540" y="200" width="2420" height="294" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="60" y="72" width="320" height="108" rx="8" ry="8" fill="#dee2e6" stroke="#495057" stroke-width="2" opacity="1" />
+  <rect x="570" y="60" width="320" height="132" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="1080" y="60" width="320" height="132" rx="8" ry="8" fill="#d0bfff" stroke="#7048e8" stroke-width="2" opacity="1" />
+  <rect x="1590" y="60" width="320" height="132" rx="8" ry="8" fill="#ffec99" stroke="#f08c00" stroke-width="2" opacity="1" />
+  <rect x="2100" y="84" width="320" height="84" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="2610" y="72" width="320" height="108" rx="8" ry="8" fill="#a5d8ff" stroke="#1971c2" stroke-width="2" opacity="1" />
+  <rect x="255" y="559" width="320" height="156" rx="8" ry="8" fill="#ffec99" stroke="#f08c00" stroke-width="2" opacity="1" />
+  <rect x="60" y="783" width="320" height="132" rx="8" ry="8" fill="#ffc9c9" stroke="#e03131" stroke-width="2" opacity="1" />
+  <rect x="450" y="783" width="320" height="132" rx="8" ry="8" fill="#d0bfff" stroke="#7048e8" stroke-width="2" opacity="1" />
+  <rect x="60" y="983" width="320" height="132" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="450" y="983" width="320" height="132" rx="8" ry="8" fill="#d0bfff" stroke="#7048e8" stroke-width="2" opacity="1" />
+  <rect x="840" y="983" width="320" height="108" rx="8" ry="8" fill="#ffd8a8" stroke="#e8590c" stroke-width="2" opacity="1" />
+  <rect x="60" y="1183" width="320" height="132" rx="8" ry="8" fill="#ffc9c9" stroke="#e03131" stroke-width="2" opacity="1" />
+  <rect x="1043" y="1410" width="320" height="132" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="60" y="1610" width="320" height="132" rx="8" ry="8" fill="#dee2e6" stroke="#495057" stroke-width="2" opacity="1" />
+  <rect x="455" y="1610" width="320" height="180" rx="8" ry="8" fill="#d0bfff" stroke="#7048e8" stroke-width="2" opacity="1" />
+  <rect x="455" y="1858" width="320" height="156" rx="8" ry="8" fill="#a5d8ff" stroke="#1971c2" stroke-width="2" opacity="1" />
+  <rect x="850" y="1610" width="320" height="180" rx="8" ry="8" fill="#ffc9c9" stroke="#e03131" stroke-width="2" opacity="1" />
+  <rect x="850" y="1858" width="320" height="156" rx="8" ry="8" fill="#ffec99" stroke="#f08c00" stroke-width="2" opacity="1" />
+  <rect x="850" y="2082" width="320" height="132" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="1635" y="1610" width="320" height="156" rx="8" ry="8" fill="#d0bfff" stroke="#7048e8" stroke-width="2" opacity="1" />
+  <rect x="1635" y="1834" width="320" height="132" rx="8" ry="8" fill="#a5d8ff" stroke="#1971c2" stroke-width="2" opacity="1" />
+  <rect x="1635" y="2034" width="320" height="132" rx="8" ry="8" fill="#a5d8ff" stroke="#1971c2" stroke-width="2" opacity="1" />
+  <rect x="1475" y="2234" width="250" height="108" rx="8" ry="8" fill="#dee2e6" stroke="#495057" stroke-width="2" opacity="1" />
+  <rect x="1795" y="2234" width="320" height="108" rx="8" ry="8" fill="#dee2e6" stroke="#495057" stroke-width="2" opacity="1" />
+  <rect x="1440" y="2410" width="320" height="132" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="1245" y="2610" width="320" height="156" rx="8" ry="8" fill="#ffc9c9" stroke="#e03131" stroke-width="2" opacity="1" />
+  <rect x="1635" y="2610" width="320" height="108" rx="8" ry="8" fill="#ffc9c9" stroke="#e03131" stroke-width="2" opacity="1" />
+  <rect x="2025" y="2610" width="320" height="108" rx="8" ry="8" fill="#ffc9c9" stroke="#e03131" stroke-width="2" opacity="1" />
+  <rect x="1243" y="2834" width="320" height="132" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="1243" y="3034" width="320" height="132" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="850" y="3034" width="320" height="132" rx="8" ry="8" fill="#ffec99" stroke="#f08c00" stroke-width="2" opacity="1" />
+  <rect x="490" y="3234" width="250" height="108" rx="8" ry="8" fill="#a5d8ff" stroke="#1971c2" stroke-width="2" opacity="1" />
+  <rect x="455" y="3410" width="320" height="108" rx="8" ry="8" fill="#dee2e6" stroke="#495057" stroke-width="2" opacity="1" />
+  <rect x="1248" y="3234" width="310" height="108" rx="8" ry="8" fill="#ffd8a8" stroke="#e8590c" stroke-width="2" opacity="1" />
+  <rect x="570" y="272" width="320" height="180" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="1080" y="284" width="320" height="156" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="1590" y="296" width="320" height="132" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="2100" y="272" width="320" height="180" rx="8" ry="8" fill="#ffd8a8" stroke="#e8590c" stroke-width="2" opacity="1" />
+  <rect x="2610" y="260" width="320" height="204" rx="8" ry="8" fill="#d0bfff" stroke="#7048e8" stroke-width="2" opacity="1" />
+  <polyline points="380,126 570,126" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="890,126 1080,126" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="730,192 730,272" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1400,126 1590,126" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1910,126 2100,126" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="2420,126 2610,126" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="2100,126 575,637" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="2610,126 -130,126 -130,3288 490,3288" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="2610,126 -80,126 -80,3100 1243,3100" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="415,715 220,783" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="415,715 610,783" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="220,915 1010,3034" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="380,849 450,849" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="450,849 380,1049" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="380,1049 450,1049" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="770,1049 840,1037" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="840,1037 380,1249" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1000,1091 1202.5,1410" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="60,1249 -130,1249 -130,3100 1243,3100" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1042.5,1476 380,1676" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1042.5,1476 775,1700" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="615,1790 615,1858" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="615,2014 615,3234" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1202.5,1542 1010,1610" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1362.5,1476 1635,1688" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1010,1790 1010,3034" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1010,1790 1010,1858" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1010,2014 1010,3034" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1010,2014 1010,2082" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1010,2214 1402.5,2834" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1170,1936 1635,1688" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1795,1766 1795,1834" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1795,1966 1795,2034" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1635,2100 1725,2288" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1600,2342 1600,2410" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1795,2166 1955,2234" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1955,2342 2185,2610" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1170,2148 2025,2664" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1440,2476 -30,2476 -30,1049 450,1049" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1600,2542 1405,2610" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1760,2476 1635,2664" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1405,2766 1402.5,2834" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1635,2664 1562.5,2900" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="2025,2664 1562.5,2900" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1402.5,2966 1402.5,3034" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="850,3100 740,3288" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="615,3342 615,3410" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1402.5,3166 1402.5,3234" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="890,362 1080,362" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1400,362 1590,362" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1910,362 2100,362" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="2420,362 2610,362" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1400,126 2610,362" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="775,1700 3020,1700 3020,362 2930,362" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1170,3100 3070,3100 3070,362 2930,362" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <text x="38" y="22" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#495057" text-anchor="start">
+    <tspan x="38" dy="0">Request entry + triage</tspan>
+  </text>
+  <text x="38" y="521" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#495057" text-anchor="start">
+    <tspan x="38" dy="0">Decompose</tspan>
+  </text>
+  <text x="38" y="745" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#495057" text-anchor="start">
+    <tspan x="38" dy="0">Plan / forecast / budget</tspan>
+  </text>
+  <text x="38" y="1372" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#495057" text-anchor="start">
+    <tspan x="38" dy="0">Execute by level + route_late</tspan>
+  </text>
+  <text x="828" y="1572" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#495057" text-anchor="start">
+    <tspan x="828" dy="0">Quality check</tspan>
+  </text>
+  <text x="1223" y="1572" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#495057" text-anchor="start">
+    <tspan x="1223" dy="0">Repair round</tspan>
+  </text>
+  <text x="433" y="2796" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#495057" text-anchor="start">
+    <tspan x="433" dy="0">Result + LLM dispatch</tspan>
+  </text>
+  <text x="548" y="222" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#495057" text-anchor="start">
+    <tspan x="548" dy="0">NEW: score_all_models (scope boundary)</tspan>
+  </text>
+  <text x="220" y="122" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#495057" text-anchor="middle">
+    <tspan x="220" dy="0">Prompt</tspan>
+    <tspan x="220" dy="20">(str | messages | Conversation)</tspan>
+  </text>
+  <text x="730" y="112" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="730" dy="0">AgenticRouter.run</tspan>
+    <tspan x="730" dy="20">_begin: latest turn, history,</tspan>
+    <tspan x="730" dy="20">per-run state (max_calls, alpha)</tspan>
+  </text>
+  <text x="1240" y="112" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#7048e8" text-anchor="middle">
+    <tspan x="1240" dy="0">route_decision</tspan>
+    <tspan x="1240" dy="20">RouterModel (NIRT / kNN)</tspan>
+    <tspan x="1240" dy="20">scores the narrow, ClientRegistry-dispatchable pool</tspan>
+  </text>
+  <text x="1750" y="112" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#f08c00" text-anchor="middle">
+    <tspan x="1750" dy="0">Triage</tspan>
+    <tspan x="1750" dy="20">Heuristic (q* &lt; 0.55 or multi-part)</tspan>
+    <tspan x="1750" dy="20">/ LLMTriage -&gt; TriageDecision{mode}</tspan>
+  </text>
+  <text x="2260" y="132" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="2260" dy="0">_solve(prompt, depth, decision)</tspan>
+  </text>
+  <text x="2770" y="122" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#1971c2" text-anchor="middle">
+    <tspan x="2770" dy="0">_answer_directly -&gt; _call_model -&gt; _leaf</tspan>
+    <tspan x="2770" dy="20">(single mode, or depth &gt;= max_depth)</tspan>
+  </text>
+  <text x="415" y="613" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#f08c00" text-anchor="middle">
+    <tspan x="415" dy="0">decompose_plan gate: _skip_decomposition</tspan>
+    <tspan x="415" dy="20">looks_atomic (root) / is_multipart (sub-task)</tspan>
+    <tspan x="415" dy="20">only orchestrator: PlanOrchestratorBridge</tspan>
+    <tspan x="415" dy="20">(no recursive/tool-calling alt - orchestrator.py deleted)</tspan>
+  </text>
+  <text x="220" y="835" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e03131" text-anchor="middle">
+    <tspan x="220" dy="0">LLMDecomposer.plan(prompt) -&gt; parse_plan_lines</tspan>
+    <tspan x="220" dy="20">'2. [after 1] [150-300 words, max 450] task'</tspan>
+    <tspan x="220" dy="20">numbered lines only; dedupe -&gt; list[SubTask]</tspan>
+  </text>
+  <text x="610" y="835" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#7048e8" text-anchor="middle">
+    <tspan x="610" dy="0">Plan-time routing: RoutedOrchestrator.plan</tspan>
+    <tspan x="610" dy="20">one batched route_text (_route_batch)</tspan>
+    <tspan x="610" dy="20">per sub-prompt</tspan>
+  </text>
+  <text x="220" y="1035" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="220" dy="0">Plan: PlanStep DAG (_new_step)</tspan>
+    <tspan x="220" dy="20">dependencies + word budget</tspan>
+    <tspan x="220" dy="20">(budget_mid_tokens / DEFAULT_BUDGET)</tspan>
+  </text>
+  <text x="610" y="1035" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#7048e8" text-anchor="middle">
+    <tspan x="610" dy="0">Forecast/admit: RoutedOrchestrator._score</tspan>
+    <tspan x="610" dy="20">PlanForecaster / RouterPlanForecaster.score_plan</tspan>
+    <tspan x="610" dy="20">cost / quality / latency</tspan>
+  </text>
+  <text x="1000" y="1033" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e8590c" text-anchor="middle">
+    <tspan x="1000" dy="0">BudgetLedger.resize</tspan>
+    <tspan x="1000" dy="20">reserve plan.budget_estimate()</tspan>
+  </text>
+  <text x="220" y="1235" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e03131" text-anchor="middle">
+    <tspan x="220" dy="0">over_budget</tspan>
+    <tspan x="220" dy="20">TaskStatus.TERMINATED, error_code=over_budget</tspan>
+    <tspan x="220" dy="20">nothing ran, nothing spent</tspan>
+  </text>
+  <text x="1203" y="1462" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="1203" dy="0">RoutedOrchestrator.execute(plan)</tspan>
+    <tspan x="1203" dy="20">_levels: topological groups by satisfied deps</tspan>
+    <tspan x="1203" dy="20">parallel within a level (ThreadPoolExecutor)</tspan>
+  </text>
+  <text x="220" y="1662" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#495057" text-anchor="middle">
+    <tspan x="220" dy="0">_blocked_call</tspan>
+    <tspan x="220" dy="20">error=dependency_failed, no model call</tspan>
+    <tspan x="220" dy="20">(ROUTEDORCHESTRATOR-004: still counted in models_used())</tspan>
+  </text>
+  <text x="615" y="1666" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#7048e8" text-anchor="middle">
+    <tspan x="615" dy="0">_assign_models: route_late</tspan>
+    <tspan x="615" dy="20">re-routes any non-pinned step whose contextual</tspan>
+    <tspan x="615" dy="20">prompt changed (escalated steps stay pinned)</tspan>
+    <tspan x="615" dy="20">(ROUTEDORCHESTRATOR-001: bypasses budget re-admission</tspan>
+    <tspan x="615" dy="20">ROUTEDORCHESTRATOR-003: dep context not in input estimate)</tspan>
+  </text>
+  <text x="615" y="1912" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#1971c2" text-anchor="middle">
+    <tspan x="615" dy="0">_run_step -&gt; agent._call_model</tspan>
+    <tspan x="615" dy="20">+ budget_instruction(step.budget)</tspan>
+    <tspan x="615" dy="20">max_tokens = budget_max_tokens</tspan>
+    <tspan x="615" dy="20">(TOKENS_PER_WORD=1.35 x SAFETY_FACTOR=2.0 = 2.7x)</tspan>
+  </text>
+  <text x="1010" y="1666" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e03131" text-anchor="middle">
+    <tspan x="1010" dy="0">Synthesize: self.synthesize(task.prompt, subcalls)</tspan>
+    <tspan x="1010" dy="20">derive_final_budget = 60% of step budgets</tspan>
+    <tspan x="1010" dy="20">only successful answers</tspan>
+    <tspan x="1010" dy="20">(ROUTEDORCHESTRATOR-002: synth + judge calls</tspan>
+    <tspan x="1010" dy="20">never charged to the budget ledger)</tspan>
+  </text>
+  <text x="1010" y="1912" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#f08c00" text-anchor="middle">
+    <tspan x="1010" dy="0">Quality check: self.checker (QualityChecker)</tspan>
+    <tspan x="1010" dy="20">parse_verdict -&gt; QualityVerdict</tspan>
+    <tspan x="1010" dy="20">VERDICT/SCORE/WEAK_STEPS/FOLLOW_UPS/ISSUES</tspan>
+    <tspan x="1010" dy="20">pass_score default 7.0</tspan>
+  </text>
+  <text x="1010" y="2134" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="1010" dy="0">Track best round: self.best</tspan>
+    <tspan x="1010" dy="20">passed &gt; unverified &gt; judged-failing,</tspan>
+    <tspan x="1010" dy="20">then score (later round wins ties)</tspan>
+  </text>
+  <text x="1795" y="1664" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#7048e8" text-anchor="middle">
+    <tspan x="1795" dy="0">Escalate weak + failed steps (_escalate/_escalation_pick)</tspan>
+    <tspan x="1795" dy="20">never a previously-tried model</tspan>
+    <tspan x="1795" dy="20">cheapest stronger, else best untried, else exhausted</tspan>
+    <tspan x="1795" dy="20">-&gt; pinned (stays pinned through route_late)</tspan>
+  </text>
+  <text x="1795" y="1886" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#1971c2" text-anchor="middle">
+    <tspan x="1795" dy="0">Dependents of re-run steps (_dependents)</tspan>
+    <tspan x="1795" dy="20">lose cached output -&gt; re-run</tspan>
+    <tspan x="1795" dy="20">with fresh context (not escalated)</tspan>
+  </text>
+  <text x="1795" y="2086" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#1971c2" text-anchor="middle">
+    <tspan x="1795" dy="0">Checker follow-ups -&gt; new PlanSteps</tspan>
+    <tspan x="1795" dy="20">(_follow_up_steps); [after N] = reviewed step N</tspan>
+    <tspan x="1795" dy="20">capped at limits.max_fanout (default 8); unscorable dropped</tspan>
+  </text>
+  <text x="1600" y="2284" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#495057" text-anchor="middle">
+    <tspan x="1600" dy="0">Every other step</tspan>
+    <tspan x="1600" dy="20">keeps its paid output</tspan>
+  </text>
+  <text x="1955" y="2284" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#495057" text-anchor="middle">
+    <tspan x="1955" dy="0">_nothing_to_repair: round changes nothing</tspan>
+    <tspan x="1955" dy="20">-&gt; short-circuit, no re-synthesis, no re-judge</tspan>
+  </text>
+  <text x="1600" y="2462" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="1600" dy="0">replan(plan) -&gt; _next_plan</tspan>
+    <tspan x="1600" dy="20">previous plan + repair instructions</tspan>
+    <tspan x="1600" dy="20">re-score -&gt; reserve -&gt; execute (next round)</tspan>
+  </text>
+  <text x="1405" y="2664" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e03131" text-anchor="middle">
+    <tspan x="1405" dy="0">Repair refused over budget</tspan>
+    <tspan x="1405" dy="20">-&gt; best round returned</tspan>
+    <tspan x="1405" dy="20">(PLANORCHESTRATORBRIDGE-001: an all-failed round</tspan>
+    <tspan x="1405" dy="20">refused this way calls the synthesizer with no sub-answers)</tspan>
+  </text>
+  <text x="1795" y="2660" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e03131" text-anchor="middle">
+    <tspan x="1795" dy="0">max_calls ran out inside a helper call</tspan>
+    <tspan x="1795" dy="20">-&gt; best round, stopped_early</tspan>
+  </text>
+  <text x="2185" y="2660" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e03131" text-anchor="middle">
+    <tspan x="2185" dy="0">max_replans reached (limits.max_replans, default 2)</tspan>
+    <tspan x="2185" dy="20">-&gt; best round, flagged failed</tspan>
+  </text>
+  <text x="1403" y="2886" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="1403" dy="0">PlanOrchestratorBridge.run</tspan>
+    <tspan x="1403" dy="20">maps ExecutionResult -&gt; (answer, [SubCall])</tspan>
+    <tspan x="1403" dy="20">back in _solve: becomes a branch SubCall</tspan>
+  </text>
+  <text x="1403" y="3086" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="1403" dy="0">_result builds AgenticResult</tspan>
+    <tspan x="1403" dy="20">steps (superseded marked), cost (total_cost over leaves),</tspan>
+    <tspan x="1403" dy="20">plans (one dict per revision), quality_check, helper_calls</tspan>
+  </text>
+  <text x="1010" y="3086" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#f08c00" text-anchor="middle">
+    <tspan x="1010" dy="0">Routed helpers: decomposer / synthesizer / judge</tspan>
+    <tspan x="1010" dy="20">= cheapest pool model with q &gt;= min_quality</tspan>
+    <tspan x="1010" dy="20">(AgenticRouter.decompose gate vs runaway re-splitting)</tspan>
+  </text>
+  <text x="615" y="3284" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#1971c2" text-anchor="middle">
+    <tspan x="615" dy="0">ClientRegistry</tspan>
+    <tspan x="615" dy="20">model_id -&gt; LLMClient</tspan>
+  </text>
+  <text x="615" y="3460" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#495057" text-anchor="middle">
+    <tspan x="615" dy="0">Adapters</tspan>
+    <tspan x="615" dy="20">Ollama / Anthropic / LangChain / Echo</tspan>
+  </text>
+  <text x="1403" y="3284" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e8590c" text-anchor="middle">
+    <tspan x="1403" dy="0">result_sink</tspan>
+    <tspan x="1403" dy="20">(SQLite, background thread)</tspan>
+  </text>
+  <text x="730" y="328" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="730" dy="0">AgenticRouter.score_all_models(prompt, *,</tspan>
+    <tspan x="730" dy="20">impute_unknown=False, knn_k=10,</tspan>
+    <tspan x="730" dy="20">knn_weighting=&quot;similarity&quot;)</tspan>
+    <tspan x="730" dy="20">SIBLING entry point - NOT part of the</tspan>
+    <tspan x="730" dy="20">decompose / orchestrate / repair flow above</tspan>
+  </text>
+  <text x="1240" y="338" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="1240" dy="0">pool_ids = union</tspan>
+    <tspan x="1240" dy="20">router.model_ids (trained pool)</tspan>
+    <tspan x="1240" dy="20">∪ model_profiles.list_profiled_model_ids(cfg)</tspan>
+    <tspan x="1240" dy="20">(every configs/model_profiles.yaml entry)</tspan>
+  </text>
+  <text x="1750" y="348" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="1750" dy="0">NIRTRouter.predict_pool_scores_text(</tspan>
+    <tspan x="1750" dy="20">[prompt], pool_ids, encoder=self.encoder,</tspan>
+    <tspan x="1750" dy="20">profile_encoder=self.encoder)</tspan>
+  </text>
+  <text x="2260" y="328" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e8590c" text-anchor="middle">
+    <tspan x="2260" dy="0">resolve_pool_profile_matrix(pool_ids)</tspan>
+    <tspan x="2260" dy="20">per id: existing store row / ad hoc render+embed /</tspan>
+    <tspan x="2260" dy="20">+ kNN blend toward trained pool if impute_unknown</tspan>
+    <tspan x="2260" dy="20">deep mechanics: see</tspan>
+    <tspan x="2260" dy="20">docs/diagrams/nirt/nirt-training-and-serving.excalidraw</tspan>
+  </text>
+  <text x="2770" y="318" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#7048e8" text-anchor="middle">
+    <tspan x="2770" dy="0">Scope boundary, not a bug</tspan>
+    <tspan x="2770" dy="20">A high score here never implies ClientRegistry can</tspan>
+    <tspan x="2770" dy="20">dispatch to that model -- separate LookupError.</tspan>
+    <tspan x="2770" dy="20">route_decision / pick_helper_model stay scoped to the</tspan>
+    <tspan x="2770" dy="20">narrow, ClientRegistry-dispatchable pool (also used by</tspan>
+    <tspan x="2770" dy="20">_assign_models/route_late and helper_call above)</tspan>
+  </text>
+  <text x="985" y="131.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="985" dy="0">every user turn</tspan>
+  </text>
+  <text x="730" y="228.5" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="730" dy="0">NEW sibling entry</tspan>
+    <tspan x="730" dy="17.5">(visibility/ranking only)</tspan>
+  </text>
+  <text x="1495" y="131.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1495" dy="0">best model + q*</tspan>
+  </text>
+  <text x="2005" y="131.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="2005" dy="0">TriageDecision</tspan>
+  </text>
+  <text x="2515" y="131.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="2515" dy="0">single / depth cap</tspan>
+  </text>
+  <text x="1337.5" y="386.75" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1337.5" dy="0">orchestrate</tspan>
+  </text>
+  <text x="-80" y="1618.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="-80" dy="0">leaf</tspan>
+  </text>
+  <text x="317.5" y="754.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="317.5" dy="0">not atomic</tspan>
+  </text>
+  <text x="512.5" y="745.5" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="512.5" dy="0">atomic: single SubTask,</tspan>
+    <tspan x="512.5" dy="17.5">skip LLM decompose call</tspan>
+  </text>
+  <text x="615" y="1979.75" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="615" dy="0">decomposer call</tspan>
+  </text>
+  <text x="415" y="854.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="415" dy="0">SubTasks</tspan>
+  </text>
+  <text x="415" y="1054.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="415" dy="0">score</tspan>
+  </text>
+  <text x="805" y="1048.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="805" dy="0">reserve</tspan>
+  </text>
+  <text x="610" y="1148.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="610" dy="0">doesn't fit</tspan>
+  </text>
+  <text x="1101.25" y="1255.75" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1101.25" dy="0">fits</tspan>
+  </text>
+  <text x="711.25" y="1581.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="711.25" dy="0">dependency failed</tspan>
+  </text>
+  <text x="908.75" y="1593.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="908.75" dy="0">deps ok</tspan>
+  </text>
+  <text x="1106.25" y="1581.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1106.25" dy="0">all levels done</tspan>
+  </text>
+  <text x="1498.75" y="1587.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1498.75" dy="0">step failed</tspan>
+  </text>
+  <text x="1010" y="2417.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1010" dy="0">synthesizer call</tspan>
+  </text>
+  <text x="1010" y="2529.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1010" dy="0">judge call</tspan>
+  </text>
+  <text x="1010" y="2053.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1010" dy="0">record round</tspan>
+  </text>
+  <text x="1206.25" y="2520.5" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1206.25" dy="0">PASS / unverified</tspan>
+    <tspan x="1206.25" dy="17.5">(no replan)</tspan>
+  </text>
+  <text x="1402.5" y="1808.5" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1402.5" dy="0">FAIL</tspan>
+    <tspan x="1402.5" dy="17.5">(&lt;= max_replans)</tspan>
+  </text>
+  <text x="1875" y="2196.5" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1875" dy="0">nothing escalated</tspan>
+    <tspan x="1875" dy="17.5">or added</tspan>
+  </text>
+  <text x="1597.5" y="2411.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1597.5" dy="0">no rounds left</tspan>
+  </text>
+  <text x="705" y="2472.5" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="705" dy="0">revised plan</tspan>
+    <tspan x="705" dy="17.5">(re-score, reserve)</tspan>
+  </text>
+  <text x="1502.5" y="2581.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1502.5" dy="0">doesn't fit</tspan>
+  </text>
+  <text x="1697.5" y="2575.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1697.5" dy="0">max_calls</tspan>
+  </text>
+  <text x="1402.5" y="3005.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1402.5" dy="0">best answer + steps</tspan>
+  </text>
+  <text x="985" y="367.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="985" dy="0">sorted(set(router.model_ids) | ...)</tspan>
+  </text>
+  <text x="2005" y="367.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="2005" dy="0">build [pool x profile] matrix</tspan>
+  </text>
+  <text x="2515" y="367.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="2515" dy="0">broad score ≠ dispatchable</tspan>
+  </text>
+  <text x="2005" y="249.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="2005" dy="0">UNCHANGED: narrow pool only</tspan>
+  </text>
+  <text x="1897.5" y="1705.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1897.5" dy="0">route_late: narrow pool only</tspan>
+  </text>
+  <text x="3070" y="1736.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="3070" dy="0">pick_helper_model: narrow pool only</tspan>
+  </text>
+</svg>

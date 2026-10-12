@@ -1,0 +1,141 @@
+# AgenticRouter: prompt templates + agent settings, validated at load time by
+# the Pydantic models in src/router/agentic/schemas.py (AgenticRouterSettings).
+#
+#   from router.agentic import AgenticRouter
+#   agent = AgenticRouter.from_settings("configs/agentic.yaml")
+#
+# The `prompts` section is the single copy of every LLM prompt the agentic
+# layer sends: `name: template`, a Python str.format template. The {placeholders}
+# each prompt is rendered with:
+#   triage            {model_id} {q} {scores} {prompt}
+#   decompose         {prompt}
+#   plan              {prompt}
+#   verify            {original} {steps} {answer}
+#   synthesize        {original} {body}
+
+prompts:
+  triage: |-
+    You triage user requests for an LLM router.
+    Routed model: {model_id}; best predicted quality in the pool: {q} (0-1 scale).
+    Per-model predicted quality: {scores}
+
+    Request:
+    """
+    {prompt}
+    """
+
+    Answer with exactly one word: SINGLE if one model call can handle it well, or DECOMPOSE if it should be split into sub-tasks.
+
+  decompose: |-
+    Break the request below into a minimal ordered list of sub-tasks. Each sub-task is sent on its own to a separate model that will NOT see the original request or any other sub-task, so each one must contain exactly the context needed to complete it -- nothing missing, nothing extra:
+    - Replace pronouns and references ("it", "this", "the above", "that code") with what they refer to.
+    - Carry over every detail from the request that this sub-task needs: its subject, inputs, data, constraints, language, format or audience.
+    - Leave out everything this sub-task does not need: the other sub-tasks, their requirements, and background that would not change its answer.
+    - Do not answer anything, and do not add requirements the request did not ask for.
+
+    Write each sub-task as one complete instruction on a single line, and list each sub-task exactly once. Output only the sub-task lines: no numbering, bullets, headings, notes or explanations. If the request is already a single task, return it unchanged on one line.
+
+    The example below shows only the format; never reuse its wording or constraints.
+    Example request: "Translate 'The meeting moved to Friday.' into French and then into German."
+    Example sub-tasks:
+    Translate 'The meeting moved to Friday.' into French.
+    Translate 'The meeting moved to Friday.' into German.
+
+    Request:
+    {prompt}
+
+  plan: |-
+    Break the request below into a minimal ordered list of sub-tasks. Each sub-task is sent to a separate model that will NOT see the original request or the other sub-tasks, so each one must contain exactly the context needed to complete it -- nothing missing, nothing extra:
+    - Replace pronouns and references ("it", "this", "the above", "that code") with what they refer to.
+    - Carry over every detail from the request that this sub-task needs: its subject, inputs, data, constraints, language, format or audience.
+    - Leave out everything this sub-task does not need.
+    - Do not answer anything, and do not add requirements the request did not ask for.
+
+    When a sub-task needs the RESULT of an earlier sub-task (for example, analysing code an earlier sub-task writes), start it with [after N], where N is that earlier sub-task's number, and name what it uses ("the Rust implementation from step 1"). That result will be given to it. Use [after N] only for real dependencies.
+
+    Give every sub-task a length budget in words, written as [A-B words, max C]: A-B is the range a complete, good answer needs, C the hard upper limit. Size it to the work -- a short fact about 20-60 words, an explanation about 150-400, code with a short explanation about 200-600. Put it right after the number (and after [after N] if there is one).
+
+    Number the sub-tasks 1, 2, 3, ... one per line, and list each sub-task exactly once. Output only the numbered lines: no headings, notes or explanations. If the request is already a single task, return it unchanged as "1. <the request>".
+
+    The example below shows only the format; never reuse its wording or constraints.
+    Example request: "Write a haiku about rain, then translate it into Spanish."
+    Example sub-tasks:
+    1. [17-25 words, max 40] Write a haiku about rain.
+    2. [after 1] [17-25 words, max 40] Translate the haiku about rain from step 1 into Spanish.
+
+    Request:
+    {prompt}
+
+  verify: |-
+    You are the final quality check for an answer that several models produced together.
+
+    Original request:
+    """
+    {original}
+    """
+
+    The request was split into steps. Each step's task and answer (long answers are cut and marked [truncated]):
+    {steps}
+
+    Final answer given to the user:
+    """
+    {answer}
+    """
+
+    Check the final answer against the request: is every part answered, correct, consistent between steps, and (for code) plausible to compile and run? Then reply in exactly this format and nothing else:
+    VERDICT: PASS or FAIL
+    SCORE: a number from 0 to 10
+    WEAK_STEPS: the numbers of the steps whose answers are wrong or incomplete, comma-separated, or none
+    FOLLOW_UPS:
+    one new self-contained task per line for anything missing or wrong that re-running a step would not fix; start it with [after N] if it needs step N's result; write none if there are none
+    ISSUES: one line summarising the problems, or none
+
+  synthesize: |-
+    Original request:
+    {original}
+
+    Sub-answers:
+    {body}
+
+    Write a single, coherent final answer to the original request using the sub-answers above. Do not mention that the work was split up.
+
+router:
+  run: nirt-2d-projected          # data/processed/nirt_runs/<run>
+  clients: echo                   # echo (no network) | anthropic (serve_map) | langchain
+  serve_map: configs/serve_anthropic.yaml
+  lam: 0.0                        # cost weight in routing (0 = quality only)
+  max_depth: 2
+  max_calls: null                 # cap on all LLM calls per request (null = none)
+  warmup: true                    # load encoder / stores / costs at construction
+  result_sink: null               # SQLite path to record runs, e.g. data/runs/agentic_runs.sqlite
+
+  triage:
+    kind: heuristic               # heuristic | llm
+    quality_threshold: 0.55
+    max_chars_single: 600
+    margin: null                  # llm only: ask the LLM only within this band of the threshold (null = always ask)
+    prompt: triage
+    model: null                   # llm only: chat model id, e.g. claude-haiku-4-5
+
+  decomposer:
+    max_parts: 6
+    min_part_chars: 8              # NaiveDecomposer fallback only, see plan.model below
+    max_prompt_chars: 4000
+
+  synthesizer:
+    max_body_chars: 8000
+    prompt: synthesize
+
+  plan:                            # the one orchestrator: decompose -> execute -> judge -> repair/stop -> synthesize
+    model: deepseek-llm:7b-chat    # chat model driving decompose + judge + synthesize; local Ollama tag (see scripts/agentic/run_agentic_ollama.py)
+    provider: ollama                # forwarded to chat_model(provider=...); guess_provider can't identify Ollama tags
+    budget: null                  # USD per request (null = unlimited)
+    max_workers: 4
+    sequential: false
+    max_replans: 2                # repair rounds after a failed step or quality check
+    route_late: true              # route each step on its prompt + dependency results
+    length_budgets: true          # per-step [A-B words, max C] from the planner -> length line + 2x max_tokens safety cap
+    planner_prompt: plan          # numbered steps with [after N] dependencies
+    quality_check:                # always on -- judges the synthesized answer; repairs weak steps / adds follow-ups
+      pass_score: 7               # PASS also needs SCORE >= this (0-10)
+      prompt: verify
