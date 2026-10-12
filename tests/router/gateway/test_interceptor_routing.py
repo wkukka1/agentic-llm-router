@@ -348,3 +348,11 @@ def test_the_log_says_what_started_a_turn_without_its_text():
     assert interceptor.turn_trigger(None) is None
     assert interceptor.turn_trigger("fix the login bug") == "typed"
     assert interceptor.turn_trigger("<command-name>/compact</command-name> secret") == "command-name"
+
+
+def test_the_dashboard_is_told_which_models_are_not_claude(env):
+    _, settings, _, _ = env
+    settings["models"]["llama3.1:latest"] = {"lane": "openai", "base_url": "http://127.0.0.1:11434/v1"}
+    interceptor.configure(settings, None)
+    notes = interceptor.preferences()["model_notes"]
+    assert notes == {"local-coder": "other provider", "llama3.1:latest": "local"}

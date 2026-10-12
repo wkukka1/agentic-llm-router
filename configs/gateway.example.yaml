@@ -92,14 +92,17 @@ interceptor:
     # Ollama ... Requests are translated with their tools; a request that
     # can't be translated losslessly (too many tools, server tools, documents,
     # images inside tool results) never goes here.
-    llama3.1:latest:                # local, via Ollama -- free
-      lane: openai
-      base_url: http://127.0.0.1:11434/v1
-      proxy: null                   # nothing in the pool is an 8B local model: name it
-                                    #   explicitly (--model) rather than let the router guess
-      context_window: 32768         # what the model supports; Ollama serves a smaller
-      max_tools: 64                 #   window unless OLLAMA_CONTEXT_LENGTH is raised
-      prices: {input: 0, output: 0}
+    # Opt-in: a local model through Ollama. The router never picks it (no
+    # proxy); it is only reachable by pinning it or by `--model`. Uncomment
+    # if you run Ollama and want that option.
+    # llama3.1:latest:                # local, via Ollama -- free
+    #   lane: openai
+    #   base_url: http://127.0.0.1:11434/v1
+    #   proxy: null                   # nothing in the pool is an 8B local model: name it
+    #                                 #   explicitly (--model) rather than let the router guess
+    #   context_window: 32768         # what the model supports; Ollama serves a smaller
+    #   max_tools: 64                 #   window unless OLLAMA_CONTEXT_LENGTH is raised
+    #   prices: {input: 0, output: 0}
     # qwen2.5-coder:14b answers tool calls as plain JSON text under Ollama (checked
     # 2026-10-06), so the agent never sees a tool call -- prefer llama3.1 for tools.
     # gpt-5-mini:

@@ -433,6 +433,12 @@ function renderSpark(records) {
 
 const rowKey = (r) => `${r.ts}|${r.conversation}|${r.status}|${r.cost_usd}|${r.latency_s}`;
 
+/* a model name, flagged when it isn't Claude: "llama3.1:latest — local (not Claude)" */
+const label = (m) => {
+  const note = (prefs && prefs.model_notes || {})[m];
+  return note ? `${short(m)} — ${note} (not Claude)` : short(m);
+};
+
 function renderPrefs() {
   if (!prefs) return;
   const m = prefs.quality_margin;
@@ -457,7 +463,7 @@ function renderPrefs() {
   });
   const pin = $("pin-model");
   if (pin.options.length !== prefs.models.length)
-    pin.innerHTML = prefs.models.map((x) => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
+    pin.innerHTML = prefs.models.map((x) => `<option value="${esc(x)}">${esc(label(x))}</option>`).join("");
   pin.value = prefs.pinned_model || prefs.strongest_model || prefs.models[0];
   $("pin-box").hidden = prefs.mode !== "pin";
   $("auto-box").hidden = prefs.mode !== "auto";
@@ -470,10 +476,10 @@ function renderPrefs() {
   $("allow-upgrade").checked = !!prefs.allow_upgrade;
   if (!document.activeElement || !document.activeElement.closest("#roles")) {
     $("roles").innerHTML = prefs.roles.map((r) => {
-      const label = (x) => x == null ? "session's model" : short(x);
+      const tierLabel = (x) => x == null ? "session's model" : short(x);
       const value = !r.overridden ? "default" : (r.model == null ? "session" : r.model);
       const opt = (v, text) => `<option value="${esc(v)}"${v === value ? " selected" : ""}>${esc(text)}</option>`;
-      const opts = [opt("default", `default · ${label(r.default)}`), ...prefs.models.map((x) => opt(x, short(x))),
+      const opts = [opt("default", `default · ${tierLabel(r.default)}`), ...prefs.models.map((x) => opt(x, label(x))),
         opt("session", "session's model")];
       return `<div class="role"><span>${esc(r.role)}${r.overridden ? '<span class="changed">changed</span>' : ""}</span>
         <select data-role="${esc(r.role)}" aria-label="Tier for ${esc(r.role)} subagents">${opts.join("")}</select></div>`;

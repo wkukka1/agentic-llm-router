@@ -176,6 +176,10 @@ def preferences() -> dict:
             "header": MARGIN_HEADER, "mode": routing["mode"], "pinned_model": routing["pinned_model"],
             "allow_upgrade": bool(routing.get("allow_upgrade")),
             "models": list(_settings["models"]),
+            # what the dropdowns show next to a model that isn't Claude
+            "model_notes": {m: ("local" if "127.0.0.1" in (spec.get("base_url") or "") or "localhost" in
+                                (spec.get("base_url") or "") else "other provider")
+                            for m, spec in _settings["models"].items() if spec.get("lane") == "openai"},
             "roles": [{"role": r, "model": _settings["subagents"]["roles"].get(r, d), "default": d,
                        "overridden": r in overrides} for r, d in defaults.items()]}
 
