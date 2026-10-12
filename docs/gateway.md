@@ -296,6 +296,15 @@ tier is wrong.
 
 ## Other models (API keys, Ollama)
 
+**Local models are opt-in.** `aar-gateway local add <model>` pulls a model
+with Ollama if needed and adds it to `~/.aar-gateway/local-models.yaml`, a
+file of its own that is merged into the configured models (it never replaces
+one, and the main config is never rewritten). `aar-gateway local` reports
+whether Ollama is installed and running, with the install command for your
+OS when it isn't. The router never picks a local model by itself (it has no
+stand-in in the benchmark); pin it, or pass `--model`.
+
+
 A model with `lane: openai` is any OpenAI-compatible endpoint: OpenAI,
 Gemini's compatible endpoint, OpenRouter, Groq, vLLM, Ollama.
 [`router/gateway/translate.py`](../src/router/gateway/translate.py) converts the

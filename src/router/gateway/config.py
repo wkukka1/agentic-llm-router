@@ -57,6 +57,18 @@ def config_path() -> Path | None:
     return default if default.exists() else None
 
 
+def local_models_path() -> Path:
+    return gateway_home() / "local-models.yaml"
+
+
+def local_models() -> dict[str, dict]:
+    """Models added with ``aar-gateway local add`` -- ``{}`` when none."""
+    path = local_models_path()
+    if not path.exists():
+        return {}
+    return {str(k): dict(v) for k, v in ((yaml.safe_load(path.read_text()) or {}).get("models") or {}).items()}
+
+
 def load_settings(config_path: str | Path | None = None) -> dict:
     """The interceptor's settings: the ``interceptor:`` section of a gateway
     config merged over the defaults above. Fails at load time, not on a
@@ -67,6 +79,10 @@ def load_settings(config_path: str | Path | None = None) -> dict:
     spec = (yaml.safe_load(Path(config_path).read_text()) or {}) if config_path else {}
     section = spec.get("interceptor") or {}
     models = {k: dict(v) for k, v in (section.get("models") or DEFAULT_MODELS).items()}
+    # opt-in local models (`aar-gateway local add`), kept in a file of their own
+    # so the main config is never rewritten; they never replace a configured model
+    for model_id, m in local_models().items():
+        models.setdefault(model_id, dict(m))
     for model_id, m in models.items():
         lane = m.setdefault("lane", "anthropic")
         if lane not in ("anthropic", "openai"):

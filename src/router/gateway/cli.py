@@ -7,6 +7,7 @@ gateway process.
     aar-gateway logs [-n N] [-f]        the gateway's own log
     aar-gateway setup [--router FILE|URL]   first-time setup: router file + config
     aar-gateway doctor                  check the setup, with a fix for each problem
+    aar-gateway local [add|remove] M    optional: a local model through Ollama
     aar-gateway config                  which config is in use
     aar-gateway dashboard               open the dashboard
     aar-gateway service install|uninstall|status   start at login (launchd / systemd)
@@ -219,6 +220,95 @@ def _logs(lines: int, follow: bool) -> int:
                     time.sleep(0.3)
         except KeyboardInterrupt:
             return 0
+
+
+# --------------------------------------------------------------------------- #
+# local models (opt-in)                                                       #
+# --------------------------------------------------------------------------- #
+OLLAMA_URL = os.environ.get("AAR_GATEWAY_OLLAMA_URL", "http://127.0.0.1:11434")
+OLLAMA_INSTALL = {
+    "darwin": "brew install ollama && brew services start ollama\n"
+              "  (or download the app from https://ollama.com/download and open it)",
+    "linux": "curl -fsSL https://ollama.com/install.sh | sh",
+    "win32": "download and run the installer from https://ollama.com/download",
+}
+
+
+def _ollama_models() -> list[str] | None:
+    """Models Ollama has pulled, or ``None`` when Ollama isn't running."""
+    tags = _get(f"{OLLAMA_URL}/api/tags", timeout=2)
+    return None if tags is None else [m.get("name", "") for m in tags.get("models") or []]
+
+
+def _ollama_name(model: str) -> str:
+    return model if ":" in model else f"{model}:latest"
+
+
+def _write_local_models(models: dict) -> None:
+    import yaml
+
+    from .config import local_models_path
+
+    path = local_models_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not models:
+        path.unlink(missing_ok=True)
+        return
+    path.write_text("# Local models added with `aar-gateway local add` (Ollama). Remove one with\n"
+                    "# `aar-gateway local remove <model>`, or delete this file to remove them all.\n"
+                    + yaml.safe_dump({"models": models}, sort_keys=False))
+
+
+def _local(argv: list[str]) -> int:
+    """``aar-gateway local [add|remove] [model]``: opt-in local models via Ollama."""
+    from .config import local_models
+
+    action = argv[0] if argv else "status"
+    configured = local_models()
+    pulled = _ollama_models()
+    installed = shutil.which("ollama") is not None or pulled is not None
+    if action == "status":
+        print(f"Ollama: {'running' if pulled is not None else 'installed, not running' if installed else 'not installed'}")
+        if pulled:
+            print("  models it has: " + ", ".join(pulled))
+        print("local models in the gateway: " + (", ".join(configured) if configured else "none"))
+        if not installed:
+            print(f"\nto install Ollama: {OLLAMA_INSTALL.get(sys.platform, OLLAMA_INSTALL['linux'])}")
+        print("\nadd one: aar-gateway local add llama3.1   (good at tool calls; 4.9 GB)")
+        return 0
+    if action not in ("add", "remove") or len(argv) < 2:
+        raise SystemExit("usage: aar-gateway local [add|remove] <model>   (e.g. llama3.1)")
+    name = _ollama_name(argv[1])
+    if action == "remove":
+        if name not in configured:
+            print(f"{name} isn't a local model in the gateway")
+            return 1
+        del configured[name]
+        _write_local_models(configured)
+        print(f"removed {name} from the gateway (Ollama still has it: `ollama rm {name}` frees the disk)")
+    else:
+        if pulled is None:
+            raise SystemExit("Ollama isn't running. " + (
+                "Start it (open the Ollama app, or run `ollama serve`)." if installed else
+                f"Install it first:\n  {OLLAMA_INSTALL.get(sys.platform, OLLAMA_INSTALL['linux'])}"))
+        if name not in pulled:
+            ollama = shutil.which("ollama")
+            if ollama is None:
+                raise SystemExit(f"Ollama doesn't have {name} yet and its command isn't on PATH: run `ollama pull {name}`")
+            print(f"downloading {name} with Ollama (one-time) ...")
+            if subprocess.run([ollama, "pull", name]).returncode != 0:
+                raise SystemExit(f"`ollama pull {name}` failed")
+        configured[name] = {"lane": "openai", "base_url": f"{OLLAMA_URL}/v1", "proxy": None,
+                            "context_window": 32768, "max_tools": 64, "prices": {"input": 0, "output": 0}}
+        _write_local_models(configured)
+        print(f"added {name}. The router never picks it on its own; use it by\n"
+              f"  - pinning it on the dashboard (Advanced settings -> Pin a model), or\n"
+              f"  - aar-gateway code --model {name}")
+    if _healthy(_base_url()):
+        _stop()
+        _ensure_running(_base_url(), quiet=True)
+        print("restarted the gateway")
+    return 0
 
 
 # --------------------------------------------------------------------------- #
@@ -610,6 +700,8 @@ def main(argv: list[str] | None = None) -> int:
     if argv[:1] == ["agents"]:
         _agents(argv[1:])
         return 0
+    if argv[:1] == ["local"]:
+        return _local(argv[1:])
 
     parser = argparse.ArgumentParser(prog="aar-gateway", description="Route Claude Code through the AAR gateway.")
     sub = parser.add_subparsers(dest="command", metavar="command")
@@ -627,6 +719,7 @@ def main(argv: list[str] | None = None) -> int:
     setup.add_argument("--router", help="a router file or URL (default: the published one)")
     setup.add_argument("--force", action="store_true", help="rewrite an existing config")
     sub.add_parser("doctor", help="check the setup, with a fix for each problem")
+    sub.add_parser("local", help="optional local models via Ollama: local [add|remove] <model>")
     sub.add_parser("config", help="which config file is in use")
     sub.add_parser("dashboard", help="open the dashboard in a browser")
     service = sub.add_parser("service", help="start the gateway at login (launchd on macOS, systemd on Linux)")

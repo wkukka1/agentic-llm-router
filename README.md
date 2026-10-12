@@ -70,6 +70,29 @@ On the dashboard, under **Cost preference**:
 off, let hard questions move *up* to a stronger model, or change which model
 each kind of subagent uses. Changes apply from your next message.
 
+## Optional: a free local model
+
+Not part of the standard setup. If you'd like a model that runs on your own
+computer (free, private, much weaker than Claude), add one through
+[Ollama](https://ollama.com):
+
+```bash
+# 1. install Ollama (once)
+brew install ollama && brew services start ollama       # macOS
+curl -fsSL https://ollama.com/install.sh | sh           # Linux
+# Windows: the installer from https://ollama.com/download
+
+# 2. add a model to the gateway (downloads it the first time)
+aar-gateway local add llama3.1
+```
+
+The router never sends anything to it on its own. Use it by pinning it on
+the dashboard (Advanced settings → Pin a model) or with
+`aar-gateway code --model llama3.1:latest`. `aar-gateway local` shows what's
+installed; `aar-gateway local remove llama3.1` takes it out again. Pick a
+model that handles tool calls well — `llama3.1` does; some coding models
+don't.
+
 ## Commands
 
 | Command | What it does |
@@ -82,6 +105,7 @@ each kind of subagent uses. Changes apply from your next message.
 | `aar-gateway doctor` | check your setup |
 | `aar-gateway setup` | install the router and write a config |
 | `aar-gateway service install` | start the gateway automatically at login |
+| `aar-gateway local add <model>` | optional: add a local model through Ollama |
 
 ## What it never does
 

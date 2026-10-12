@@ -96,3 +96,45 @@ def test_windows_never_probes_with_a_signal_and_needs_no_shell_env(tmp_path, mon
     assert cli._running_pid() == 4242
     command = cli._self_command()
     assert "PYTHONPATH=" not in command and command.endswith("-m router.gateway.cli")
+
+
+def _fake_ollama(monkeypatch, pulled):
+    """Ollama answering /api/tags with ``pulled`` (None: not running); the gateway itself down."""
+    def get(url, timeout=1.0):
+        if "/api/tags" in url:
+            return None if pulled is None else {"models": [{"name": m} for m in pulled]}
+        return None
+    monkeypatch.setattr(cli, "_get", get)
+    monkeypatch.setattr(cli, "_healthy", lambda url: False)
+
+
+def test_local_status_says_how_to_install_ollama_when_missing(monkeypatch, capsys):
+    _fake_ollama(monkeypatch, None)
+    monkeypatch.setattr(cli.shutil, "which", lambda name, path=None: None)
+    assert cli.main(["local"]) == 0
+    out = capsys.readouterr().out
+    assert "not installed" in out and "to install Ollama" in out
+
+
+def test_local_add_needs_ollama_running(monkeypatch):
+    _fake_ollama(monkeypatch, None)
+    monkeypatch.setattr(cli.shutil, "which", lambda name, path=None: "/usr/bin/ollama")
+    with pytest.raises(SystemExit, match="isn't running"):
+        cli.main(["local", "add", "llama3.1"])
+
+
+def test_local_add_pulls_once_adds_and_remove_takes_it_out(monkeypatch, capsys):
+    from router.gateway.config import load_settings, local_models_path
+
+    _fake_ollama(monkeypatch, ["qwen2.5-coder:14b"])
+    monkeypatch.setattr(cli.shutil, "which", lambda name, path=None: "/usr/bin/ollama")
+    pulls = []
+    monkeypatch.setattr(cli.subprocess, "run", lambda cmd, **kw: pulls.append(cmd) or
+                        cli.subprocess.CompletedProcess(cmd, 0))
+    assert cli.main(["local", "add", "llama3.1"]) == 0
+    assert pulls == [["/usr/bin/ollama", "pull", "llama3.1:latest"]]
+    models = load_settings(None)["models"]
+    assert models["llama3.1:latest"]["lane"] == "openai" and models["llama3.1:latest"]["proxy"] is None
+    assert "claude-opus-5-5" in models  # added to the defaults, never replacing them
+    assert cli.main(["local", "remove", "llama3.1"]) == 0
+    assert "llama3.1:latest" not in load_settings(None)["models"] and not local_models_path().exists()
