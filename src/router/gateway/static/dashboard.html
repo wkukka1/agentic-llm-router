@@ -163,7 +163,6 @@
     animation: shimmer 1.3s linear infinite; }
   @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
   button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-  footer { font-size: 12.5px; color: var(--muted); max-width: 860px; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
@@ -305,9 +304,6 @@
     </details>
   </section>
 
-  <footer>Plan usage is what the same work costs at API prices on each model, the relative price of the models:
-    on a Claude subscription nothing is billed per token. Baselines reuse each request's tokens on the other model,
-    adjusted for what it would have had cached; a subagent is measured against the session's own model.</footer>
 </main>
 <script>
 const PAGE_SIZE = 12;
