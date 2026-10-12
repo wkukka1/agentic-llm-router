@@ -241,8 +241,10 @@ def grade(n: int, *, tiers: tuple[str, ...] = DEFAULT_TIERS, judge_model: str = 
     return written
 
 
-#: what the claude CLI says when the subscription's usage window is used up
-_LIMIT = re.compile(r"usage limit|rate limit|limit reached|resets? at|too many requests|\b429\b", re.I)
+#: what the claude CLI says when the subscription's usage window is used up --
+#: e.g. "You've hit your session limit · resets 4am (America/Toronto)"
+_LIMIT = re.compile(r"(?:usage|session|weekly|rate) limit|limit reached|\bresets?\b|too many requests|\b429\b",
+                    re.I)
 
 
 def _fmt(row: dict) -> str:

@@ -101,3 +101,11 @@ def test_grading_stops_when_the_plans_usage_limit_is_reached(tmp_path, monkeypat
     monkeypatch.setattr(g, "grade_turn", limited)
     g.grade(6, workers=1, turns_file=turns, out_file=tmp_path / "graded.jsonl")
     assert len(graded_calls) == 1  # stopped after the first, instead of failing all six
+
+
+def test_the_limit_messages_the_cli_really_prints_are_recognised():
+    for message in ("RuntimeError: claude exited 1: You've hit your session limit · resets 4am (America/Toronto)",
+                    "RuntimeError: claude exited 1: Claude AI usage limit reached|1760000000",
+                    "RuntimeError: claude exited 1: API Error: 429 rate limit"):
+        assert g._LIMIT.search(message), message
+    assert not g._LIMIT.search("RuntimeError: claude exited 1: TimeoutExpired")
