@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 
-from router.gateway import interceptor, server
+from router.gateway import cli, interceptor
 
 
 def test_the_log_is_read_incrementally_and_survives_rotation():
@@ -44,5 +44,5 @@ def test_listeners_hear_about_each_logged_request():
 
 
 def test_stop_without_a_running_gateway_says_so(capsys):
-    server.main(["stop"])
-    assert "no gateway running" in capsys.readouterr().out
+    cli.main(["stop"])
+    assert "not running" in capsys.readouterr().out

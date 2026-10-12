@@ -40,6 +40,23 @@ DEFAULT_ROUTER = {"enabled": False, "kind": "knn", "data_config": "configs/llmro
 DEFAULT_SUBAGENTS = {"enabled": True, "roles": {}}
 
 
+def gateway_home() -> Path:
+    """Where the gateway keeps its files: the request log's folder
+    (``AAR_GATEWAY_LOG``), else ``~/.aar-gateway``."""
+    log = os.environ.get("AAR_GATEWAY_LOG")
+    return Path(log).expanduser().parent if log else Path.home() / ".aar-gateway"
+
+
+def config_path() -> Path | None:
+    """The gateway config in use: ``AAR_GATEWAY_CONFIG``, else
+    ``~/.aar-gateway/config.yaml`` if it exists, else none (the defaults)."""
+    named = os.environ.get("AAR_GATEWAY_CONFIG")
+    if named:
+        return Path(named).expanduser()
+    default = gateway_home() / "config.yaml"
+    return default if default.exists() else None
+
+
 def load_settings(config_path: str | Path | None = None) -> dict:
     """The interceptor's settings: the ``interceptor:`` section of a gateway
     config merged over the defaults above. Fails at load time, not on a

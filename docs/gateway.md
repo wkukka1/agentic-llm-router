@@ -18,17 +18,46 @@ Claude Code ──► gateway (127.0.0.1:8787) ──► router picks a model fo
 
 ```bash
 pip install -e ".[gateway,research]"          # research = the trained router
-cp configs/gateway.example.yaml configs/gateway.yaml
-export AAR_GATEWAY_CONFIG=$PWD/configs/gateway.yaml
+mkdir -p ~/.aar-gateway
+cp configs/gateway.example.yaml ~/.aar-gateway/config.yaml   # found there by default
 
 aar-gateway code          # starts the gateway if needed, then runs Claude Code through it
 aar-gateway dashboard     # opens http://127.0.0.1:8787/dashboard
+aar-gateway doctor        # if anything looks wrong
 ```
+
+The config is `AAR_GATEWAY_CONFIG` if set, else `~/.aar-gateway/config.yaml`
+if it exists, else the defaults (router off).
+
+## Managing the gateway
+
+| Command | What it does |
+|---|---|
+| `aar-gateway start` / `stop` / `restart` | the gateway in the background (`code` and `dashboard` start it if needed) |
+| `aar-gateway status` | running or not, router loaded or why not, config, requests and saving, where the logs are |
+| `aar-gateway logs [-n 50] [-f]` | the gateway's own log; `-f` follows it |
+| `aar-gateway doctor` | checks Claude Code, the config, the router, the port and the log folder, with a fix for each problem |
+| `aar-gateway config` | which config file is in use |
+| `aar-gateway service install` / `uninstall` / `status` | start at login: a LaunchAgent on macOS, a systemd user unit on Linux; restarted if it crashes, not after `stop` |
+| `aar-gateway serve` | the gateway in the foreground |
+
+`status --json` prints the same as JSON. The command line is
+[`router/gateway/cli.py`](../src/router/gateway/cli.py); `hook` and
+`statusline`, which Claude Code calls itself, import only the standard
+library (the subagent hook runs in about 0.07 s).
+
+**Operating systems.** macOS is what this is run and tested on. Linux uses
+the same process handling (and systemd for `service`) but hasn't been run
+yet. Windows has its own code paths -- Claude Code is run as a child process
+instead of replacing this one, the gateway is detached with Windows process
+flags, and liveness is checked over HTTP (`os.kill(pid, 0)` would terminate
+the process there) -- but is untested, and `service` isn't available there:
+use `aar-gateway start`.
 
 `aar-gateway code` passes every further argument to `claude`
 (`aar-gateway code -p "..."`, `aar-gateway code -c`). It is the same as
 running `ENABLE_TOOL_SEARCH=true ANTHROPIC_BASE_URL=http://127.0.0.1:8787 claude`
-with the gateway already up (`aar-gateway serve`). It also sets Claude Code's
+with the gateway already up (`aar-gateway start`). It also sets Claude Code's
 status line to show **which model actually answered** and this session's
 cost against no router, e.g.
 `aar router · claude-sonnet-5-5 (routed) · $0.21 · saved $0.26 (55%)`.
@@ -234,7 +263,6 @@ Choices apply from the next turn and survive restarts
 `~/.aar-gateway/overrides.jsonl`: if a kind keeps being moved up, its default
 tier is wrong.
 
-`aar-gateway stop` stops the running gateway, however it was started.
 
 ## Other models (API keys, Ollama)
 

@@ -55,7 +55,7 @@ research = [
 [project.scripts]
 router-phase0 = "training.phase0:main"
 prompt-decomposition = "scripts.prompt_decomposition_cli:main"
-aar-gateway = "router.gateway.server:main"
+aar-gateway = "router.gateway.cli:main"
 aar-gateway-grade = "evaluation.gateway.grade:main"
 aar-gateway-subagents = "evaluation.gateway.subagent_baseline:main"
 

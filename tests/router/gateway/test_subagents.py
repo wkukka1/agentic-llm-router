@@ -11,7 +11,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from router.gateway import interceptor, server
+from router.gateway import cli, interceptor, server
 from router.gateway.config import load_settings
 from router.gateway.subagents import (
     ROLES,
@@ -174,17 +174,17 @@ def test_subagent_roles_can_be_turned_off(gateway, tmp_path):
 
 def test_claude_code_is_given_the_roles_unless_the_user_brings_their_own(monkeypatch):
     monkeypatch.setenv("AAR_GATEWAY_STATUSLINE", "0")
-    args, _ = server._claude_command("http://127.0.0.1:8787", [])
+    args, _ = cli._claude_command("http://127.0.0.1:8787", [])
     assert json.loads(args[args.index("--agents") + 1]) == agent_definitions()
-    args, _ = server._claude_command("http://127.0.0.1:8787", ["--agents", "{}"])
+    args, _ = cli._claude_command("http://127.0.0.1:8787", ["--agents", "{}"])
     assert args.count("--agents") == 1
     monkeypatch.setenv("AAR_GATEWAY_AGENTS", "0")
-    assert "--agents" not in server._claude_command("http://127.0.0.1:8787", [])[0]
+    assert "--agents" not in cli._claude_command("http://127.0.0.1:8787", [])[0]
 
 
 def test_agents_install_writes_files_and_keeps_existing_ones(tmp_path, capsys):
     (tmp_path / "lookup.md").write_text("mine")
-    server.main(["agents", "--install", str(tmp_path)])
+    cli.main(["agents", "--install", str(tmp_path)])
     assert (tmp_path / "lookup.md").read_text() == "mine"
     assert (tmp_path / "make.md").read_text() == agent_markdown("make")
 
@@ -335,7 +335,7 @@ def test_the_hook_sets_the_model_only_when_the_gateway_says_so(monkeypatch, caps
              "tool_input": {"subagent_type": "Explore", "prompt": "find x", "description": "d"}}
     monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout: Reply({"alias": "haiku"}))
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(event)))
-    server.main(["hook"])
+    cli.main(["hook"])
     out = json.loads(capsys.readouterr().out)["hookSpecificOutput"]
     assert out["updatedInput"] == {**event["tool_input"], "model": "haiku"}
 
@@ -343,21 +343,21 @@ def test_the_hook_sets_the_model_only_when_the_gateway_says_so(monkeypatch, caps
         raise OSError("connection refused")
     monkeypatch.setattr(urllib.request, "urlopen", down)
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(event)))
-    server.main(["hook"])
+    cli.main(["hook"])
     assert capsys.readouterr().out == ""  # gateway down: the call is left exactly as it was
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"tool_name": "Bash", "tool_input": {}})))
-    server.main(["hook"])
+    cli.main(["hook"])
     assert capsys.readouterr().out == ""
 
 
 def test_claude_code_is_launched_with_the_spawn_hook(monkeypatch):
     monkeypatch.setenv("AAR_GATEWAY_STATUSLINE", "0")
-    args, _ = server._claude_command("http://127.0.0.1:8787", [])
+    args, _ = cli._claude_command("http://127.0.0.1:8787", [])
     settings = json.loads(args[args.index("--settings") + 1])
     (entry,) = settings["hooks"]["PreToolUse"]
-    assert entry["matcher"] == "Agent|Task" and entry["hooks"][0]["command"].endswith("server hook")
+    assert entry["matcher"] == "Agent|Task" and entry["hooks"][0]["command"].endswith("router.gateway.cli hook")
     monkeypatch.setenv("AAR_GATEWAY_HOOK", "0")
-    assert "--settings" not in server._claude_command("http://127.0.0.1:8787", [])[0]
+    assert "--settings" not in cli._claude_command("http://127.0.0.1:8787", [])[0]
 
 
 def test_a_subagent_tier_on_a_model_that_cannot_take_the_request_is_not_forced():
