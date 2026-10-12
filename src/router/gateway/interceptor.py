@@ -420,6 +420,20 @@ def _notify() -> None:
             _listeners.discard((loop, queue))
 
 
+_LEADING_TAG = re.compile(r"\s*<([A-Za-z][\w-]{0,40})")
+
+
+def turn_trigger(text: str | None) -> str | None:
+    """What started a turn, coarsely, for the log: ``"typed"``, or the name
+    of a leading tag such as ``command-name`` -- never the text itself. A
+    message Claude Code writes that isn't yet in :data:`_REMINDER` shows up
+    here by its tag."""
+    if text is None:
+        return None
+    found = _LEADING_TAG.match(text)
+    return found.group(1) if found else "typed"
+
+
 def human_text(body: Mapping) -> str | None:
     """The new human text that starts a turn, or ``None`` for a tool-loop
     continuation or a message Claude Code wrote itself. Trailing ``system``
@@ -606,6 +620,7 @@ class _Turn:
             "claude_session": self.claude_session[:12] or None,
             "conversation": self.key,
             "new_turn": self.human is not None,
+            "turn_trigger": turn_trigger(self.human),
             "subagent": self.agent is not None,
             "agent_role": (self.agent or {}).get("role"),
             "role_source": (self.agent or {}).get("source"),

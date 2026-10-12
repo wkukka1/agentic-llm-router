@@ -342,3 +342,9 @@ def test_capture_is_opt_in_and_keeps_only_the_humans_words_and_folder(env, tmp_p
     (rec,) = [json.loads(line) for line in interceptor.turns_path().read_text().splitlines()]
     assert rec["prompt"] == "refactor the loader" and rec["cwd"] == "/repo/x"
     assert "system-reminder" not in rec["prompt"]
+
+
+def test_the_log_says_what_started_a_turn_without_its_text():
+    assert interceptor.turn_trigger(None) is None
+    assert interceptor.turn_trigger("fix the login bug") == "typed"
+    assert interceptor.turn_trigger("<command-name>/compact</command-name> secret") == "command-name"
