@@ -158,15 +158,20 @@ q_emb  = d.query_embeddings(pathway="irt")
 ds     = d.nirt_dataset(split="train", pathway="irt")       # -> {query_embedding, model_embedding, target}
 ```
 
-Current outputs from the checked-in raw data:
+Current outputs from the raw data (rebuilt 2026-10-12 with `training.phase0
+--sources routerbench,chatbot_arena,gpt4_judge,irt_router`; anchor_judge's
+8,000 rows need its gated pipeline, §7 of the runbook). Since `force_cold:
+[mixtral-8x7b-instruct]` in `configs/phase0.yaml`, RouterBench's Mixtral is a
+cold-start model: 28 warm models and 72,966 fewer NIRT observations than the
+29 / 1,449,159 recorded before that change.
 
 ```
 1,904,408 observations   271,305 queries   90 models   100 datasets
 by metric : mc_accuracy 869,456 | accuracy 693,796 | judge_preference 226,202 | arena_preference 114,954
 by source : routerbench 802,626 | irt_router 760,626 | gpt4_judge 218,202 | chatbot_arena 114,954 | anchor_judge 8,000
 train / val / test queries : 216,939 / 27,072 / 27,235
-cold-start models : claude-2.0, gpt_4o_mini, mistral_7b_instruct_v02, mixtral_8x7b_instruct, vicuna-13b
-NIRT observations : 1,449,159  (train 1,159,880 / val 143,954 / test 145,325; 29 warm models, 110,997 queries)
+cold-start models : claude-2.0, gpt_4o_mini, mistral_7b_instruct_v02, mixtral-8x7b-instruct, mixtral_8x7b_instruct, vicuna-13b
+NIRT observations : 1,376,193  (train 1,101,536 / val 136,686 / test 137,971; 28 warm models)
 ```
 
 Dataset sources, schema, chance correction and split mechanics:
