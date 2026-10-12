@@ -73,6 +73,7 @@ def test_service_install_and_uninstall_on_macos(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sys, "platform", "darwin")
     monkeypatch.setattr(cli.Path, "home", lambda: tmp_path)
     monkeypatch.setattr(cli, "_running_pid", lambda: None)
+    monkeypatch.setattr(cli.os, "getuid", lambda: 501, raising=False)  # absent on Windows
     calls = []
     run = lambda cmd, **kw: calls.append(cmd)  # noqa: E731 -- never touch the real launchctl
     assert cli._service("install", run=run) == 0
