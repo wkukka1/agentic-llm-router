@@ -5,7 +5,7 @@ gateway process.
     aar-gateway start | stop | restart  the gateway in the background
     aar-gateway status                  running? router loaded? where are its files?
     aar-gateway logs [-n N] [-f]        the gateway's own log
-    aar-gateway setup [--router FILE|URL]   first-time setup: router file + config
+    aar-gateway setup [--router FILE|URL]   first-time setup: the router + a config
     aar-gateway doctor                  check the setup, with a fix for each problem
     aar-gateway local [add|remove] M    optional: a local model through Ollama
     aar-gateway config                  which config is in use
@@ -36,9 +36,10 @@ import time
 from pathlib import Path
 
 SERVICE_LABEL = "com.aar.gateway"
-#: where ``aar-gateway setup`` gets the router file when not given one
-#: (``AAR_GATEWAY_ROUTER_URL`` overrides); empty until a release hosts one
-DEFAULT_ROUTER_URL = ""
+#: the router ``aar-gateway setup`` installs when not given one: a trained
+#: network (weights only, 0.4 MB) shipped inside the package.
+#: ``AAR_GATEWAY_ROUTER_URL`` points setup at another file or URL instead.
+BUNDLED_ROUTER = Path(__file__).with_name("routers") / "llmrouterbench-mlp.npz"
 WINDOWS = os.name == "nt"
 
 
@@ -332,7 +333,7 @@ interceptor:
 def _fetch_router(source: str, target: Path) -> dict:
     """Copy or download a router file to ``target``, checking it loads.
     Returns its header."""
-    from ..models.artifacts import KNNArtifactPayload
+    from ..models.artifacts import load_router_file
 
     tmp = target.with_suffix(".part")
     if source.startswith(("http://", "https://")):
@@ -347,13 +348,14 @@ def _fetch_router(source: str, target: Path) -> dict:
             raise SystemExit(f"no router file at {path}")
         shutil.copyfile(path, tmp)
     try:
-        payload, header = KNNArtifactPayload.load(tmp)
+        payload, header = load_router_file(tmp)
     except Exception as exc:  # noqa: BLE001 -- anything unreadable is not a router file
         tmp.unlink(missing_ok=True)
         raise SystemExit(f"{source} is not a router file this gateway can load: {exc}") from exc
     tmp.replace(target)
-    print(f"router installed: {target} ({header.get('n_queries', len(payload.scores))} training prompts, "
-          f"{len(payload.model_ids)} models, k={payload.k})")
+    kind = "trained network" if header.get("format") == "mlp" else f"kNN, k={header.get('k')}"
+    print(f"router installed: {target} ({kind}, {len(payload.model_ids)} models"
+          + (f", {header['dataset']}" if header.get("dataset") else "") + ")")
     return header
 
 
@@ -362,7 +364,8 @@ def _setup(router: str | None, force: bool) -> int:
     home = _home()
     home.mkdir(parents=True, exist_ok=True)
     router_file = home / "router.npz"
-    source = router or os.environ.get("AAR_GATEWAY_ROUTER_URL") or DEFAULT_ROUTER_URL
+    source = router or os.environ.get("AAR_GATEWAY_ROUTER_URL") or (
+        str(BUNDLED_ROUTER) if BUNDLED_ROUTER.exists() else "")
     if source:
         _fetch_router(source, router_file)
     elif router_file.exists():
@@ -431,7 +434,7 @@ def _doctor() -> int:
     if health:
         router = health.get("router") or {}
         if router.get("enabled"):
-            report(True, "router", f"{router.get('kind')} loaded")
+            report(True, "router", f"{router.get('kind')} loaded from {router.get('source')}")
         elif router.get("error"):
             report(False, "router", router["error"],
                    "check router.data_config in the config points at the benchmark data, then `aar-gateway restart`")
@@ -716,7 +719,7 @@ def main(argv: list[str] | None = None) -> int:
     logs.add_argument("-n", type=int, default=50, help="lines to show (default 50)")
     logs.add_argument("-f", "--follow", action="store_true", help="keep printing new lines")
     setup = sub.add_parser("setup", help="install the router and write a config (first-time setup)")
-    setup.add_argument("--router", help="a router file or URL (default: the published one)")
+    setup.add_argument("--router", help="a router file or URL (default: the one shipped with the package)")
     setup.add_argument("--force", action="store_true", help="rewrite an existing config")
     sub.add_parser("doctor", help="check the setup, with a fix for each problem")
     sub.add_parser("local", help="optional local models via Ollama: local [add|remove] <model>")

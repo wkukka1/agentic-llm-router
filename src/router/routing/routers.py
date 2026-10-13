@@ -769,16 +769,59 @@ class MLPRouter(RouterModel):
             cost_model=cost_model, artifact=artifact,
         )
 
+    @classmethod
+    def from_router_file(cls, artifact, header: dict, *, encoder=None, name: Optional[str] = None):
+        """Served from a router file (:func:`~router.models.artifacts.load_router_file`)
+        with numpy alone -- no torch, no training data. Routes text only:
+        the prompt is embedded with the encoder the file names (``fastembed``
+        when installed), then ``sigmoid(W2 relu(W1 x + b1) + b2)``."""
+        sd = artifact.payload.state_dict
+        w1, b1, w2, b2 = (np.asarray(sd[k], dtype=np.float32) for k in ("0.weight", "0.bias", "3.weight", "3.bias"))
+
+        def forward(x: np.ndarray) -> np.ndarray:
+            h = np.maximum(x @ w1.T + b1, 0.0)
+            return 1.0 / (1.0 + np.exp(-(h @ w2.T + b2)))
+
+        router = cls(forward, artifact.payload.model_ids, name=name or f"mlp:{artifact.artifact_id}",
+                     pathway=artifact.payload.pathway, artifact=artifact)
+        router._cost_cache = (np.asarray(header["model_costs"], dtype=float)
+                              if header.get("model_costs") is not None else None)
+        router._file_encoder = (encoder, dict(header.get("encoder") or {}))
+        return router
+
+    @property
+    def can_route_text(self) -> bool:
+        return getattr(self, "_file_encoder", None) is not None
+
+    def predict_scores_text(self, texts: Sequence[str], *, encoder=None) -> pd.DataFrame:
+        """Text routing for a router loaded from a file."""
+        if not self.can_route_text:
+            return super().predict_scores_text(texts, encoder=encoder)
+        enc, spec = self._file_encoder
+        encoder = encoder or enc
+        if encoder is None:
+            from ..embeddings.encoder import EncoderConfig, TextEncoder
+
+            encoder = TextEncoder(EncoderConfig(name="mlp-file", **_artifact_encoder(spec)))
+            self._file_encoder = (encoder, spec)
+        x = np.asarray(encoder.encode(list(texts)), dtype=np.float32)
+        return pd.DataFrame(self._model(x), index=list(range(len(x))), columns=self._model_ids)
+
     @property
     def _data(self):
         return _lazy_training_data(self)
 
     @property
     def default_model_costs(self) -> Optional[np.ndarray]:
+        if self.can_route_text:  # loaded from a file: the costs it carries
+            return self._cost_cache
         return _lazy_model_costs(self)
 
     def predict_scores(self, query_ids: Sequence[str]) -> pd.DataFrame:
         from ..nirt.baselines_infer import mlp_router_matrix
+
+        if self.can_route_text:
+            raise NotImplementedError("an MLP router loaded from a file routes text, not dataset query ids")
 
         return mlp_router_matrix(
             self._model, self._model_ids, self._data,

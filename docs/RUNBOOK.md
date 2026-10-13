@@ -103,15 +103,16 @@ appear here (see `d.pairwise()` for those). Full pipeline numbers:
 
 ### 1.1 The gateway's router file
 
-The gateway serves the kNN router from one small file, so its users need none
-of this data. Build it from a pool with retrieval embeddings:
+The gateway serves its router from one small file, so its users need none of
+this data. Build it from a pool with retrieval embeddings:
 
 ```bash
-python scripts/routing/export_knn_router.py --config configs/llmrouterbench.yaml \
-    --k 25 --dataset llmrouterbench --out router-llmrouterbench.npz
+python scripts/routing/export_router.py --config configs/llmrouterbench.yaml \
+    --dataset llmrouterbench --out router-llmrouterbench.npz
 ```
 
-(~6 MB for LLMRouterBench; [docs/gateway.md](gateway.md#the-router-file).)
+A trained network, 0.4 MB, weights only (`--kind knn` writes the kNN index
+instead, ~6 MB); [docs/gateway.md](gateway.md#the-router-file).
 
 ---
 

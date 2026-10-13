@@ -72,7 +72,7 @@ aar-gateway-subagents = "evaluation.gateway.subagent_baseline:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"router.gateway" = ["static/*.html"]
+"router.gateway" = ["static/*.html", "routers/*.npz"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

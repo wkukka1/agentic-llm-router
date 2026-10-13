@@ -40,8 +40,10 @@ async def _lifespan(_app: FastAPI):
         print(f"router not loaded, forwarding requests unrouted: {router_error}", file=sys.stderr)
     interceptor.configure(settings, picker, router_error=router_error)
     rcfg = settings["router"]
-    _router_status.update(enabled=picker is not None, error=router_error, kind=rcfg.get("kind"),
-                          source=rcfg.get("data_config") if rcfg.get("kind") == "knn" else rcfg.get("run"),
+    _router_status.update(enabled=picker is not None, error=router_error,
+                          kind=getattr(picker, "router_kind", rcfg.get("kind")),
+                          source=(rcfg.get("artifact") or
+                                  (rcfg.get("data_config") if rcfg.get("kind") == "knn" else rcfg.get("run"))),
                           models=sorted(settings["models"]))
     pid_file = _pid_file()
     pid_file.parent.mkdir(parents=True, exist_ok=True)

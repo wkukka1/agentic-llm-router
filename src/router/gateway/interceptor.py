@@ -150,8 +150,8 @@ MARGIN_HEADER = "x-aar-quality-margin"
 #: named cost preferences for the dashboard: how much predicted quality a turn
 #: may give up to reach a cheaper model
 #: Calibrated on LLMRouterBench's held-out split (1,738 prompts, 13 models,
-#: kNN router) against always-GPT-5 (0.596 quality, $28.3 per 1k prompts):
-#: 0.01 -> 0.615 at $24.4; 0.05 -> 0.596 at $17.2; 0.08 -> 0.580 at $12.1.
+#: the shipped MLP router) against always-GPT-5 (0.596 quality, $28.3 per 1k
+#: prompts): 0.01 -> 0.626 at $26.5; 0.05 -> 0.612 at $19.8; 0.08 -> 0.590 at $14.8.
 PRESETS = {"best_quality": 0.01, "balanced": 0.05, "save_more": 0.08}
 
 

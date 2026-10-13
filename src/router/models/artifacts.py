@@ -159,6 +159,25 @@ class MLPArtifactPayload(ArtifactPayload):
             "query_features": self.query_features,
         }
 
+    def save(self, path, *, encoder: dict[str, Any], model_costs: Optional[list[float]] = None,
+             meta: Optional[dict[str, Any]] = None) -> None:
+        """One ``.npz`` the gateway serves with numpy alone: the two layers'
+        weights (``Linear -> ReLU -> Dropout -> Linear``; dropout is off at
+        inference) and a JSON header. No training prompts or scores inside."""
+        import json
+
+        import numpy as np
+
+        def arr(key):
+            v = self.state_dict[key]
+            return np.asarray(v.detach().cpu().numpy() if hasattr(v, "detach") else v, dtype=np.float32)
+
+        header = {"format": "mlp", "model_ids": self.model_ids, "in_dim": self.in_dim, "hidden": self.hidden,
+                  "dropout": self.dropout, "pathway": self.pathway, "encoder": encoder,
+                  "model_costs": model_costs, **(meta or {})}
+        np.savez_compressed(path, w1=arr("0.weight"), b1=arr("0.bias"), w2=arr("3.weight"), b2=arr("3.bias"),
+                            header=np.frombuffer(json.dumps(header).encode(), dtype=np.uint8))
+
     @classmethod
     def from_state(cls, state: dict[str, Any]) -> "MLPArtifactPayload":
         return cls(
@@ -235,6 +254,29 @@ class KNNArtifactPayload(ArtifactPayload):
                           model_ids=list(header["model_ids"]), k=int(header["k"]),
                           encoder=dict(header["encoder"]), model_costs=header.get("model_costs"))
         return payload, header
+
+
+def load_router_file(path) -> tuple[ArtifactPayload, dict[str, Any]]:
+    """``(payload, header)`` from a router ``.npz`` (``aar-gateway setup``):
+    a :class:`KNNArtifactPayload` or an :class:`MLPArtifactPayload` whose
+    ``state_dict`` holds numpy arrays, by the header's ``format``."""
+    import json
+
+    import numpy as np
+
+    with np.load(path, allow_pickle=False) as z:
+        header = json.loads(z["header"].tobytes().decode())
+        kind = header.get("format")
+        if kind == "knn":
+            return KNNArtifactPayload.load(path)
+        if kind == "mlp":
+            state = {"0.weight": z["w1"], "0.bias": z["b1"], "3.weight": z["w2"], "3.bias": z["b2"]}
+            payload = MLPArtifactPayload(state_dict=state, model_ids=list(header["model_ids"]),
+                                         in_dim=int(header["in_dim"]), hidden=int(header["hidden"]),
+                                         dropout=float(header.get("dropout", 0.0)),
+                                         pathway=header.get("pathway", "retrieval"))
+            return payload, header
+    raise ValueError(f"{path} is not a router file this version can load (format={kind!r})")
 
 
 @dataclass

@@ -34,7 +34,17 @@ if it exists, else the defaults (router off).
 
 ## The router file
 
-The gateway serves its router from one small file: the training prompts'
+The gateway serves its router from one small file. **The shipped one is a
+trained network** ([`MLPArtifactPayload`](../src/router/models/artifacts.py)):
+a prompt's embedding in, a predicted score per model out (`Linear → ReLU →
+Linear`, 256 hidden units). The file holds only the weights, **0.38 MB, no
+training prompts or scores**, and is served with numpy. On LLMRouterBench's
+held-out split it matches or beats the kNN router at every margin (Balanced:
+0.612 at $19.79 per 1k against kNN's 0.596 at $17.25; at equal cost the
+network is ~0.005–0.009 higher); loaded from the file it scores exactly as
+it did in training.
+
+The alternative (`--kind knn`) is a kNN index: the training prompts'
 embeddings and their per-model scores
 ([`KNNArtifactPayload`](../src/router/models/artifacts.py)). A prompt's
 predicted quality per model is the mean score of its 25 nearest training
@@ -47,8 +57,9 @@ exactly (largest difference 0.0; same top model on all 500).
 
 ```bash
 # build it (needs the pool's processed data and retrieval embeddings)
-python scripts/routing/export_knn_router.py --config configs/llmrouterbench.yaml \
-    --k 25 --dataset llmrouterbench --out router-llmrouterbench.npz
+python scripts/routing/export_router.py --config configs/llmrouterbench.yaml \
+    --dataset llmrouterbench --out router-llmrouterbench.npz      # trained network (default)
+# or --kind knn --k 25 for the kNN index
 
 # use it
 aar-gateway setup --router router-llmrouterbench.npz
@@ -220,13 +231,14 @@ cache rewrites than it saved.
 The margin is the user's cost preference: how much predicted quality a turn
 may give up for a cheaper model. The presets are calibrated on
 LLMRouterBench's held-out split (1,738 prompts, 13 models), against always
-using GPT-5 (quality 0.596, $28.30 per 1k prompts):
+using GPT-5 (quality 0.596, $28.30 per 1k prompts), for the shipped trained
+router (the kNN router's figures in brackets):
 
 | Preset | Margin | Quality | Cost / 1k prompts |
 |---|---|---|---|
-| Best quality | 0.01 | 0.615 | $24.40 (−14%) |
-| Balanced (default) | 0.05 | 0.596 | $17.25 (−39%) |
-| Save more | 0.08 | 0.580 | $12.06 (−57%) |
+| Best quality | 0.01 | 0.626 (0.615) | $26.52, −6% ($24.40, −14%) |
+| Balanced (default) | 0.05 | 0.612 (0.596) | $19.79, −30% ($17.25, −39%) |
+| Save more | 0.08 | 0.590 (0.580) | $14.82, −48% ($12.06, −57%) |
 
 `0` (always the top prediction) is allowed, but on the benchmark it cost
 *more* than always using GPT-5 for no measurable gain.

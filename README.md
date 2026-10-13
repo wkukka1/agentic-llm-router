@@ -31,15 +31,14 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv tool install "agentic-llm-router[gateway] @ git+https://github.com/wkukka1/agentic-llm-router"
 
 # 3. first-time setup: installs the router and writes ~/.aar-gateway/config.yaml
-aar-gateway setup --router <router file or URL>
+aar-gateway setup
 ```
 
-The router is one ~6 MB file (`router-llmrouterbench.npz`). Get it from the
-maintainers, or build it yourself from the benchmark data:
-`scripts/routing/export_knn_router.py` ([docs/RUNBOOK.md](docs/RUNBOOK.md)).
-Without it the gateway still works, but sends every request to the model you
-asked for. `aar-gateway setup` ends by running `aar-gateway doctor`, which
-checks everything and says how to fix anything missing.
+The router comes with the package: a small trained network (0.4 MB). To use
+one you built yourself, `aar-gateway setup --router <file>`
+([docs/RUNBOOK.md](docs/RUNBOOK.md)). `aar-gateway setup` ends by running
+`aar-gateway doctor`, which checks everything and says how to fix anything
+missing.
 
 Later: `uv tool upgrade agentic-llm-router` updates it; `uv tool uninstall
 agentic-llm-router` removes it (your settings stay in `~/.aar-gateway`).

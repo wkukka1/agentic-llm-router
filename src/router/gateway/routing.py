@@ -95,24 +95,26 @@ def price_for(settings: Mapping, model: str | None) -> Mapping | None:
 def load_router_model(rcfg: Mapping):
     """The trained ranker the gateway scores prompts with.
 
-    * ``artifact``: a kNN router file (``aar-gateway setup`` fetches one;
-      ``scripts/routing/export_knn_router.py`` writes one) -- served with
-      numpy and fastembed alone, no training data and no PyTorch. Takes
-      precedence when set.
+    * ``artifact``: a router file (``aar-gateway setup`` installs one;
+      ``scripts/routing/export_router.py`` writes one) -- a trained MLP
+      (weights only) or a kNN index, served with numpy and fastembed alone,
+      no training data and no PyTorch. Takes precedence when set.
     * ``knn``: nearest neighbours over a pool's training prompts, from the
       full training data (the `research` extra). On LLMRouterBench it matched
       or beat the trained NIRT at every margin (see docs/gateway.md).
     * ``nirt``: a trained run under ``runs_dir``."""
     if rcfg.get("artifact"):
-        from ..models.artifacts import ArtifactFormat, KNNArtifactPayload, RouterModelArtifact
-        from ..routing.routers import KNNRouter
+        from ..models.artifacts import ArtifactFormat, RouterModelArtifact, load_router_file
+        from ..routing.routers import KNNRouter, MLPRouter
 
         path = Path(rcfg["artifact"]).expanduser()
-        payload, header = KNNArtifactPayload.load(path)
+        payload, header = load_router_file(path)
         artifact = RouterModelArtifact(artifact_id=str(header.get("artifact_id") or path.stem), payload=payload,
                                        content_hash=str(header.get("content_hash", "")), format=ArtifactFormat.NPZ,
-                                       supported_model_ids=payload.model_ids, router_model_name="knn",
+                                       supported_model_ids=payload.model_ids, router_model_name=header["format"],
                                        training_dataset_version=str(header.get("dataset", "")))
+        if header["format"] == "mlp":
+            return MLPRouter.from_router_file(artifact, header)
         return KNNRouter.from_artifact(artifact)
     if rcfg.get("kind", "nirt") == "knn":
         from ..routing.routers import KNNRouter, load_training_data_for_router
@@ -316,4 +318,5 @@ def build_picker(settings: Mapping, router_model=None, graded=None,
         }
 
     pick.calibration_status = calibration_status
+    pick.router_kind = getattr(router_model, "kind", rcfg.get("kind"))  # what actually loaded
     return pick
