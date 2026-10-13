@@ -33,7 +33,7 @@ DEFAULT_MODELS: dict[str, dict] = {
 DEFAULT_ROUTER = {"enabled": False, "kind": "knn", "data_config": "configs/llmrouterbench.yaml", "k": 25,
                   "run": "lrb-nirt-2d-projected", "runs_dir": None, "margin": 0.05,
                   "expected_output_tokens": 800, "cache_ttl": "1h", "horizon_requests": 20,
-                  "switch_margin": 0.05}
+                  "switch_margin": 0.05, "turn_smoothing": 0.5}
 #: Claude Code subagents (``router.gateway.subagents``): ``roles`` maps a role
 #: to a model (``null`` keeps the session's), merged over that module's
 #: defaults; ``enabled: false`` routes subagents like any other turn.

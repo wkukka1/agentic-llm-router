@@ -596,8 +596,9 @@ class _Turn:
             _prefixes[self.sig] = (now, fewest)
             _forget_cold(now)
             profile = _update_profile(self.session.get("profile") or {}, usage)
+            quality = self.decision.get("model_quality") or self.session.get("quality")
             _sessions[self.key] = {"model": self.target, "prompt_tokens": tokens, "profile": profile,
-                                   "agent": self.agent}
+                                   "agent": self.agent, "quality": quality}
             if self.body.get("tools"):
                 _global_profile.update(_update_profile(_global_profile, usage))
             _sessions.move_to_end(self.key)
@@ -718,6 +719,7 @@ async def _decide(turn: _Turn) -> None:
     ctx = {"requested": turn.requested, "human_text": turn.human,
            "est_prompt_tokens": _est_prompt_tokens(turn),
            "last_model": turn.session.get("model"),
+           "prev_quality": turn.session.get("quality"),
            "last_prompt_tokens": turn.session.get("prompt_tokens"),
            "quality_margin": _request_margin(turn.request),
            "allow_upgrade": bool(routing.get("allow_upgrade")),

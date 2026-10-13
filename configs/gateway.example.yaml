@@ -63,6 +63,12 @@ interceptor:
     # it is on. The router's per-prompt scores are noisy; without this a
     # session flip-flops and pays a cache rewrite on every flip.
     switch_margin: 0.05
+    # Each turn's predicted quality is blended with the previous turn's: the
+    # weight on the new message (1.0 = judge each message alone). A
+    # conversation's difficulty changes slowly and one prediction is noisy;
+    # without this, consecutive messages flipped Opus -> Haiku -> Opus and Opus
+    # reread the whole conversation into its cache.
+    turn_smoothing: 0.5
     # Once this many of your turns are graded (aar-gateway-grade), a prompt
     # with enough similar graded ones is routed on those grades -- the real
     # tiers, no stand-ins. Otherwise the benchmark router above decides.

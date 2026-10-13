@@ -199,6 +199,12 @@ def build_picker(settings: Mapping, router_model=None, graded=None,
     #: conversation flip-flops between models turn to turn and every flip
     #: rewrites the ~200k-token prompt cache (seen live: 2% dearer than no router).
     switch_margin = float(rcfg.get("switch_margin", 0.05))
+    # A conversation's difficulty changes slowly and one message's prediction
+    # is noisy, so each turn's per-model prediction is blended with the
+    # previous turn's: weight on the new message (1.0 = judge each message
+    # alone). Found live: two messages 34 s apart flipped Opus -> Haiku ->
+    # Opus, and Opus reread the whole conversation into its cache.
+    smoothing = min(max(float(rcfg.get("turn_smoothing", 0.5)), 0.0), 1.0)
 
     def warm_tokens(model: str, ctx: Mapping) -> float:
         """Prefix tokens already in ``model``'s cache: the whole conversation
@@ -277,6 +283,9 @@ def build_picker(settings: Mapping, router_model=None, graded=None,
             if reason:
                 skipped[model] = reason
                 continue
+            previous = (ctx.get("prev_quality") or {}).get(model)
+            if previous is not None and math.isfinite(previous):
+                quality = smoothing * quality + (1.0 - smoothing) * float(previous)
             raw_quality[model] = quality
             profile = LLMProfile(name=model, provider=spec["lane"], model_id=model,
                                  input_cost_per_token=price["input"] * 1e-6,
@@ -305,6 +314,7 @@ def build_picker(settings: Mapping, router_model=None, graded=None,
         return {
             "model": chosen.model.model_id,
             "reason": reason,
+            "model_quality": {m: round(q, 4) for m, q in raw_quality.items()},  # carried to the next turn
             "predicted_quality": round(raw_quality[chosen.model.model_id], 4),
             "best_predicted_quality": round(max(raw_quality.values()), 4),
             "est_cost": round(chosen.expected_cost, 6),

@@ -356,3 +356,16 @@ def test_the_dashboard_is_told_which_models_are_not_claude(env):
     interceptor.configure(settings, None)
     notes = interceptor.preferences()["model_notes"]
     assert notes == {"local-coder": "other provider", "llama3.1:latest": "local"}
+
+
+def test_the_previous_turns_prediction_reaches_the_router(env):
+    client, settings, _, _ = env
+    seen = []
+
+    def picker(body, ctx):
+        seen.append(ctx["prev_quality"])
+        return {"model": "claude-haiku-4-5", "reason": "r", "model_quality": {"claude-haiku-4-5": 0.6}}
+    interceptor.configure(settings, picker)
+    client.post("/v1/messages", json=turn("one"), headers=AUTH)
+    client.post("/v1/messages", json=turn("two"), headers=AUTH)  # same conversation, next human turn
+    assert seen == [None, {"claude-haiku-4-5": 0.6}]
