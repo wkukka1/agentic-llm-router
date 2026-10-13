@@ -496,8 +496,21 @@ cheaper. Haiku matched the best answer on 110 of 198 prompts; the router
 sent it 21. The oracle shows the headroom: 59% less usage at no loss. A
 leave-one-out classifier on the benchmark router's predictions, prompt
 length and source found almost no signal either (AUC 0.57 for "Haiku is
-enough", 0.55 for Sonnet). The next steps are a much larger graded set, or
-answering cheap first and escalating on a quality check.
+enough", 0.55 for Sonnet). The shipped trained router routes the same way
+(0.849, +0.005 vs mix, −28% usage): it learned from the same stand-ins.
+
+**Answering cheap first and escalating on a check doesn't pay off either.**
+On the same 200 prompts, a checker read each prompt with Haiku's answer and
+said keep it or escalate to Opus:
+
+| Checker | Right when it says "keep" (base rate 55%) | vs mix | Checking cost |
+|---|---|---|---|
+| Haiku | 57% | +0.002 | $0.56 |
+| Sonnet | 66% | −0.012 | $7.95 |
+
+Haiku can't judge its own answers, and Sonnet checking costs nearly as much
+as answering. What's left is training data graded on the real tiers: a much
+larger graded set than these 200.
 
 Known limits:
 
