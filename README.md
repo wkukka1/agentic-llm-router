@@ -125,10 +125,10 @@ don't.
   router and the port, and says how to fix each problem.
 * **"busy" in the dashboard's Status column** means Anthropic asked Claude
   Code to slow down (your plan's rate limit). Claude Code retries by itself.
-* **A red "+$0.xx"** on one request means switching model cost more that
-  once: the new model had to read the whole conversation in fresh. A "—"
-  means the request went to the model you asked for. Judge savings by the
-  session totals, which include these.
+* **A red "+N%"** on one request means switching model cost more that
+  once: the new model had to read the whole conversation in fresh. It should
+  be rare. A "—" means the request went to the model you asked for. Judge
+  savings by the session totals, which include these.
 * **Settings:** `aar-gateway config` shows which config file is in use
   (default `~/.aar-gateway/config.yaml`). Every option is explained in
   [configs/gateway.example.yaml](configs/gateway.example.yaml).

@@ -395,18 +395,14 @@ function savedCell(actual, base, cls = "") {
   return `<td class="save ${p < 0 ? "neg" : ""} ${cls}"${why}>${p > 0 ? p + "%" : "+" + (-p) + "%"}</td>`;
 }
 
-/* One request's saving. A percentage only where it means something: a request
-   answered by the model asked for saved nothing by definition (an earlier
-   switch's cache cost lands on it, and is counted in the session total), and
-   a rerouted one that cost more shows the extra dollars -- a percentage of a
-   small cached baseline reads as "+1200%". */
+/* One request's saving. A request answered by the model asked for saved
+   nothing by definition (an earlier switch's cache cost lands on it, and is
+   counted in the session total), so it shows "—". */
 function requestSavedCell(r) {
   const base = r.cost_if_requested_usd, actual = r.cost_usd;
   const routed = r.routed_model !== r.requested_model && !r.fallback;
   if (!routed || base == null || actual == null)
     return `<td class="save none" title="Answered by the model you asked for. Any cache cost from an earlier switch to another model is counted in the session's total.">—</td>`;
-  if (actual > base)
-    return `<td class="save neg" title="This switch cost more on this request: the new model read the whole conversation into its cache. Whether switching paid off shows in the session's total.">+${usd(actual - base)}</td>`;
   return savedCell(actual, base);
 }
 
