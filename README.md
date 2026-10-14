@@ -133,6 +133,12 @@ don't.
 
 ## If something looks wrong
 
+* **"talking to Anthropic directly"** in Claude Code: the gateway stopped
+  answering, so Claude Code went back to Anthropic on its own (no routing,
+  nothing else changes). It tries to restart the gateway and switches back
+  by itself once it's up; `aar-gateway logs` shows why it stopped. If you
+  enabled the gateway before this check existed, run `aar-gateway enable`
+  once more to get it.
 * **`claude` can't connect** after you enabled the gateway: it isn't
   running. `aar-gateway start`, or `aar-gateway disable` to go back to
   talking to Anthropic directly.

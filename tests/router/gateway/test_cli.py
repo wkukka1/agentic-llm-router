@@ -150,7 +150,8 @@ def test_local_add_pulls_once_adds_and_remove_takes_it_out(monkeypatch, capsys):
 def claude_settings(monkeypatch):
     """~/.claude/settings.json (home is a temp folder, conftest); no real login service."""
     monkeypatch.setattr(cli, "_service", lambda action, run=None: 0)
-    monkeypatch.setattr(cli, "_ensure_running", lambda url, quiet=False: False)
+    monkeypatch.setattr(cli, "_ensure_running", lambda url, quiet=False, wait=90: False)
+    monkeypatch.setattr(cli, "_temporary_install", lambda: None)
     path = cli._claude_settings_path()
     path.parent.mkdir(parents=True)
     return path
@@ -184,11 +185,131 @@ def test_enable_never_replaces_another_proxy_unless_forced(claude_settings):
 
 def test_the_session_start_hook_prints_nothing(monkeypatch, capsys):
     """A SessionStart hook's output becomes part of the conversation."""
-    def down(url, quiet=False):
+    def down(url, quiet=False, wait=90):
         raise SystemExit("the gateway did not come up")
     monkeypatch.setattr(cli, "_ensure_running", down)
+    monkeypatch.setattr(cli, "_healthy", lambda url: False)
     assert cli.main(["start", "--quiet"]) == 0
     assert capsys.readouterr() == ("", "")
+
+
+def test_enable_refuses_a_copy_in_a_temporary_folder_unless_forced(claude_settings, monkeypatch):
+    """Seen live: `enable` run from a test install under /private/tmp pointed
+    every session at a gateway that never came up."""
+    monkeypatch.setattr(cli, "_temporary_install", lambda: "/private/tmp/scratch/uvcheck/bin")
+    with pytest.raises(SystemExit, match="temporary folder"):
+        cli.main(["enable"])
+    assert not claude_settings.exists() and not cli.auto_enabled()
+    assert cli.main(["enable", "--force"]) == 0 and cli.auto_enabled()
+
+
+def test_a_temporary_install_is_recognised(monkeypatch, tmp_path):
+    import tempfile
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(cli.sys, "executable", str(tmp_path / "uvcheck" / "bin" / "python"))
+    assert cli._temporary_install() == str((tmp_path / "uvcheck" / "bin").absolute())
+    if cli.WINDOWS:
+        return
+    monkeypatch.setattr(cli.sys, "executable", "/opt/tools/agentic-llm-router/bin/python")
+    monkeypatch.setattr(cli, "_src", lambda: "/opt/tools/agentic-llm-router/lib/site-packages")
+    assert cli._temporary_install() is None
+
+
+@pytest.fixture
+def gateway(claude_settings, monkeypatch):
+    """`enable`d, with the gateway's health and background starts under the test's control."""
+    import json
+
+    state = {"up": True, "spawned": 0}
+    monkeypatch.setattr(cli, "_healthy", lambda url: state["up"])
+    monkeypatch.setattr(cli, "_running_pid", lambda: None)
+    monkeypatch.setattr(cli, "_spawn", lambda: state.__setitem__("spawned", state["spawned"] + 1))
+    claude_settings.write_text(json.dumps({"model": "opus"}))
+    cli.main(["enable"])
+    state["settings"] = lambda: json.loads(claude_settings.read_text())
+    return state
+
+
+def _said(capsys) -> str:
+    import json
+
+    out = capsys.readouterr().out.strip()
+    return json.loads(out)["systemMessage"] if out else ""
+
+
+def test_a_down_gateway_sends_claude_code_to_anthropic_until_it_is_back(gateway, capsys):
+    capsys.readouterr()
+    assert cli.main(["guard"]) == 0 and _said(capsys) == ""  # up: nothing changes, nothing printed
+    assert gateway["settings"]()["env"]["ANTHROPIC_BASE_URL"] == cli._base_url()
+
+    gateway["up"] = False
+    cli.main(["guard"])
+    assert "talking to Anthropic directly" in _said(capsys)
+    on = gateway["settings"]()
+    assert "ANTHROPIC_BASE_URL" not in on["env"] and on["model"] == "opus"
+    assert gateway["spawned"] == 1 and cli.auto_enabled()  # still enabled: its hooks stay
+    assert len(on["hooks"]["UserPromptSubmit"]) == 1
+
+    cli.main(["guard"])  # still down: says it once, and doesn't restart it on every message
+    assert _said(capsys) == "" and gateway["spawned"] == 1
+
+    gateway["up"] = True
+    cli.main(["guard"])
+    assert "routing is on again" in _said(capsys)
+    assert gateway["settings"]()["env"]["ANTHROPIC_BASE_URL"] == cli._base_url() and not cli._suspended()
+
+
+def test_the_session_start_hook_switches_to_anthropic_when_the_gateway_wont_start(gateway, monkeypatch, capsys):
+    def down(url, quiet=False, wait=90):
+        raise SystemExit("the gateway exited while starting")
+    monkeypatch.setattr(cli, "_ensure_running", down)
+    gateway["up"] = False
+    capsys.readouterr()
+    cli.main(["start", "--quiet"])
+    assert "talking to Anthropic directly" in _said(capsys)
+    assert "ANTHROPIC_BASE_URL" not in gateway["settings"]()["env"]
+
+
+def test_a_down_gateway_never_takes_out_someone_elses_address(gateway, capsys):
+    import json
+
+    gateway["up"] = False
+    cli.main(["guard"])
+    on = gateway["settings"]()
+    on["env"]["ANTHROPIC_BASE_URL"] = "http://other:9000"  # the user points Claude Code elsewhere meanwhile
+    cli._claude_settings_path().write_text(json.dumps(on))
+    gateway["up"] = True
+    cli.main(["guard"])
+    assert gateway["settings"]()["env"]["ANTHROPIC_BASE_URL"] == "http://other:9000" and not cli._suspended()
+
+
+def test_disable_while_the_gateway_is_down_restores_the_settings(gateway):
+    gateway["up"] = False
+    cli.main(["guard"])
+    assert cli.main(["disable"]) == 0
+    assert gateway["settings"]() == {"model": "opus"} and not cli.auto_enabled()
+
+
+def test_the_guard_does_nothing_unless_enabled(claude_settings, monkeypatch, capsys):
+    import json
+
+    monkeypatch.setattr(cli, "_healthy", lambda url: False)
+    monkeypatch.setattr(cli, "_spawn", lambda: pytest.fail("started a gateway nobody enabled"))
+    claude_settings.write_text(json.dumps({"env": {"ANTHROPIC_BASE_URL": "http://other:9000"}}))
+    cli.main(["guard"])
+    assert capsys.readouterr().out == "" and not cli._suspended()
+
+
+def test_starting_gives_up_as_soon_as_the_gateway_exits(monkeypatch):
+    class Exited:
+        def poll(self):
+            return 1
+    monkeypatch.setattr(cli, "_healthy", lambda url: False)
+    monkeypatch.setattr(cli, "_spawn", lambda: Exited())
+    monkeypatch.setattr(cli.time, "sleep", lambda s: None)
+    with pytest.raises(SystemExit, match="exited while starting"):
+        cli._ensure_running(cli._base_url(), quiet=True)
 
 
 def test_setup_changes_claude_code_only_on_a_yes(claude_settings, monkeypatch, capsys):

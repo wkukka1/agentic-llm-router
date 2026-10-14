@@ -14,7 +14,7 @@ gateway process.
     aar-gateway serve                   the gateway in the foreground
     aar-gateway agents [--install DIR]  the subagent kinds as --agents JSON / agent files
 
-``hook`` and ``statusline`` are called by Claude Code itself. They import
+``hook``, ``guard`` and ``statusline`` are called by Claude Code itself. They import
 nothing but the standard library: the hook runs on every subagent spawn and
 must not wait for the web server's imports.
 
@@ -114,26 +114,39 @@ def _running_pid() -> int | None:
 # --------------------------------------------------------------------------- #
 # process management                                                          #
 # --------------------------------------------------------------------------- #
-def _ensure_running(url: str, *, quiet: bool = False) -> bool:
-    """Start the gateway in the background if nothing answers at ``url``.
-    ``True`` if this call started it."""
-    if _healthy(url):
-        return False
+def _spawn() -> subprocess.Popen:
+    """The gateway, started in the background; returns without waiting."""
     log = _log_file()
     log.parent.mkdir(parents=True, exist_ok=True)
     # detached, so it outlives this command and the terminal it ran in
     detach = ({"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
               if WINDOWS else {"start_new_session": True})
     with log.open("ab") as out:
-        subprocess.Popen([sys.executable, "-m", "router.gateway.cli", "serve"],
-                         stdout=out, stderr=out, stdin=subprocess.DEVNULL, env=_src_env(), **detach)
+        return subprocess.Popen([sys.executable, "-m", "router.gateway.cli", "serve"],
+                                stdout=out, stderr=out, stdin=subprocess.DEVNULL, env=_src_env(), **detach)
+
+
+def _ensure_running(url: str, *, quiet: bool = False, wait: float = 90) -> bool:
+    """Start the gateway in the background if nothing answers at ``url``.
+    ``True`` if this call started it. Gives up after ``wait`` seconds, or as
+    soon as the new process exits (a crash on start, or another gateway
+    already starting on the port) and nothing answers."""
+    if _healthy(url):
+        return False
+    proc = _spawn()
     if not quiet:
-        print(f"starting the gateway at {url} (log: {log}) ...", file=sys.stderr)
-    for _ in range(180):
+        print(f"starting the gateway at {url} (log: {_log_file()}) ...", file=sys.stderr)
+    deadline = time.monotonic() + wait
+    while time.monotonic() < deadline:
         if _healthy(url):
             return True
+        if proc.poll() is not None:
+            time.sleep(1)  # the port's owner may have been mid-start
+            if _healthy(url):
+                return True
+            raise SystemExit("the gateway exited while starting -- see `aar-gateway logs`")
         time.sleep(0.5)
-    raise SystemExit("the gateway did not come up within 90s -- see `aar-gateway logs`")
+    raise SystemExit(f"the gateway did not come up within {wait:g}s -- see `aar-gateway logs`")
 
 
 def _stop() -> bool:
@@ -491,6 +504,9 @@ def _doctor() -> int:
     if not auto_enabled():
         report(None, "every Claude Code session", "off: only `aar-gateway code` uses the gateway",
                "aar-gateway enable")
+    elif _suspended() and not _healthy(url):
+        report(False, "every Claude Code session", "on, but the gateway is down, so `claude` talks to Anthropic "
+               "directly (no routing) until it's back", "aar-gateway start  (and `aar-gateway logs` for why)")
     elif _healthy(url):
         report(True, "every Claude Code session", "plain `claude` goes through the gateway")
     else:
@@ -674,12 +690,136 @@ def _write_claude_settings(path: Path, settings: dict) -> None:
 
 
 def auto_enabled() -> bool:
-    """Whether plain ``claude`` goes through this gateway (``aar-gateway enable``)."""
+    """Whether plain ``claude`` goes through this gateway (``aar-gateway enable``),
+    counting a session that is on Anthropic directly while the gateway is down."""
+    if _suspended():
+        return True
     try:
         settings = _read_claude_settings(_claude_settings_path())
     except SystemExit:
         return False
     return (settings.get("env") or {}).get("ANTHROPIC_BASE_URL") == _base_url()
+
+
+def _temporary_install() -> str | None:
+    """The temporary folder this copy of the package runs from, if it does:
+    ``enable`` would make every Claude Code session depend on a folder the
+    system can delete (seen live: a test install under /private/tmp left
+    every session failing with "connection refused")."""
+    import tempfile
+
+    roots = set()
+    for root in (tempfile.gettempdir(), "/tmp", "/private/tmp", "/var/tmp"):
+        roots |= {Path(root), Path(root).resolve()}
+    exe = Path(sys.executable).absolute()  # a venv's python is a symlink to the real one: not resolved
+    for place in (exe.parent, Path(_src())):
+        for root in roots:
+            if place.is_relative_to(root):
+                return str(place)
+    return None
+
+
+# --------------------------------------------------------------------------- #
+# when the gateway is down: talk to Anthropic directly until it's back        #
+# --------------------------------------------------------------------------- #
+#: Without this, plain `claude` sends every request to a gateway that isn't
+#: there and fails with "connection refused" -- and can't even run a command
+#: to fix it. Claude Code's hooks check the gateway as a session starts and
+#: before each message: down, its address comes out of the user settings (so
+#: Claude Code talks to Anthropic directly) and a restart is tried in the
+#: background; back up, the address goes back in.
+RETRY_START_SECONDS = 120
+
+
+def _suspend_file() -> Path:
+    return _home() / "suspended.json"
+
+
+def _suspended() -> dict | None:
+    try:
+        return json.loads(_suspend_file().read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def _mark_suspended(**fields) -> None:
+    path = _suspend_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({**(_suspended() or {}), **fields}))
+
+
+def _suspend() -> bool:
+    """Takes the gateway's address out of Claude Code's user settings, if it
+    is there; ``True`` if it was."""
+    path = _claude_settings_path()
+    try:
+        settings = _read_claude_settings(path)
+    except SystemExit:
+        return False
+    env = settings.get("env") or {}
+    if env.get("ANTHROPIC_BASE_URL") != _base_url():
+        return False
+    _mark_suspended(url=_base_url(), since=time.time())
+    del env["ANTHROPIC_BASE_URL"]
+    _write_claude_settings(path, settings)
+    return True
+
+
+def _resume() -> bool:
+    """Puts the gateway's address back after :func:`_suspend`; ``True`` if it
+    did. If the user has pointed Claude Code somewhere else since, that stays."""
+    if not _suspended():
+        return False
+    path = _claude_settings_path()
+    try:
+        settings = _read_claude_settings(path)
+    except SystemExit:
+        return False
+    env = settings.setdefault("env", {})
+    _suspend_file().unlink(missing_ok=True)
+    if env.get("ANTHROPIC_BASE_URL"):
+        return False
+    env["ANTHROPIC_BASE_URL"] = _base_url()
+    _write_claude_settings(path, settings)
+    return True
+
+
+def _say(message: str) -> None:
+    """A hook's note to the user: shown in Claude Code, not added to the conversation."""
+    print(json.dumps({"systemMessage": message}))
+
+
+def _guard(wait: float = 0) -> None:
+    """Claude Code's SessionStart (``wait`` > 0: start the gateway and wait for
+    it) and UserPromptSubmit (no waiting) hook. Prints nothing unless it
+    switched the session one way or the other."""
+    url = _base_url()
+    up = _healthy(url)
+    if not up and wait:
+        try:
+            _ensure_running(url, quiet=True, wait=wait)
+            up = True
+        except SystemExit:
+            pass
+    if up:
+        if _resume():
+            _say(f"aar gateway is back at {url}: routing is on again.")
+        return
+    switched = _suspend()
+    state = _suspended()
+    if state is None:  # Claude Code isn't pointed at this gateway by `enable`: nothing to do
+        return
+    if wait:  # the start above was this attempt
+        _mark_suspended(tried=time.time())
+    elif _running_pid() is None and time.time() - state.get("tried", 0) > RETRY_START_SECONDS:
+        try:
+            _spawn()  # in the background; a later message switches back once it answers
+            _mark_suspended(tried=time.time())
+        except OSError:
+            pass
+    if switched:
+        _say(f"aar gateway isn't answering at {url}, so Claude Code is talking to Anthropic directly "
+             "(no routing) until it's back. `aar-gateway logs` shows why it stopped.")
 
 
 def _enable(force: bool = False) -> int:
@@ -689,6 +829,13 @@ def _enable(force: bool = False) -> int:
     the status line; the subagent kinds go to ``~/.claude/agents``; on macOS
     and Linux the gateway also starts at login. Only what's missing is added,
     and ``aar-gateway disable`` takes exactly that out again."""
+    temp = _temporary_install()
+    if temp and not force:
+        raise SystemExit(f"This aar-gateway runs from a temporary folder ({temp}).\n"
+                         "Every Claude Code session would depend on it, and the system can delete that folder.\n"
+                         "Install it for good first (`uv tool install \"agentic-llm-router[gateway] @ "
+                         "git+https://github.com/wkukka1/agentic-llm-router\"`) and run `aar-gateway enable` "
+                         "from there, or pass --force.")
     path = _claude_settings_path()
     settings = _read_claude_settings(path)
     url, run = _base_url(), _self_command()
@@ -701,8 +848,10 @@ def _enable(force: bool = False) -> int:
     env.setdefault("ENABLE_TOOL_SEARCH", "true")  # see _claude_command
     hooks = settings.setdefault("hooks", {})
     wanted = {
-        # prints nothing: a SessionStart hook's output would become part of the conversation
+        # both print nothing unless the gateway is down (_guard): a hook's plain
+        # output would become part of the conversation
         "SessionStart": {"hooks": [{"type": "command", "command": f"{run} start --quiet", "timeout": 90}]},
+        "UserPromptSubmit": {"hooks": [{"type": "command", "command": f"{run} guard", "timeout": 5}]},
         "PreToolUse": {"matcher": "Agent|Task",
                        "hooks": [{"type": "command", "command": f"{run} hook", "timeout": 5}]},
     }
@@ -713,6 +862,7 @@ def _enable(force: bool = False) -> int:
     if path.exists() and not path.with_name("settings.json.aar-backup").exists():
         shutil.copy2(path, path.with_name("settings.json.aar-backup"))
     _write_claude_settings(path, settings)
+    _suspend_file().unlink(missing_ok=True)
     print(f"plain `claude` now goes through the gateway in every session ({path})")
     _agents(["--install"])
     if sys.platform == "darwin" or sys.platform.startswith("linux"):
@@ -731,8 +881,9 @@ def _disable() -> int:
     path = _claude_settings_path()
     settings = _read_claude_settings(path)
     env = settings.get("env") or {}
-    if env.get("ANTHROPIC_BASE_URL") == _base_url():
-        del env["ANTHROPIC_BASE_URL"]
+    ours = env.get("ANTHROPIC_BASE_URL") == _base_url()
+    if ours or (_suspended() and not env.get("ANTHROPIC_BASE_URL")):  # suspended: the address is out already
+        env.pop("ANTHROPIC_BASE_URL", None)
         if env.get("ENABLE_TOOL_SEARCH") == "true":
             del env["ENABLE_TOOL_SEARCH"]
     if not env:
@@ -748,6 +899,7 @@ def _disable() -> int:
         del settings["statusLine"]
     if path.exists():
         _write_claude_settings(path, settings)
+    _suspend_file().unlink(missing_ok=True)
     if sys.platform == "darwin" or sys.platform.startswith("linux"):
         _service("uninstall")
     print("plain `claude` talks to Anthropic directly again; `aar-gateway code` still uses the gateway")
@@ -812,7 +964,10 @@ def _statusline() -> None:
     except ValueError:
         session = ""
     info = _get(f"{_base_url()}/api/statusline?{urllib.parse.urlencode({'session_id': session})}")
-    print(info.get("line", "aar gateway") if info else "aar gateway: not running")
+    if info:
+        print(info.get("line", "aar gateway"))
+    else:
+        print("aar gateway: down, talking to Anthropic directly" if _suspended() else "aar gateway: not running")
 
 
 # --------------------------------------------------------------------------- #
@@ -837,6 +992,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if argv[:1] == ["statusline"]:
         _statusline()
+        return 0
+    if argv[:1] == ["guard"]:
+        _guard()
         return 0
     if argv[:1] == ["agents"]:
         _agents(argv[1:])
@@ -865,7 +1023,8 @@ def main(argv: list[str] | None = None) -> int:
     every.add_argument("--no-enable", action="store_true",
                        help="leave plain `claude` alone (use `aar-gateway code` instead)")
     enable = sub.add_parser("enable", help="every `claude` session goes through the gateway, no command needed")
-    enable.add_argument("--force", action="store_true", help="replace another ANTHROPIC_BASE_URL in your settings")
+    enable.add_argument("--force", action="store_true", help="replace another ANTHROPIC_BASE_URL in your settings, "
+                                                             "or enable from a temporary install")
     sub.add_parser("disable", help="undo `enable`: plain `claude` talks to Anthropic directly again")
     sub.add_parser("doctor", help="check the setup, with a fix for each problem")
     sub.add_parser("local", help="optional local models via Ollama: local [add|remove] <model>")
@@ -877,17 +1036,16 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("agents", help="the subagent kinds as --agents JSON; --install [DIR] writes agent files")
     sub.add_parser("statusline", help="Claude Code's status-line command (reads JSON on stdin)")
     sub.add_parser("hook", help="Claude Code's PreToolUse hook for subagents (reads JSON on stdin)")
+    sub.add_parser("guard", help="Claude Code's UserPromptSubmit hook: talk to Anthropic directly while the "
+                                 "gateway is down")
     args = parser.parse_args(argv)
 
     if args.command is None:
         parser.print_help()
         return 0
     if args.command == "start":
-        if args.quiet:
-            try:
-                _ensure_running(url, quiet=True)
-            except SystemExit:
-                pass  # Claude Code's next request reports the gateway being down
+        if args.quiet:  # Claude Code's SessionStart hook
+            _guard(wait=45)
             return 0
         started = _ensure_running(url)
         print(("started" if started else "already running") + f": {url}  (dashboard {url}/dashboard)")
