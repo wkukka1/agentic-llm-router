@@ -144,3 +144,78 @@ def test_local_add_pulls_once_adds_and_remove_takes_it_out(monkeypatch, capsys):
     assert "claude-opus-5-5" in models  # added to the defaults, never replacing them
     assert cli.main(["local", "remove", "llama3.1"]) == 0
     assert "llama3.1:latest" not in load_settings(None)["models"] and not local_models_path().exists()
+
+
+@pytest.fixture
+def claude_settings(monkeypatch):
+    """~/.claude/settings.json (home is a temp folder, conftest); no real login service."""
+    monkeypatch.setattr(cli, "_service", lambda action, run=None: 0)
+    monkeypatch.setattr(cli, "_ensure_running", lambda url, quiet=False: False)
+    path = cli._claude_settings_path()
+    path.parent.mkdir(parents=True)
+    return path
+
+
+def test_enable_keeps_the_users_settings_and_disable_restores_them(claude_settings, capsys):
+    import json
+
+    mine = {"model": "opus", "env": {"FOO": "1"},
+            "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "lint"}]}]}}
+    claude_settings.write_text(json.dumps(mine))
+    assert cli.main(["enable"]) == 0 and cli.main(["enable"]) == 0  # twice: nothing added twice
+    on = json.loads(claude_settings.read_text())
+    assert on["env"]["ANTHROPIC_BASE_URL"] == cli._base_url() and on["env"]["FOO"] == "1"
+    assert len(on["hooks"]["SessionStart"]) == 1 and len(on["hooks"]["PreToolUse"]) == 2
+    assert on["hooks"]["SessionStart"][0]["hooks"][0]["command"].endswith("start --quiet")
+    assert "statusline" in on["statusLine"]["command"] and cli.auto_enabled()
+    assert (claude_settings.parent / "agents" / "lookup.md").exists()
+    assert cli.main(["disable"]) == 0
+    assert json.loads(claude_settings.read_text()) == mine and not cli.auto_enabled()
+
+
+def test_enable_never_replaces_another_proxy_unless_forced(claude_settings):
+    import json
+
+    claude_settings.write_text(json.dumps({"env": {"ANTHROPIC_BASE_URL": "http://other:9000"}}))
+    with pytest.raises(SystemExit, match="--force"):
+        cli.main(["enable"])
+    assert cli.main(["enable", "--force"]) == 0 and cli.auto_enabled()
+
+
+def test_the_session_start_hook_prints_nothing(monkeypatch, capsys):
+    """A SessionStart hook's output becomes part of the conversation."""
+    def down(url, quiet=False):
+        raise SystemExit("the gateway did not come up")
+    monkeypatch.setattr(cli, "_ensure_running", down)
+    assert cli.main(["start", "--quiet"]) == 0
+    assert capsys.readouterr() == ("", "")
+
+
+def test_setup_changes_claude_code_only_on_a_yes(claude_settings, monkeypatch, capsys):
+    monkeypatch.setattr(cli, "_doctor", lambda: 0)
+    monkeypatch.setattr(cli, "_healthy", lambda url: False)
+    monkeypatch.setattr(cli, "_fetch_router", lambda source, target: None)
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt: "")  # Enter: the default is no
+    cli.main(["setup"])
+    assert not cli.auto_enabled() and "aar-gateway code" in capsys.readouterr().out
+    monkeypatch.setattr("builtins.input", lambda prompt: "y")
+    cli.main(["setup"])
+    assert cli.auto_enabled()
+
+
+def test_setup_without_a_terminal_never_asks_or_changes_anything(claude_settings, monkeypatch):
+    monkeypatch.setattr(cli, "_doctor", lambda: 0)
+    monkeypatch.setattr(cli, "_healthy", lambda url: False)
+    monkeypatch.setattr(cli, "_fetch_router", lambda source, target: None)
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False)
+    cli.main(["setup"])
+    assert not cli.auto_enabled()
+    cli.main(["setup", "--yes"])
+    assert cli.auto_enabled()
+
+
+def test_code_adds_no_second_hook_once_enabled(claude_settings):
+    cli.main(["enable"])
+    args, env = cli._claude_command(cli._base_url(), [])
+    assert "--settings" not in args and env["ANTHROPIC_BASE_URL"] == cli._base_url()

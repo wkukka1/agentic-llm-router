@@ -34,16 +34,27 @@ uv tool install "agentic-llm-router[gateway] @ git+https://github.com/wkukka1/ag
 aar-gateway setup
 ```
 
+Setup asks one question: **use the gateway in every Claude Code session?**
+Answer `y` and plain `claude` goes through the gateway from then on. The
+gateway starts by itself (at login on macOS and Linux, and whenever a
+session starts if it isn't running), so you never run a command for it.
+Press Enter (the default is no) and nothing about Claude Code changes: start
+it with `aar-gateway code` whenever you want routing. You can change your
+mind any time with `aar-gateway enable` or `aar-gateway disable`.
+
 The router comes with the package: a small trained network (0.4 MB). To use
 one you built yourself, `aar-gateway setup --router <file>`
 ([docs/RUNBOOK.md](docs/RUNBOOK.md)). `aar-gateway setup` ends by running
 `aar-gateway doctor`, which checks everything and says how to fix anything
 missing.
 
-Later: `uv tool upgrade agentic-llm-router` updates it; `uv tool uninstall
-agentic-llm-router` removes it (your settings stay in `~/.aar-gateway`).
+Later: `uv tool upgrade agentic-llm-router` updates it. To remove it, run
+`aar-gateway disable` first (if you enabled it), then `uv tool uninstall
+agentic-llm-router`; your settings stay in `~/.aar-gateway`.
 
 ## Use it
+
+If you enabled it at setup, just run `claude` as always. Otherwise:
 
 ```bash
 aar-gateway code            # Claude Code, through the gateway (starts it if needed)
@@ -97,6 +108,7 @@ don't.
 | Command | What it does |
 |---|---|
 | `aar-gateway code` | run Claude Code through the gateway |
+| `aar-gateway enable` / `disable` | use the gateway in every `claude` session, or stop |
 | `aar-gateway dashboard` | open the dashboard |
 | `aar-gateway status` | is it running, is the router loaded, how much has it saved |
 | `aar-gateway start` / `stop` / `restart` | run or stop the gateway in the background |
@@ -121,6 +133,9 @@ don't.
 
 ## If something looks wrong
 
+* **`claude` can't connect** after you enabled the gateway: it isn't
+  running. `aar-gateway start`, or `aar-gateway disable` to go back to
+  talking to Anthropic directly.
 * **Run `aar-gateway doctor`.** It checks Claude Code, your config, the
   router and the port, and says how to fix each problem.
 * **"busy" in the dashboard's Status column** means Anthropic asked Claude
