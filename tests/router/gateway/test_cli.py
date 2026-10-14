@@ -49,6 +49,12 @@ def test_logs_shows_the_last_lines(tmp_path, capsys):
     assert capsys.readouterr().out == "line 8\nline 9\n"
 
 
+def test_logs_from_windows_print_one_line_ending(tmp_path, capsys):
+    (tmp_path / "gateway.log").write_bytes(b"a\r\nb\r\n")
+    assert cli.main(["logs", "-n", "1"]) == 0
+    assert capsys.readouterr().out == "b\n"
+
+
 def test_doctor_flags_a_missing_claude_and_a_bad_config(nothing_running, tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(cli.shutil, "which", lambda name, path=None: None)
     bad = tmp_path / "config.yaml"

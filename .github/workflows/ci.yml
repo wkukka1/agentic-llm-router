@@ -27,7 +27,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[research,gateway,dev]"
-          pip install pytest ruff
+          pip install pytest ruff pytest-github-actions-annotate-failures
 
       - name: Lint
         run: ruff check src tests
@@ -57,7 +57,7 @@ jobs:
       - name: Install (gateway only)
         run: |
           python -m pip install --upgrade pip
-          pip install ".[gateway]" pytest
+          pip install ".[gateway]" pytest pytest-github-actions-annotate-failures
 
       - name: Test
         run: pytest -q -p no:cacheprovider tests/router/gateway tests/router/llm/adapters/test_claude_subscription.py

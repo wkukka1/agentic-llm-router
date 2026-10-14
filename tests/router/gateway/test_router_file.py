@@ -68,7 +68,7 @@ def test_setup_installs_the_router_and_writes_a_config(tmp_path, monkeypatch, ca
     home = tmp_path  # AAR_GATEWAY_LOG lives in tmp_path (conftest)
     assert (home / "router.npz").exists()
     config = (home / "config.yaml").read_text()
-    assert "enabled: true" in config and str(home / "router.npz") in config
+    assert "enabled: true" in config  # the path is checked parsed: Windows' backslashes are escaped in the file
     from router.gateway.config import load_settings
     assert load_settings(home / "config.yaml")["router"]["artifact"] == str(home / "router.npz")
     (home / "config.yaml").write_text("mine\n")

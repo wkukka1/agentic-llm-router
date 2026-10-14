@@ -199,6 +199,11 @@ def _status(as_json: bool = False) -> int:
     return 0
 
 
+def _text(raw: bytes) -> str:
+    """Log bytes as text; Windows writes \\r\\n, which print() would double up."""
+    return raw.decode(errors="replace").replace("\r\n", "\n")
+
+
 def _logs(lines: int, follow: bool) -> int:
     log = _log_file()
     if not log.exists():
@@ -206,7 +211,7 @@ def _logs(lines: int, follow: bool) -> int:
         return 1
     with log.open("rb") as f:
         tail = f.readlines()[-lines:] if lines > 0 else []
-    sys.stdout.write(b"".join(tail).decode(errors="replace"))
+    sys.stdout.write(_text(b"".join(tail)))
     if not follow:
         return 0
     with log.open("rb") as f:
@@ -215,7 +220,7 @@ def _logs(lines: int, follow: bool) -> int:
             while True:
                 chunk = f.readline()
                 if chunk:
-                    sys.stdout.write(chunk.decode(errors="replace"))
+                    sys.stdout.write(_text(chunk))
                     sys.stdout.flush()
                 else:
                     time.sleep(0.3)
