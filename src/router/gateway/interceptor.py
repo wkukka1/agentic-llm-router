@@ -122,6 +122,26 @@ _REQUEST_SPECIFIC = re.compile(r"prompt is too long|too many tokens|max_tokens|c
                                r"|thread|previous_message_id", re.I)
 
 
+#: a message that says the last answer was wrong. Phrases only: a bare "wrong"
+#: or "no" would catch questions about code that is wrong. Automated messages
+#: (subagent hand-backs, grading prompts) are excluded in is_correction.
+CORRECTION = re.compile(r"\b(?:that'?s|that is|this is|it'?s) (?:wrong|incorrect|not (?:right|correct|what i (?:asked|meant|wanted)))"
+                        r"|\bnot (?:quite )?(?:right|correct)\b|\bnot (?:quite )?what i (?:asked|meant|wanted)\b"
+                        r"|\btry again\b|\bredo (?:it|that|this)\b|\byou missed\b|\bstill (?:broken|failing|wrong)\b"
+                        r"|\b(?:doesn'?t|didn'?t) work\b|^\s*no[,.!]", re.I)
+#: after a correction of a cheaper model's answer, this many main-agent turns
+#: stay on the model the user asked for
+CORRECTION_HOLD_TURNS = 8
+
+
+def is_correction(text: str | None) -> bool:
+    if not text or len(text) > 400:  # a correction is short; long text is a new task
+        return False
+    if text.lstrip().startswith(("<", "Another Claude session", "You are grading")):
+        return False
+    return bool(CORRECTION.search(text))
+
+
 #: why the router isn't loaded, when it failed at startup (shown on the dashboard)
 _router_error: str | None = None
 
@@ -581,6 +601,8 @@ class _Turn:
         self.attempted: str | None = None
         self.error: str | None = None  # the provider's error type and message, when it refused
         self.message_id: str | None = None  # the id of the message this request produced
+        self.correction = False  # the user's message corrects a cheaper model's answer
+        self.hold_left = self.session.get("hold", 0)  # main-agent turns still held on the asked model
         self.t0 = time.perf_counter()
 
     def body_for(self, model: str) -> bytes:
@@ -614,7 +636,7 @@ class _Turn:
             profile = _update_profile(self.session.get("profile") or {}, usage)
             quality = self.decision.get("model_quality") or self.session.get("quality")
             _sessions[self.key] = {"model": self.target, "prompt_tokens": tokens, "profile": profile,
-                                   "agent": self.agent, "quality": quality}
+                                   "agent": self.agent, "quality": quality, "hold": self.hold_left}
             if self.body.get("tools"):
                 _global_profile.update(_update_profile(_global_profile, usage))
             _sessions.move_to_end(self.key)
@@ -642,6 +664,7 @@ class _Turn:
             "conversation": self.key,
             "new_turn": self.human is not None,
             "turn_trigger": turn_trigger(self.human),
+            "correction": self.correction,
             "subagent": self.agent is not None,
             "agent_role": (self.agent or {}).get("role"),
             "role_source": (self.agent or {}).get("source"),
@@ -735,6 +758,15 @@ async def _decide(turn: _Turn) -> None:
                                 _blocked_for(turn), _est_prompt_tokens(turn))
         if by_role:
             turn.target, turn.decision = by_role["model"], by_role
+            return
+    if turn.agent is None and turn.human is not None:
+        if is_correction(turn.human) and turn.session.get("model") not in (None, turn.requested):
+            turn.correction, turn.hold_left = True, CORRECTION_HOLD_TURNS
+        if turn.hold_left > 0:
+            turn.target = turn.requested
+            turn.decision = {"reason": "after a correction: staying on the model you asked for "
+                                       f"({turn.hold_left} more turn{'s' if turn.hold_left != 1 else ''})"}
+            turn.hold_left -= 1
             return
     if _picker is None:
         return

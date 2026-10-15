@@ -432,3 +432,44 @@ def test_a_thread_error_never_blocks_the_model(env):
     state["anthropic_status"]["claude-haiku-4-5"] = 400
     client.post("/v1/messages", json=turn("again"), headers=AUTH)
     assert not interceptor._blocked
+
+
+@pytest.mark.parametrize("text", [
+    "that's wrong, the cache key is the model name", "No, use the other file", "not quite what I asked",
+    "try again", "you missed the second case", "still failing on the tests", "this doesn't work",
+    "redo that with the retry logic"])
+def test_corrections_are_recognised(text):
+    assert interceptor.is_correction(text)
+
+
+@pytest.mark.parametrize("text", [
+    None, "what's wrong with this function?", "no need to change the tests", "add a wrong-type check",
+    "<agent-message from='a1'>Another subagent wrote: that's wrong</agent-message>",
+    "Another Claude session sent a message: not quite right", "You are grading answers to a developer's request",
+    "that's wrong " * 40])
+def test_ordinary_messages_and_automated_ones_are_not_corrections(text):
+    assert not interceptor.is_correction(text)
+
+
+def test_a_correction_of_a_cheaper_answer_holds_the_next_turns_on_the_asked_model(env):
+    client, settings, calls, _ = env
+    interceptor.configure(settings, lambda body, ctx: "claude-haiku-4-5")
+    client.post("/v1/messages", json=turn("first"), headers=AUTH)  # Haiku answers
+    client.post("/v1/messages", json=turn("that's wrong, redo it"), headers=AUTH)  # the correction
+    assert calls["anthropic"][-1]["model"] == "claude-opus-5"
+    rec = records()[-1]
+    assert rec["correction"] is True and rec["routed_model"] == "claude-opus-5"
+    for i in range(interceptor.CORRECTION_HOLD_TURNS - 1):
+        client.post("/v1/messages", json=turn(f"next task {i}"), headers=AUTH)
+        assert calls["anthropic"][-1]["model"] == "claude-opus-5", i
+    client.post("/v1/messages", json=turn("another task"), headers=AUTH)
+    assert calls["anthropic"][-1]["model"] == "claude-haiku-4-5"  # the hold is over
+
+
+def test_a_correction_after_an_answer_on_the_asked_model_holds_nothing(env):
+    client, settings, calls, _ = env
+    interceptor.configure(settings, lambda body, ctx: None)
+    client.post("/v1/messages", json=turn("first"), headers=AUTH)
+    client.post("/v1/messages", json=turn("that's wrong"), headers=AUTH)
+    assert records()[-1]["correction"] is False
+    assert records()[-1]["reason"] != "after a correction: staying on the model you asked for (7 more turns)"
