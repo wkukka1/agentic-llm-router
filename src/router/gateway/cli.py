@@ -1135,13 +1135,26 @@ def main(argv: list[str] | None = None) -> int:
         # `aar-gateway stop` just stopped: a stop is a clean exit
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
 
-    config = uvicorn.Config(app, host=os.environ.get("AAR_GATEWAY_HOST", "127.0.0.1"),
-                            port=int(os.environ.get("AAR_GATEWAY_PORT", "8787")),
+    import socket
+
+    host, port = os.environ.get("AAR_GATEWAY_HOST", "127.0.0.1"), int(os.environ.get("AAR_GATEWAY_PORT", "8787"))
+    config = uvicorn.Config(app, host=host, port=port,
                             timeout_graceful_shutdown=5)  # open dashboard streams never close by themselves
     # the port first, before anything loads: a second gateway started at the
     # same moment exits here, without touching the running one's pid file,
-    # and requests arriving while the router loads wait instead of being refused
-    sock = config.bind_socket()  # exits if the port is taken
+    # and requests arriving while the router loads wait instead of being refused.
+    # Windows: SO_REUSEADDR there lets a second socket take a port in use, so
+    # the exclusive option is used instead (uvicorn's own bind sets REUSEADDR)
+    sock = socket.socket(socket.AF_INET6 if ":" in host else socket.AF_INET, socket.SOCK_STREAM)
+    if WINDOWS:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+    else:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.bind((host, port))
+    except OSError as exc:
+        raise SystemExit(f"can't listen on {host}:{port} ({exc}): another gateway may be running -- "
+                         f"see `aar-gateway status`") from None
     uvicorn.Server(config).run(sockets=[sock])
     return 0
 
