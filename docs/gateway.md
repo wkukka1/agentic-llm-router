@@ -509,8 +509,33 @@ said keep it or escalate to Opus:
 | Sonnet | 66% | −0.012 | $7.95 |
 
 Haiku can't judge its own answers, and Sonnet checking costs nearly as much
-as answering. What's left is training data graded on the real tiers: a much
-larger graded set than these 200.
+as answering.
+
+**More graded prompts of this kind won't close the gap either.** Three
+checks, before spending the plan on 800 more:
+
+* **The learning curve is flat.** Routing on the graded pool, trained on
+  50, 100 or 150 prompts and tested on 40 held out (60 random splits),
+  stays on the random-mix line at every size (kNN −0.000 → +0.002 →
+  −0.001 vs mix; ridge +0.000 → +0.002 → +0.001).
+* **The headroom is real, not judge noise.** The same stored answers for
+  50 prompts were judged twice, in fresh random order. Scores correlate
+  0.75 (mean difference 0.07 on a 0–1 scale); "Haiku is as good as the
+  best" agrees 80% of the time; the oracle's pick agrees 72%. The oracle's
+  picks from one pass, scored by the other, keep their quality (+0.038 vs
+  always-Opus), so the 59% saving is there to be had.
+* **The prompt doesn't say which tier is enough.** Leave-one-out AUC for
+  "Haiku is enough": length, code hints and source 0.64; the benchmark
+  router's predictions 0.63; the text embedding 0.57; all of them 0.64.
+  For "Haiku or Sonnet is enough", all of them 0.67.
+
+So a per-turn router that reads only the prompt can't find most of that
+saving, however much graded data it gets. What works is routing by the
+kind of work instead: search subagents on Haiku save ~97% with no measured
+loss (see [Subagents](#subagents)). The next gains are more of that
+(delegating more of a turn's lookup work to cheap subagents) and signals
+from the session itself (whether the user had to correct or redo a cheap
+model's answer), not more prompts.
 
 Known limits:
 
