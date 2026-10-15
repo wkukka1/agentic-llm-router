@@ -139,6 +139,34 @@ def test_a_failed_reroute_falls_back_to_the_model_the_client_asked_for(env):
     assert rec["fallback"] is True and rec["routed_model"] == "claude-opus-5"
 
 
+def test_a_refused_request_logs_the_providers_reason(env):
+    """So a run of 400s can be diagnosed from the log, without the prompt."""
+    client, settings, calls, state = env
+    interceptor.configure(settings, None)
+    state["anthropic_status"]["claude-opus-5"] = 400
+    state["error_message"] = "messages.3.content.0: invalid   signature in thinking block"
+    assert client.post("/v1/messages", json=turn("hi"), headers=AUTH).status_code == 400
+    (rec,) = records()
+    assert rec["status"] == 400 and rec["error"] == "error: messages.3.content.0: invalid signature in thinking block"
+
+
+def test_a_fallback_keeps_why_the_reroute_was_refused(env):
+    client, settings, calls, state = env
+    state["anthropic_status"]["claude-haiku-4-5"] = 400
+    state["error_message"] = "thinking: not supported"
+    interceptor.configure(settings, lambda body, ctx: "claude-haiku-4-5")
+    assert client.post("/v1/messages", json=turn("hi"), headers=AUTH).status_code == 200
+    (rec,) = records()
+    assert rec["status"] == 200 and rec["error"] == "claude-haiku-4-5: error: thinking: not supported"
+
+
+def test_an_error_event_mid_stream_is_logged():
+    tap = interceptor._SSEUsageTap()
+    tap.feed(b'event: error\ndata: {"type": "error", "error": {"type": "overloaded_error", '
+             b'"message": "Overloaded"}}\n\n')
+    assert tap.error == "overloaded_error: Overloaded"
+
+
 def test_baselines_assume_the_other_model_kept_its_cache(env):
     """Turn 1 on Opus caches a 1,000-token prefix. Turn 2 is moved to Haiku,
     which has to rewrite that prefix -- but the "if you had stayed on Opus"

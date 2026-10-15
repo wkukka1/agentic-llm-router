@@ -523,6 +523,7 @@ class _SSEUsageTap:
         self._buf = b""
         self.usage: dict = {}
         self.stop_reason: str | None = None
+        self.error: str | None = None  # an error event mid-stream (overloaded, ...)
 
     def feed(self, chunk: bytes) -> None:
         self._buf += chunk
@@ -542,6 +543,8 @@ class _SSEUsageTap:
         elif payload.get("type") == "message_delta":
             self.usage.update({k: v for k, v in (payload.get("usage") or {}).items() if v is not None})
             self.stop_reason = (payload.get("delta") or {}).get("stop_reason") or self.stop_reason
+        elif payload.get("type") == "error":
+            self.error = error_summary(json.dumps(payload).encode())
 
 
 class _Turn:
@@ -569,6 +572,7 @@ class _Turn:
         self.decision: dict = {"reason": "client's choice"}
         self.fallback = False
         self.attempted: str | None = None
+        self.error: str | None = None  # the provider's error type and message, when it refused
         self.t0 = time.perf_counter()
 
     def body_for(self, model: str) -> bytes:
@@ -638,6 +642,7 @@ class _Turn:
             "reason": d.get("reason"),
             "fallback": self.fallback,
             "attempted_model": self.attempted,
+            "error": self.error,
             "status": status,
             "latency_s": round(time.perf_counter() - self.t0, 3),
             "input_tokens": usage.get("input_tokens"),
@@ -758,20 +763,22 @@ async def _relay_anthropic(upstream: httpx.Response, on_done) -> Response:
                     yield chunk
             finally:
                 await upstream.aclose()
-                on_done(upstream.status_code, tap.usage, tap.stop_reason)
+                on_done(upstream.status_code, tap.usage, tap.stop_reason, tap.error)
 
         return StreamingResponse(relay(), status_code=upstream.status_code, headers=headers)
 
     content = await upstream.aread()
     await upstream.aclose()
-    usage = stop_reason = None
+    usage = stop_reason = error = None
     if upstream.status_code == 200:
         try:
             message = json.loads(content)
             usage, stop_reason = message.get("usage"), message.get("stop_reason")
         except (ValueError, AttributeError):
             pass
-    on_done(upstream.status_code, usage, stop_reason)
+    else:
+        error = error_summary(content)
+    on_done(upstream.status_code, usage, stop_reason, error)
     return Response(content, status_code=upstream.status_code, headers=headers)
 
 
@@ -799,15 +806,29 @@ async def _via_anthropic_unguarded(turn: _Turn) -> Response:
         if upstream.status_code == 400:  # the request is valid for the client's model, not this one
             if not _REQUEST_SPECIFIC.search(detail):
                 _blocked[(turn.target, turn.request.headers.get("user-agent", ""))] = (detail[:160], time.monotonic())
+        turn.error = f"{turn.target}: {error_summary(detail.encode())}"  # kept if the fallback succeeds
         turn.fallback, turn.attempted, turn.target = True, turn.target, turn.requested
         turn.decision = {**turn.decision, "reason": f"fell back: {turn.attempted} returned "
                                                     f"{upstream.status_code}: {detail[:160]}"}
         upstream = await _send_anthropic(turn.request, "v1/messages", turn.raw)
-    def done(status: int, usage: Mapping | None, stop_reason: str | None = None) -> None:
+    def done(status: int, usage: Mapping | None, stop_reason: str | None = None, error: str | None = None) -> None:
         turn.stop_reason = stop_reason
+        turn.error = error or turn.error
         turn.finish(status, usage, "anthropic")
 
     return await _relay_anthropic(upstream, done)
+
+
+def error_summary(content: bytes) -> str:
+    """``type: message`` from a provider's error body, for the request log.
+    Error messages name fields and limits, not conversation text; capped
+    all the same."""
+    try:
+        err = json.loads(content).get("error") or {}
+        text = f"{err.get('type', 'error')}: {err.get('message', '')}"
+    except (ValueError, AttributeError):
+        text = content.decode(errors="replace")
+    return " ".join(text.split())[:240]
 
 
 def _error(status: int, message: str) -> JSONResponse:
@@ -843,6 +864,7 @@ async def _via_openai_unguarded(turn: _Turn) -> Response:
             turn.decision = {**turn.decision, "reason": f"fell back: {turn.attempted} returned "
                                                         f"{upstream.status_code}: {detail[:160]}"}
             return await _via_anthropic(turn)
+        turn.error = error_summary(detail.encode())
         turn.finish(upstream.status_code, None, "openai")
         return _error(upstream.status_code, f"{turn.target}: {detail}")
 
@@ -898,7 +920,7 @@ async def forward(request: Request, path: str) -> Response:
         upstream = await _send_anthropic(request, path, raw)
     except httpx.HTTPError as exc:
         return _unreachable(None, "Anthropic API", exc, "anthropic")
-    return await _relay_anthropic(upstream, lambda status, usage, stop_reason=None: None)
+    return await _relay_anthropic(upstream, lambda *_: None)  # passed through, not logged
 
 
 #: the request log as parsed so far: a dashboard refresh parses only the
