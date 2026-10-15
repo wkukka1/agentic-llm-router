@@ -67,6 +67,7 @@ interceptor:
             return httpx.Response(status, json={"type": "error",
                                                 "error": {"message": state.get("error_message", "nope")}})
         return httpx.Response(200, json={"type": "message", "model": body["model"], "content": [],
+                                         "id": f"msg_{len(calls['anthropic'])}",
                                          "usage": state.get("usage", {"input_tokens": 10, "output_tokens": 2})})
 
     interceptor.set_upstream_client(httpx.AsyncClient(transport=httpx.MockTransport(handler)))
@@ -403,3 +404,31 @@ def test_the_thread_mode_is_logged_never_its_ids():
     assert interceptor.thread_mode({"messages": []}) is None
     assert interceptor.thread_mode({"thread": {"type": "create"}}) == "create"
     assert interceptor.thread_mode({"thread": {"previous_message_id": "msg_secret"}}) == "continue"
+
+
+def test_a_thread_continuation_stays_on_the_model_that_wrote_its_message(env):
+    """The API keeps a threaded conversation server-side; a request that
+    only adds to it must not move to another model mid-thread."""
+    client, settings, calls, state = env
+    interceptor.configure(settings, lambda body, ctx: "claude-haiku-4-5")
+    client.post("/v1/messages", json=turn("first"), headers=AUTH)  # routed to Haiku, writes msg_1
+    interceptor.set_model_picker(lambda body, ctx: "claude-opus-5")
+    cont = {**turn("next"), "thread": {"previous_message_id": "msg_1"}}
+    client.post("/v1/messages", json=cont, headers=AUTH)
+    assert calls["anthropic"][-1]["model"] == "claude-haiku-4-5"
+    rec = records()[-1]
+    assert rec["thread"] == "continue" and rec["reason"].startswith("continues a server-side thread")
+    unknown = {**turn("other"), "thread": {"previous_message_id": "msg_from_before_the_gateway"}}
+    client.post("/v1/messages", json=unknown, headers=AUTH)
+    assert calls["anthropic"][-1]["model"] == "claude-opus-5"  # the model asked for
+
+
+def test_a_thread_error_never_blocks_the_model(env):
+    client, settings, calls, state = env
+    state["anthropic_status"]["claude-haiku-4-5"] = 404
+    state["error_message"] = "No thread state was found for the requested `previous_message_id`."
+    interceptor.configure(settings, lambda body, ctx: "claude-haiku-4-5")
+    client.post("/v1/messages", json=turn("hi"), headers=AUTH)
+    state["anthropic_status"]["claude-haiku-4-5"] = 400
+    client.post("/v1/messages", json=turn("again"), headers=AUTH)
+    assert not interceptor._blocked

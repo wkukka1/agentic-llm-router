@@ -77,6 +77,10 @@ _sessions: OrderedDict[str, dict] = OrderedDict()
 _prefixes: dict[str, tuple[float, int]] = {}
 #: (model, prefix signature) -> when that model last cached that prefix
 _warm: dict[tuple[str, str], float] = {}
+#: which model wrote each message (by its id): a request that continues a
+#: server-side thread from a message goes to the model that wrote it
+_message_models: OrderedDict[str, str] = OrderedDict()
+_MAX_MESSAGES = 5000
 #: running per-request token profile of all agent traffic -- the default for a
 #: conversation that has none of its own yet
 _global_profile: dict = {}
@@ -114,7 +118,8 @@ _blocked: dict[tuple[str, str], tuple[str, float]] = {}
 BLOCK_SECONDS = 600.0
 #: 400s about this one request, not the model -- never a reason to stop using it
 _REQUEST_SPECIFIC = re.compile(r"prompt is too long|too many tokens|max_tokens|context (?:length|window)"
-                               r"|exceeds|too large|invalid image|could not process image", re.I)
+                               r"|exceeds|too large|invalid image|could not process image"
+                               r"|thread|previous_message_id", re.I)
 
 
 #: why the router isn't loaded, when it failed at startup (shown on the dashboard)
@@ -524,6 +529,7 @@ class _SSEUsageTap:
         self.usage: dict = {}
         self.stop_reason: str | None = None
         self.error: str | None = None  # an error event mid-stream (overloaded, ...)
+        self.message_id: str | None = None
 
     def feed(self, chunk: bytes) -> None:
         self._buf += chunk
@@ -540,6 +546,7 @@ class _SSEUsageTap:
             return
         if payload.get("type") == "message_start":
             self.usage.update((payload.get("message") or {}).get("usage") or {})
+            self.message_id = (payload.get("message") or {}).get("id")
         elif payload.get("type") == "message_delta":
             self.usage.update({k: v for k, v in (payload.get("usage") or {}).items() if v is not None})
             self.stop_reason = (payload.get("delta") or {}).get("stop_reason") or self.stop_reason
@@ -573,6 +580,7 @@ class _Turn:
         self.fallback = False
         self.attempted: str | None = None
         self.error: str | None = None  # the provider's error type and message, when it refused
+        self.message_id: str | None = None  # the id of the message this request produced
         self.t0 = time.perf_counter()
 
     def body_for(self, model: str) -> bytes:
@@ -592,6 +600,10 @@ class _Turn:
         prev_tokens = self.session.get("prompt_tokens") or 0
         baseline = _warm_usage(usage, max(prev_tokens, self.shared_before))
         strongest = _settings.get("strongest")
+        if status == 200 and self.message_id and lane == "anthropic":
+            _message_models[self.message_id] = self.target
+            while len(_message_models) > _MAX_MESSAGES:
+                _message_models.popitem(last=False)
         if status == 200 and usage:
             now, tokens = time.monotonic(), _prompt_tokens(usage)
             if lane == "anthropic":
@@ -692,6 +704,14 @@ def _est_prompt_tokens(turn: _Turn) -> int:
 
 
 async def _decide(turn: _Turn) -> None:
+    previous = thread_previous(turn.body)
+    if previous:
+        # the API keeps this conversation server-side and this request only
+        # adds to it: it stays with the model that wrote the message it
+        # continues (or the one asked for), never moved mid-thread
+        turn.target = _message_models.get(previous) or turn.requested
+        turn.decision = {"reason": "continues a server-side thread: stays on its model"}
+        return
     if turn.human is None and turn.session.get("model"):
         turn.target = turn.session["model"]
         turn.decision = {"reason": "same turn as the previous request"}
@@ -766,22 +786,22 @@ async def _relay_anthropic(upstream: httpx.Response, on_done) -> Response:
                     yield chunk
             finally:
                 await upstream.aclose()
-                on_done(upstream.status_code, tap.usage, tap.stop_reason, tap.error)
+                on_done(upstream.status_code, tap.usage, tap.stop_reason, tap.error, tap.message_id)
 
         return StreamingResponse(relay(), status_code=upstream.status_code, headers=headers)
 
     content = await upstream.aread()
     await upstream.aclose()
-    usage = stop_reason = error = None
+    usage = stop_reason = error = message_id = None
     if upstream.status_code == 200:
         try:
             message = json.loads(content)
-            usage, stop_reason = message.get("usage"), message.get("stop_reason")
+            usage, stop_reason, message_id = message.get("usage"), message.get("stop_reason"), message.get("id")
         except (ValueError, AttributeError):
             pass
     else:
         error = error_summary(content)
-    on_done(upstream.status_code, usage, stop_reason, error)
+    on_done(upstream.status_code, usage, stop_reason, error, message_id)
     return Response(content, status_code=upstream.status_code, headers=headers)
 
 
@@ -814,12 +834,20 @@ async def _via_anthropic_unguarded(turn: _Turn) -> Response:
         turn.decision = {**turn.decision, "reason": f"fell back: {turn.attempted} returned "
                                                     f"{upstream.status_code}: {detail[:160]}"}
         upstream = await _send_anthropic(turn.request, "v1/messages", turn.raw)
-    def done(status: int, usage: Mapping | None, stop_reason: str | None = None, error: str | None = None) -> None:
+    def done(status: int, usage: Mapping | None, stop_reason: str | None = None, error: str | None = None,
+             message_id: str | None = None) -> None:
         turn.stop_reason = stop_reason
         turn.error = error or turn.error
+        turn.message_id = message_id
         turn.finish(status, usage, "anthropic")
 
     return await _relay_anthropic(upstream, done)
+
+
+def thread_previous(body: Mapping) -> str | None:
+    """The message id a server-side thread request continues from, if any."""
+    thread = body.get("thread")
+    return thread.get("previous_message_id") if isinstance(thread, Mapping) else None
 
 
 def thread_mode(body: Mapping) -> str | None:
