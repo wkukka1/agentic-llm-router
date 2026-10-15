@@ -27,6 +27,10 @@ async def _lifespan(_app: FastAPI):
     from .routing import build_picker
 
     settings = load_settings(config_path())
+    # the text encoder's model, kept with the gateway's files: fastembed's
+    # default is the system temp folder, which macOS clears, and a missing
+    # model means a download before the gateway can answer
+    os.environ.setdefault("FASTEMBED_CACHE_PATH", str(interceptor.log_path().parent / "models"))
     use_graded = settings["router"].get("use_graded", True)
     router_error = None
     try:
@@ -146,7 +150,7 @@ async def health():
     picker = getattr(interceptor, "_picker", None)
     if picker is not None and hasattr(picker, "calibration_status"):
         status["calibration"] = picker.calibration_status()
-    return {"status": "ok", "router": status}
+    return {"status": "ok", "pid": os.getpid(), "router": status}
 
 
 @app.get("/stats")

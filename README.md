@@ -133,9 +133,11 @@ don't.
 
 ## If something looks wrong
 
-* **`claude` can't connect** after you enabled the gateway: it isn't
-  running. `aar-gateway start`, or `aar-gateway disable` to go back to
-  talking to Anthropic directly.
+* **If the gateway stops answering** while you use Claude Code with it
+  enabled, sessions switch to Anthropic directly, with one line saying so,
+  and try to start the gateway again. Routing comes back on with the next
+  message once it answers. Nothing needs doing; `aar-gateway doctor` says
+  why it stopped.
 * **Run `aar-gateway doctor`.** It checks Claude Code, your config, the
   router and the port, and says how to fix each problem.
 * **"busy" in the dashboard's Status column** means Anthropic asked Claude

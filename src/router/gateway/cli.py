@@ -101,7 +101,9 @@ def _running_pid() -> int | None:
     try:
         pid = int(_pid_file().read_text().strip())
     except (OSError, ValueError):
-        return None
+        # no pid file (an older gateway could lose it): ask the one answering
+        pid = (_get(f"{_base_url()}/health") or {}).get("pid")
+        return pid if isinstance(pid, int) else None
     if WINDOWS:
         return pid if _healthy(_base_url()) else None
     try:
@@ -114,26 +116,50 @@ def _running_pid() -> int | None:
 # --------------------------------------------------------------------------- #
 # process management                                                          #
 # --------------------------------------------------------------------------- #
-def _ensure_running(url: str, *, quiet: bool = False) -> bool:
-    """Start the gateway in the background if nothing answers at ``url``.
-    ``True`` if this call started it."""
+def _ensure_running(url: str, *, quiet: bool = False, timeout: float = 90) -> bool:
+    """Start the gateway in the background if nothing answers at ``url``,
+    waiting up to ``timeout`` seconds for it. ``True`` if this call started it."""
     if _healthy(url):
         return False
+    if _service_running():
+        # the login service is starting it (at login the router takes a few
+        # seconds to load): a second one here would only fail on the port
+        if _wait_healthy(url, min(30, timeout)):
+            return False
+    elif _service_start():
+        # started by the login service, so it restarts the gateway if it crashes
+        if not quiet:
+            print(f"starting the gateway at {url} (login service) ...", file=sys.stderr)
+        if _wait_healthy(url, timeout):
+            return True
     log = _log_file()
     log.parent.mkdir(parents=True, exist_ok=True)
     # detached, so it outlives this command and the terminal it ran in
     detach = ({"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
               if WINDOWS else {"start_new_session": True})
     with log.open("ab") as out:
-        subprocess.Popen([sys.executable, "-m", "router.gateway.cli", "serve"],
-                         stdout=out, stderr=out, stdin=subprocess.DEVNULL, env=_src_env(), **detach)
+        proc = subprocess.Popen([sys.executable, "-m", "router.gateway.cli", "serve"],
+                                stdout=out, stderr=out, stdin=subprocess.DEVNULL, env=_src_env(), **detach)
     if not quiet:
         print(f"starting the gateway at {url} (log: {log}) ...", file=sys.stderr)
-    for _ in range(180):
+    if _wait_healthy(url, timeout, proc):
+        return True
+    if proc.poll() is not None and not _healthy(url):
+        raise SystemExit(f"the gateway exited while starting (code {proc.returncode}) -- see `aar-gateway logs`")
+    raise SystemExit(f"the gateway did not come up within {timeout:.0f}s -- see `aar-gateway logs`")
+
+
+def _wait_healthy(url: str, seconds: float, proc: subprocess.Popen | None = None) -> bool:
+    """Whether ``url`` answers within ``seconds``; gives up early once
+    ``proc`` (the gateway being started) has exited."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
         if _healthy(url):
             return True
+        if proc is not None and proc.poll() is not None:
+            return _healthy(url)  # another gateway may have taken the port meanwhile
         time.sleep(0.5)
-    raise SystemExit("the gateway did not come up within 90s -- see `aar-gateway logs`")
+    return False
 
 
 def _stop() -> bool:
@@ -147,13 +173,38 @@ def _stop() -> bool:
         print("the gateway is not running")
         return False
     os.kill(pid, signal.SIGTERM)  # on Windows: TerminateProcess
-    for _ in range(50):
-        if not _healthy(_base_url()):
-            _pid_file().unlink(missing_ok=True)  # a terminated process can't remove its own
-            print(f"stopped the gateway (pid {pid})")
-            return True
+    # gone, not just quiet: a gateway closes its port first, then waits for
+    # open connections (the dashboard's live stream never ends by itself)
+    if not _wait_exit(pid, 10) and not WINDOWS:
+        os.kill(pid, signal.SIGKILL)
+        _wait_exit(pid, 5)
+    if _healthy(_base_url()):
+        print(f"sent stop to pid {pid}; something is still answering on {_base_url()}")
+        return False
+    _pid_file().unlink(missing_ok=True)  # a terminated process can't remove its own
+    print(f"stopped the gateway (pid {pid})")
+    return True
+
+
+def _wait_exit(pid: int, seconds: float) -> bool:
+    """Whether ``pid`` exited within ``seconds``. Windows has no signal-free
+    probe (see :func:`_running_pid`); there the port going quiet is the sign."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if WINDOWS:
+            if not _healthy(_base_url()):
+                return True
+        else:
+            try:
+                if os.waitpid(pid, os.WNOHANG)[0] == pid:  # our own child: reap it
+                    return True
+            except ChildProcessError:
+                pass  # not our child: the usual case
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                return True
         time.sleep(0.2)
-    print(f"sent stop to pid {pid}; it is still answering on {_base_url()}")
     return False
 
 
@@ -488,7 +539,11 @@ def _doctor() -> int:
     except OSError as exc:
         report(False, "log folder writable", f"{home}: {exc}", "set AAR_GATEWAY_LOG to a writable path")
 
-    if not auto_enabled():
+    if _suspended_file().exists():
+        report(False, "every Claude Code session",
+               "the gateway stopped answering, so sessions talk to Anthropic directly (no routing)",
+               "aar-gateway start  -- routing comes back on with the next message")
+    elif not auto_enabled():
         report(None, "every Claude Code session", "off: only `aar-gateway code` uses the gateway",
                "aar-gateway enable")
     elif _healthy(url):
@@ -548,22 +603,76 @@ def _service_paths() -> tuple[str, Path]:
     raise SystemExit(f"start-at-login isn't supported on {sys.platform}; run `aar-gateway start` instead")
 
 
-def _service(action: str, run=subprocess.run) -> int:
+def _service_start() -> bool:
+    """Asks launchd/systemd to start the gateway, if its service is installed."""
+    try:
+        kind, path = _service_paths()
+    except SystemExit:
+        return False
+    if not path.exists():
+        return False
+    cmd = (["launchctl", "kickstart", f"gui/{os.getuid()}/{SERVICE_LABEL}"] if kind == "launchd"
+           else ["systemctl", "--user", "start", "aar-gateway.service"])
+    try:
+        return subprocess.run(cmd, capture_output=True, timeout=10).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _service_running() -> bool:
+    """Whether launchd/systemd has the gateway's process up (it may still be loading)."""
+    try:
+        kind, path = _service_paths()
+    except SystemExit:  # no login service on this OS
+        return False
+    if not path.exists():
+        return False
+    cmd = (["launchctl", "print", f"gui/{os.getuid()}/{SERVICE_LABEL}"] if kind == "launchd"
+           else ["systemctl", "--user", "is-active", "aar-gateway.service"])
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return "state = running" in out if kind == "launchd" else out.strip() == "active"
+
+
+def _service(action: str, run=subprocess.run, *, at_next_login: bool = False) -> int:
+    """``at_next_login``: register it without starting it now, so a gateway
+    that is already serving keeps serving -- no gap for sessions using it."""
     kind, path = _service_paths()
     if action == "status":
         print(f"{'installed' if path.exists() else 'not installed'} ({path})")
         return 0 if path.exists() else 1
     if action == "install":
-        if _running_pid():
-            _stop()  # the service starts its own
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(launchd_plist() if kind == "launchd" else systemd_unit())
+        if at_next_login:  # launchd loads ~/Library/LaunchAgents at login by itself
+            if kind == "systemd":
+                run(["systemctl", "--user", "daemon-reload"], check=True)
+                run(["systemctl", "--user", "enable", "aar-gateway.service"], check=True)
+            print(f"installed: the gateway starts at login ({path}); the running one keeps serving")
+            return 0
+        if _running_pid():
+            _stop()  # the service starts its own
         if kind == "launchd":
-            run(["launchctl", "bootout", f"gui/{os.getuid()}/{SERVICE_LABEL}"], capture_output=True)
-            run(["launchctl", "bootstrap", f"gui/{os.getuid()}", str(path)], check=True)
+            job = f"gui/{os.getuid()}/{SERVICE_LABEL}"
+            run(["launchctl", "bootout", job], capture_output=True)
+            # bootout returns before the old job is gone, and loading it
+            # again meanwhile fails ("Bootstrap failed: 5")
+            for _ in range(60):
+                if run(["launchctl", "print", job], capture_output=True).returncode != 0:
+                    break
+                time.sleep(0.5)
+            try:
+                run(["launchctl", "bootstrap", f"gui/{os.getuid()}", str(path)], check=True)
+            except subprocess.CalledProcessError:
+                raise SystemExit(f"launchd wouldn't load {path}; try again in a few seconds, "
+                                 f"or `aar-gateway start` for now") from None
         else:
             run(["systemctl", "--user", "daemon-reload"], check=True)
             run(["systemctl", "--user", "enable", "--now", "aar-gateway.service"], check=True)
+        if not _wait_healthy(_base_url(), 90):
+            print("the service didn't answer within 90s -- see `aar-gateway logs`")
         print(f"installed: the gateway now starts at login ({path})")
         return 0
     if action == "uninstall":
@@ -651,7 +760,15 @@ def _claude_command(url: str, claude_args: list[str]) -> tuple[list[str], dict]:
 # plain `claude`, every session (enable / disable)                            #
 # --------------------------------------------------------------------------- #
 def _claude_settings_path() -> Path:
-    return Path.home() / ".claude" / "settings.json"
+    """Claude Code's user settings (``AAR_GATEWAY_CLAUDE_SETTINGS``: another
+    settings file, such as a test project's)."""
+    other = os.environ.get("AAR_GATEWAY_CLAUDE_SETTINGS")
+    return Path(other).expanduser() if other else Path.home() / ".claude" / "settings.json"
+
+
+def _suspended_file() -> Path:
+    """Present while sessions bypass a gateway that isn't answering (:func:`_check`)."""
+    return _home() / "bypassed"
 
 
 def _ours(entry: dict) -> bool:
@@ -679,7 +796,64 @@ def auto_enabled() -> bool:
         settings = _read_claude_settings(_claude_settings_path())
     except SystemExit:
         return False
-    return (settings.get("env") or {}).get("ANTHROPIC_BASE_URL") == _base_url()
+    return ((settings.get("env") or {}).get("ANTHROPIC_BASE_URL") == _base_url()
+            or _suspended_file().exists())
+
+
+def _set_base_url(on: bool) -> None:
+    path = _claude_settings_path()
+    settings = _read_claude_settings(path)
+    env = settings.setdefault("env", {})
+    if on:
+        env["ANTHROPIC_BASE_URL"] = _base_url()
+    elif env.get("ANTHROPIC_BASE_URL") == _base_url():
+        del env["ANTHROPIC_BASE_URL"]
+    _write_claude_settings(path, settings)
+
+
+def _check(session_start: bool) -> None:
+    """Claude Code's SessionStart and UserPromptSubmit hook, once enabled:
+    the gateway must answer before a message goes out, or Claude Code talks
+    to Anthropic directly until it does.
+
+    Claude Code rereads its settings while it runs, so taking the gateway's
+    address out of them sends the session's next request straight to
+    Anthropic: a gateway that won't start costs the routing, never the
+    session. Starting it is tried first (it comes back within a second or
+    two when the login service has it). Once it answers again, the address
+    goes back in. Prints only a one-line notice for the user, when that
+    changes: anything else a SessionStart hook prints joins the conversation.
+    """
+    url, bypassed = _base_url(), _suspended_file()
+    notice = None
+    if not _healthy(url):
+        if bypassed.exists():
+            # already talking to Anthropic: try a start without holding the message
+            subprocess.Popen([sys.executable, "-m", "router.gateway.cli", "start", "--quiet"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                             env=_src_env(), **({"creationflags": subprocess.DETACHED_PROCESS} if WINDOWS
+                                                else {"start_new_session": True}))
+            return
+        try:
+            _ensure_running(url, quiet=True, timeout=60 if session_start else 15)
+        except SystemExit:
+            pass
+    if _healthy(url):
+        if bypassed.exists():
+            _set_base_url(True)
+            bypassed.unlink(missing_ok=True)
+            notice = "AAR gateway is answering again: routing is back on."
+    elif not bypassed.exists():
+        bypassed.parent.mkdir(parents=True, exist_ok=True)
+        bypassed.write_text(url)
+        _set_base_url(False)
+        # Claude Code rereads its settings a moment after they change; the
+        # message waits for that, or it would still go to the gateway's address
+        time.sleep(float(os.environ.get("AAR_GATEWAY_SETTINGS_SETTLE", "3")))
+        notice = ("AAR gateway isn't answering, so Claude Code is talking to Anthropic directly (no routing) "
+                  "until it's back. `aar-gateway doctor` says why.")
+    if notice:
+        print(json.dumps({"systemMessage": notice}))
 
 
 def _enable(force: bool = False) -> int:
@@ -689,6 +863,14 @@ def _enable(force: bool = False) -> int:
     the status line; the subagent kinds go to ``~/.claude/agents``; on macOS
     and Linux the gateway also starts at login. Only what's missing is added,
     and ``aar-gateway disable`` takes exactly that out again."""
+    import tempfile
+
+    # the environment's own folder: its `python` is often a link to one elsewhere
+    here = Path(sys.prefix).resolve()
+    if not force and any(here.is_relative_to(Path(t).resolve()) for t in (tempfile.gettempdir(), "/tmp")):
+        raise SystemExit(f"this copy of the gateway is in a temporary folder ({sys.prefix}), which the\n"
+                         f"system deletes: every `claude` session would then fail to connect. Install it with\n"
+                         f"`uv tool install` and run `aar-gateway enable` from there (or pass --force).")
     path = _claude_settings_path()
     settings = _read_claude_settings(path)
     url, run = _base_url(), _self_command()
@@ -698,17 +880,23 @@ def _enable(force: bool = False) -> int:
         raise SystemExit(f"Claude Code already sends requests to {current} (ANTHROPIC_BASE_URL in {path}).\n"
                          f"Run `aar-gateway enable --force` to point it at the gateway instead.")
     env["ANTHROPIC_BASE_URL"] = url
+    _suspended_file().unlink(missing_ok=True)  # the next message checks the gateway afresh
     env.setdefault("ENABLE_TOOL_SEARCH", "true")  # see _claude_command
     hooks = settings.setdefault("hooks", {})
     wanted = {
-        # prints nothing: a SessionStart hook's output would become part of the conversation
-        "SessionStart": {"hooks": [{"type": "command", "command": f"{run} start --quiet", "timeout": 90}]},
+        # before a session and before each message: the gateway answers, or
+        # the session talks to Anthropic directly until it does (_check)
+        "SessionStart": {"hooks": [{"type": "command", "command": f"{run} check --session", "timeout": 90}]},
+        "UserPromptSubmit": {"hooks": [{"type": "command", "command": f"{run} check", "timeout": 30}]},
+        # and before the request after each tool call: a turn makes many
+        "PostToolUse": {"hooks": [{"type": "command", "command": f"{run} check", "timeout": 30}]},
         "PreToolUse": {"matcher": "Agent|Task",
                        "hooks": [{"type": "command", "command": f"{run} hook", "timeout": 5}]},
     }
     for event, entry in wanted.items():
         hooks[event] = [e for e in hooks.get(event, []) if not _ours(e)] + [entry]
-    if not settings.get("statusLine"):
+    # the user's own status line stays; ours is rewritten (this install may have moved)
+    if not settings.get("statusLine") or "router.gateway.cli" in settings["statusLine"].get("command", ""):
         settings["statusLine"] = {"type": "command", "command": f"{run} statusline"}
     if path.exists() and not path.with_name("settings.json.aar-backup").exists():
         shutil.copy2(path, path.with_name("settings.json.aar-backup"))
@@ -717,7 +905,7 @@ def _enable(force: bool = False) -> int:
     _agents(["--install"])
     if sys.platform == "darwin" or sys.platform.startswith("linux"):
         try:
-            _service("install")
+            _service("install", at_next_login=_healthy(url))
         except (OSError, subprocess.CalledProcessError) as exc:
             print(f"couldn't register the login service ({exc}); each session starts the gateway instead")
     else:
@@ -731,10 +919,12 @@ def _disable() -> int:
     path = _claude_settings_path()
     settings = _read_claude_settings(path)
     env = settings.get("env") or {}
-    if env.get("ANTHROPIC_BASE_URL") == _base_url():
-        del env["ANTHROPIC_BASE_URL"]
+    if env.get("ANTHROPIC_BASE_URL") == _base_url() or _suspended_file().exists():
+        if env.get("ANTHROPIC_BASE_URL") == _base_url():
+            del env["ANTHROPIC_BASE_URL"]
         if env.get("ENABLE_TOOL_SEARCH") == "true":
             del env["ENABLE_TOOL_SEARCH"]
+    _suspended_file().unlink(missing_ok=True)
     if not env:
         settings.pop("env", None)
     hooks = settings.get("hooks") or {}
@@ -835,6 +1025,12 @@ def main(argv: list[str] | None = None) -> int:
     if argv[:1] == ["hook"]:
         _hook()
         return 0
+    if argv[:1] == ["check"]:
+        try:
+            _check(session_start="--session" in argv)
+        except Exception as exc:  # noqa: BLE001 -- never stand between the user and their message
+            print(f"aar-gateway check: {exc}", file=sys.stderr)
+        return 0
     if argv[:1] == ["statusline"]:
         _statusline()
         return 0
@@ -931,8 +1127,22 @@ def main(argv: list[str] | None = None) -> int:
 
     from .server import app
 
-    uvicorn.run(app, host=os.environ.get("AAR_GATEWAY_HOST", "127.0.0.1"),
-                port=int(os.environ.get("AAR_GATEWAY_PORT", "8787")))
+    if not WINDOWS:
+        import signal
+
+        # uvicorn shuts down on SIGTERM, then re-raises it. Dying of a signal
+        # counts as a crash to launchd, which would restart a gateway that
+        # `aar-gateway stop` just stopped: a stop is a clean exit
+        signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+
+    config = uvicorn.Config(app, host=os.environ.get("AAR_GATEWAY_HOST", "127.0.0.1"),
+                            port=int(os.environ.get("AAR_GATEWAY_PORT", "8787")),
+                            timeout_graceful_shutdown=5)  # open dashboard streams never close by themselves
+    # the port first, before anything loads: a second gateway started at the
+    # same moment exits here, without touching the running one's pid file,
+    # and requests arriving while the router loads wait instead of being refused
+    sock = config.bind_socket()  # exits if the port is taken
+    uvicorn.Server(config).run(sockets=[sock])
     return 0
 
 

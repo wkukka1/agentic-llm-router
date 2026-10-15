@@ -79,9 +79,13 @@ def test_service_install_and_uninstall_on_macos(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sys, "platform", "darwin")
     monkeypatch.setattr(cli.Path, "home", lambda: tmp_path)
     monkeypatch.setattr(cli, "_running_pid", lambda: None)
+    monkeypatch.setattr(cli, "_wait_healthy", lambda url, seconds: True)
     monkeypatch.setattr(cli.os, "getuid", lambda: 501, raising=False)  # absent on Windows
     calls = []
-    run = lambda cmd, **kw: calls.append(cmd)  # noqa: E731 -- never touch the real launchctl
+
+    def run(cmd, **kw):  # never touch the real launchctl
+        calls.append(cmd)
+        return cli.subprocess.CompletedProcess(cmd, 1 if cmd[1] == "print" else 0)  # print: job gone
     assert cli._service("install", run=run) == 0
     plist = tmp_path / "Library" / "LaunchAgents" / "com.aar.gateway.plist"
     assert plist.exists() and calls[-1][:2] == ["launchctl", "bootstrap"]
@@ -149,7 +153,7 @@ def test_local_add_pulls_once_adds_and_remove_takes_it_out(monkeypatch, capsys):
 @pytest.fixture
 def claude_settings(monkeypatch):
     """~/.claude/settings.json (home is a temp folder, conftest); no real login service."""
-    monkeypatch.setattr(cli, "_service", lambda action, run=None: 0)
+    monkeypatch.setattr(cli, "_service", lambda action, run=None, at_next_login=False: 0)
     monkeypatch.setattr(cli, "_ensure_running", lambda url, quiet=False: False)
     path = cli._claude_settings_path()
     path.parent.mkdir(parents=True)
@@ -166,7 +170,9 @@ def test_enable_keeps_the_users_settings_and_disable_restores_them(claude_settin
     on = json.loads(claude_settings.read_text())
     assert on["env"]["ANTHROPIC_BASE_URL"] == cli._base_url() and on["env"]["FOO"] == "1"
     assert len(on["hooks"]["SessionStart"]) == 1 and len(on["hooks"]["PreToolUse"]) == 2
-    assert on["hooks"]["SessionStart"][0]["hooks"][0]["command"].endswith("start --quiet")
+    assert on["hooks"]["SessionStart"][0]["hooks"][0]["command"].endswith("check --session")
+    assert on["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"].endswith("check")
+    assert on["hooks"]["PostToolUse"][0]["hooks"][0]["command"].endswith("check")
     assert "statusline" in on["statusLine"]["command"] and cli.auto_enabled()
     assert (claude_settings.parent / "agents" / "lookup.md").exists()
     assert cli.main(["disable"]) == 0
@@ -219,3 +225,189 @@ def test_code_adds_no_second_hook_once_enabled(claude_settings):
     cli.main(["enable"])
     args, env = cli._claude_command(cli._base_url(), [])
     assert "--settings" not in args and env["ANTHROPIC_BASE_URL"] == cli._base_url()
+
+
+def test_installing_the_service_with_a_gateway_serving_leaves_it_serving(tmp_path, monkeypatch, capsys):
+    """Sessions already going through the gateway must never see it go away."""
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(cli, "_stop", lambda: pytest.fail("stopped a serving gateway"))
+    calls = []
+    assert cli._service("install", run=lambda cmd, **kw: calls.append(cmd), at_next_login=True) == 0
+    assert calls == [] and (cli.Path.home() / "Library" / "LaunchAgents" / "com.aar.gateway.plist").exists()
+    assert "keeps serving" in capsys.readouterr().out
+
+
+def test_a_session_waits_for_the_login_services_gateway_instead_of_starting_another(monkeypatch):
+    monkeypatch.setattr(cli, "_service_running", lambda: True)
+    answers = iter([False, False, True])
+    monkeypatch.setattr(cli, "_healthy", lambda url: next(answers))
+    monkeypatch.setattr(cli.time, "sleep", lambda s: None)
+    monkeypatch.setattr(cli.subprocess, "Popen", lambda *a, **kw: pytest.fail("started a second gateway"))
+    assert cli._ensure_running("http://127.0.0.1:1") is False
+
+
+def test_stop_ends_a_gateway_that_has_a_dashboard_open(tmp_path, monkeypatch):
+    """The dashboard's live stream never closes by itself; a stopped gateway
+    used to wait on it forever, still running, port closed."""
+    import socket
+    import subprocess
+    import time
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    monkeypatch.setenv("AAR_GATEWAY_PORT", str(port))
+    monkeypatch.delenv("AAR_GATEWAY_CONFIG", raising=False)
+    env = {**cli._src_env(), "AAR_GATEWAY_PORT": str(port), "AAR_GATEWAY_LOG": str(tmp_path / "requests.jsonl")}
+    env.pop("AAR_GATEWAY_CONFIG", None)
+    proc = subprocess.Popen([sys.executable, "-m", "router.gateway.cli", "serve"], env=env,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        assert cli._wait_healthy(cli._base_url(), 60)
+        stream = socket.create_connection(("127.0.0.1", port))
+        stream.sendall(b"GET /api/events HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+        time.sleep(0.5)
+        assert cli._stop() is True
+        code = proc.wait(timeout=5)
+        # a clean exit: dying of SIGTERM reads as a crash to launchd, which restarts it
+        assert code == 0 or cli.WINDOWS
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
+def test_enable_refuses_a_copy_in_a_temporary_folder(claude_settings, monkeypatch):
+    """Every session would point at files the system deletes."""
+    import tempfile
+
+    monkeypatch.setattr(cli.sys, "prefix", str(cli.Path(tempfile.gettempdir()) / "x"))
+    with pytest.raises(SystemExit, match="temporary folder"):
+        cli.main(["enable"])
+    assert not cli.auto_enabled()
+    assert cli.main(["enable", "--force"]) == 0 and cli.auto_enabled()
+
+
+def test_starting_gives_up_as_soon_as_the_gateway_crashes(monkeypatch):
+    class Crashed:
+        returncode = 1
+
+        def poll(self):
+            return 1
+    monkeypatch.setattr(cli, "_healthy", lambda url: False)
+    monkeypatch.setattr(cli, "_service_running", lambda: False)
+    monkeypatch.setattr(cli, "_service_start", lambda: False)
+    monkeypatch.setattr(cli.subprocess, "Popen", lambda *a, **kw: Crashed())
+    started = cli.time.monotonic()
+    with pytest.raises(SystemExit, match="exited while starting"):
+        cli._ensure_running("http://127.0.0.1:1", quiet=True)
+    assert cli.time.monotonic() - started < 5
+
+
+def test_starting_goes_through_the_login_service_when_installed(monkeypatch):
+    """So the service, not a stray process, owns it, and restarts it after a crash."""
+    monkeypatch.setattr(cli, "_service_running", lambda: False)
+    monkeypatch.setattr(cli, "_service_start", lambda: True)
+    answers = iter([False, True])
+    monkeypatch.setattr(cli, "_healthy", lambda url: next(answers))
+    monkeypatch.setattr(cli.subprocess, "Popen", lambda *a, **kw: pytest.fail("started its own gateway"))
+    assert cli._ensure_running("http://127.0.0.1:1", quiet=True) is True
+
+
+def _base_url_in_settings(path):
+    import json
+
+    return (json.loads(path.read_text()).get("env") or {}).get("ANTHROPIC_BASE_URL")
+
+
+def test_a_gateway_that_wont_start_hands_the_session_to_anthropic_and_back(claude_settings, monkeypatch, capsys):
+    """Never "connection refused" on every message: Claude Code rereads its
+    settings, so without the gateway's address the next request goes to Anthropic."""
+    import json
+
+    cli.main(["enable"])
+    up = {"now": False}
+    monkeypatch.setattr(cli, "_healthy", lambda url: up["now"])
+
+    def cannot_start(url, quiet=False, timeout=90):
+        raise SystemExit("the gateway exited while starting")
+    monkeypatch.setattr(cli, "_ensure_running", cannot_start)
+    spawned = []
+    monkeypatch.setattr(cli.subprocess, "Popen", lambda cmd, **kw: spawned.append(cmd))
+    capsys.readouterr()
+
+    assert cli.main(["check"]) == 0
+    assert _base_url_in_settings(claude_settings) is None
+    assert "talking to Anthropic directly" in json.loads(capsys.readouterr().out)["systemMessage"]
+    assert cli.auto_enabled()  # still enabled, only bypassed
+
+    assert cli.main(["check"]) == 0  # still down: no notice again, a start tried without waiting
+    assert capsys.readouterr().out == "" and spawned and spawned[-1][-2:] == ["start", "--quiet"]
+
+    up["now"] = True
+    assert cli.main(["check"]) == 0
+    assert _base_url_in_settings(claude_settings) == cli._base_url()
+    assert "routing is back on" in json.loads(capsys.readouterr().out)["systemMessage"]
+
+
+def test_check_starts_a_stopped_gateway_and_says_nothing(claude_settings, monkeypatch, capsys):
+    cli.main(["enable"])
+    up = {"now": False}
+    monkeypatch.setattr(cli, "_healthy", lambda url: up["now"])
+    monkeypatch.setattr(cli, "_ensure_running", lambda url, quiet=False, timeout=90: up.update(now=True))
+    capsys.readouterr()
+    assert cli.main(["check", "--session"]) == 0
+    assert capsys.readouterr().out == "" and _base_url_in_settings(claude_settings) == cli._base_url()
+
+
+def test_disable_while_bypassed_restores_the_settings(claude_settings, monkeypatch):
+    import json
+
+    claude_settings.write_text(json.dumps({"model": "opus"}))
+    cli.main(["enable"])
+    monkeypatch.setattr(cli, "_healthy", lambda url: False)
+    monkeypatch.setattr(cli, "_ensure_running", lambda url, quiet=False, timeout=90: False)
+    cli.main(["check"])
+    assert cli.main(["disable"]) == 0
+    assert json.loads(claude_settings.read_text()) == {"model": "opus"} and not cli.auto_enabled()
+
+
+def test_check_never_blocks_a_message_on_its_own_error(monkeypatch):
+    monkeypatch.setattr(cli, "_check", lambda session_start: 1 / 0)
+    assert cli.main(["check"]) == 0
+
+
+def test_a_second_gateway_started_at_the_same_time_leaves_the_first_one_stoppable(tmp_path, monkeypatch):
+    """The second used to overwrite the pid file while loading, then delete it
+    on failing to get the port: the first kept serving and `stop` couldn't find it."""
+    import socket
+    import subprocess
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    monkeypatch.setenv("AAR_GATEWAY_PORT", str(port))
+    env = {**cli._src_env(), "AAR_GATEWAY_PORT": str(port), "AAR_GATEWAY_LOG": str(tmp_path / "requests.jsonl")}
+    env.pop("AAR_GATEWAY_CONFIG", None)
+    serve = [sys.executable, "-m", "router.gateway.cli", "serve"]
+    first = subprocess.Popen(serve, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        assert cli._wait_healthy(cli._base_url(), 60)
+        second = subprocess.run(serve, env=env, capture_output=True, timeout=60)
+        assert second.returncode != 0  # port taken: gone at once
+        assert cli._running_pid() == first.pid
+        assert cli._stop() is True
+        first.wait(timeout=10)
+    finally:
+        if first.poll() is None:
+            first.kill()
+
+
+def test_enable_again_from_a_new_install_points_every_hook_at_it(claude_settings, monkeypatch):
+    import json
+
+    monkeypatch.setattr(cli, "_self_command", lambda: "/old/python -m router.gateway.cli")
+    cli.main(["enable"])
+    monkeypatch.setattr(cli, "_self_command", lambda: "/new/python -m router.gateway.cli")
+    cli.main(["enable"])
+    text = claude_settings.read_text()
+    assert "/old/" not in text and json.loads(text)["statusLine"]["command"].startswith("/new/")
