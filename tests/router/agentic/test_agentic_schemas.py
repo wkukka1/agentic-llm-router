@@ -161,7 +161,7 @@ def test_from_settings_wires_llm_helpers_plan_orchestrator_and_sink(fake_run, mo
     assert chats == ["claude-haiku-4-5", "claude-sonnet-5"]
     assert agent.max_calls == 5
     assert agent.run("What is 2+2?").mode == "single"
-    flush_bookkeeping(timeout=5)
+    flush_bookkeeping(timeout=30)  # returns as soon as the write lands; slow CI disks need the room
     assert connect(db).execute("SELECT router FROM runs").fetchone() == ("nirt-2d-projected",)
 
 
