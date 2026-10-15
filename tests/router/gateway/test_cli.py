@@ -411,3 +411,15 @@ def test_enable_again_from_a_new_install_points_every_hook_at_it(claude_settings
     cli.main(["enable"])
     text = claude_settings.read_text()
     assert "/old/" not in text and json.loads(text)["statusLine"]["command"].startswith("/new/")
+
+
+def test_the_login_service_only_counts_for_the_port_it_serves(tmp_path, monkeypatch):
+    """A gateway on another port must not wait on, or start, the service's."""
+    unit = tmp_path / "svc"
+    unit.write_text("ExecStart=python -m router.gateway.cli serve\n")  # no port: the default
+    monkeypatch.setenv("AAR_GATEWAY_PORT", "8787")
+    assert cli._service_serves_this_port(unit)
+    monkeypatch.setenv("AAR_GATEWAY_PORT", "58802")
+    assert not cli._service_serves_this_port(unit)
+    unit.write_text("<key>AAR_GATEWAY_PORT</key>\n<string>58802</string>\n")
+    assert cli._service_serves_this_port(unit)

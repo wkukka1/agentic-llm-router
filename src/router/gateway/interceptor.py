@@ -643,6 +643,9 @@ class _Turn:
             "fallback": self.fallback,
             "attempted_model": self.attempted,
             "error": self.error,
+            # server-side conversation state: Claude Code may send only what's new
+            # since a previous message ("continue") instead of the whole history
+            "thread": thread_mode(self.body),
             "status": status,
             "latency_s": round(time.perf_counter() - self.t0, 3),
             "input_tokens": usage.get("input_tokens"),
@@ -817,6 +820,18 @@ async def _via_anthropic_unguarded(turn: _Turn) -> Response:
         turn.finish(status, usage, "anthropic")
 
     return await _relay_anthropic(upstream, done)
+
+
+def thread_mode(body: Mapping) -> str | None:
+    """``create`` / ``continue`` / the type given, for a request that uses
+    the API's server-side threads; ``None`` for a plain full-history request.
+    Only the mode is logged, never ids or content."""
+    thread = body.get("thread")
+    if not isinstance(thread, Mapping):
+        return None
+    if thread.get("previous_message_id"):
+        return "continue"
+    return str(thread.get("type") or "thread")[:20]
 
 
 def error_summary(content: bytes) -> str:

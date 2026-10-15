@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -603,13 +604,26 @@ def _service_paths() -> tuple[str, Path]:
     raise SystemExit(f"start-at-login isn't supported on {sys.platform}; run `aar-gateway start` instead")
 
 
+def _service_serves_this_port(path: Path) -> bool:
+    """Whether the installed login service runs the gateway this command
+    talks to: the same port (a second gateway on another port, for a test
+    or a second setup, must not wait on or start the service's)."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    # launchd: <key>AAR_GATEWAY_PORT</key><string>N</string>; systemd: AAR_GATEWAY_PORT=N
+    found = re.search(r"AAR_GATEWAY_PORT\D{0,40}?(\d+)", text)
+    return (found.group(1) if found else "8787") == os.environ.get("AAR_GATEWAY_PORT", "8787")
+
+
 def _service_start() -> bool:
     """Asks launchd/systemd to start the gateway, if its service is installed."""
     try:
         kind, path = _service_paths()
     except SystemExit:
         return False
-    if not path.exists():
+    if not _service_serves_this_port(path):
         return False
     cmd = (["launchctl", "kickstart", f"gui/{os.getuid()}/{SERVICE_LABEL}"] if kind == "launchd"
            else ["systemctl", "--user", "start", "aar-gateway.service"])
@@ -625,7 +639,7 @@ def _service_running() -> bool:
         kind, path = _service_paths()
     except SystemExit:  # no login service on this OS
         return False
-    if not path.exists():
+    if not _service_serves_this_port(path):
         return False
     cmd = (["launchctl", "print", f"gui/{os.getuid()}/{SERVICE_LABEL}"] if kind == "launchd"
            else ["systemctl", "--user", "is-active", "aar-gateway.service"])

@@ -397,3 +397,9 @@ def test_the_previous_turns_prediction_reaches_the_router(env):
     client.post("/v1/messages", json=turn("one"), headers=AUTH)
     client.post("/v1/messages", json=turn("two"), headers=AUTH)  # same conversation, next human turn
     assert seen == [None, {"claude-haiku-4-5": 0.6}]
+
+
+def test_the_thread_mode_is_logged_never_its_ids():
+    assert interceptor.thread_mode({"messages": []}) is None
+    assert interceptor.thread_mode({"thread": {"type": "create"}}) == "create"
+    assert interceptor.thread_mode({"thread": {"previous_message_id": "msg_secret"}}) == "continue"

@@ -80,6 +80,7 @@ pythonpath = ["tests", "src"]
 filterwarnings = ["ignore::DeprecationWarning"]
 markers = [
     "real_data: reads the built data/ tables (10-25s each, skips when absent); deselect with -m 'not real_data'",
+    "claude_e2e: drives a real logged-in Claude Code through an isolated gateway; runs only with AAR_E2E=1 (uses the plan)",
 ]
 
 [tool.importlinter]
