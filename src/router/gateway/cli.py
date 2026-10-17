@@ -883,22 +883,27 @@ def _check(session_start: bool) -> None:
             _ensure_running(url, quiet=True, timeout=60 if session_start else 15)
         except SystemExit:
             pass
-    # the switch itself under the settings lock, deciding on what is true
-    # once the lock is held: another session's hook may have just switched
-    # (both ways at once would leave the address out with nothing to bring
-    # it back)
+    # The switch itself happens under the settings lock, the address and the
+    # marker always changing together: two hooks switching opposite ways at
+    # once can then never leave the address out with no marker to bring it
+    # back. Health is checked before taking the lock (a refused connection
+    # takes ~2 s on Windows; holding the lock for it would queue every other
+    # session); a stale reading costs at most one switch the next check undoes.
+    healthy = _healthy(url)
     switched_off = False
-    with _settings_lock(_claude_settings_path()):
-        healthy = _healthy(url)
-        if healthy and bypassed.exists():
-            _set_base_url(True)
-            bypassed.unlink(missing_ok=True)
-            notice = "AAR gateway is answering again: routing is back on."
-        elif not healthy and not bypassed.exists():
-            bypassed.parent.mkdir(parents=True, exist_ok=True)
-            bypassed.write_text(url)
-            _set_base_url(False)
-            switched_off = True
+    try:
+        with _settings_lock(_claude_settings_path()):
+            if healthy and bypassed.exists():
+                _set_base_url(True)
+                bypassed.unlink(missing_ok=True)
+                notice = "AAR gateway is answering again: routing is back on."
+            elif not healthy and not bypassed.exists():
+                bypassed.parent.mkdir(parents=True, exist_ok=True)
+                bypassed.write_text(url)
+                _set_base_url(False)
+                switched_off = True
+    except SystemExit:
+        return  # another hook held the lock too long; the next message checks again
     if switched_off:
         # Claude Code rereads its settings a moment after they change; the
         # message waits for that, or it would still go to the gateway's address

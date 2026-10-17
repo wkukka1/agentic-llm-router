@@ -63,6 +63,9 @@ def test_a_reader_never_sees_half_a_file_while_writers_replace_it(tmp_path):
                 bad.append(exc)
             except FileNotFoundError:
                 bad.append("missing")
+            except PermissionError:
+                pass  # Windows, mid-replace: busy for a moment, never partial
+            time.sleep(0.001)  # a reader like Claude Code, not a tight loop holding the file open
 
     reader = threading.Thread(target=read)
     reader.start()

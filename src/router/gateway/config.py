@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import time
 from pathlib import Path
 
 import yaml
@@ -117,7 +118,16 @@ def atomic_write_text(path: Path, text: str) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(text)
-        os.replace(tmp, path)
+        for attempt in range(100):
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                # Windows won't replace a file another program has open (Claude
+                # Code reading its settings, say): it is free again moments later
+                if os.name != "nt" or attempt == 99:
+                    raise
+                time.sleep(0.02)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
