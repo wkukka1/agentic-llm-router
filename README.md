@@ -119,6 +119,20 @@ don't.
 | `aar-gateway setup` | install the router and write a config |
 | `aar-gateway service install` | start the gateway automatically at login |
 | `aar-gateway local add <model>` | optional: add a local model through Ollama |
+| `aar-gateway share [on/off/show/delete]` | optional: anonymous usage sharing (off by default) |
+
+## Sharing usage data (optional, off by default)
+
+Setup asks whether you'd like to share anonymous usage data to help improve
+routing; only a `y` turns it on. When on, each message you type adds one
+record: which model was asked for and which answered, tokens, cost, speed,
+whether you corrected the answer, a rounded prompt length, and a compressed
+embedding of the message (64 small numbers). Never your prompts, error
+messages, file paths, or session ids, and no time finer than the day.
+
+For now nothing is sent anywhere: records stay in `~/.aar-gateway/share/`
+on your computer. `aar-gateway share show` prints them, `aar-gateway share
+off` stops collecting, `aar-gateway share delete` removes them.
 
 ## What it never does
 

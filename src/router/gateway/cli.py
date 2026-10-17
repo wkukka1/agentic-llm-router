@@ -417,7 +417,7 @@ def _fetch_router(source: str, target: Path) -> dict:
     return header
 
 
-def _setup(router: str | None, force: bool, enable: bool | None = False) -> int:
+def _setup(router: str | None, force: bool, enable: bool | None = False, share: bool | None = False) -> int:
     """Everything a new user needs: the router file and a config that uses it."""
     home = _home()
     home.mkdir(parents=True, exist_ok=True)
@@ -458,6 +458,13 @@ def _setup(router: str | None, force: bool, enable: bool | None = False) -> int:
     elif not auto_enabled():
         print("plain `claude` is unchanged: start Claude Code with `aar-gateway code`\n"
               "(or run `aar-gateway enable` once to use the gateway in every session)")
+    from . import share as sharing
+
+    if share is None and sys.stdin.isatty() and not sharing.consent_path().exists():
+        print()
+        share = input(SHARE_QUESTION).strip().lower() in ("y", "yes")  # opt in: only a yes
+    if share is not None:
+        _share(["on" if share else "off"])
     print()
     return _doctor()
 
@@ -554,6 +561,10 @@ def _doctor() -> int:
         report(False, "every Claude Code session", "on, but the gateway isn't running, so `claude` can't connect",
                "aar-gateway start  (or `aar-gateway disable` to talk to Anthropic directly)")
 
+    from . import share as sharing
+
+    report(True, "usage sharing", f"on, {len(sharing.queued())} record(s) kept locally, nothing sent yet"
+           if sharing.enabled() else "off (optional; `aar-gateway share` explains)")
     print("\nall good" if problems == 0 else f"\n{problems} problem(s) to fix")
     return 0 if problems == 0 else 1
 
@@ -1014,6 +1025,49 @@ def _disable_settings(path: Path) -> None:
         _write_claude_settings(path, settings)
 
 
+# --------------------------------------------------------------------------- #
+# opt-in usage sharing                                                        #
+# --------------------------------------------------------------------------- #
+SHARE_QUESTION = ("Share anonymous usage data to help improve routing? Never your prompts, file paths or ids:\n"
+                  "which models answered, cost, tokens, and a compressed embedding of each message.\n"
+                  "Kept on this computer until a destination is set up (`aar-gateway share show` shows it). [y/N] ")
+
+
+def _share(argv: list[str]) -> int:
+    """``aar-gateway share [on|off|status|show|delete]``."""
+    from . import share
+
+    action = argv[0] if argv else "status"
+    if action == "on":
+        share.set_enabled(True)
+        print("sharing on: each message you type adds an anonymous record (no prompt text) to\n"
+              f"{share.queue_path()}; nothing is sent anywhere yet. `aar-gateway share off` stops it.")
+        return 0
+    if action == "off":
+        share.set_enabled(False)
+        print(f"sharing off: no new records. The ones already kept stay in {share.queue_path()}\n"
+              "until `aar-gateway share delete`.")
+        return 0
+    if action == "delete":
+        share.queue_path().unlink(missing_ok=True)
+        print("deleted every kept record")
+        return 0
+    if action == "show":
+        rows = share.queued()
+        n = int(argv[1]) if len(argv) > 1 and argv[1].isdigit() else 3
+        for row in rows[-n:]:
+            emb = row.get("embedding")
+            print(json.dumps({**row, "embedding": f"{len(emb)} small integers" if emb else None}, indent=2))
+        print(f"{len(rows)} record(s) kept in {share.queue_path()}")
+        return 0
+    if action == "status":
+        print(f"sharing      {'on' if share.enabled() else 'off'}")
+        print(f"kept         {len(share.queued())} record(s) in {share.queue_path()}")
+        print("sent to      nowhere yet (no destination is set up)")
+        return 0
+    raise SystemExit(f"unknown share action {action!r}: on, off, status, show [N] or delete")
+
+
 def _agents(argv: list[str]) -> None:
     """``aar-gateway agents``: print the kinds as ``--agents`` JSON;
     ``--install [DIR]``: write them as agent files (default
@@ -1109,6 +1163,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if argv[:1] == ["local"]:
         return _local(argv[1:])
+    if argv[:1] == ["share"]:
+        return _share(argv[1:])
 
     parser = argparse.ArgumentParser(prog="aar-gateway", description="Route Claude Code through the AAR gateway.")
     sub = parser.add_subparsers(dest="command", metavar="command")
@@ -1130,11 +1186,15 @@ def main(argv: list[str] | None = None) -> int:
     every.add_argument("--yes", action="store_true", help="use the gateway in every `claude` session without asking")
     every.add_argument("--no-enable", action="store_true",
                        help="leave plain `claude` alone (use `aar-gateway code` instead)")
+    sharing = setup.add_mutually_exclusive_group()
+    sharing.add_argument("--share", action="store_true", help="opt in to anonymous usage sharing without asking")
+    sharing.add_argument("--no-share", action="store_true", help="don't share usage data, and don't ask")
     enable = sub.add_parser("enable", help="every `claude` session goes through the gateway, no command needed")
     enable.add_argument("--force", action="store_true", help="replace another ANTHROPIC_BASE_URL in your settings")
     sub.add_parser("disable", help="undo `enable`: plain `claude` talks to Anthropic directly again")
     sub.add_parser("doctor", help="check the setup, with a fix for each problem")
     sub.add_parser("local", help="optional local models via Ollama: local [add|remove] <model>")
+    sub.add_parser("share", help="opt-in anonymous usage sharing: share [on|off|status|show|delete]")
     sub.add_parser("config", help="which config file is in use")
     sub.add_parser("dashboard", help="open the dashboard in a browser")
     service = sub.add_parser("service", help="start the gateway at login (launchd on macOS, systemd on Linux)")
@@ -1173,7 +1233,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "doctor":
         return _doctor()
     if args.command == "setup":
-        return _setup(args.router, args.force, enable=True if args.yes else False if args.no_enable else None)
+        return _setup(args.router, args.force, enable=True if args.yes else False if args.no_enable else None,
+                      share=True if args.share else False if args.no_share else None)
     if args.command == "enable":
         return _enable(force=args.force)
     if args.command == "disable":

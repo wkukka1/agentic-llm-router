@@ -47,6 +47,7 @@ from fastapi import Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
+from . import share
 from .config import atomic_write_text, load_settings
 from .pricing import canonical_model, cost_usd
 from .routing import ModelPicker, price_for, unavailable_reason
@@ -658,7 +659,7 @@ class _Turn:
             _cc_sessions.move_to_end(self.claude_session)
             while len(_cc_sessions) > _MAX_SESSIONS:
                 _cc_sessions.popitem(last=False)
-        _append_record({
+        record = {
             "ts": datetime.now(UTC).isoformat(timespec="seconds"),
             "claude_session": self.claude_session[:12] or None,
             "conversation": self.key,
@@ -696,7 +697,9 @@ class _Turn:
             "candidates": d.get("candidates"),
             "quality_margin": d.get("quality_margin"),
             "quality_source": d.get("quality_source"),
-        })
+        }
+        _append_record(record)
+        share.record(record, self.human)  # opt-in only; a background thread, no prompt text
 
 
 def _forget_cold(now: float) -> None:
