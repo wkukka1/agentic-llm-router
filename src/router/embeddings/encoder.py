@@ -314,12 +314,6 @@ class EmbeddingStore:
     IDS = "ids.parquet"
     MANIFEST = "manifest.json"
     PROGRESS = "_progress.json"
-    # filenames used before the streaming rewrite -- still readable
-    _LEGACY = {
-        "vectors.npy": "embeddings.npy",
-        "ids.parquet": "embedding_ids.parquet",
-        "manifest.json": "embeddings_manifest.json",
-    }
 
     def __init__(self, ids: Sequence[str], matrix: np.ndarray, manifest: dict,
                  id_field: str = "query_id"):
@@ -367,14 +361,6 @@ class EmbeddingStore:
         return cls(ids, matrix, cls._manifest(encoder, ids, id_field, dim, texts), id_field)
 
     # -- io ----------------------------------------------------------
-    @classmethod
-    def _resolve(cls, d: Path, canonical: str) -> Path:
-        p = d / canonical
-        if p.exists():
-            return p
-        legacy = d / cls._LEGACY.get(canonical, canonical)
-        return legacy if legacy.exists() else p
-
     def save(self, directory: str | os.PathLike) -> Path:
         import pandas as pd
 
@@ -392,20 +378,20 @@ class EmbeddingStore:
         import pandas as pd
 
         d = Path(directory)
-        manifest = json.loads(cls._resolve(d, cls.MANIFEST).read_text(encoding="utf-8"))
+        manifest = json.loads((d / cls.MANIFEST).read_text(encoding="utf-8"))
         if manifest.get("complete") is False:
             raise IncompleteEmbeddingStore(
                 f"{d} is a partial build (rows_done < count); resume it with build_store()"
             )
-        matrix = np.load(cls._resolve(d, cls.MATRIX), mmap_mode="r" if mmap else None)
+        matrix = np.load(d / cls.MATRIX, mmap_mode="r" if mmap else None)
         id_field = manifest.get("id_field", "query_id")
-        ids_df = pd.read_parquet(cls._resolve(d, cls.IDS)).sort_values("row")
+        ids_df = pd.read_parquet(d / cls.IDS).sort_values("row")
         return cls(ids_df[id_field].tolist(), matrix, manifest, id_field=id_field)
 
     @classmethod
     def exists(cls, directory: str | os.PathLike) -> bool:
         d = Path(directory)
-        m = cls._resolve(d, cls.MANIFEST)
+        m = d / cls.MANIFEST
         if not m.exists():
             return False
         try:
@@ -515,7 +501,7 @@ def build_store(
     vpath = d / EmbeddingStore.MATRIX
 
     if not force and EmbeddingStore.exists(d):
-        man = json.loads(EmbeddingStore._resolve(d, EmbeddingStore.MANIFEST).read_text("utf-8"))
+        man = json.loads(mpath.read_text("utf-8"))
 
         def _ok(key, expect):
             got = man.get(key)

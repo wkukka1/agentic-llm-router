@@ -269,27 +269,6 @@ class RouterModel(abc.ABC):
             out.append(c)
         return out
 
-    # -- artifact lifecycle --------------------------------------------------
-    def save(self, path: str) -> "RouterModelArtifact":
-        """Persist this router's fitted state and return its artifact record.
-
-        No concrete router implements this yet -- today's checkpoints are
-        written directly by the training loop (``training.nirt.train.fit``)
-        rather than through the served router object. Override in a subclass
-        that owns state worth round-tripping through a
-        :class:`~router.models.artifacts.RouterModelArtifact`.
-        """
-        raise NotImplementedError(f"{type(self).__name__} does not support save()")
-
-    def load(self, artifact: "RouterModelArtifact") -> None:
-        """Restore fitted state from an artifact record, in place.
-
-        The working equivalent today is a classmethod constructor per router
-        (e.g. :meth:`~router.routing.routers.NIRTRouter.from_run`) rather than
-        mutating an existing instance from a typed artifact.
-        """
-        raise NotImplementedError(f"{type(self).__name__} does not support load()")
-
     def warmup(self) -> dict[str, float]:
         """Pay every lazy, first-request cost now (call once at startup), so no
         routed request does disk I/O or model loading. Returns seconds per stage.
