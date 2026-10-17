@@ -27,8 +27,8 @@ progress. Your own numbers show up on the dashboard as you work.
 # 1. uv, a fast Python installer that brings its own Python (skip if you have it)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 2. the gateway, in its own isolated environment
-uv tool install "agentic-llm-router[gateway] @ git+https://github.com/wkukka1/agentic-llm-router"
+# 2. the gateway (release v0.1.0, a beta), in its own isolated environment
+uv tool install "agentic-llm-router[gateway] @ git+https://github.com/wkukka1/agentic-llm-router@v0.1.0"
 
 # 3. first-time setup: installs the router and writes ~/.aar-gateway/config.yaml
 aar-gateway setup
@@ -48,7 +48,9 @@ one you built yourself, `aar-gateway setup --router <file>`
 `aar-gateway doctor`, which checks everything and says how to fix anything
 missing.
 
-Later: `uv tool upgrade agentic-llm-router` updates it. To remove it, run
+To update to a newer release, run step 2 again with its tag and `--force`
+(`uv tool install --force "agentic-llm-router[gateway] @ git+https://github.com/wkukka1/agentic-llm-router@v0.2.0"`),
+then `aar-gateway restart`. To remove it, run
 `aar-gateway disable` first (if you enabled it), then `uv tool uninstall
 agentic-llm-router`; your settings stay in `~/.aar-gateway`.
 
