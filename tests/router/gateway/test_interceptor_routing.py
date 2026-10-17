@@ -67,6 +67,7 @@ interceptor:
             return httpx.Response(status, json={"type": "error",
                                                 "error": {"message": state.get("error_message", "nope")}})
         return httpx.Response(200, json={"type": "message", "model": body["model"], "content": [],
+                                         "id": f"msg_{len(calls['anthropic'])}",
                                          "usage": state.get("usage", {"input_tokens": 10, "output_tokens": 2})})
 
     interceptor.set_upstream_client(httpx.AsyncClient(transport=httpx.MockTransport(handler)))
@@ -137,6 +138,34 @@ def test_a_failed_reroute_falls_back_to_the_model_the_client_asked_for(env):
     assert [c["model"] for c in calls["anthropic"]] == ["claude-haiku-4-5", "claude-opus-5"]
     (rec,) = records()
     assert rec["fallback"] is True and rec["routed_model"] == "claude-opus-5"
+
+
+def test_a_refused_request_logs_the_providers_reason(env):
+    """So a run of 400s can be diagnosed from the log, without the prompt."""
+    client, settings, calls, state = env
+    interceptor.configure(settings, None)
+    state["anthropic_status"]["claude-opus-5"] = 400
+    state["error_message"] = "messages.3.content.0: invalid   signature in thinking block"
+    assert client.post("/v1/messages", json=turn("hi"), headers=AUTH).status_code == 400
+    (rec,) = records()
+    assert rec["status"] == 400 and rec["error"] == "error: messages.3.content.0: invalid signature in thinking block"
+
+
+def test_a_fallback_keeps_why_the_reroute_was_refused(env):
+    client, settings, calls, state = env
+    state["anthropic_status"]["claude-haiku-4-5"] = 400
+    state["error_message"] = "thinking: not supported"
+    interceptor.configure(settings, lambda body, ctx: "claude-haiku-4-5")
+    assert client.post("/v1/messages", json=turn("hi"), headers=AUTH).status_code == 200
+    (rec,) = records()
+    assert rec["status"] == 200 and rec["error"] == "claude-haiku-4-5: error: thinking: not supported"
+
+
+def test_an_error_event_mid_stream_is_logged():
+    tap = interceptor._SSEUsageTap()
+    tap.feed(b'event: error\ndata: {"type": "error", "error": {"type": "overloaded_error", '
+             b'"message": "Overloaded"}}\n\n')
+    assert tap.error == "overloaded_error: Overloaded"
 
 
 def test_baselines_assume_the_other_model_kept_its_cache(env):
@@ -221,6 +250,28 @@ def test_a_model_the_upstream_rejects_for_this_client_is_not_tried_again(env):
     client.post("/v1/messages", json={**turn("two"), "messages": [{"role": "user", "content": "x"}]},
                 headers={**AUTH, "user-agent": "claude-cli/1.0"})
     assert seen[0] == {} and "claude-haiku-4-5" in seen[1]
+
+
+def test_subagent_hand_backs_and_task_notifications_are_not_new_turns(env):
+    """Found live: with background subagents, Claude Code tells the main agent
+    each one finished with two user messages of its own. Routing each as a new
+    turn moved the main conversation between models mid-task."""
+    client, settings, calls, _ = env
+    asked = []
+    interceptor.configure(settings, lambda body, ctx: asked.append(ctx["human_text"]) or "claude-haiku-4-5")
+    client.post("/v1/messages", json=turn("research the gateway with subagents"), headers=AUTH)
+    hand_back = ('Another Claude session sent a message:\n<agent-message from="a41b9e">\n[Subagent hand-back] '
+                 'The text below is the final report of a subagent.\nsrc/x.py:12\n</agent-message>')
+    notification = ("<task-notification>\n<task-id>a41b9e</task-id>\n<status>completed</status>\n"
+                    "</task-notification>")
+    for text in (hand_back, notification):
+        client.post("/v1/messages", json=turn(text), headers=AUTH)
+    assert asked == ["research the gateway with subagents"]
+    assert [c["model"] for c in calls["anthropic"]] == ["claude-haiku-4-5"] * 3
+    assert [r["reason"] for r in records()[1:]] == ["same turn as the previous request"] * 2
+    client.post("/v1/messages", json=turn([{"type": "text", "text": notification},
+                                           {"type": "text", "text": "now summarise it"}]), headers=AUTH)
+    assert asked[-1] == "now summarise it"  # the human's own words still start a turn
 
 
 def test_a_400_about_the_request_itself_does_not_block_the_model(env):
@@ -320,3 +371,152 @@ def test_capture_is_opt_in_and_keeps_only_the_humans_words_and_folder(env, tmp_p
     (rec,) = [json.loads(line) for line in interceptor.turns_path().read_text().splitlines()]
     assert rec["prompt"] == "refactor the loader" and rec["cwd"] == "/repo/x"
     assert "system-reminder" not in rec["prompt"]
+
+
+def test_the_log_says_what_started_a_turn_without_its_text():
+    assert interceptor.turn_trigger(None) is None
+    assert interceptor.turn_trigger("fix the login bug") == "typed"
+    assert interceptor.turn_trigger("<command-name>/compact</command-name> secret") == "command-name"
+
+
+def test_the_dashboard_is_told_which_models_are_not_claude(env):
+    _, settings, _, _ = env
+    settings["models"]["llama3.1:latest"] = {"lane": "openai", "base_url": "http://127.0.0.1:11434/v1"}
+    interceptor.configure(settings, None)
+    notes = interceptor.preferences()["model_notes"]
+    assert notes == {"local-coder": "other provider", "llama3.1:latest": "local"}
+
+
+def test_the_previous_turns_prediction_reaches_the_router(env):
+    client, settings, _, _ = env
+    seen = []
+
+    def picker(body, ctx):
+        seen.append(ctx["prev_quality"])
+        return {"model": "claude-haiku-4-5", "reason": "r", "model_quality": {"claude-haiku-4-5": 0.6}}
+    interceptor.configure(settings, picker)
+    client.post("/v1/messages", json=turn("one"), headers=AUTH)
+    client.post("/v1/messages", json=turn("two"), headers=AUTH)  # same conversation, next human turn
+    assert seen == [None, {"claude-haiku-4-5": 0.6}]
+
+
+def test_the_thread_mode_is_logged_never_its_ids():
+    assert interceptor.thread_mode({"messages": []}) is None
+    assert interceptor.thread_mode({"thread": {"type": "create"}}) == "create"
+    assert interceptor.thread_mode({"thread": {"previous_message_id": "msg_secret"}}) == "continue"
+
+
+def test_a_thread_continuation_stays_on_the_model_that_wrote_its_message(env):
+    """The API keeps a threaded conversation server-side; a request that
+    only adds to it must not move to another model mid-thread."""
+    client, settings, calls, state = env
+    interceptor.configure(settings, lambda body, ctx: "claude-haiku-4-5")
+    client.post("/v1/messages", json=turn("first"), headers=AUTH)  # routed to Haiku, writes msg_1
+    interceptor.set_model_picker(lambda body, ctx: "claude-opus-5")
+    cont = {**turn("next"), "thread": {"previous_message_id": "msg_1"}}
+    client.post("/v1/messages", json=cont, headers=AUTH)
+    assert calls["anthropic"][-1]["model"] == "claude-haiku-4-5"
+    rec = records()[-1]
+    assert rec["thread"] == "continue" and rec["reason"].startswith("continues a server-side thread")
+    unknown = {**turn("other"), "thread": {"previous_message_id": "msg_from_before_the_gateway"}}
+    client.post("/v1/messages", json=unknown, headers=AUTH)
+    assert calls["anthropic"][-1]["model"] == "claude-opus-5"  # the model asked for
+
+
+def test_a_thread_error_never_blocks_the_model(env):
+    client, settings, calls, state = env
+    state["anthropic_status"]["claude-haiku-4-5"] = 404
+    state["error_message"] = "No thread state was found for the requested `previous_message_id`."
+    interceptor.configure(settings, lambda body, ctx: "claude-haiku-4-5")
+    client.post("/v1/messages", json=turn("hi"), headers=AUTH)
+    state["anthropic_status"]["claude-haiku-4-5"] = 400
+    client.post("/v1/messages", json=turn("again"), headers=AUTH)
+    assert not interceptor._blocked
+
+
+@pytest.mark.parametrize("text", [
+    "that's wrong, the cache key is the model name", "No, use the other file", "not quite what I asked",
+    "try again", "you missed the second case", "still failing on the tests", "this doesn't work",
+    "redo that with the retry logic"])
+def test_corrections_are_recognised(text):
+    assert interceptor.is_correction(text)
+
+
+@pytest.mark.parametrize("text", [
+    None, "what's wrong with this function?", "no need to change the tests", "add a wrong-type check",
+    "<agent-message from='a1'>Another subagent wrote: that's wrong</agent-message>",
+    "Another Claude session sent a message: not quite right", "You are grading answers to a developer's request",
+    "that's wrong " * 40])
+def test_ordinary_messages_and_automated_ones_are_not_corrections(text):
+    assert not interceptor.is_correction(text)
+
+
+def test_a_correction_of_a_cheaper_answer_holds_the_next_turns_on_the_asked_model(env):
+    client, settings, calls, _ = env
+    interceptor.configure(settings, lambda body, ctx: "claude-haiku-4-5")
+    client.post("/v1/messages", json=turn("first"), headers=AUTH)  # Haiku answers
+    client.post("/v1/messages", json=turn("that's wrong, redo it"), headers=AUTH)  # the correction
+    assert calls["anthropic"][-1]["model"] == "claude-opus-5"
+    rec = records()[-1]
+    assert rec["correction"] is True and rec["routed_model"] == "claude-opus-5"
+    for i in range(interceptor.CORRECTION_HOLD_TURNS - 1):
+        client.post("/v1/messages", json=turn(f"next task {i}"), headers=AUTH)
+        assert calls["anthropic"][-1]["model"] == "claude-opus-5", i
+    client.post("/v1/messages", json=turn("another task"), headers=AUTH)
+    assert calls["anthropic"][-1]["model"] == "claude-haiku-4-5"  # the hold is over
+
+
+def test_a_correction_after_an_answer_on_the_asked_model_holds_nothing(env):
+    client, settings, calls, _ = env
+    interceptor.configure(settings, lambda body, ctx: None)
+    client.post("/v1/messages", json=turn("first"), headers=AUTH)
+    client.post("/v1/messages", json=turn("that's wrong"), headers=AUTH)
+    assert records()[-1]["correction"] is False
+    assert records()[-1]["reason"] != "after a correction: staying on the model you asked for (7 more turns)"
+
+
+def test_an_expired_thread_is_not_counted_as_an_error():
+    expired = {"status": 404, "error": "not_found_error: No thread state was found for the requested `previous_message_id`."}
+    real = {"status": 404, "error": "not_found_error: model not found"}
+    assert interceptor._expected_thread_expiry(expired)
+    assert not interceptor._expected_thread_expiry(real)
+    stats = interceptor.summarize([{**expired, "requested_model": "claude-opus-5-5", "routed_model": "claude-opus-5-5"},
+                                   {"status": 200, "requested_model": "claude-opus-5-5", "routed_model": "claude-opus-5-5"}])
+    assert stats["totals"]["errors"] == 0
+
+
+MISMATCH = ("thread: the request does not match the stored Thread for the requested `previous_message_id`; "
+            "differing field(s): model. These fields must stay the same across a Thread's turns")
+
+
+def test_a_thread_continuation_with_an_unknown_model_finds_it_by_retrying(env):
+    """The thread started on Haiku while the gateway wasn't watching: the
+    continuation goes to the model asked for, is rejected, then lands on Haiku."""
+    client, settings, calls, state = env
+    interceptor.configure(settings, None)
+    state["anthropic_status"]["claude-opus-5"] = 400
+    state["error_message"] = MISMATCH
+    cont = {**turn("next"), "thread": {"previous_message_id": "msg_from_before"}}
+    resp = client.post("/v1/messages", json=cont, headers=AUTH)
+    assert resp.status_code == 200
+    assert [c["model"] for c in calls["anthropic"]] == ["claude-opus-5", "claude-haiku-4-5"]
+    assert records()[-1]["routed_model"] == "claude-haiku-4-5"
+    assert interceptor._message_model("msg_from_before") == "claude-haiku-4-5"  # remembered
+
+
+def test_another_400_on_a_thread_is_returned_unchanged(env):
+    client, settings, calls, state = env
+    interceptor.configure(settings, None)
+    state["anthropic_status"]["claude-opus-5"] = 400
+    state["error_message"] = "max_tokens: too large"
+    cont = {**turn("next"), "thread": {"previous_message_id": "msg_x"}}
+    resp = client.post("/v1/messages", json=cont, headers=AUTH)
+    assert resp.status_code == 400 and "max_tokens" in resp.text
+    assert len(calls["anthropic"]) == 1  # no retries for a different error
+
+
+def test_thread_models_survive_a_restart(env):
+    interceptor._remember_message("msg_kept", "claude-haiku-4-5")
+    interceptor._message_models.clear()  # what a restart loses
+    interceptor._message_models_loaded = False
+    assert interceptor._message_model("msg_kept") == "claude-haiku-4-5"

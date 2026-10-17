@@ -99,7 +99,7 @@ def mark_self_contained(rows: list[dict], model: str = "claude-haiku-5-5", batch
         chunk = rows[start:start + batch]
         listing = "\n\n".join(f"[{i + 1}] {r['prompt'][:1500]}" for i, r in enumerate(chunk))
         reply = llm.complete(f"{SELF_CONTAINED_PROMPT}\n\n{listing}",
-                             extra_args=("--permission-mode", "plan", "--strict-mcp-config")).content
+                             extra_args=("--permission-mode", "plan", "--strict-mcp-config", "--safe-mode")).content
         found = re.search(r"\[[\d,\s]*\]", reply or "")
         if not found:
             continue

@@ -18,6 +18,9 @@
     --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   }
   * { box-sizing: border-box; }
+  /* never scroll sideways, whatever a browser does with a long value or an animation;
+     clip, not hidden: hidden makes a scroll container and breaks the sticky header */
+  html, body { overflow-x: hidden; overflow-x: clip; max-width: 100%; }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 var(--sans); }
   main { max-width: 1180px; margin: 0 auto; padding: 28px 24px 64px; display: flex; flex-direction: column; gap: 28px; }
   @media (max-width: 600px) { main { padding: 20px 16px 48px; } }
@@ -147,7 +150,27 @@
   tbody.turn tr { animation: fade-in .28s ease-out both; }
   @keyframes fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
   @media (max-width: 960px) { .hide-md { display: none; } }
-  @media (max-width: 680px) { .hide-sm { display: none; } }
+  @media (max-width: 680px) {
+    .hide-sm { display: none; }
+    /* phones: tighter cells, smaller headers, the numbers get the room */
+    th { font-size: 10.5px; letter-spacing: 0.02em; padding: 9px 6px; }
+    td { padding: 10px 6px; }
+    th:first-child, td:first-child { padding-left: 12px; }
+    th:last-child, td:last-child { padding-right: 12px; }
+    td.l { white-space: normal; }
+    .flow { flex-wrap: wrap; row-gap: 4px; }
+    .flow .asked, .flow .arr { display: none; }
+    #recent col:nth-child(1) { width: 21% !important; }
+    #recent col:nth-child(2) { width: 41% !important; }
+    #recent col:nth-child(4) { width: 22% !important; }
+    #recent col:nth-child(5) { width: 16% !important; }
+    #sessions col:nth-child(1) { width: 42% !important; }
+    #sessions col:nth-child(2) { width: 15% !important; }
+    #sessions col:nth-child(5) { width: 25% !important; }
+    #sessions col:nth-child(7) { width: 18% !important; }
+    .seg[aria-label="Cost preference"] { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
+    .seg[aria-label="Cost preference"] button { padding: 0 6px; }
+  }
 
   .pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px;
     border-top: 1px solid var(--row); background: var(--panel-2); }
@@ -163,7 +186,6 @@
     animation: shimmer 1.3s linear infinite; }
   @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
   button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-  footer { font-size: 12.5px; color: var(--muted); max-width: 860px; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
@@ -305,9 +327,6 @@
     </details>
   </section>
 
-  <footer>Plan usage is what the same work costs at API prices on each model, the relative price of the models:
-    on a Claude subscription nothing is billed per token. Baselines reuse each request's tokens on the other model,
-    adjusted for what it would have had cached; a subagent is measured against the session's own model.</footer>
 </main>
 <script>
 const PAGE_SIZE = 12;
@@ -337,7 +356,7 @@ let showAllSessions = false;
 const tier = (m) => { m = String(m || ""); return m.includes("opus") ? "var(--opus)" : m.includes("sonnet") ? "var(--sonnet)"
   : m.includes("haiku") ? "var(--haiku)" : "var(--other)"; };
 const swatch = (m) => `<span class="sw" style="background:${tier(m)}"></span>`;
-const ARROW = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--other)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>';
+const ARROW = '<svg class="arr" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--other)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>';
 const CHEV = (d) => `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
 const PRESET_NOTES = {best_quality: "Stays on the stronger model unless a cheaper one is almost as good",
   balanced: "Cheaper models when they're predicted close in quality (default)",
@@ -375,7 +394,19 @@ function savedCell(actual, base, cls = "") {
   const p = pct(actual, base);
   if (p == null) return `<td class="save none ${cls}">–</td>`;
   if (p === 0) return `<td class="save none ${cls}">0%</td>`;
-  return `<td class="save ${p < 0 ? "neg" : ""} ${cls}">${p > 0 ? p + "%" : "+" + (-p) + "%"}</td>`;
+  const why = p < 0 ? ` title="Cost more than the model asked for would have: a model that just took over a long conversation writes its cached copy of it once, and the model asked for already had it."` : "";
+  return `<td class="save ${p < 0 ? "neg" : ""} ${cls}"${why}>${p > 0 ? p + "%" : "+" + (-p) + "%"}</td>`;
+}
+
+/* One request's saving. A request answered by the model asked for saved
+   nothing by definition (an earlier switch's cache cost lands on it, and is
+   counted in the session total), so it shows "—". */
+function requestSavedCell(r) {
+  const base = r.cost_if_requested_usd, actual = r.cost_usd;
+  const routed = r.routed_model !== r.requested_model && !r.fallback;
+  if (!routed || base == null || actual == null)
+    return `<td class="save none" title="Answered by the model you asked for. Any cache cost from an earlier switch to another model is counted in the session's total.">—</td>`;
+  return savedCell(actual, base);
 }
 
 function saving(pctEl, barsEl, actual, base, baseLabel) {
@@ -416,6 +447,12 @@ function renderSpark(records) {
 
 const rowKey = (r) => `${r.ts}|${r.conversation}|${r.status}|${r.cost_usd}|${r.latency_s}`;
 
+/* a model name, flagged when it isn't Claude: "llama3.1:latest — local (not Claude)" */
+const label = (m) => {
+  const note = (prefs && prefs.model_notes || {})[m];
+  return note ? `${short(m)} — ${note} (not Claude)` : short(m);
+};
+
 function renderPrefs() {
   if (!prefs) return;
   const m = prefs.quality_margin;
@@ -440,7 +477,7 @@ function renderPrefs() {
   });
   const pin = $("pin-model");
   if (pin.options.length !== prefs.models.length)
-    pin.innerHTML = prefs.models.map((x) => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
+    pin.innerHTML = prefs.models.map((x) => `<option value="${esc(x)}">${esc(label(x))}</option>`).join("");
   pin.value = prefs.pinned_model || prefs.strongest_model || prefs.models[0];
   $("pin-box").hidden = prefs.mode !== "pin";
   $("auto-box").hidden = prefs.mode !== "auto";
@@ -453,10 +490,10 @@ function renderPrefs() {
   $("allow-upgrade").checked = !!prefs.allow_upgrade;
   if (!document.activeElement || !document.activeElement.closest("#roles")) {
     $("roles").innerHTML = prefs.roles.map((r) => {
-      const label = (x) => x == null ? "session's model" : short(x);
+      const tierLabel = (x) => x == null ? "session's model" : short(x);
       const value = !r.overridden ? "default" : (r.model == null ? "session" : r.model);
       const opt = (v, text) => `<option value="${esc(v)}"${v === value ? " selected" : ""}>${esc(text)}</option>`;
-      const opts = [opt("default", `default · ${label(r.default)}`), ...prefs.models.map((x) => opt(x, short(x))),
+      const opts = [opt("default", `default · ${tierLabel(r.default)}`), ...prefs.models.map((x) => opt(x, label(x))),
         opt("session", "session's model")];
       return `<div class="role"><span>${esc(r.role)}${r.overridden ? '<span class="changed">changed</span>' : ""}</span>
         <select data-role="${esc(r.role)}" aria-label="Tier for ${esc(r.role)} subagents">${opts.join("")}</select></div>`;
@@ -499,7 +536,7 @@ function renderRecent(turning) {
         ${r.subagent ? `<span class="pill sub">${esc(r.agent_role || "subagent")}</span>` : moved ? '<span class="pill">routed</span>' : ""}
         ${r.fallback ? '<span class="pill fb">fallback</span>' : ""}</span></td>
       <td class="l why hide-md" title="${esc(r.reason)}">${src ? `<span class="pill src">${src}</span>` : ""}${esc(r.reason)}</td>
-      <td class="strong">${usd(r.cost_usd)}</td>${savedCell(r.cost_usd, r.cost_if_requested_usd)}
+      <td class="strong">${usd(r.cost_usd)}</td>${requestSavedCell(r)}
       <td class="hide-sm">${statusCell(r.status)}</td></tr>`;
   }).join("") || `<tr><td colspan="6" class="empty">Nothing yet. Run <code>aar-gateway code</code>.</td></tr>`;
 

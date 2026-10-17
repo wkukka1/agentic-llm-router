@@ -59,7 +59,7 @@ def _priced_clients(*, fail=()):
 
 def _flush():
     """Wait for everything already submitted to the bookkeeping thread."""
-    flush_bookkeeping(timeout=5)
+    flush_bookkeeping(timeout=30)  # returns as soon as the write lands; slow CI disks need the room
 
 
 @pytest.fixture

@@ -4,11 +4,12 @@ itself is covered by test_interceptor*.py."""
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from router.gateway import interceptor, server
+from router.gateway import cli, interceptor, server
 
 
 @pytest.fixture
@@ -39,27 +40,26 @@ def test_claude_is_launched_with_tool_search_and_a_status_line(monkeypatch, tmp_
     monkeypatch.setenv("HOME", str(tmp_path))  # no user settings -> no existing status line
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("ENABLE_TOOL_SEARCH", raising=False)
-    args, env = server._claude_command("http://127.0.0.1:8787", ["-p", "hi"])
+    args, env = cli._claude_command("http://127.0.0.1:8787", ["-p", "hi"])
     assert env["ENABLE_TOOL_SEARCH"] == "true"
     assert env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:8787"
     assert args[0] == "claude" and args[-2:] == ["-p", "hi"]
     settings = json.loads(args[args.index("--settings") + 1])
-    assert settings["statusLine"]["command"].endswith("-m router.gateway.server statusline")
+    assert settings["statusLine"]["command"].endswith("-m router.gateway.cli statusline")
 
 
-def test_an_existing_status_line_is_left_alone(monkeypatch, tmp_path):
-    (tmp_path / ".claude").mkdir()
-    (tmp_path / ".claude" / "settings.json").write_text(json.dumps({"statusLine": {"type": "command"}}))
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("USERPROFILE", str(tmp_path))   # Path.home() on Windows
-    args, _ = server._claude_command("http://x", [])
+def test_an_existing_status_line_is_left_alone():
+    settings = Path.home() / ".claude" / "settings.json"  # a temp folder (conftest)
+    settings.parent.mkdir(parents=True)
+    settings.write_text(json.dumps({"statusLine": {"type": "command"}}))
+    args, _ = cli._claude_command("http://x", [])
     assert "statusLine" not in json.loads(args[args.index("--settings") + 1])
 
 
 def test_a_users_own_tool_search_setting_wins(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("ENABLE_TOOL_SEARCH", "false")
-    assert server._claude_command("http://x", [])[1]["ENABLE_TOOL_SEARCH"] == "false"
+    assert cli._claude_command("http://x", [])[1]["ENABLE_TOOL_SEARCH"] == "false"
 
 
 def test_the_log_rotates(tmp_path, monkeypatch):

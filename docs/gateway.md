@@ -17,18 +17,88 @@ Claude Code ──► gateway (127.0.0.1:8787) ──► router picks a model fo
 ## Quick start
 
 ```bash
-pip install -e ".[gateway,research]"          # research = the trained router
-cp configs/gateway.example.yaml configs/gateway.yaml
-export AAR_GATEWAY_CONFIG=$PWD/configs/gateway.yaml
+uv tool install "agentic-llm-router[gateway] @ git+https://github.com/wkukka1/agentic-llm-router"
+aar-gateway setup --router router-llmrouterbench.npz   # the router file + a config
 
 aar-gateway code          # starts the gateway if needed, then runs Claude Code through it
 aar-gateway dashboard     # opens http://127.0.0.1:8787/dashboard
+aar-gateway doctor        # if anything looks wrong
 ```
+
+From a checkout instead: `pip install -e ".[gateway]"` (add `research` to
+build router files or run the data pipeline). The router file is described
+under [The router file](#the-router-file).
+
+The config is `AAR_GATEWAY_CONFIG` if set, else `~/.aar-gateway/config.yaml`
+if it exists, else the defaults (router off).
+
+## The router file
+
+The gateway serves its router from one small file. **The shipped one is a
+trained network** ([`MLPArtifactPayload`](../src/router/models/artifacts.py)):
+a prompt's embedding in, a predicted score per model out (`Linear → ReLU →
+Linear`, 256 hidden units). The file holds only the weights, **0.38 MB, no
+training prompts or scores**, and is served with numpy. On LLMRouterBench's
+held-out split it matches or beats the kNN router at every margin (Balanced:
+0.612 at $19.79 per 1k against kNN's 0.596 at $17.25; at equal cost the
+network is ~0.005–0.009 higher); loaded from the file it scores exactly as
+it did in training.
+
+The alternative (`--kind knn`) is a kNN index: the training prompts'
+embeddings and their per-model scores
+([`KNNArtifactPayload`](../src/router/models/artifacts.py)). A prompt's
+predicted quality per model is the mean score of its 25 nearest training
+prompts. For LLMRouterBench that is 8,602 prompts × 13 models, **6.1 MB**.
+It needs no training data and no PyTorch: the text encoder
+(`all-MiniLM-L6-v2`) runs on `fastembed` (ONNX), which gives the same vectors
+as sentence-transformers (cosine 1.0000, the longest prompts included). On
+500 held-out test prompts the file's predictions match the full `KNNRouter`
+exactly (largest difference 0.0; same top model on all 500).
+
+```bash
+# build it (needs the pool's processed data and retrieval embeddings)
+python scripts/routing/export_router.py --config configs/llmrouterbench.yaml \
+    --dataset llmrouterbench --out router-llmrouterbench.npz      # trained network (default)
+# or --kind knn --k 25 for the kNN index
+
+# use it
+aar-gateway setup --router router-llmrouterbench.npz
+```
+
+`setup` copies (or downloads) the file to `~/.aar-gateway/router.npz`, checks
+it loads, and writes `interceptor.router.artifact` into a new config. In any
+config, `router.artifact` takes precedence over `data_config`.
+
+## Managing the gateway
+
+| Command | What it does |
+|---|---|
+| `aar-gateway start` / `stop` / `restart` | the gateway in the background (`code` and `dashboard` start it if needed) |
+| `aar-gateway status` | running or not, router loaded or why not, config, requests and saving, where the logs are |
+| `aar-gateway logs [-n 50] [-f]` | the gateway's own log; `-f` follows it |
+| `aar-gateway doctor` | checks Claude Code, the config, the router, the port and the log folder, with a fix for each problem |
+| `aar-gateway config` | which config file is in use |
+| `aar-gateway setup [--router FILE\|URL] [--force]` | install the router file and write a config (existing configs are kept without `--force`) |
+| `aar-gateway service install` / `uninstall` / `status` | start at login: a LaunchAgent on macOS, a systemd user unit on Linux; restarted if it crashes, not after `stop` |
+| `aar-gateway serve` | the gateway in the foreground |
+
+`status --json` prints the same as JSON. The command line is
+[`router/gateway/cli.py`](../src/router/gateway/cli.py); `hook` and
+`statusline`, which Claude Code calls itself, import only the standard
+library (the subagent hook runs in about 0.07 s).
+
+**Operating systems.** macOS is what this is run and tested on. Linux uses
+the same process handling (and systemd for `service`) but hasn't been run
+yet. Windows has its own code paths -- Claude Code is run as a child process
+instead of replacing this one, the gateway is detached with Windows process
+flags, and liveness is checked over HTTP (`os.kill(pid, 0)` would terminate
+the process there) -- but is untested, and `service` isn't available there:
+use `aar-gateway start`.
 
 `aar-gateway code` passes every further argument to `claude`
 (`aar-gateway code -p "..."`, `aar-gateway code -c`). It is the same as
 running `ENABLE_TOOL_SEARCH=true ANTHROPIC_BASE_URL=http://127.0.0.1:8787 claude`
-with the gateway already up (`aar-gateway serve`). It also sets Claude Code's
+with the gateway already up (`aar-gateway start`). It also sets Claude Code's
 status line to show **which model actually answered** and this session's
 cost against no router, e.g.
 `aar router · claude-sonnet-5-5 (routed) · $0.21 · saved $0.26 (55%)`.
@@ -161,13 +231,14 @@ cache rewrites than it saved.
 The margin is the user's cost preference: how much predicted quality a turn
 may give up for a cheaper model. The presets are calibrated on
 LLMRouterBench's held-out split (1,738 prompts, 13 models), against always
-using GPT-5 (quality 0.596, $28.30 per 1k prompts):
+using GPT-5 (quality 0.596, $28.30 per 1k prompts), for the shipped trained
+router (the kNN router's figures in brackets):
 
 | Preset | Margin | Quality | Cost / 1k prompts |
 |---|---|---|---|
-| Best quality | 0.01 | 0.615 | $24.40 (−14%) |
-| Balanced (default) | 0.05 | 0.596 | $17.25 (−39%) |
-| Save more | 0.08 | 0.580 | $12.06 (−57%) |
+| Best quality | 0.01 | 0.626 (0.615) | $26.52, −6% ($24.40, −14%) |
+| Balanced (default) | 0.05 | 0.612 (0.596) | $19.79, −30% ($17.25, −39%) |
+| Save more | 0.08 | 0.590 (0.580) | $14.82, −48% ($12.06, −57%) |
 
 `0` (always the top prediction) is allowed, but on the benchmark it cost
 *more* than always using GPT-5 for no measurable gain.
@@ -234,9 +305,17 @@ Choices apply from the next turn and survive restarts
 `~/.aar-gateway/overrides.jsonl`: if a kind keeps being moved up, its default
 tier is wrong.
 
-`aar-gateway stop` stops the running gateway, however it was started.
 
 ## Other models (API keys, Ollama)
+
+**Local models are opt-in.** `aar-gateway local add <model>` pulls a model
+with Ollama if needed and adds it to `~/.aar-gateway/local-models.yaml`, a
+file of its own that is merged into the configured models (it never replaces
+one, and the main config is never rewritten). `aar-gateway local` reports
+whether Ollama is installed and running, with the install command for your
+OS when it isn't. The router never picks a local model by itself (it has no
+stand-in in the benchmark); pin it, or pass `--model`.
+
 
 A model with `lane: openai` is any OpenAI-compatible endpoint: OpenAI,
 Gemini's compatible endpoint, OpenRouter, Groq, vLLM, Ollama.
@@ -386,6 +465,103 @@ Each row also gets `matches_best`: whether the judge found that answer as
 good as the best of the three. "Did Haiku match the best?" is the label a
 router is trained on. Rows carry `group` (the repository, or `arena`) so
 train/test splits can be made by group.
+
+**How good is routing between the tiers?**
+[`evaluation/gateway/pool_eval.py`](../src/evaluation/gateway/pool_eval.py)
+replays routing policies on graded prompts: each has a real score and cost
+for every tier, so it shows what each policy would have picked, scored and
+cost. It also shows what randomly mixing two fixed tiers achieves at the
+same cost ("vs mix"); a router on that line has bought nothing with its
+predictions.
+
+```bash
+python -m evaluation.gateway.pool_eval --graded ~/.cache/aar/routing-pool/graded.jsonl \
+    --router-file ~/.aar-gateway/router.npz --by-source
+```
+
+On the 198-prompt pool (119 LMArena, 79 SWE-bench Verified; margin 0.05):
+
+| Policy | Quality | vs mix | Matches best | vs always Opus |
+|---|---|---|---|---|
+| always Opus 5.5 | 0.883 | — | 92% | — |
+| always Sonnet 5.5 | 0.805 | — | 72% | −56% usage |
+| always Haiku 5.5 | 0.749 | — | 56% | −95% usage |
+| benchmark router (today) | 0.828 | −0.002 | 77% | −39% usage |
+| kNN on the graded pool (leave-one-out) | 0.839 | −0.005 | 81% | −29% usage |
+| oracle (cheapest tier that matched the best) | 0.880 | +0.079 | 100% | −59% usage |
+
+Today's router keeps ~94% of always-Opus quality at 39% less usage, but it
+sits on the random-mix line: it isn't yet predicting *which* prompts can go
+cheaper. Haiku matched the best answer on 110 of 198 prompts; the router
+sent it 21. The oracle shows the headroom: 59% less usage at no loss. A
+leave-one-out classifier on the benchmark router's predictions, prompt
+length and source found almost no signal either (AUC 0.57 for "Haiku is
+enough", 0.55 for Sonnet). The shipped trained router routes the same way
+(0.849, +0.005 vs mix, −28% usage): it learned from the same stand-ins.
+
+**Answering cheap first and escalating on a check doesn't pay off either.**
+On the same 200 prompts, a checker read each prompt with Haiku's answer and
+said keep it or escalate to Opus:
+
+| Checker | Right when it says "keep" (base rate 55%) | vs mix | Checking cost |
+|---|---|---|---|
+| Haiku | 57% | +0.002 | $0.56 |
+| Sonnet | 66% | −0.012 | $7.95 |
+
+Haiku can't judge its own answers, and Sonnet checking costs nearly as much
+as answering.
+
+**More graded prompts of this kind won't close the gap either.** Three
+checks, before spending the plan on 800 more:
+
+* **The learning curve is flat.** Routing on the graded pool, trained on
+  50, 100 or 150 prompts and tested on 40 held out (60 random splits),
+  stays on the random-mix line at every size (kNN −0.000 → +0.002 →
+  −0.001 vs mix; ridge +0.000 → +0.002 → +0.001).
+* **The headroom is real, not judge noise.** The same stored answers for
+  50 prompts were judged twice, in fresh random order. Scores correlate
+  0.75 (mean difference 0.07 on a 0–1 scale); "Haiku is as good as the
+  best" agrees 80% of the time; the oracle's pick agrees 72%. The oracle's
+  picks from one pass, scored by the other, keep their quality (+0.038 vs
+  always-Opus), so the 59% saving is there to be had.
+* **The prompt doesn't say which tier is enough.** Leave-one-out AUC for
+  "Haiku is enough": length, code hints and source 0.64; the benchmark
+  router's predictions 0.63; the text embedding 0.57; all of them 0.64.
+  For "Haiku or Sonnet is enough", all of them 0.67.
+
+**A smarter reader of the prompt helps a little, on repo work only.**
+Asked directly ("would Haiku answer this as well as the best?"), Opus and
+Haiku reach AUC 0.70–0.71 with the kind of task known (today's router
+0.62). Routing within each kind, half to Haiku, half to Opus, quality vs
+the random-mix line:
+
+| Scorer | General questions (120) | Repo bugs (80) |
+|---|---|---|
+| Today's router | −0.007 | +0.015 |
+| Haiku reading the prompt (an API call per turn) | −0.009 | +0.035 |
+| Opus reading the prompt | −0.008 | +0.034 |
+| Student, bge-base-en-v1.5 (210 MB ONNX) | −0.014 | +0.027 |
+| Student, nomic-embed-text-v1.5-Q (130 MB) | −0.014 | +0.021 |
+| Student, jina-embeddings-v2-small-en (120 MB) | −0.004 | +0.014 |
+| Student, all-MiniLM-L6-v2 (shipped) | −0.011 | +0.007 |
+| Student, bge-small-en-v1.5 (67 MB) | −0.006 | +0.002 |
+
+The students are small ONNX encoders (no torch, every OS) plus a numpy
+MLP, trained to copy Haiku's estimate on 3,670 prompts Haiku labelled
+(Arena coding questions, SWE-bench Verified issues, benchmark prompts and
+the user's own turns; none of the 200 test prompts). None helps on general
+questions; on repo bugs the best gets three quarters of the way to Haiku,
+but 80 prompts leave about ±0.02 of noise, so none is clearly better than
+today's router. Not shipped: a decision would need a larger graded test
+set first.
+
+So a per-turn router that reads only the prompt can't find most of that
+saving, however much graded data it gets. What works is routing by the
+kind of work instead: search subagents on Haiku save ~97% with no measured
+loss (see [Subagents](#subagents)). The next gains are more of that
+(delegating more of a turn's lookup work to cheap subagents) and signals
+from the session itself (whether the user had to correct or redo a cheap
+model's answer), not more prompts.
 
 Known limits:
 

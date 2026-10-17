@@ -47,7 +47,8 @@ from fastapi import Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from .config import load_settings
+from . import share
+from .config import atomic_write_text, load_settings
 from .pricing import canonical_model, cost_usd
 from .routing import ModelPicker, price_for, unavailable_reason
 from .subagents import DEFAULT_ROLE_MODELS, role_decision, spawn_decision
@@ -77,6 +78,48 @@ _sessions: OrderedDict[str, dict] = OrderedDict()
 _prefixes: dict[str, tuple[float, int]] = {}
 #: (model, prefix signature) -> when that model last cached that prefix
 _warm: dict[tuple[str, str], float] = {}
+#: which model wrote each message (by its id): a request that continues a
+#: server-side thread from a message goes to the model that wrote it
+_message_models: OrderedDict[str, str] = OrderedDict()
+_MAX_MESSAGES = 5000
+#: the API rejects a thread continuation sent to another model than the
+#: thread's ("differing field(s): model"), so who wrote what must survive a
+#: restart: appended to ``thread-models.jsonl``, read back on first use
+_message_models_loaded = False
+_THREAD_MISMATCH = re.compile(r"differing field\(s\):[^.]*\bmodel\b", re.I)
+
+
+def _thread_models_path() -> Path:
+    return log_path().parent / "thread-models.jsonl"
+
+
+def _remember_message(message_id: str, model: str) -> None:
+    _message_models[message_id] = model
+    _message_models.move_to_end(message_id)
+    while len(_message_models) > _MAX_MESSAGES:
+        _message_models.popitem(last=False)
+    path = _thread_models_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"m": message_id, "model": model}) + "\n")
+        if path.stat().st_size > _MAX_MESSAGES * 200:  # ~2x the entries kept: compact
+            atomic_write_text(path, "".join(json.dumps({"m": k, "model": v}) + "\n" for k, v in _message_models.items()))
+    except OSError:
+        pass  # memory still has it; a lost entry only costs one retried request
+
+
+def _message_model(message_id: str) -> str | None:
+    global _message_models_loaded
+    if message_id not in _message_models and not _message_models_loaded:
+        _message_models_loaded = True
+        try:
+            for line in _thread_models_path().read_text(encoding="utf-8").splitlines()[-_MAX_MESSAGES:]:
+                entry = json.loads(line)
+                _message_models.setdefault(entry["m"], entry["model"])
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+    return _message_models.get(message_id)
 #: running per-request token profile of all agent traffic -- the default for a
 #: conversation that has none of its own yet
 _global_profile: dict = {}
@@ -114,7 +157,28 @@ _blocked: dict[tuple[str, str], tuple[str, float]] = {}
 BLOCK_SECONDS = 600.0
 #: 400s about this one request, not the model -- never a reason to stop using it
 _REQUEST_SPECIFIC = re.compile(r"prompt is too long|too many tokens|max_tokens|context (?:length|window)"
-                               r"|exceeds|too large|invalid image|could not process image", re.I)
+                               r"|exceeds|too large|invalid image|could not process image"
+                               r"|thread|previous_message_id", re.I)
+
+
+#: a message that says the last answer was wrong. Phrases only: a bare "wrong"
+#: or "no" would catch questions about code that is wrong. Automated messages
+#: (subagent hand-backs, grading prompts) are excluded in is_correction.
+CORRECTION = re.compile(r"\b(?:that'?s|that is|this is|it'?s) (?:wrong|incorrect|not (?:right|correct|what i (?:asked|meant|wanted)))"
+                        r"|\bnot (?:quite )?(?:right|correct)\b|\bnot (?:quite )?what i (?:asked|meant|wanted)\b"
+                        r"|\btry again\b|\bredo (?:it|that|this)\b|\byou missed\b|\bstill (?:broken|failing|wrong)\b"
+                        r"|\b(?:doesn'?t|didn'?t) work\b|^\s*no[,.!]", re.I)
+#: after a correction of a cheaper model's answer, this many main-agent turns
+#: stay on the model the user asked for
+CORRECTION_HOLD_TURNS = 8
+
+
+def is_correction(text: str | None) -> bool:
+    if not text or len(text) > 400:  # a correction is short; long text is a new task
+        return False
+    if text.lstrip().startswith(("<", "Another Claude session", "You are grading")):
+        return False
+    return bool(CORRECTION.search(text))
 
 
 #: why the router isn't loaded, when it failed at startup (shown on the dashboard)
@@ -150,8 +214,8 @@ MARGIN_HEADER = "x-aar-quality-margin"
 #: named cost preferences for the dashboard: how much predicted quality a turn
 #: may give up to reach a cheaper model
 #: Calibrated on LLMRouterBench's held-out split (1,738 prompts, 13 models,
-#: kNN router) against always-GPT-5 (0.596 quality, $28.3 per 1k prompts):
-#: 0.01 -> 0.615 at $24.4; 0.05 -> 0.596 at $17.2; 0.08 -> 0.580 at $12.1.
+#: the shipped MLP router) against always-GPT-5 (0.596 quality, $28.3 per 1k
+#: prompts): 0.01 -> 0.626 at $26.5; 0.05 -> 0.612 at $19.8; 0.08 -> 0.590 at $14.8.
 PRESETS = {"best_quality": 0.01, "balanced": 0.05, "save_more": 0.08}
 
 
@@ -176,6 +240,10 @@ def preferences() -> dict:
             "header": MARGIN_HEADER, "mode": routing["mode"], "pinned_model": routing["pinned_model"],
             "allow_upgrade": bool(routing.get("allow_upgrade")),
             "models": list(_settings["models"]),
+            # what the dropdowns show next to a model that isn't Claude
+            "model_notes": {m: ("local" if "127.0.0.1" in (spec.get("base_url") or "") or "localhost" in
+                                (spec.get("base_url") or "") else "other provider")
+                            for m, spec in _settings["models"].items() if spec.get("lane") == "openai"},
             "roles": [{"role": r, "model": _settings["subagents"]["roles"].get(r, d), "default": d,
                        "overridden": r in overrides} for r, d in defaults.items()]}
 
@@ -213,7 +281,7 @@ def overrides_path() -> Path:
 def _save_preferences(**changes) -> None:
     path = preferences_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({**_read_preferences(), **changes}))
+    atomic_write_text(path, json.dumps({**_read_preferences(), **changes}))
 
 
 def _log_override(record: dict) -> None:
@@ -420,11 +488,25 @@ def _notify() -> None:
             _listeners.discard((loop, queue))
 
 
+_LEADING_TAG = re.compile(r"\s*<([A-Za-z][\w-]{0,40})")
+
+
+def turn_trigger(text: str | None) -> str | None:
+    """What started a turn, coarsely, for the log: ``"typed"``, or the name
+    of a leading tag such as ``command-name`` -- never the text itself. A
+    message Claude Code writes that isn't yet in :data:`_REMINDER` shows up
+    here by its tag."""
+    if text is None:
+        return None
+    found = _LEADING_TAG.match(text)
+    return found.group(1) if found else "typed"
+
+
 def human_text(body: Mapping) -> str | None:
     """The new human text that starts a turn, or ``None`` for a tool-loop
-    continuation. Trailing ``system`` messages (Claude Code appends hook
-    output after the user's message) are skipped, and ``<system-reminder>``
-    sections are removed -- they are Claude Code's words, not the human's."""
+    continuation or a message Claude Code wrote itself. Trailing ``system``
+    messages (Claude Code appends hook output after the user's message) are
+    skipped, and Claude Code's own sections (:data:`_REMINDER`) removed."""
     msgs = [m for m in body.get("messages") or [] if m.get("role") != "system"]
     if not msgs or msgs[-1].get("role") != "user":
         return None
@@ -505,6 +587,8 @@ class _SSEUsageTap:
         self._buf = b""
         self.usage: dict = {}
         self.stop_reason: str | None = None
+        self.error: str | None = None  # an error event mid-stream (overloaded, ...)
+        self.message_id: str | None = None
 
     def feed(self, chunk: bytes) -> None:
         self._buf += chunk
@@ -521,9 +605,12 @@ class _SSEUsageTap:
             return
         if payload.get("type") == "message_start":
             self.usage.update((payload.get("message") or {}).get("usage") or {})
+            self.message_id = (payload.get("message") or {}).get("id")
         elif payload.get("type") == "message_delta":
             self.usage.update({k: v for k, v in (payload.get("usage") or {}).items() if v is not None})
             self.stop_reason = (payload.get("delta") or {}).get("stop_reason") or self.stop_reason
+        elif payload.get("type") == "error":
+            self.error = error_summary(json.dumps(payload).encode())
 
 
 class _Turn:
@@ -551,6 +638,10 @@ class _Turn:
         self.decision: dict = {"reason": "client's choice"}
         self.fallback = False
         self.attempted: str | None = None
+        self.error: str | None = None  # the provider's error type and message, when it refused
+        self.message_id: str | None = None  # the id of the message this request produced
+        self.correction = False  # the user's message corrects a cheaper model's answer
+        self.hold_left = self.session.get("hold", 0)  # main-agent turns still held on the asked model
         self.t0 = time.perf_counter()
 
     def body_for(self, model: str) -> bytes:
@@ -570,6 +661,8 @@ class _Turn:
         prev_tokens = self.session.get("prompt_tokens") or 0
         baseline = _warm_usage(usage, max(prev_tokens, self.shared_before))
         strongest = _settings.get("strongest")
+        if status == 200 and self.message_id and lane == "anthropic":
+            _remember_message(self.message_id, self.target)
         if status == 200 and usage:
             now, tokens = time.monotonic(), _prompt_tokens(usage)
             if lane == "anthropic":
@@ -578,8 +671,9 @@ class _Turn:
             _prefixes[self.sig] = (now, fewest)
             _forget_cold(now)
             profile = _update_profile(self.session.get("profile") or {}, usage)
+            quality = self.decision.get("model_quality") or self.session.get("quality")
             _sessions[self.key] = {"model": self.target, "prompt_tokens": tokens, "profile": profile,
-                                   "agent": self.agent}
+                                   "agent": self.agent, "quality": quality, "hold": self.hold_left}
             if self.body.get("tools"):
                 _global_profile.update(_update_profile(_global_profile, usage))
             _sessions.move_to_end(self.key)
@@ -601,11 +695,13 @@ class _Turn:
             _cc_sessions.move_to_end(self.claude_session)
             while len(_cc_sessions) > _MAX_SESSIONS:
                 _cc_sessions.popitem(last=False)
-        _append_record({
+        record = {
             "ts": datetime.now(UTC).isoformat(timespec="seconds"),
             "claude_session": self.claude_session[:12] or None,
             "conversation": self.key,
             "new_turn": self.human is not None,
+            "turn_trigger": turn_trigger(self.human),
+            "correction": self.correction,
             "subagent": self.agent is not None,
             "agent_role": (self.agent or {}).get("role"),
             "role_source": (self.agent or {}).get("source"),
@@ -618,6 +714,10 @@ class _Turn:
             "reason": d.get("reason"),
             "fallback": self.fallback,
             "attempted_model": self.attempted,
+            "error": self.error,
+            # server-side conversation state: Claude Code may send only what's new
+            # since a previous message ("continue") instead of the whole history
+            "thread": thread_mode(self.body),
             "status": status,
             "latency_s": round(time.perf_counter() - self.t0, 3),
             "input_tokens": usage.get("input_tokens"),
@@ -633,7 +733,9 @@ class _Turn:
             "candidates": d.get("candidates"),
             "quality_margin": d.get("quality_margin"),
             "quality_source": d.get("quality_source"),
-        })
+        }
+        _append_record(record)
+        share.record(record, self.human)  # opt-in only; a background thread, no prompt text
 
 
 def _forget_cold(now: float) -> None:
@@ -664,6 +766,14 @@ def _est_prompt_tokens(turn: _Turn) -> int:
 
 
 async def _decide(turn: _Turn) -> None:
+    previous = thread_previous(turn.body)
+    if previous:
+        # the API keeps this conversation server-side and this request only
+        # adds to it: it stays with the model that wrote the message it
+        # continues (or the one asked for), never moved mid-thread
+        turn.target = _message_model(previous) or turn.requested
+        turn.decision = {"reason": "continues a server-side thread: stays on its model"}
+        return
     if turn.human is None and turn.session.get("model"):
         turn.target = turn.session["model"]
         turn.decision = {"reason": "same turn as the previous request"}
@@ -688,6 +798,15 @@ async def _decide(turn: _Turn) -> None:
         if by_role:
             turn.target, turn.decision = by_role["model"], by_role
             return
+    if turn.agent is None and turn.human is not None:
+        if is_correction(turn.human) and turn.session.get("model") not in (None, turn.requested):
+            turn.correction, turn.hold_left = True, CORRECTION_HOLD_TURNS
+        if turn.hold_left > 0:
+            turn.target = turn.requested
+            turn.decision = {"reason": "after a correction: staying on the model you asked for "
+                                       f"({turn.hold_left} more turn{'s' if turn.hold_left != 1 else ''})"}
+            turn.hold_left -= 1
+            return
     if _picker is None:
         return
     if not turn.body.get("tools"):
@@ -699,6 +818,7 @@ async def _decide(turn: _Turn) -> None:
     ctx = {"requested": turn.requested, "human_text": turn.human,
            "est_prompt_tokens": _est_prompt_tokens(turn),
            "last_model": turn.session.get("model"),
+           "prev_quality": turn.session.get("quality"),
            "last_prompt_tokens": turn.session.get("prompt_tokens"),
            "quality_margin": _request_margin(turn.request),
            "allow_upgrade": bool(routing.get("allow_upgrade")),
@@ -737,20 +857,22 @@ async def _relay_anthropic(upstream: httpx.Response, on_done) -> Response:
                     yield chunk
             finally:
                 await upstream.aclose()
-                on_done(upstream.status_code, tap.usage, tap.stop_reason)
+                on_done(upstream.status_code, tap.usage, tap.stop_reason, tap.error, tap.message_id)
 
         return StreamingResponse(relay(), status_code=upstream.status_code, headers=headers)
 
     content = await upstream.aread()
     await upstream.aclose()
-    usage = stop_reason = None
+    usage = stop_reason = error = message_id = None
     if upstream.status_code == 200:
         try:
             message = json.loads(content)
-            usage, stop_reason = message.get("usage"), message.get("stop_reason")
+            usage, stop_reason, message_id = message.get("usage"), message.get("stop_reason"), message.get("id")
         except (ValueError, AttributeError):
             pass
-    on_done(upstream.status_code, usage, stop_reason)
+    else:
+        error = error_summary(content)
+    on_done(upstream.status_code, usage, stop_reason, error, message_id)
     return Response(content, status_code=upstream.status_code, headers=headers)
 
 
@@ -770,6 +892,37 @@ async def _via_anthropic(turn: _Turn) -> Response:
         return _unreachable(turn, "Anthropic API", exc, "anthropic")
 
 
+async def _find_thread_model(turn: _Turn, upstream: httpx.Response, *, tried: set) -> httpx.Response:
+    """A thread continuation sent to a model other than the thread's is
+    rejected before anything runs ("differing field(s): model"). That
+    happens when the gateway doesn't know the thread's model (it started
+    while the gateway was down, say): try the other Claude models once each
+    and remember the one that takes it. Anything else is returned as is."""
+    detail = (await upstream.aread()).decode(errors="replace")
+    if not _THREAD_MISMATCH.search(detail):
+        return _replay(upstream, detail)
+    await upstream.aclose()
+    for model in [m for m, spec in _settings["models"].items() if spec.get("lane") == "anthropic" and m not in tried]:
+        candidate = await _send_anthropic(turn.request, "v1/messages", turn.body_for(model))
+        if candidate.status_code == 400:
+            text = (await candidate.aread()).decode(errors="replace")
+            if _THREAD_MISMATCH.search(text):
+                await candidate.aclose()
+                continue
+            return _replay(candidate, text)
+        turn.target = model
+        turn.decision = {**turn.decision, "reason": f"continues a server-side thread on {model} (found by retrying)"}
+        _remember_message(thread_previous(turn.body), model)
+        return candidate
+    return _replay(upstream, detail)
+
+
+def _replay(upstream: httpx.Response, text: str) -> httpx.Response:
+    """A response already read, as a fresh one that can be relayed."""
+    headers = {k: v for k, v in upstream.headers.items() if k.lower() not in _RESPONSE_HOP_HEADERS}
+    return httpx.Response(upstream.status_code, headers=headers, content=text.encode())
+
+
 async def _via_anthropic_unguarded(turn: _Turn) -> Response:
     upstream = await _send_anthropic(turn.request, "v1/messages", turn.body_for(turn.target))
     if upstream.status_code >= 400 and turn.target != turn.requested:
@@ -778,15 +931,54 @@ async def _via_anthropic_unguarded(turn: _Turn) -> Response:
         if upstream.status_code == 400:  # the request is valid for the client's model, not this one
             if not _REQUEST_SPECIFIC.search(detail):
                 _blocked[(turn.target, turn.request.headers.get("user-agent", ""))] = (detail[:160], time.monotonic())
+        turn.error = f"{turn.target}: {error_summary(detail.encode())}"  # kept if the fallback succeeds
         turn.fallback, turn.attempted, turn.target = True, turn.target, turn.requested
         turn.decision = {**turn.decision, "reason": f"fell back: {turn.attempted} returned "
                                                     f"{upstream.status_code}: {detail[:160]}"}
         upstream = await _send_anthropic(turn.request, "v1/messages", turn.raw)
-    def done(status: int, usage: Mapping | None, stop_reason: str | None = None) -> None:
+        if upstream.status_code == 400 and thread_previous(turn.body):
+            upstream = await _find_thread_model(turn, upstream, tried={turn.attempted, turn.requested})
+    elif upstream.status_code == 400 and thread_previous(turn.body):
+        upstream = await _find_thread_model(turn, upstream, tried={turn.target})
+
+    def done(status: int, usage: Mapping | None, stop_reason: str | None = None, error: str | None = None,
+             message_id: str | None = None) -> None:
         turn.stop_reason = stop_reason
+        turn.error = error or turn.error
+        turn.message_id = message_id
         turn.finish(status, usage, "anthropic")
 
     return await _relay_anthropic(upstream, done)
+
+
+def thread_previous(body: Mapping) -> str | None:
+    """The message id a server-side thread request continues from, if any."""
+    thread = body.get("thread")
+    return thread.get("previous_message_id") if isinstance(thread, Mapping) else None
+
+
+def thread_mode(body: Mapping) -> str | None:
+    """``create`` / ``continue`` / the type given, for a request that uses
+    the API's server-side threads; ``None`` for a plain full-history request.
+    Only the mode is logged, never ids or content."""
+    thread = body.get("thread")
+    if not isinstance(thread, Mapping):
+        return None
+    if thread.get("previous_message_id"):
+        return "continue"
+    return str(thread.get("type") or "thread")[:20]
+
+
+def error_summary(content: bytes) -> str:
+    """``type: message`` from a provider's error body, for the request log.
+    Error messages name fields and limits, not conversation text; capped
+    all the same."""
+    try:
+        err = json.loads(content).get("error") or {}
+        text = f"{err.get('type', 'error')}: {err.get('message', '')}"
+    except (ValueError, AttributeError):
+        text = content.decode(errors="replace")
+    return " ".join(text.split())[:240]
 
 
 def _error(status: int, message: str) -> JSONResponse:
@@ -822,6 +1014,7 @@ async def _via_openai_unguarded(turn: _Turn) -> Response:
             turn.decision = {**turn.decision, "reason": f"fell back: {turn.attempted} returned "
                                                         f"{upstream.status_code}: {detail[:160]}"}
             return await _via_anthropic(turn)
+        turn.error = error_summary(detail.encode())
         turn.finish(upstream.status_code, None, "openai")
         return _error(upstream.status_code, f"{turn.target}: {detail}")
 
@@ -877,7 +1070,7 @@ async def forward(request: Request, path: str) -> Response:
         upstream = await _send_anthropic(request, path, raw)
     except httpx.HTTPError as exc:
         return _unreachable(None, "Anthropic API", exc, "anthropic")
-    return await _relay_anthropic(upstream, lambda status, usage, stop_reason=None: None)
+    return await _relay_anthropic(upstream, lambda *_: None)  # passed through, not logged
 
 
 #: the request log as parsed so far: a dashboard refresh parses only the
@@ -937,6 +1130,12 @@ def _current_records() -> list[dict]:
 RECENT_RECORDS = 200
 
 
+def _expected_thread_expiry(record: dict) -> bool:
+    """A 404 for a server-side thread the API has let go of: Claude Code
+    replays the conversation itself, so it isn't a failure of the gateway."""
+    return record.get("status") == 404 and "No thread state" in (record.get("error") or "")
+
+
 def summarize(records: list[dict] | None = None) -> dict:
     """Totals and per-model rows for ``GET /stats`` and the dashboard."""
     records = read_records() if records is None else records
@@ -954,7 +1153,7 @@ def summarize(records: list[dict] | None = None) -> dict:
         m = models.setdefault(r.get("routed_model") or "unknown", blank())
         for row in (total, m):
             row["requests"] += 1
-            row["errors"] += r.get("status") != 200
+            row["errors"] += r.get("status") != 200 and not _expected_thread_expiry(r)
             row["rerouted"] += r.get("routed_model") != r.get("requested_model")
             row["fallbacks"] += bool(r.get("fallback"))
             for k in token_keys:

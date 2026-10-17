@@ -75,7 +75,14 @@ class ClaudeSubscriptionAdapter(ProviderAdapter):
         proc = subprocess.run(cmd, input=text, capture_output=True, text=True, timeout=self._timeout,
                               cwd=generation_kwargs.get("cwd"), env=env)
         if proc.returncode != 0:
-            raise RuntimeError(f"{self._cli} exited {proc.returncode}: {proc.stderr.strip()}")
+            # with --output-format json the CLI reports its error (a usage
+            # limit, an auth problem) on stdout, and stderr is often empty
+            detail = proc.stderr.strip()
+            try:
+                detail = detail or str(json.loads(proc.stdout).get("result") or "")
+            except (ValueError, AttributeError):
+                detail = detail or proc.stdout.strip()[:300]
+            raise RuntimeError(f"{self._cli} exited {proc.returncode}: {detail}")
         payload = json.loads(proc.stdout)
         usage = payload.get("usage") or {}
         return LLMResponse(

@@ -614,9 +614,39 @@ class KNNRouter(RouterModel):
         self._cost_cache = _UNSET
         self._encoder_cache: dict = {}
         self._fit_cache = _UNSET
+        self._payload = None
+
+    @classmethod
+    def from_artifact(cls, artifact, cost_model=None, *, encoder=None, name: Optional[str] = None):
+        """A kNN router served from a :class:`~router.models.artifacts.KNNArtifactPayload`
+        alone -- no training data, no FAISS/sklearn, and no PyTorch when the
+        payload's encoder runs on the ``fastembed`` backend. Routes text only
+        (:meth:`predict_scores_text`): query ids belong to a dataset it doesn't have.
+        ``encoder`` overrides the encoder the payload names (tests)."""
+        from ..models.artifacts import KNNArtifactPayload
+
+        payload = artifact.payload
+        if not isinstance(payload, KNNArtifactPayload):
+            raise TypeError(f"KNNRouter.from_artifact needs a KNNArtifactPayload, got {type(payload).__name__}")
+        router = cls.__new__(cls)
+        RouterModel.__init__(router, payload.model_ids, name=name or f"knn(k={payload.k})",
+                             cost_model=cost_model, artifact=artifact)
+        E = np.asarray(payload.embeddings, dtype=np.float32)
+        router._data = None
+        router._k = int(payload.k)
+        router._pathway = "retrieval"
+        router._cost_cache = (np.asarray(payload.model_costs, dtype=float)
+                              if payload.model_costs is not None else None)
+        router._encoder_cache = {"encoder": encoder} if encoder is not None else {}
+        router._fit_cache = _UNSET
+        router._payload = (E / np.clip(np.linalg.norm(E, axis=1, keepdims=True), 1e-12, None),
+                           np.asarray(payload.scores, dtype=np.float32), dict(payload.encoder))
+        return router
 
     @property
     def default_model_costs(self) -> Optional[np.ndarray]:
+        if self._payload is not None:
+            return self._cost_cache
         return _lazy_model_costs(self)
 
     def _fitted(self) -> tuple:
@@ -633,12 +663,23 @@ class KNNRouter(RouterModel):
     def predict_scores(self, query_ids: Sequence[str]) -> pd.DataFrame:
         from ..nirt.baselines_infer import knn_router_matrix
 
+        if self._payload is not None:
+            raise NotImplementedError("a kNN router loaded from an artifact routes text, not dataset query ids")
         return knn_router_matrix(
             self._data, [str(q) for q in query_ids], k=self._k, pathway=self._pathway,
             fitted=self._fitted(),
         )
 
     def predict_scores_text(self, texts: Sequence[str], *, encoder=None) -> pd.DataFrame:
+        if self._payload is not None:
+            if encoder is None:
+                encoder = self._encoder_cache.get("encoder")
+            if encoder is None:
+                from ..embeddings.encoder import EncoderConfig, TextEncoder
+
+                encoder = TextEncoder(EncoderConfig(name="knn-artifact", **_artifact_encoder(self._payload[2])))
+                self._encoder_cache["encoder"] = encoder
+            return self._score_embeddings(np.asarray(encoder.encode(list(texts)), dtype=np.float32))
         e_q = _encode_texts(self._data, texts, self._pathway, encoder=encoder,
                             cache=self._encoder_cache)
         return self._score_embeddings(e_q)
@@ -647,10 +688,30 @@ class KNNRouter(RouterModel):
         """k-NN over the train-query embeddings for a raw ``[N, d]`` batch."""
         from ..nirt.baselines_infer import knn_router_matrix_from_embeddings
 
+        if self._payload is not None:
+            E, C, _ = self._payload
+            q = np.asarray(e_q, dtype=np.float32)
+            q = q / np.clip(np.linalg.norm(q, axis=1, keepdims=True), 1e-12, None)
+            k = min(self._k, len(E))
+            sims = q @ E.T
+            nearest = np.argpartition(-sims, k - 1, axis=1)[:, :k]
+            return pd.DataFrame(C[nearest].mean(axis=1), index=list(range(len(q))), columns=self._model_ids)
+
         return knn_router_matrix_from_embeddings(
             self._data, e_q, k=self._k, pathway=self._pathway, model_ids=self._model_ids,
             fitted=self._fitted(),
         )
+
+
+def _artifact_encoder(spec: dict) -> dict:
+    """The encoder a kNN artifact names, served without PyTorch when it can be:
+    a sentence-transformers model runs on the ``fastembed`` backend (same
+    vectors) if fastembed is installed."""
+    from ..embeddings.encoder import light_backend
+
+    spec = {k: v for k, v in spec.items() if k in ("backend", "model_name", "normalize", "max_seq_length")}
+    spec["backend"] = light_backend(spec.get("backend", "sentence_transformer"))
+    return spec
 
 
 # --------------------------------------------------------------------------- #
@@ -708,16 +769,59 @@ class MLPRouter(RouterModel):
             cost_model=cost_model, artifact=artifact,
         )
 
+    @classmethod
+    def from_router_file(cls, artifact, header: dict, *, encoder=None, name: Optional[str] = None):
+        """Served from a router file (:func:`~router.models.artifacts.load_router_file`)
+        with numpy alone -- no torch, no training data. Routes text only:
+        the prompt is embedded with the encoder the file names (``fastembed``
+        when installed), then ``sigmoid(W2 relu(W1 x + b1) + b2)``."""
+        sd = artifact.payload.state_dict
+        w1, b1, w2, b2 = (np.asarray(sd[k], dtype=np.float32) for k in ("0.weight", "0.bias", "3.weight", "3.bias"))
+
+        def forward(x: np.ndarray) -> np.ndarray:
+            h = np.maximum(x @ w1.T + b1, 0.0)
+            return 1.0 / (1.0 + np.exp(-(h @ w2.T + b2)))
+
+        router = cls(forward, artifact.payload.model_ids, name=name or f"mlp:{artifact.artifact_id}",
+                     pathway=artifact.payload.pathway, artifact=artifact)
+        router._cost_cache = (np.asarray(header["model_costs"], dtype=float)
+                              if header.get("model_costs") is not None else None)
+        router._file_encoder = (encoder, dict(header.get("encoder") or {}))
+        return router
+
+    @property
+    def can_route_text(self) -> bool:
+        return getattr(self, "_file_encoder", None) is not None
+
+    def predict_scores_text(self, texts: Sequence[str], *, encoder=None) -> pd.DataFrame:
+        """Text routing for a router loaded from a file."""
+        if not self.can_route_text:
+            return super().predict_scores_text(texts, encoder=encoder)
+        enc, spec = self._file_encoder
+        encoder = encoder or enc
+        if encoder is None:
+            from ..embeddings.encoder import EncoderConfig, TextEncoder
+
+            encoder = TextEncoder(EncoderConfig(name="mlp-file", **_artifact_encoder(spec)))
+            self._file_encoder = (encoder, spec)
+        x = np.asarray(encoder.encode(list(texts)), dtype=np.float32)
+        return pd.DataFrame(self._model(x), index=list(range(len(x))), columns=self._model_ids)
+
     @property
     def _data(self):
         return _lazy_training_data(self)
 
     @property
     def default_model_costs(self) -> Optional[np.ndarray]:
+        if self.can_route_text:  # loaded from a file: the costs it carries
+            return self._cost_cache
         return _lazy_model_costs(self)
 
     def predict_scores(self, query_ids: Sequence[str]) -> pd.DataFrame:
         from ..nirt.baselines_infer import mlp_router_matrix
+
+        if self.can_route_text:
+            raise NotImplementedError("an MLP router loaded from a file routes text, not dataset query ids")
 
         return mlp_router_matrix(
             self._model, self._model_ids, self._data,

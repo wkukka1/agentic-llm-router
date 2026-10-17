@@ -9,6 +9,11 @@ Two backends, selected per *pathway* in ``configs/phase0.yaml -> embedding``:
   encoder embeds queries *and* LLM profile texts so a query's item parameters
   and a model's ability vector live in one text space (and a cold-start model
   can be placed from its profile alone).
+* ``fastembed`` -- the same sentence-transformers models run through ONNX
+  (``fastembed``), with no PyTorch. ``all-MiniLM-L6-v2`` gives the same vectors
+  as the ``sentence_transformer`` backend (cosine 1.0000 on LLMRouterBench
+  prompts, the 40 longest included), so a router fitted on those vectors serves
+  from this backend unchanged -- the gateway's install needs no torch.
 
 Inference is deterministic (eval mode, ``torch.no_grad``, seeded model load, no
 dropout). Phase 0 does **not** fine-tune anything here.
@@ -32,10 +37,11 @@ import numpy as np
 from ..config import Config, require_choice, section
 from ..determinism import seed_everything as _seed_everything
 
-_BACKENDS = ("sentence_transformer", "bert")
+_BACKENDS = ("sentence_transformer", "bert", "fastembed")
 _DEFAULT_MODEL = {
     "sentence_transformer": "sentence-transformers/all-MiniLM-L6-v2",
     "bert": "bert-base-uncased",
+    "fastembed": "sentence-transformers/all-MiniLM-L6-v2",
 }
 
 
@@ -58,7 +64,7 @@ def _resolve_device(pref: str) -> str:
 @dataclass
 class EncoderConfig:
     name: str = "default"                     # pathway name
-    backend: str = "sentence_transformer"     # {"sentence_transformer", "bert"}
+    backend: str = "sentence_transformer"     # {"sentence_transformer", "bert", "fastembed"}
     model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
     batch_size: int = 64
     normalize: bool = True
@@ -118,10 +124,25 @@ def _scoped_seed(seed: int):
         np.random.set_state(np_state)
 
 
+def light_backend(backend: str = "sentence_transformer") -> str:
+    """``fastembed`` in place of ``sentence_transformer`` when fastembed is
+    installed -- the same vectors without PyTorch (the gateway's install has
+    no torch). Any other backend is returned as is."""
+    if backend != "sentence_transformer":
+        return backend
+    try:
+        import fastembed  # noqa: F401
+    except ImportError:
+        return backend
+    return "fastembed"
+
+
 class TextEncoder:
     def __init__(self, cfg: EncoderConfig):
         self.cfg = cfg
-        self.device = _resolve_device(cfg.device)
+        # fastembed runs on onnxruntime's CPU provider; resolving a torch
+        # device would import torch, which that install doesn't have
+        self.device = "cpu" if cfg.backend == "fastembed" else _resolve_device(cfg.device)
         self._model = None
         self._tokenizer = None
 
@@ -135,6 +156,11 @@ class TextEncoder:
         m.eval()
         return m
 
+    def _load_fastembed(self):
+        from fastembed import TextEmbedding
+
+        return TextEmbedding(self.cfg.model_name)
+
     def _load_bert(self):
         from transformers import AutoModel, AutoTokenizer
 
@@ -146,6 +172,8 @@ class TextEncoder:
 
     @property
     def model(self):
+        if self._model is None and self.cfg.backend == "fastembed":
+            self._model = self._load_fastembed()  # ONNX inference: no RNG involved
         if self._model is None:
             # seeded for a reproducible load, but inside a saved/restored RNG
             # scope: this also runs on the serving path, and the process-global
@@ -162,6 +190,8 @@ class TextEncoder:
     def dim(self) -> int:
         if self.cfg.backend == "bert":
             return int(self.model.config.hidden_size)
+        if self.cfg.backend == "fastembed":
+            return int(np.asarray(next(iter(self.model.embed(["dim"])))).shape[0])
         get = getattr(self.model, "get_embedding_dimension", None) or \
             getattr(self.model, "get_sentence_embedding_dimension")
         return int(get())
@@ -198,6 +228,10 @@ class TextEncoder:
             batch = list(texts[i : i + bs])
             if self.cfg.backend == "bert":
                 vec = self._encode_bert_batch(batch)
+            elif self.cfg.backend == "fastembed":
+                vec = np.asarray(list(self.model.embed(batch, batch_size=bs)), dtype=np.float32)
+                if self.cfg.normalize:
+                    vec /= np.clip(np.linalg.norm(vec, axis=1, keepdims=True), 1e-12, None)
             else:
                 vec = self.model.encode(
                     batch,

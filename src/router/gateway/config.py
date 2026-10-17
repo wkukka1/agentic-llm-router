@@ -8,6 +8,8 @@ lane model names the environment variable its key is read from.
 from __future__ import annotations
 
 import os
+import tempfile
+import time
 from pathlib import Path
 
 import yaml
@@ -33,11 +35,40 @@ DEFAULT_MODELS: dict[str, dict] = {
 DEFAULT_ROUTER = {"enabled": False, "kind": "knn", "data_config": "configs/llmrouterbench.yaml", "k": 25,
                   "run": "lrb-nirt-2d-projected", "runs_dir": None, "margin": 0.05,
                   "expected_output_tokens": 800, "cache_ttl": "1h", "horizon_requests": 20,
-                  "switch_margin": 0.05}
+                  "switch_margin": 0.05, "turn_smoothing": 0.5}
 #: Claude Code subagents (``router.gateway.subagents``): ``roles`` maps a role
 #: to a model (``null`` keeps the session's), merged over that module's
 #: defaults; ``enabled: false`` routes subagents like any other turn.
 DEFAULT_SUBAGENTS = {"enabled": True, "roles": {}}
+
+
+def gateway_home() -> Path:
+    """Where the gateway keeps its files: the request log's folder
+    (``AAR_GATEWAY_LOG``), else ``~/.aar-gateway``."""
+    log = os.environ.get("AAR_GATEWAY_LOG")
+    return Path(log).expanduser().parent if log else Path.home() / ".aar-gateway"
+
+
+def config_path() -> Path | None:
+    """The gateway config in use: ``AAR_GATEWAY_CONFIG``, else
+    ``~/.aar-gateway/config.yaml`` if it exists, else none (the defaults)."""
+    named = os.environ.get("AAR_GATEWAY_CONFIG")
+    if named:
+        return Path(named).expanduser()
+    default = gateway_home() / "config.yaml"
+    return default if default.exists() else None
+
+
+def local_models_path() -> Path:
+    return gateway_home() / "local-models.yaml"
+
+
+def local_models() -> dict[str, dict]:
+    """Models added with ``aar-gateway local add`` -- ``{}`` when none."""
+    path = local_models_path()
+    if not path.exists():
+        return {}
+    return {str(k): dict(v) for k, v in ((yaml.safe_load(path.read_text()) or {}).get("models") or {}).items()}
 
 
 def load_settings(config_path: str | Path | None = None) -> dict:
@@ -50,6 +81,10 @@ def load_settings(config_path: str | Path | None = None) -> dict:
     spec = (yaml.safe_load(Path(config_path).read_text()) or {}) if config_path else {}
     section = spec.get("interceptor") or {}
     models = {k: dict(v) for k, v in (section.get("models") or DEFAULT_MODELS).items()}
+    # opt-in local models (`aar-gateway local add`), kept in a file of their own
+    # so the main config is never rewritten; they never replace a configured model
+    for model_id, m in local_models().items():
+        models.setdefault(model_id, dict(m))
     for model_id, m in models.items():
         lane = m.setdefault("lane", "anthropic")
         if lane not in ("anthropic", "openai"):
@@ -72,3 +107,27 @@ def load_settings(config_path: str | Path | None = None) -> dict:
             "capture_prompts": bool(section.get("capture_prompts", False)),
             "router": {**DEFAULT_ROUTER, **(section.get("router") or {})},
             "subagents": {**DEFAULT_SUBAGENTS, **(section.get("subagents") or {})}}
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    """Replace ``path`` in one step: a reader sees the old file or the new
+    one, never half of it. Each writer gets its own temporary file, so two
+    writing at once can't mix their content."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        for attempt in range(100):
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                # Windows won't replace a file another program has open (Claude
+                # Code reading its settings, say): it is free again moments later
+                if os.name != "nt" or attempt == 99:
+                    raise
+                time.sleep(0.02)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise

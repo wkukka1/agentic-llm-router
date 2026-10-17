@@ -239,3 +239,21 @@ def test_calibration_is_shrunk_while_grades_are_few(settings, router, tmp_path):
                                              "model": "claude-opus-5", "score": 0.9}) for i in range(5)))
     off = calibration_offsets(graded, router, settings, shrink=20)
     assert abs(off["claude-opus-5"] - 0.4 * 5 / 25) < 1e-9
+
+
+def test_a_turns_prediction_is_blended_with_the_previous_turns(settings, router):
+    """One noisy message mustn't flip a conversation: the previous turn's
+    per-model prediction carries half the weight (turn_smoothing 0.5)."""
+    pick = build_picker(settings, router_model=router)
+    router.scores = HARD
+    first = pick(BODY, ctx())
+    assert first["model"] == "claude-opus-5" and set(first["model_quality"]) >= {"claude-opus-5"}
+    router.scores = {"strong": 0.72, "mid": 0.72, "weak": 0.72}  # this message alone: anything goes
+    alone = pick(BODY, ctx())
+    blended = pick(BODY, ctx(prev_quality=first["model_quality"]))
+    assert alone["model"] != "claude-opus-5"
+    assert blended["model_quality"]["claude-opus-5"] == pytest.approx(
+        0.5 * 0.72 + 0.5 * first["model_quality"]["claude-opus-5"], abs=1e-3)
+    settings["router"]["turn_smoothing"] = 1.0
+    assert build_picker(settings, router_model=router)(BODY, ctx(prev_quality=first["model_quality"]))[
+        "model_quality"] == alone["model_quality"]

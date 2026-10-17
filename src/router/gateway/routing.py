@@ -93,10 +93,29 @@ def price_for(settings: Mapping, model: str | None) -> Mapping | None:
 
 
 def load_router_model(rcfg: Mapping):
-    """The trained ranker the gateway scores prompts with (the `research`
-    extra). ``knn``: nearest neighbours over a pool's training prompts -- on
-    LLMRouterBench it matched or beat the trained NIRT at every margin (see
-    docs/gateway.md); ``nirt``: a trained run under ``runs_dir``."""
+    """The trained ranker the gateway scores prompts with.
+
+    * ``artifact``: a router file (``aar-gateway setup`` installs one;
+      ``scripts/routing/export_router.py`` writes one) -- a trained MLP
+      (weights only) or a kNN index, served with numpy and fastembed alone,
+      no training data and no PyTorch. Takes precedence when set.
+    * ``knn``: nearest neighbours over a pool's training prompts, from the
+      full training data (the `research` extra). On LLMRouterBench it matched
+      or beat the trained NIRT at every margin (see docs/gateway.md).
+    * ``nirt``: a trained run under ``runs_dir``."""
+    if rcfg.get("artifact"):
+        from ..models.artifacts import ArtifactFormat, RouterModelArtifact, load_router_file
+        from ..routing.routers import KNNRouter, MLPRouter
+
+        path = Path(rcfg["artifact"]).expanduser()
+        payload, header = load_router_file(path)
+        artifact = RouterModelArtifact(artifact_id=str(header.get("artifact_id") or path.stem), payload=payload,
+                                       content_hash=str(header.get("content_hash", "")), format=ArtifactFormat.NPZ,
+                                       supported_model_ids=payload.model_ids, router_model_name=header["format"],
+                                       training_dataset_version=str(header.get("dataset", "")))
+        if header["format"] == "mlp":
+            return MLPRouter.from_router_file(artifact, header)
+        return KNNRouter.from_artifact(artifact)
     if rcfg.get("kind", "nirt") == "knn":
         from ..routing.routers import KNNRouter, load_training_data_for_router
 
@@ -180,6 +199,12 @@ def build_picker(settings: Mapping, router_model=None, graded=None,
     #: conversation flip-flops between models turn to turn and every flip
     #: rewrites the ~200k-token prompt cache (seen live: 2% dearer than no router).
     switch_margin = float(rcfg.get("switch_margin", 0.05))
+    # A conversation's difficulty changes slowly and one message's prediction
+    # is noisy, so each turn's per-model prediction is blended with the
+    # previous turn's: weight on the new message (1.0 = judge each message
+    # alone). Found live: two messages 34 s apart flipped Opus -> Haiku ->
+    # Opus, and Opus reread the whole conversation into its cache.
+    smoothing = min(max(float(rcfg.get("turn_smoothing", 0.5)), 0.0), 1.0)
 
     def warm_tokens(model: str, ctx: Mapping) -> float:
         """Prefix tokens already in ``model``'s cache: the whole conversation
@@ -258,6 +283,9 @@ def build_picker(settings: Mapping, router_model=None, graded=None,
             if reason:
                 skipped[model] = reason
                 continue
+            previous = (ctx.get("prev_quality") or {}).get(model)
+            if previous is not None and math.isfinite(previous):
+                quality = smoothing * quality + (1.0 - smoothing) * float(previous)
             raw_quality[model] = quality
             profile = LLMProfile(name=model, provider=spec["lane"], model_id=model,
                                  input_cost_per_token=price["input"] * 1e-6,
@@ -286,6 +314,7 @@ def build_picker(settings: Mapping, router_model=None, graded=None,
         return {
             "model": chosen.model.model_id,
             "reason": reason,
+            "model_quality": {m: round(q, 4) for m, q in raw_quality.items()},  # carried to the next turn
             "predicted_quality": round(raw_quality[chosen.model.model_id], 4),
             "best_predicted_quality": round(max(raw_quality.values()), 4),
             "est_cost": round(chosen.expected_cost, 6),
@@ -299,4 +328,5 @@ def build_picker(settings: Mapping, router_model=None, graded=None,
         }
 
     pick.calibration_status = calibration_status
+    pick.router_kind = getattr(router_model, "kind", rcfg.get("kind"))  # what actually loaded
     return pick

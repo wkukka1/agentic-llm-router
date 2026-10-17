@@ -37,7 +37,7 @@ import re
 import sys
 import tempfile
 from collections.abc import Iterable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -48,19 +48,23 @@ DEFAULT_JUDGE = "claude-opus-5-5"
 #: per answer, in the judge prompt -- long enough for a code review, bounded
 #: so one runaway answer can't crowd the others out
 ANSWER_CHARS = 12_000
-#: replays and the judge run read-only, and without the user's MCP servers --
-#: found live: with them loaded, an answer can wander into the servers' auth
-#: status, which the judge rightly penalises but which says nothing about the
-#: model's answer to the request
-READ_ONLY = ("--permission-mode", "plan", "--strict-mcp-config")
+#: replays and the judge run read-only and with none of the user's own
+#: customisation (--safe-mode: CLAUDE.md, skills, plugins, hooks, agents) or
+#: MCP servers -- found live: with them loaded an answer wandered into the MCP
+#: servers' auth status, and another ended with a line a plugin added; the
+#: judge rightly penalised both, which says nothing about the model
+READ_ONLY = ("--permission-mode", "plan", "--strict-mcp-config", "--safe-mode")
 
 JUDGE_INSTRUCTIONS = """You are grading answers to a developer's request to an AI coding assistant.
 The answers come from different assistants and are labelled only by letter, in random order.
 
 For EACH answer, score 0-10: would a careful senior engineer accept it as a correct and
 complete response to this request, as written? 10 = fully correct and complete; 7 = acceptable
-with minor gaps; 4 = partly right or incomplete; 0 = wrong, irrelevant or refused. Judge
-correctness and completeness first, then clarity. Do not reward length for its own sake.
+with minor gaps; 4 = partly right or incomplete; 0 = wrong, irrelevant or refused.
+- Correctness first: a factual or code error that would mislead the developer is a serious flaw.
+- Complete means covering what was ASKED. Extra sections, background, alternatives or caveats
+  nobody asked for earn nothing; never prefer an answer for being longer or more thorough.
+- A short answer that fully and correctly answers the request is as good as a long one.
 Some answers were produced in a read-only mode: for a request to change code, a correct,
 specific plan counts as a complete answer.
 
@@ -209,14 +213,38 @@ def grade(n: int, *, tiers: tuple[str, ...] = DEFAULT_TIERS, judge_model: str = 
         return grade_turn(turn, tiers, judge_model, timeout=timeout, rng=random.Random(seed + i))
 
     out_file.parent.mkdir(parents=True, exist_ok=True)
+    # submitted a few at a time (never the whole list up front), so a usage
+    # limit stops the run instead of failing every prompt still queued
+    pending = list(enumerate(todo))
+    limited = False
     with ThreadPoolExecutor(max_workers=max(workers, 1)) as pool:
-        for rows in pool.map(one, enumerate(todo)):
-            with out_file.open("a", encoding="utf-8") as f:
-                for r in rows:
-                    f.write(json.dumps(r) + "\n")
-            written.extend(rows)
-            print(f"  {rows[0]['prompt'][:60]!r}: " + ", ".join(_fmt(r) for r in rows), file=sys.stderr)
+        running = {pool.submit(one, item) for item in pending[:max(workers, 1)]}
+        pending = pending[max(workers, 1):]
+        while running:
+            done, running = wait(running, return_when=FIRST_COMPLETED)
+            for future in done:
+                rows = future.result()
+                with out_file.open("a", encoding="utf-8") as f:
+                    for r in rows:
+                        f.write(json.dumps(r) + "\n")
+                written.extend(rows)
+                print(f"  {rows[0]['prompt'][:60]!r}: " + ", ".join(_fmt(r) for r in rows), file=sys.stderr)
+                if all(r["score"] is None and _LIMIT.search(r.get("error") or "") for r in rows):
+                    limited = True
+            if limited:
+                pending = []
+            elif pending:
+                running.add(pool.submit(one, pending.pop(0)))
+    if limited:
+        print("stopped: the plan's usage limit was reached -- run again after it resets; "
+              "prompts not graded yet are picked up then", file=sys.stderr)
     return written
+
+
+#: what the claude CLI says when the subscription's usage window is used up --
+#: e.g. "You've hit your session limit · resets 4am (America/Toronto)"
+_LIMIT = re.compile(r"(?:usage|session|weekly|rate) limit|limit reached|\bresets?\b|too many requests|\b429\b",
+                    re.I)
 
 
 def _fmt(row: dict) -> str:

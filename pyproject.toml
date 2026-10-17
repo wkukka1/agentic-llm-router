@@ -37,7 +37,7 @@ ollama = ["ollama>=0.4"]
 # kept free of `research` below so `pip install -e ".[gateway]"` stays a
 # seconds-long, no-native-build install for someone who only wants to run
 # the gateway locally (see docs/gateway.md).
-gateway = ["fastapi", "uvicorn[standard]", "httpx"]  # httpx: interceptor's upstream client
+gateway = ["fastapi", "uvicorn[standard]", "httpx", "fastembed", "huggingface_hub"]  # httpx: upstream client; fastembed: the router's text encoder without PyTorch; huggingface_hub: opt-in usage sharing (fastembed needs it anyway)
 # The data pipeline + model training/eval stack (training/, evaluation/,
 # most of decompose/): heavy, sometimes-native-build dependencies that
 # nothing in router.agentic/router.llm/router.gateway actually imports
@@ -64,7 +64,7 @@ research = [
 [project.scripts]
 router-phase0 = "training.phase0:main"
 prompt-decomposition = "scripts.prompt_decomposition_cli:main"
-aar-gateway = "router.gateway.server:main"
+aar-gateway = "router.gateway.cli:main"
 aar-gateway-grade = "evaluation.gateway.grade:main"
 aar-gateway-subagents = "evaluation.gateway.subagent_baseline:main"
 
@@ -72,7 +72,7 @@ aar-gateway-subagents = "evaluation.gateway.subagent_baseline:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"router.gateway" = ["static/*.html"]
+"router.gateway" = ["static/*.html", "routers/*.npz"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -80,6 +80,7 @@ pythonpath = ["tests", "src"]
 filterwarnings = ["ignore::DeprecationWarning"]
 markers = [
     "real_data: reads the built data/ tables (10-25s each, skips when absent); deselect with -m 'not real_data'",
+    "claude_e2e: drives a real logged-in Claude Code through an isolated gateway; runs only with AAR_E2E=1 (uses the plan)",
 ]
 
 [tool.importlinter]
