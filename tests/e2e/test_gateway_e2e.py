@@ -34,7 +34,11 @@ pytestmark = [
 ]
 
 SRC = str(Path(__file__).resolve().parents[2] / "src")
-CLI = [sys.executable, "-m", "router.gateway.cli"]
+#: AAR_E2E_PYTHON=<an installed copy's python> tests that copy (e.g. a fresh
+#: `uv tool install` from GitHub) instead of this checkout's source
+INSTALLED = os.environ.get("AAR_E2E_PYTHON")
+CLI = [INSTALLED or sys.executable, "-m", "router.gateway.cli"]
+CODE_PATH = {} if INSTALLED else {"PYTHONPATH": SRC}
 
 
 class Rig:
@@ -54,8 +58,8 @@ class Rig:
         self.broken = root / "broken.yaml"
         self.broken.write_text("interceptor: [not, a, mapping\n")
         # this gateway's processes: an isolated home (config, router file, logs)
-        self.env = {**os.environ, "HOME": str(self.home), "AAR_GATEWAY_PORT": str(self.port),
-                    "PYTHONPATH": SRC}
+        self.env = {**{k: v for k, v in os.environ.items() if k != "PYTHONPATH"},
+                    "HOME": str(self.home), "AAR_GATEWAY_PORT": str(self.port), **CODE_PATH}
         for key in ("AAR_GATEWAY_CONFIG", "AAR_GATEWAY_LOG", "ANTHROPIC_BASE_URL"):
             self.env.pop(key, None)
 
@@ -67,7 +71,7 @@ class Rig:
         hook = " ".join(CLI)
         env = {"AAR_GATEWAY_PORT": str(self.port), "AAR_GATEWAY_LOG": str(self.data / "requests.jsonl"),
                "AAR_GATEWAY_CONFIG": str(config or self.config),
-               "AAR_GATEWAY_CLAUDE_SETTINGS": str(self.settings), "PYTHONPATH": SRC}
+               "AAR_GATEWAY_CLAUDE_SETTINGS": str(self.settings), **CODE_PATH}
         if base_url:
             env["ANTHROPIC_BASE_URL"] = self.url
         self.settings.parent.mkdir(parents=True, exist_ok=True)
