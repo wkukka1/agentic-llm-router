@@ -18,9 +18,8 @@ import json
 import sys
 
 import pandas as pd
-import yaml
 
-from training.cli import float_table, raw_parser, resolve, write_json
+from training.cli import float_table, load_yaml, raw_parser, resolve, write_json
 from router.config import load_config
 from router.nirt.checkpoint import load_run
 from training.data.facade import load_training_data
@@ -52,7 +51,7 @@ def main() -> int:
     ap.add_argument("--also-free", default=None, help="a 'free' run name to contrast (should fail)")
     args = ap.parse_args()
 
-    ncfg = yaml.safe_load(resolve(args.config).read_text(encoding="utf-8"))
+    ncfg = load_yaml(args.config)
     runs_dir = resolve(ncfg.get("runs_dir", "data/processed/nirt_runs"))
 
     p0 = load_config(args.phase0_config) if args.phase0_config else load_config()

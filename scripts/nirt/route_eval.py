@@ -27,9 +27,8 @@ from __future__ import annotations
 import sys
 
 import numpy as np
-import yaml
 
-from training.cli import add_source_arg, float_table, raw_parser, resolve, write_json
+from training.cli import add_source_arg, float_table, load_yaml, raw_parser, resolve, write_json
 from router.config import load_config
 from router.nirt.checkpoint import load_run as nirt_load_run
 from router.nirt.predict import predict_matrix
@@ -118,7 +117,7 @@ def main() -> int:
                     help="also dump the full [Q x M] predicted/actual/rank table")
     args = ap.parse_args()
 
-    ncfg = yaml.safe_load(resolve(args.nirt_config).read_text(encoding="utf-8"))
+    ncfg = load_yaml(args.nirt_config)
     runs_dir = resolve(ncfg.get("runs_dir", "data/processed/nirt_runs"))
 
     p0 = load_config(args.config)

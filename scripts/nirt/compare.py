@@ -26,9 +26,8 @@ import sys
 
 import numpy as np
 import pandas as pd
-import yaml
 
-from training.cli import add_source_arg, float_table, raw_parser, resolve, write_json
+from training.cli import add_source_arg, float_table, load_yaml, raw_parser, resolve, write_json
 from router.config import load_config
 from router.nirt.baselines_infer import knn_router_matrix, mlp_router_matrix
 from router.nirt.checkpoint import load_run
@@ -85,7 +84,7 @@ def main() -> int:
     if args.ood and args.source:
         ap.error("--source applies to the standard splits; --ood evaluates held-out families")
 
-    nirt_cfg = yaml.safe_load(resolve(args.config).read_text(encoding="utf-8"))
+    nirt_cfg = load_yaml(args.config)
     runs_dir = resolve(nirt_cfg.get("runs_dir", "data/processed/nirt_runs"))
 
     p0 = load_config(args.phase0_config) if args.phase0_config else load_config()

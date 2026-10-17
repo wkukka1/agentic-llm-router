@@ -17,9 +17,8 @@ import sys
 
 import numpy as np
 import pandas as pd
-import yaml
 
-from training.cli import float_table, raw_parser, resolve, write_json
+from training.cli import float_table, load_yaml, raw_parser, resolve, write_json
 from router.config import load_config
 from router.nirt.checkpoint import load_run
 from router.nirt.predict import predict_matrix
@@ -34,7 +33,7 @@ _ORI = {"query_latent": "nirt", "model_latent": "irt"}
 
 
 def _load_cfg(path) -> dict:
-    c = yaml.safe_load(resolve(path).read_text(encoding="utf-8"))
+    c = load_yaml(path)
     c.setdefault("model", {})
     c.setdefault("train", {})
     return c

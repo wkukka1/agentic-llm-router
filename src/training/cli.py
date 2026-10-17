@@ -59,6 +59,13 @@ def resolve(path: str | Path, root: str | Path | None = None) -> Path:
     return _resolve_path(path, root=root)
 
 
+def load_yaml(path: str | Path, root: str | Path | None = None) -> dict:
+    """Parse the YAML file at ``path`` (relative to ``root``, as in :func:`resolve`)."""
+    import yaml
+
+    return yaml.safe_load(resolve(path, root).read_text(encoding="utf-8"))
+
+
 def json_default(obj: Any) -> Any:
     """``json.dumps(default=...)`` hook that keeps numpy ints/bools as ints/bools.
 
