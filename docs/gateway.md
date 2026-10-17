@@ -529,6 +529,32 @@ checks, before spending the plan on 800 more:
   router's predictions 0.63; the text embedding 0.57; all of them 0.64.
   For "Haiku or Sonnet is enough", all of them 0.67.
 
+**A smarter reader of the prompt helps a little, on repo work only.**
+Asked directly ("would Haiku answer this as well as the best?"), Opus and
+Haiku reach AUC 0.70–0.71 with the kind of task known (today's router
+0.62). Routing within each kind, half to Haiku, half to Opus, quality vs
+the random-mix line:
+
+| Scorer | General questions (120) | Repo bugs (80) |
+|---|---|---|
+| Today's router | −0.007 | +0.015 |
+| Haiku reading the prompt (an API call per turn) | −0.009 | +0.035 |
+| Opus reading the prompt | −0.008 | +0.034 |
+| Student, bge-base-en-v1.5 (210 MB ONNX) | −0.014 | +0.027 |
+| Student, nomic-embed-text-v1.5-Q (130 MB) | −0.014 | +0.021 |
+| Student, jina-embeddings-v2-small-en (120 MB) | −0.004 | +0.014 |
+| Student, all-MiniLM-L6-v2 (shipped) | −0.011 | +0.007 |
+| Student, bge-small-en-v1.5 (67 MB) | −0.006 | +0.002 |
+
+The students are small ONNX encoders (no torch, every OS) plus a numpy
+MLP, trained to copy Haiku's estimate on 3,670 prompts Haiku labelled
+(Arena coding questions, SWE-bench Verified issues, benchmark prompts and
+the user's own turns; none of the 200 test prompts). None helps on general
+questions; on repo bugs the best gets three quarters of the way to Haiku,
+but 80 prompts leave about ±0.02 of noise, so none is clearly better than
+today's router. Not shipped: a decision would need a larger graded test
+set first.
+
 So a per-turn router that reads only the prompt can't find most of that
 saving, however much graded data it gets. What works is routing by the
 kind of work instead: search subagents on Haiku save ~97% with no measured
