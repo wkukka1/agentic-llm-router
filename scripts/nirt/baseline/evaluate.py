@@ -1,8 +1,8 @@
 """Evaluate a trained Phase 1/2 checkpoint (Bernoulli or a continuous head).
 
-    python scripts/evaluate.py --checkpoint artifacts/phase1/baseline
-    python scripts/evaluate.py --checkpoint artifacts/phase2/zoib --split validation
-    python scripts/evaluate.py --checkpoint artifacts/phase2/normal --level 0.8
+    python scripts/nirt/baseline/evaluate.py --checkpoint artifacts/phase1/baseline
+    python scripts/nirt/baseline/evaluate.py --checkpoint artifacts/phase2/zoib --split validation
+    python scripts/nirt/baseline/evaluate.py --checkpoint artifacts/phase2/normal --level 0.8
 
 Dispatches on the checkpoint's response model: Bernoulli -> prediction /
 calibration / cold-start / ICC / theta spectrum; continuous -> the same plus

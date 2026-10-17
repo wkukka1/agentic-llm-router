@@ -30,10 +30,6 @@ from .data.quality import check_responses
 from .data.response_matrix import build_tables, write_tables
 from .data.splits import check_leakage, make_splits, write_splits
 
-_OPTIONAL_LLM = [
-    "scripts/taxonomy/label_queries.py  (opt-in LLM cluster labelling, not run here)",
-]
-
 
 def main(argv: list[str] | None = None) -> int:
     parser = base_parser(__doc__)
@@ -139,7 +135,6 @@ def main(argv: list[str] | None = None) -> int:
         info(f"  warm-up: {len(wu)} queries x {wu.dim}")
 
     info("deterministic Phase 0 complete.")
-    info("opt-in LLM stage (not run here): " + "; ".join(_OPTIONAL_LLM))
     return 0
 
 

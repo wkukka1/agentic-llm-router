@@ -1,7 +1,7 @@
 """Compare Bernoulli vs Normal vs Beta vs ZOIB on the same representation + split.
 
-    python scripts/compare_response_models.py
-    python scripts/compare_response_models.py --split validation
+    python scripts/nirt/baseline/compare_response_models.py
+    python scripts/nirt/baseline/compare_response_models.py --split validation
 
 Writes artifacts/phase2/comparison.json. Uses whatever checkpoints exist under
 artifacts/phase1/baseline and artifacts/phase2/{normal,beta,zoib}.

@@ -278,6 +278,19 @@ def test_sessions_sum_plan_usage_and_count_turns_and_subagents():
     assert (before["session"], before["requests"]) == (None, 1)
 
 
+def test_subagent_summary_keeps_a_zero_requested_cost():
+    """A subagent request priced at 0.0 at the requested model is a real 0.0,
+    not missing: only ``None`` falls back to the billed cost."""
+    base = {"subagent": True, "agent_role": "lookup", "role_source": "task", "conversation": "c1",
+            "requested_model": "claude-opus-5-5", "routed_model": "claude-haiku-5-5"}
+    records = [
+        {**base, "cost_usd": 0.3, "cost_if_requested_usd": 0.0},
+        {**base, "cost_usd": 0.2, "cost_if_requested_usd": None},
+    ]
+    [row] = interceptor.summarize_subagents(records)
+    assert row["cost_if_requested_usd"] == pytest.approx(0.2)
+
+
 def test_spawn_decision_picks_the_agent_tool_alias_and_respects_choices_already_made():
     settings = load_settings(None)
     d = spawn_decision("general-purpose", "Find where X is defined", "claude-opus-5-5", settings)

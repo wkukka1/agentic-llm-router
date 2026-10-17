@@ -1,7 +1,7 @@
 """Oracle-routing evaluation for a trained NIRT / ZOIB predictor.
 
 SEPARATE from predictive (NLL / calibration) evaluation -- see
-`scripts/nirt/eval_nirt.py` and `scripts/evaluate_continuous.py` for that. This
+`scripts/nirt/eval_nirt.py` and `scripts/nirt/baseline/evaluate.py` for that. This
 script turns a predictor into routing decisions and scores them against the
 oracle derived from the split's ACTUAL observed outcomes (evaluation-only; never
 fed back into the model). See `docs/routing_evaluation.md`.

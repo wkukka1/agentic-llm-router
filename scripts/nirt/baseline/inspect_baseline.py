@@ -1,7 +1,7 @@
 """Inspect the learned Phase 1 parameters for individual model / query pairs.
 
-    python scripts/inspect_baseline.py --checkpoint artifacts/phase1/baseline
-    python scripts/inspect_baseline.py --query-id routerbench:mmlu:xxxx --model-id gpt-4-1106-preview
+    python scripts/nirt/baseline/inspect_baseline.py --checkpoint artifacts/phase1/baseline
+    python scripts/nirt/baseline/inspect_baseline.py --query-id routerbench:mmlu:xxxx --model-id gpt-4-1106-preview
 
 model -> theta_m ; query -> a_q / b_q / r_q ; parameter distributions ; and
 P(correct | q, m) with the base IRT score for a chosen pair.

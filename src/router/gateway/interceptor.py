@@ -1028,7 +1028,8 @@ def summarize_subagents(records: list[dict]) -> list[dict]:
         model = r.get("routed_model") or "unknown"
         row["models"][model] = row["models"].get(model, 0) + 1
         row["cost_usd"] += r.get("cost_usd") or 0.0
-        row["cost_if_requested_usd"] += r.get("cost_if_requested_usd") or r.get("cost_usd") or 0.0
+        asked = r.get("cost_if_requested_usd")
+        row["cost_if_requested_usd"] += asked if asked is not None else (r.get("cost_usd") or 0.0)
         row["cache_read_input_tokens"] += r.get("cache_read_input_tokens") or 0
         row["prompt_tokens"] += _prompt_tokens(r)
         row["latency_s"] += r.get("latency_s") or 0.0

@@ -1,8 +1,8 @@
 """Train the Phase 1 plain Bernoulli / BCE NIRT baseline.
 
-    python scripts/train_baseline.py --config configs/phase1.yaml
-    python scripts/train_baseline.py --theta-dim 4 --model-params projected
-    python scripts/train_baseline.py --resume artifacts/phase1/baseline
+    python scripts/nirt/baseline/train_baseline.py --config configs/phase1.yaml
+    python scripts/nirt/baseline/train_baseline.py --theta-dim 4 --model-params projected
+    python scripts/nirt/baseline/train_baseline.py --resume artifacts/phase1/baseline
 
 Writes artifacts/phase1/baseline/{model.pt, config.yaml, metrics.json,
 training_history.json, provenance.json}.
