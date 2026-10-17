@@ -483,3 +483,40 @@ def test_an_expired_thread_is_not_counted_as_an_error():
     stats = interceptor.summarize([{**expired, "requested_model": "claude-opus-5-5", "routed_model": "claude-opus-5-5"},
                                    {"status": 200, "requested_model": "claude-opus-5-5", "routed_model": "claude-opus-5-5"}])
     assert stats["totals"]["errors"] == 0
+
+
+MISMATCH = ("thread: the request does not match the stored Thread for the requested `previous_message_id`; "
+            "differing field(s): model. These fields must stay the same across a Thread's turns")
+
+
+def test_a_thread_continuation_with_an_unknown_model_finds_it_by_retrying(env):
+    """The thread started on Haiku while the gateway wasn't watching: the
+    continuation goes to the model asked for, is rejected, then lands on Haiku."""
+    client, settings, calls, state = env
+    interceptor.configure(settings, None)
+    state["anthropic_status"]["claude-opus-5"] = 400
+    state["error_message"] = MISMATCH
+    cont = {**turn("next"), "thread": {"previous_message_id": "msg_from_before"}}
+    resp = client.post("/v1/messages", json=cont, headers=AUTH)
+    assert resp.status_code == 200
+    assert [c["model"] for c in calls["anthropic"]] == ["claude-opus-5", "claude-haiku-4-5"]
+    assert records()[-1]["routed_model"] == "claude-haiku-4-5"
+    assert interceptor._message_model("msg_from_before") == "claude-haiku-4-5"  # remembered
+
+
+def test_another_400_on_a_thread_is_returned_unchanged(env):
+    client, settings, calls, state = env
+    interceptor.configure(settings, None)
+    state["anthropic_status"]["claude-opus-5"] = 400
+    state["error_message"] = "max_tokens: too large"
+    cont = {**turn("next"), "thread": {"previous_message_id": "msg_x"}}
+    resp = client.post("/v1/messages", json=cont, headers=AUTH)
+    assert resp.status_code == 400 and "max_tokens" in resp.text
+    assert len(calls["anthropic"]) == 1  # no retries for a different error
+
+
+def test_thread_models_survive_a_restart(env):
+    interceptor._remember_message("msg_kept", "claude-haiku-4-5")
+    interceptor._message_models.clear()  # what a restart loses
+    interceptor._message_models_loaded = False
+    assert interceptor._message_model("msg_kept") == "claude-haiku-4-5"

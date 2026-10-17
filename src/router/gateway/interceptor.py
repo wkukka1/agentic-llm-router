@@ -82,6 +82,44 @@ _warm: dict[tuple[str, str], float] = {}
 #: server-side thread from a message goes to the model that wrote it
 _message_models: OrderedDict[str, str] = OrderedDict()
 _MAX_MESSAGES = 5000
+#: the API rejects a thread continuation sent to another model than the
+#: thread's ("differing field(s): model"), so who wrote what must survive a
+#: restart: appended to ``thread-models.jsonl``, read back on first use
+_message_models_loaded = False
+_THREAD_MISMATCH = re.compile(r"differing field\(s\):[^.]*\bmodel\b", re.I)
+
+
+def _thread_models_path() -> Path:
+    return log_path().parent / "thread-models.jsonl"
+
+
+def _remember_message(message_id: str, model: str) -> None:
+    _message_models[message_id] = model
+    _message_models.move_to_end(message_id)
+    while len(_message_models) > _MAX_MESSAGES:
+        _message_models.popitem(last=False)
+    path = _thread_models_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"m": message_id, "model": model}) + "\n")
+        if path.stat().st_size > _MAX_MESSAGES * 200:  # ~2x the entries kept: compact
+            atomic_write_text(path, "".join(json.dumps({"m": k, "model": v}) + "\n" for k, v in _message_models.items()))
+    except OSError:
+        pass  # memory still has it; a lost entry only costs one retried request
+
+
+def _message_model(message_id: str) -> str | None:
+    global _message_models_loaded
+    if message_id not in _message_models and not _message_models_loaded:
+        _message_models_loaded = True
+        try:
+            for line in _thread_models_path().read_text(encoding="utf-8").splitlines()[-_MAX_MESSAGES:]:
+                entry = json.loads(line)
+                _message_models.setdefault(entry["m"], entry["model"])
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+    return _message_models.get(message_id)
 #: running per-request token profile of all agent traffic -- the default for a
 #: conversation that has none of its own yet
 _global_profile: dict = {}
@@ -624,9 +662,7 @@ class _Turn:
         baseline = _warm_usage(usage, max(prev_tokens, self.shared_before))
         strongest = _settings.get("strongest")
         if status == 200 and self.message_id and lane == "anthropic":
-            _message_models[self.message_id] = self.target
-            while len(_message_models) > _MAX_MESSAGES:
-                _message_models.popitem(last=False)
+            _remember_message(self.message_id, self.target)
         if status == 200 and usage:
             now, tokens = time.monotonic(), _prompt_tokens(usage)
             if lane == "anthropic":
@@ -735,7 +771,7 @@ async def _decide(turn: _Turn) -> None:
         # the API keeps this conversation server-side and this request only
         # adds to it: it stays with the model that wrote the message it
         # continues (or the one asked for), never moved mid-thread
-        turn.target = _message_models.get(previous) or turn.requested
+        turn.target = _message_model(previous) or turn.requested
         turn.decision = {"reason": "continues a server-side thread: stays on its model"}
         return
     if turn.human is None and turn.session.get("model"):
@@ -856,6 +892,37 @@ async def _via_anthropic(turn: _Turn) -> Response:
         return _unreachable(turn, "Anthropic API", exc, "anthropic")
 
 
+async def _find_thread_model(turn: _Turn, upstream: httpx.Response, *, tried: set) -> httpx.Response:
+    """A thread continuation sent to a model other than the thread's is
+    rejected before anything runs ("differing field(s): model"). That
+    happens when the gateway doesn't know the thread's model (it started
+    while the gateway was down, say): try the other Claude models once each
+    and remember the one that takes it. Anything else is returned as is."""
+    detail = (await upstream.aread()).decode(errors="replace")
+    if not _THREAD_MISMATCH.search(detail):
+        return _replay(upstream, detail)
+    await upstream.aclose()
+    for model in [m for m, spec in _settings["models"].items() if spec.get("lane") == "anthropic" and m not in tried]:
+        candidate = await _send_anthropic(turn.request, "v1/messages", turn.body_for(model))
+        if candidate.status_code == 400:
+            text = (await candidate.aread()).decode(errors="replace")
+            if _THREAD_MISMATCH.search(text):
+                await candidate.aclose()
+                continue
+            return _replay(candidate, text)
+        turn.target = model
+        turn.decision = {**turn.decision, "reason": f"continues a server-side thread on {model} (found by retrying)"}
+        _remember_message(thread_previous(turn.body), model)
+        return candidate
+    return _replay(upstream, detail)
+
+
+def _replay(upstream: httpx.Response, text: str) -> httpx.Response:
+    """A response already read, as a fresh one that can be relayed."""
+    headers = {k: v for k, v in upstream.headers.items() if k.lower() not in _RESPONSE_HOP_HEADERS}
+    return httpx.Response(upstream.status_code, headers=headers, content=text.encode())
+
+
 async def _via_anthropic_unguarded(turn: _Turn) -> Response:
     upstream = await _send_anthropic(turn.request, "v1/messages", turn.body_for(turn.target))
     if upstream.status_code >= 400 and turn.target != turn.requested:
@@ -869,6 +936,11 @@ async def _via_anthropic_unguarded(turn: _Turn) -> Response:
         turn.decision = {**turn.decision, "reason": f"fell back: {turn.attempted} returned "
                                                     f"{upstream.status_code}: {detail[:160]}"}
         upstream = await _send_anthropic(turn.request, "v1/messages", turn.raw)
+        if upstream.status_code == 400 and thread_previous(turn.body):
+            upstream = await _find_thread_model(turn, upstream, tried={turn.attempted, turn.requested})
+    elif upstream.status_code == 400 and thread_previous(turn.body):
+        upstream = await _find_thread_model(turn, upstream, tried={turn.target})
+
     def done(status: int, usage: Mapping | None, stop_reason: str | None = None, error: str | None = None,
              message_id: str | None = None) -> None:
         turn.stop_reason = stop_reason

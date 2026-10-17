@@ -18,6 +18,9 @@
     --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   }
   * { box-sizing: border-box; }
+  /* never scroll sideways, whatever a browser does with a long value or an animation;
+     clip, not hidden: hidden makes a scroll container and breaks the sticky header */
+  html, body { overflow-x: hidden; overflow-x: clip; max-width: 100%; }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 var(--sans); }
   main { max-width: 1180px; margin: 0 auto; padding: 28px 24px 64px; display: flex; flex-direction: column; gap: 28px; }
   @media (max-width: 600px) { main { padding: 20px 16px 48px; } }
