@@ -37,7 +37,7 @@ ollama = ["ollama>=0.4"]
 # kept free of `research` below so `pip install -e ".[gateway]"` stays a
 # seconds-long, no-native-build install for someone who only wants to run
 # the gateway locally (see docs/gateway.md).
-gateway = ["fastapi", "uvicorn[standard]", "httpx", "fastembed"]  # httpx: upstream client; fastembed: the router's text encoder without PyTorch
+gateway = ["fastapi", "uvicorn[standard]", "httpx", "fastembed", "huggingface_hub"]  # httpx: upstream client; fastembed: the router's text encoder without PyTorch; huggingface_hub: opt-in usage sharing (fastembed needs it anyway)
 # The data pipeline + model training/eval stack (training/, evaluation/,
 # most of decompose/): heavy, sometimes-native-build dependencies that
 # nothing in router.agentic/router.llm/router.gateway actually imports

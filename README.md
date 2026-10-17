@@ -130,9 +130,13 @@ whether you corrected the answer, a rounded prompt length, and a compressed
 embedding of the message (64 small numbers). Never your prompts, error
 messages, file paths, or session ids, and no time finer than the day.
 
-For now nothing is sent anywhere: records stay in `~/.aar-gateway/share/`
-on your computer. `aar-gateway share show` prints them, `aar-gateway share
-off` stops collecting, `aar-gateway share delete` removes them.
+Records wait in `~/.aar-gateway/share/` on your computer until you add the
+upload token the project gave you (`aar-gateway share token <token>`); then
+they go once a day to the project's private Hugging Face dataset, filed
+under a random id that isn't tied to you. `aar-gateway share show` prints
+what's waiting, `aar-gateway share status` shows what's been sent,
+`aar-gateway share off` stops it, `aar-gateway share delete` removes what
+hasn't been sent.
 
 ## What it never does
 

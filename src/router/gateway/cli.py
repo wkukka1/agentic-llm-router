@@ -563,8 +563,14 @@ def _doctor() -> int:
 
     from . import share as sharing
 
-    report(True, "usage sharing", f"on, {len(sharing.queued())} record(s) kept locally, nothing sent yet"
-           if sharing.enabled() else "off (optional; `aar-gateway share` explains)")
+    if not sharing.enabled():
+        report(True, "usage sharing", "off (optional; `aar-gateway share` explains)")
+    elif not sharing.token():
+        report(True, "usage sharing", f"on, {len(sharing.queued())} record(s) kept locally; no upload token yet")
+    else:
+        last = sharing.state().get("last_error")
+        report(not last, "usage sharing", f"on, sent to {sharing.dataset()}" + (f"; last upload failed ({last})" if last else ""),
+               "check the token: aar-gateway share token <token>, then aar-gateway share upload")
     print("\nall good" if problems == 0 else f"\n{problems} problem(s) to fix")
     return 0 if problems == 0 else 1
 
@@ -1040,13 +1046,15 @@ def _share(argv: list[str]) -> int:
     action = argv[0] if argv else "status"
     if action == "on":
         share.set_enabled(True)
-        print("sharing on: each message you type adds an anonymous record (no prompt text) to\n"
-              f"{share.queue_path()}; nothing is sent anywhere yet. `aar-gateway share off` stops it.")
+        dest = (f"sent to the private dataset {share.dataset()} once a day" if share.token()
+                else "kept on this computer until an upload token is set (`aar-gateway share token`)")
+        print(f"sharing on: each message you type adds an anonymous record (no prompt text), {dest}.\n"
+              "`aar-gateway share show` prints them; `aar-gateway share off` stops it.")
         return 0
     if action == "off":
         share.set_enabled(False)
-        print(f"sharing off: no new records. The ones already kept stay in {share.queue_path()}\n"
-              "until `aar-gateway share delete`.")
+        print(f"sharing off: no new records and nothing more is sent. Records not yet sent stay in\n"
+              f"{share.queue_path()} until `aar-gateway share delete`.")
         return 0
     if action == "delete":
         share.queue_path().unlink(missing_ok=True)
@@ -1060,12 +1068,32 @@ def _share(argv: list[str]) -> int:
             print(json.dumps({**row, "embedding": f"{len(emb)} small integers" if emb else None}, indent=2))
         print(f"{len(rows)} record(s) kept in {share.queue_path()}")
         return 0
-    if action == "status":
-        print(f"sharing      {'on' if share.enabled() else 'off'}")
-        print(f"kept         {len(share.queued())} record(s) in {share.queue_path()}")
-        print("sent to      nowhere yet (no destination is set up)")
+    if action == "token":
+        if len(argv) < 2 or not argv[1].strip():
+            raise SystemExit("usage: aar-gateway share token <hugging face token with write access to the dataset>")
+        share.set_token(argv[1])
+        print(f"upload token saved ({share.token_path()}, readable by you only); records go to "
+              f"the private dataset {share.dataset()} once a day")
         return 0
-    raise SystemExit(f"unknown share action {action!r}: on, off, status, show [N] or delete")
+    if action == "upload":
+        result = share.upload()
+        if "sent" in result:
+            print(f"sent {result['sent']} record(s) to {share.dataset()}")
+            return 0
+        print(result.get("skipped") or f"upload failed ({result['error']}); the records are kept for next time")
+        return 0 if "skipped" in result else 1
+    if action == "status":
+        st = share.state()
+        print(f"sharing      {'on' if share.enabled() else 'off'}")
+        print(f"kept         {len(share.queued())} record(s) waiting in {share.queue_path()}")
+        print(f"sent to      {share.dataset()} (private Hugging Face dataset)" if share.token()
+              else "sent to      nowhere yet (no upload token: aar-gateway share token <token>)")
+        if st.get("sent_total"):
+            print(f"sent so far  {st['sent_total']} record(s), last {st.get('last_upload')}")
+        if st.get("last_error"):
+            print(f"last upload  failed ({st['last_error']}); retried later")
+        return 0
+    raise SystemExit(f"unknown share action {action!r}: on, off, status, show [N], delete, token or upload")
 
 
 def _agents(argv: list[str]) -> None:
@@ -1194,7 +1222,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("disable", help="undo `enable`: plain `claude` talks to Anthropic directly again")
     sub.add_parser("doctor", help="check the setup, with a fix for each problem")
     sub.add_parser("local", help="optional local models via Ollama: local [add|remove] <model>")
-    sub.add_parser("share", help="opt-in anonymous usage sharing: share [on|off|status|show|delete]")
+    sub.add_parser("share", help="opt-in anonymous usage sharing: share [on|off|status|show|delete|token|upload]")
     sub.add_parser("config", help="which config file is in use")
     sub.add_parser("dashboard", help="open the dashboard in a browser")
     service = sub.add_parser("service", help="start the gateway at login (launchd on macOS, systemd on Linux)")

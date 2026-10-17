@@ -89,3 +89,74 @@ def test_setup_asks_once_and_only_a_yes_opts_in(monkeypatch, capsys):
     assert not any("Share anonymous" in q for q in asked)  # asked once: the answer is remembered
     cli.main(["setup", "--share"])
     assert share.enabled()
+
+
+class FakeHub:
+    def __init__(self, fail=False, during=None):
+        self.files, self.fail, self.during = [], fail, during
+
+    def upload_file(self, *, path_or_fileobj, path_in_repo, repo_id, repo_type, commit_message):
+        if self.during:
+            self.during()
+        if self.fail:
+            raise ConnectionError("hub down: token=hf_SECRET123")
+        self.files.append((repo_id, repo_type, path_in_repo, path_or_fileobj.decode()))
+
+
+def _queue(n):
+    share.set_enabled(True)
+    for i in range(n):
+        share.record(LOGGED, f"message number {i}")
+    share.flush(5)
+
+
+def test_without_a_token_nothing_is_sent():
+    _queue(2)
+    assert "skipped" in share.upload(api=FakeHub()) and len(share.queued()) == 2
+
+
+def test_an_upload_sends_the_queue_to_the_private_dataset_and_empties_it():
+    share.set_token("hf_SECRET123")
+    _queue(3)
+    hub = FakeHub()
+    assert share.upload(api=hub)["sent"] == 3
+    ((repo, kind, name, body),) = hub.files
+    assert repo == share.DEFAULT_DATASET and kind == "dataset" and name.startswith("records/")
+    assert len(body.splitlines()) == 3 and share.queued() == []
+    assert share.state()["sent_total"] == 3
+
+
+def test_a_failed_upload_keeps_the_records_and_never_stores_the_error_text():
+    share.set_token("hf_SECRET123")
+    _queue(2)
+    assert share.upload(api=FakeHub(fail=True)) == {"error": "ConnectionError"}
+    assert len(share.queued()) == 2 and "hf_SECRET123" not in share.state_path().read_text()
+
+
+def test_records_written_during_an_upload_stay_queued():
+    share.set_token("hf_SECRET123")
+    _queue(2)
+    late = lambda: share._append(LOGGED, "a late message")  # noqa: E731
+    assert share.upload(api=FakeHub(during=late))["sent"] == 2
+    assert len(share.queued()) == 1
+
+
+def test_the_token_is_never_printed(capsys):
+    cli.main(["share", "token", "hf_SECRET123"])
+    cli.main(["share", "status"])
+    out = capsys.readouterr().out
+    assert "hf_SECRET123" not in out and share.DEFAULT_DATASET in out
+    assert share.token() == "hf_SECRET123"
+
+
+def test_it_uploads_by_itself_once_enough_records_are_queued(monkeypatch):
+    sent = []
+    monkeypatch.setattr(share, "upload", lambda api=None: sent.append(1) or {"sent": 0})
+    monkeypatch.setattr(share, "UPLOAD_AFTER", 3)
+    share.set_token("hf_SECRET123")
+    share.state_path().parent.mkdir(parents=True, exist_ok=True)
+    share.state_path().write_text('{"last_attempt": "2999-01-01T00:00:00+00:00"}')  # not due by time
+    _queue(2)
+    assert sent == []
+    _queue(1)
+    assert sent == [1]
