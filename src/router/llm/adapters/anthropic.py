@@ -37,6 +37,7 @@ from collections.abc import Generator
 from typing import Any
 
 from ..client import LLMResponse
+from ..cost import price_tokens
 from .base import Prompt, ProviderAdapter
 
 #: Anthropic cache pricing relative to the base input rate
@@ -119,12 +120,9 @@ class AnthropicAdapter(ProviderAdapter):
         )
 
     def _cost(self, uncached: int, read: int, write: int, out: int) -> float | None:
-        in_price = self.client_kwargs.get("input_cost_per_token")
-        out_price = self.client_kwargs.get("output_cost_per_token")
-        if in_price is None or out_price is None:
-            return None
         effective_in = uncached + _CACHE_READ_MULTIPLIER * read + _CACHE_WRITE_MULTIPLIER * write
-        return float(effective_in * in_price + out * out_price)
+        return price_tokens(effective_in, out, self.client_kwargs.get("input_cost_per_token"),
+                            self.client_kwargs.get("output_cost_per_token"))
 
     # -- ProviderAdapter -------------------------------------------------
     def complete(self, prompt: Prompt, **generation_kwargs) -> LLMResponse:
