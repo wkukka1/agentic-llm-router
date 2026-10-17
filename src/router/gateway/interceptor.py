@@ -1058,6 +1058,12 @@ def _current_records() -> list[dict]:
 RECENT_RECORDS = 200
 
 
+def _expected_thread_expiry(record: dict) -> bool:
+    """A 404 for a server-side thread the API has let go of: Claude Code
+    replays the conversation itself, so it isn't a failure of the gateway."""
+    return record.get("status") == 404 and "No thread state" in (record.get("error") or "")
+
+
 def summarize(records: list[dict] | None = None) -> dict:
     """Totals and per-model rows for ``GET /stats`` and the dashboard."""
     records = read_records() if records is None else records
@@ -1075,7 +1081,7 @@ def summarize(records: list[dict] | None = None) -> dict:
         m = models.setdefault(r.get("routed_model") or "unknown", blank())
         for row in (total, m):
             row["requests"] += 1
-            row["errors"] += r.get("status") != 200
+            row["errors"] += r.get("status") != 200 and not _expected_thread_expiry(r)
             row["rerouted"] += r.get("routed_model") != r.get("requested_model")
             row["fallbacks"] += bool(r.get("fallback"))
             for k in token_keys:
