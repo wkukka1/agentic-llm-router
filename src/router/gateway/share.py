@@ -251,6 +251,8 @@ def record(log_record: dict, human: str | None) -> None:
     Runs on a background thread: never slows the request."""
     if not human or log_record.get("subagent") or not enabled():
         return
+    if reason_category(log_record.get("reason")) == "side_request":
+        return  # Claude Code's own background requests (titles, summaries): not the user's messages
     global _worker
     if _worker is None:
         _worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="aar-share")

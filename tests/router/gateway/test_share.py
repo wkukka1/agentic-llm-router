@@ -48,6 +48,7 @@ def test_a_record_holds_no_text_ids_paths_or_exact_times():
 def test_subagents_and_tool_steps_add_nothing():
     share.set_enabled(True)
     share.record({**LOGGED, "subagent": True}, "search for x")
+    share.record({**LOGGED, "reason": "side request (no tools), not routed"}, "write a title for this chat")
     share.record(LOGGED, None)  # a tool-loop step: no typed message
     share.flush(5)
     assert share.queued() == []
