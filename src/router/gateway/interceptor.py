@@ -89,20 +89,29 @@ _message_models_loaded = False
 _THREAD_MISMATCH = re.compile(r"differing field\(s\):[^.]*\bmodel\b", re.I)
 
 
+def _lru_set(cache: OrderedDict, key, value, max_size: int) -> None:
+    """Store ``key`` as the most recent entry, evicting the oldest past ``max_size``."""
+    cache[key] = value
+    cache.move_to_end(key)
+    while len(cache) > max_size:
+        cache.popitem(last=False)
+
+
+def _append_jsonl(path: Path, record: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record) + "\n")
+
+
 def _thread_models_path() -> Path:
     return log_path().parent / "thread-models.jsonl"
 
 
 def _remember_message(message_id: str, model: str) -> None:
-    _message_models[message_id] = model
-    _message_models.move_to_end(message_id)
-    while len(_message_models) > _MAX_MESSAGES:
-        _message_models.popitem(last=False)
+    _lru_set(_message_models, message_id, model, _MAX_MESSAGES)
     path = _thread_models_path()
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps({"m": message_id, "model": model}) + "\n")
+        _append_jsonl(path, {"m": message_id, "model": model})
         if path.stat().st_size > _MAX_MESSAGES * 200:  # ~2x the entries kept: compact
             atomic_write_text(path, "".join(json.dumps({"m": k, "model": v}) + "\n" for k, v in _message_models.items()))
     except OSError:
@@ -265,10 +274,7 @@ def record_spawn(session_id: str, subagent_type: str | None, task: str,
     else:
         session_model = (_cc_sessions.get(session_id) or {}).get("requested")
         decision = spawn_decision(subagent_type, task, session_model, _settings, asked_model)
-    _spawns[_task_key(task)] = decision
-    _spawns.move_to_end(_task_key(task))
-    while len(_spawns) > _MAX_SPAWNS:
-        _spawns.popitem(last=False)
+    _lru_set(_spawns, _task_key(task), decision, _MAX_SPAWNS)
     return decision
 
 
@@ -285,10 +291,7 @@ def _save_preferences(**changes) -> None:
 
 
 def _log_override(record: dict) -> None:
-    path = overrides_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps({"ts": datetime.now(UTC).isoformat(timespec="seconds"), **record}) + "\n")
+    _append_jsonl(overrides_path(), {"ts": datetime.now(UTC).isoformat(timespec="seconds"), **record})
 
 
 def set_routing(mode: str, pinned_model: str | None = None) -> dict:
@@ -422,20 +425,17 @@ def _capture(turn: _Turn) -> None:
     """Only the human's own words of a new agent turn, plus where it ran --
     never the conversation, tool results or credentials. For a subagent,
     the "human" is the main agent and its words are the subagent's task."""
-    path = turns_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps({
-            "ts": datetime.now(UTC).isoformat(timespec="seconds"),
-            "conversation": turn.key,
-            "prompt_hash": hashlib.sha1(turn.human.encode()).hexdigest()[:16],
-            "prompt": turn.human,
-            "cwd": working_directory(turn.body),
-            "requested_model": turn.requested,
-            "routed_model": turn.target,
-            "subagent": turn.agent is not None,
-            "agent_role": (turn.agent or {}).get("role"),
-        }) + "\n")
+    _append_jsonl(turns_path(), {
+        "ts": datetime.now(UTC).isoformat(timespec="seconds"),
+        "conversation": turn.key,
+        "prompt_hash": hashlib.sha1(turn.human.encode()).hexdigest()[:16],
+        "prompt": turn.human,
+        "cwd": working_directory(turn.body),
+        "requested_model": turn.requested,
+        "routed_model": turn.target,
+        "subagent": turn.agent is not None,
+        "agent_role": (turn.agent or {}).get("role"),
+    })
 
 
 def log_path() -> Path:
@@ -448,14 +448,12 @@ MAX_LOG_BYTES = 50 * 1024 * 1024
 
 def _append_record(record: dict) -> None:
     path = log_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
     try:
         if path.stat().st_size > MAX_LOG_BYTES:
             path.replace(path.with_name(path.name + ".1"))
     except FileNotFoundError:
         pass
-    with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(record) + "\n")
+    _append_jsonl(path, record)
     _notify()
 
 
@@ -672,13 +670,11 @@ class _Turn:
             _forget_cold(now)
             profile = _update_profile(self.session.get("profile") or {}, usage)
             quality = self.decision.get("model_quality") or self.session.get("quality")
-            _sessions[self.key] = {"model": self.target, "prompt_tokens": tokens, "profile": profile,
-                                   "agent": self.agent, "quality": quality, "hold": self.hold_left}
+            _lru_set(_sessions, self.key, {"model": self.target, "prompt_tokens": tokens, "profile": profile,
+                                           "agent": self.agent, "quality": quality, "hold": self.hold_left},
+                     _MAX_SESSIONS)
             if self.body.get("tools"):
                 _global_profile.update(_update_profile(_global_profile, usage))
-            _sessions.move_to_end(self.key)
-            while len(_sessions) > _MAX_SESSIONS:
-                _sessions.popitem(last=False)
         d = self.decision
         cost = cost_usd(price_for(_settings, self.target), usage)
         cost_asked = cost_usd(price_for(_settings, asked), baseline)
@@ -692,9 +688,7 @@ class _Turn:
                 # the main agent's model: not side requests, not subagents
                 tot.update(model=self.target, requested=self.requested)
             tot["rerouted"] += self.target != asked
-            _cc_sessions.move_to_end(self.claude_session)
-            while len(_cc_sessions) > _MAX_SESSIONS:
-                _cc_sessions.popitem(last=False)
+            _lru_set(_cc_sessions, self.claude_session, tot, _MAX_SESSIONS)
         record = {
             "ts": datetime.now(UTC).isoformat(timespec="seconds"),
             "claude_session": self.claude_session[:12] or None,
