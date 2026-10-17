@@ -461,15 +461,20 @@ class RouterModel(abc.ABC):
         values near ``0`` are increasingly cost-averse. See
         :func:`router.nirt.routing_decision.alpha_to_lam`.
         """
+        return self._route_scored(self.aligned_scores(query_ids), query_ids, lam=lam, alpha=alpha,
+                                  model_costs=model_costs, eligible=eligible, margin=margin)
+
+    def _route_scored(self, scores: pd.DataFrame, query_ids: Sequence[str], *, lam: float,
+                      alpha: Optional[float], model_costs, eligible, margin: float) -> RoutingResult:
+        """The cost choice and the pick, shared by :meth:`route` and
+        :meth:`route_text`. ``scores`` are already aligned to ``query_ids``."""
         # quality-only routing never needs (possibly expensive) predicted costs
         costs = (self.decision_costs(query_ids, model_costs)
                  if lam or margin or alpha is not None or model_costs is not None
                  else self.default_model_costs)
         lam, costs = self._resolve_alpha(alpha, lam, costs)
-        return self._route_from_scores(
-            self.aligned_scores(query_ids), lam=lam, costs=costs, eligible=eligible,
-            alpha=alpha, margin=margin,
-        )
+        return self._route_from_scores(scores, lam=lam, costs=costs, eligible=eligible,
+                                       alpha=alpha, margin=margin)
 
     def __call__(self, *args, **kwargs) -> RoutingResult:
         # not ``__call__ = route``: that binds the base function, so a subclass
@@ -501,13 +506,8 @@ class RouterModel(abc.ABC):
         scores = self.predict_scores_text(list(texts), encoder=encoder)
         scores = scores.copy()
         scores.index = [str(i) for i in range(len(scores))]
-        # quality-only routing never needs (possibly expensive) predicted costs
-        costs = (self.decision_costs(list(scores.index), model_costs)
-                 if lam or margin or alpha is not None or model_costs is not None
-                 else self.default_model_costs)
-        lam, costs = self._resolve_alpha(alpha, lam, costs)
-        return self._route_from_scores(scores, lam=lam, costs=costs, eligible=eligible,
-                                       alpha=alpha, margin=margin)
+        return self._route_scored(scores, list(scores.index), lam=lam, alpha=alpha,
+                                  model_costs=model_costs, eligible=eligible, margin=margin)
 
     # Oracle-relative evaluation needs ground truth and lives in
     # evaluation.routing.oracle.evaluate_router(router, true_df, cost_df, lam)
