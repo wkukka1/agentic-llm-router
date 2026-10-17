@@ -47,7 +47,7 @@ from fastapi import Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from .config import load_settings
+from .config import atomic_write_text, load_settings
 from .pricing import canonical_model, cost_usd
 from .routing import ModelPicker, price_for, unavailable_reason
 from .subagents import DEFAULT_ROLE_MODELS, role_decision, spawn_decision
@@ -242,7 +242,7 @@ def overrides_path() -> Path:
 def _save_preferences(**changes) -> None:
     path = preferences_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({**_read_preferences(), **changes}))
+    atomic_write_text(path, json.dumps({**_read_preferences(), **changes}))
 
 
 def _log_override(record: dict) -> None:

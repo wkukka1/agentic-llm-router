@@ -23,7 +23,7 @@ async def _lifespan(_app: FastAPI):
     """Load eagerly rather than on the first request -- a bad config (missing
     API key, unknown lane, router run that won't load) should fail the
     process at boot, in the logs, not surface on someone's first real call."""
-    from .config import config_path, load_settings
+    from .config import atomic_write_text, config_path, load_settings
     from .routing import build_picker
 
     settings = load_settings(config_path())
@@ -51,7 +51,7 @@ async def _lifespan(_app: FastAPI):
                           models=sorted(settings["models"]))
     pid_file = _pid_file()
     pid_file.parent.mkdir(parents=True, exist_ok=True)
-    pid_file.write_text(str(os.getpid()))
+    atomic_write_text(pid_file, str(os.getpid()))
     try:
         yield
     finally:

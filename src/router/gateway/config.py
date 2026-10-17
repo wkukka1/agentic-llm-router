@@ -8,6 +8,7 @@ lane model names the environment variable its key is read from.
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -105,3 +106,18 @@ def load_settings(config_path: str | Path | None = None) -> dict:
             "capture_prompts": bool(section.get("capture_prompts", False)),
             "router": {**DEFAULT_ROUTER, **(section.get("router") or {})},
             "subagents": {**DEFAULT_SUBAGENTS, **(section.get("subagents") or {})}}
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    """Replace ``path`` in one step: a reader sees the old file or the new
+    one, never half of it. Each writer gets its own temporary file, so two
+    writing at once can't mix their content."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise

@@ -26,6 +26,7 @@ Environment: ``AAR_GATEWAY_HOST`` / ``AAR_GATEWAY_PORT`` (default
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -798,10 +799,39 @@ def _read_claude_settings(path: Path) -> dict:
 
 
 def _write_claude_settings(path: Path, settings: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".aar-tmp")
-    tmp.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
-    tmp.replace(path)
+    from .config import atomic_write_text
+
+    atomic_write_text(path, json.dumps(settings, indent=2) + "\n")
+
+
+@contextlib.contextmanager
+def _settings_lock(path: Path, *, wait: float = 10.0, stale: float = 10.0):
+    """Holds a lock on Claude Code's settings file while it is read, changed
+    and written: every session's hooks change it, and without the lock two of
+    them at once can each write back what they read, losing the other's
+    change. A lock older than ``stale`` seconds was left by a process that
+    died, and is taken over."""
+    lock = path.with_name(path.name + ".aar-lock")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + wait
+    while True:
+        try:
+            os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            break
+        except FileExistsError:
+            try:
+                if time.time() - lock.stat().st_mtime > stale:
+                    lock.unlink(missing_ok=True)
+                    continue
+            except FileNotFoundError:
+                continue
+            if time.monotonic() > deadline:
+                raise SystemExit(f"{lock} is held by another aar-gateway command; try again") from None
+            time.sleep(0.05)
+    try:
+        yield
+    finally:
+        lock.unlink(missing_ok=True)
 
 
 def auto_enabled() -> bool:
@@ -815,6 +845,7 @@ def auto_enabled() -> bool:
 
 
 def _set_base_url(on: bool) -> None:
+    """Under :func:`_settings_lock` only."""
     path = _claude_settings_path()
     settings = _read_claude_settings(path)
     env = settings.setdefault("env", {})
@@ -852,15 +883,23 @@ def _check(session_start: bool) -> None:
             _ensure_running(url, quiet=True, timeout=60 if session_start else 15)
         except SystemExit:
             pass
-    if _healthy(url):
-        if bypassed.exists():
+    # the switch itself under the settings lock, deciding on what is true
+    # once the lock is held: another session's hook may have just switched
+    # (both ways at once would leave the address out with nothing to bring
+    # it back)
+    switched_off = False
+    with _settings_lock(_claude_settings_path()):
+        healthy = _healthy(url)
+        if healthy and bypassed.exists():
             _set_base_url(True)
             bypassed.unlink(missing_ok=True)
             notice = "AAR gateway is answering again: routing is back on."
-    elif not bypassed.exists():
-        bypassed.parent.mkdir(parents=True, exist_ok=True)
-        bypassed.write_text(url)
-        _set_base_url(False)
+        elif not healthy and not bypassed.exists():
+            bypassed.parent.mkdir(parents=True, exist_ok=True)
+            bypassed.write_text(url)
+            _set_base_url(False)
+            switched_off = True
+    if switched_off:
         # Claude Code rereads its settings a moment after they change; the
         # message waits for that, or it would still go to the gateway's address
         time.sleep(float(os.environ.get("AAR_GATEWAY_SETTINGS_SETTLE", "3")))
@@ -886,8 +925,26 @@ def _enable(force: bool = False) -> int:
                          f"system deletes: every `claude` session would then fail to connect. Install it with\n"
                          f"`uv tool install` and run `aar-gateway enable` from there (or pass --force).")
     path = _claude_settings_path()
+    url = _base_url()
+    with _settings_lock(path):
+        _enable_settings(path, url, force)
+    print(f"plain `claude` now goes through the gateway in every session ({path})")
+    _agents(["--install"])
+    if sys.platform == "darwin" or sys.platform.startswith("linux"):
+        try:
+            _service("install", at_next_login=_healthy(url))
+        except (OSError, subprocess.CalledProcessError) as exc:
+            print(f"couldn't register the login service ({exc}); each session starts the gateway instead")
+    else:
+        _ensure_running(url, quiet=True)
+    print("undo with `aar-gateway disable`")
+    return 0
+
+
+def _enable_settings(path: Path, url: str, force: bool) -> None:
+    """:func:`_enable`'s change to Claude Code's settings (under the lock)."""
     settings = _read_claude_settings(path)
-    url, run = _base_url(), _self_command()
+    run = _self_command()
     env = settings.setdefault("env", {})
     current = env.get("ANTHROPIC_BASE_URL")
     if current and current != url and not force:
@@ -915,22 +972,20 @@ def _enable(force: bool = False) -> int:
     if path.exists() and not path.with_name("settings.json.aar-backup").exists():
         shutil.copy2(path, path.with_name("settings.json.aar-backup"))
     _write_claude_settings(path, settings)
-    print(f"plain `claude` now goes through the gateway in every session ({path})")
-    _agents(["--install"])
-    if sys.platform == "darwin" or sys.platform.startswith("linux"):
-        try:
-            _service("install", at_next_login=_healthy(url))
-        except (OSError, subprocess.CalledProcessError) as exc:
-            print(f"couldn't register the login service ({exc}); each session starts the gateway instead")
-    else:
-        _ensure_running(url, quiet=True)
-    print("undo with `aar-gateway disable`")
-    return 0
 
 
 def _disable() -> int:
     """Takes out what :func:`_enable` added; the rest of the settings stay."""
     path = _claude_settings_path()
+    with _settings_lock(path):
+        _disable_settings(path)
+    if sys.platform == "darwin" or sys.platform.startswith("linux"):
+        _service("uninstall")
+    print("plain `claude` talks to Anthropic directly again; `aar-gateway code` still uses the gateway")
+    return 0
+
+
+def _disable_settings(path: Path) -> None:
     settings = _read_claude_settings(path)
     env = settings.get("env") or {}
     if env.get("ANTHROPIC_BASE_URL") == _base_url() or _suspended_file().exists():
@@ -952,10 +1007,6 @@ def _disable() -> int:
         del settings["statusLine"]
     if path.exists():
         _write_claude_settings(path, settings)
-    if sys.platform == "darwin" or sys.platform.startswith("linux"):
-        _service("uninstall")
-    print("plain `claude` talks to Anthropic directly again; `aar-gateway code` still uses the gateway")
-    return 0
 
 
 def _agents(argv: list[str]) -> None:
