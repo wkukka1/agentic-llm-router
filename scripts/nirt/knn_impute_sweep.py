@@ -24,7 +24,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from training.cli import float_table, raw_parser, write_json, zeroshot_only
+from training.cli import float_table, get_phase0_config, raw_parser, write_json, zeroshot_only
 from router.config import load_config
 from router.embeddings import EmbeddingStore
 from router.nirt.checkpoint import load_run
@@ -111,7 +111,7 @@ def main() -> int:
     ref_runs = list(ki.get("reference_runs", []))
     wt = "w" if weighting == "similarity" else "u"
 
-    cfg = load_config(args.phase0_config) if args.phase0_config else load_config()
+    cfg = get_phase0_config(args)
     p0 = cfg
     d = load_training_data(cfg)
 

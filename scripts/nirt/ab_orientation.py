@@ -18,8 +18,7 @@ import sys
 import numpy as np
 import pandas as pd
 
-from training.cli import float_table, load_yaml, raw_parser, resolve, write_json
-from router.config import load_config
+from training.cli import float_table, get_phase0_config, load_yaml, raw_parser, resolve, write_json
 from router.nirt.checkpoint import load_run
 from router.nirt.predict import predict_matrix
 from training.data.facade import load_training_data
@@ -53,7 +52,7 @@ def main() -> int:
     base_cfg = _load_cfg(args.config)
     runs_dir = resolve(base_cfg.get("runs_dir", "data/processed/nirt_runs"))
 
-    p0 = load_config(args.phase0_config) if args.phase0_config else load_config()
+    p0 = get_phase0_config(args)
     d = load_training_data(p0)
     pathway = base_cfg.get("data", {}).get("pathway", "irt")
     reference = base_cfg.get("routing", {}).get("reference_model", "gpt-4-1106-preview")

@@ -45,6 +45,11 @@ def get_config(args: argparse.Namespace) -> Config:
     return load_config(args.config)
 
 
+def get_phase0_config(args: argparse.Namespace) -> Config:
+    """The Phase 0 config named by ``--phase0-config``, else the default one."""
+    return load_config(args.phase0_config) if args.phase0_config else load_config()
+
+
 def info(msg: str) -> None:
     print(f"[phase0] {msg}", file=sys.stderr)
 

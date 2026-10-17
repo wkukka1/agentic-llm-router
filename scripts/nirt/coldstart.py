@@ -19,8 +19,7 @@ import sys
 
 import pandas as pd
 
-from training.cli import float_table, load_yaml, raw_parser, resolve, write_json
-from router.config import load_config
+from training.cli import float_table, get_phase0_config, load_yaml, raw_parser, resolve, write_json
 from router.nirt.checkpoint import load_run
 from training.data.facade import load_training_data
 from evaluation.nirt.evaluate import cold_start_eval
@@ -54,7 +53,7 @@ def main() -> int:
     ncfg = load_yaml(args.config)
     runs_dir = resolve(ncfg.get("runs_dir", "data/processed/nirt_runs"))
 
-    p0 = load_config(args.phase0_config) if args.phase0_config else load_config()
+    p0 = get_phase0_config(args)
     d = load_training_data(p0)
 
     model, run_cfg, model_index = load_run(args.run, runs_dir=runs_dir)

@@ -21,6 +21,7 @@ from pathlib import Path
 import yaml
 
 from router.config import load_config
+from training.cli import get_phase0_config
 from training.nirt.baseline.train import fit
 from training.nirt.baseline.response_head import RESPONSE_MODELS
 
@@ -79,7 +80,7 @@ def main() -> int:
     if args.response == "bernoulli":
         cfg.setdefault("train", {})["target"] = "binary"
 
-    p0 = load_config(args.phase0_config) if args.phase0_config else load_config()
+    p0 = get_phase0_config(args)
     res = fit(cfg, phase0_cfg=p0)
     print(f"\n=== {args.response} — validation (best epoch {res.best_epoch}) ===")
     print(json.dumps({k: v for k, v in res.val_metrics.items() if isinstance(v, (int, float))},

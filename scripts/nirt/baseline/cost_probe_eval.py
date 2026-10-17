@@ -32,9 +32,8 @@ from evaluation.nirt.cost_baselines import (
 from evaluation.nirt.routing import align, eval_matrices
 from evaluation.nirt.routing_benchmark import baseline_cell_predictions
 from evaluation.routing.oracle import routing_evaluation
-from router.config import load_config
 from router.nirt.frames import pivot_qm
-from training.cli import add_source_arg, raw_parser, resolve, write_json
+from training.cli import add_source_arg, get_phase0_config, raw_parser, resolve, write_json
 from training.data.facade import load_training_data
 from training.data.pricing import load_prices
 from training.data.tokens import cell_token_table
@@ -135,7 +134,7 @@ def main() -> int:
     add_source_arg(ap)
     args = ap.parse_args()
 
-    cfg = load_config(args.phase0_config) if args.phase0_config else load_config()
+    cfg = get_phase0_config(args)
     d = load_training_data(cfg)
     ckpt = resolve(args.ckpt, cfg.root)
     long, mcfg = baseline_cell_predictions(ckpt, cfg, d, args.split)
