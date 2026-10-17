@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Optional
 
 from router.config import Config, load_config
+from training.data.download import fetch as _download
 
 Record = dict[str, dict]
 
@@ -177,21 +178,6 @@ def _public_benchmarks_cfg(cfg: Config) -> Config:
     return cfg.get("public_benchmarks") or Config({})
 
 
-def _download(url: str, dest: Path) -> Path:
-    import urllib.request
-
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    if not dest.exists():
-        # a plain urlretrieve sends Python's default User-Agent, which
-        # benchlm.ai's server rejects (403) even though this file is a
-        # published, free CC-BY-NC-4.0 download -- a normal browser-like UA
-        # is all that's needed, not a bypass of any actual access control.
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req) as resp:  # noqa: S310 -- fixed, trusted URLs only
-            dest.write_bytes(resp.read())
-    return dest
-
-
 def fetch_benchlm_models_json(cfg: Optional[Config] = None, *, force: bool = False) -> Path:
     cfg = cfg or load_config()
     pc = _public_benchmarks_cfg(cfg)
@@ -229,6 +215,79 @@ def fetch_arena_leaderboard_csv(cfg: Optional[Config] = None, *, snapshot_date: 
                                 filename=snap["filename"], revision=snap["revision"])
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(Path(path).read_bytes())
+    return dest
+
+
+def _restricted_unpickle(path: Path):
+    """Load an ``elo_results_<date>.pkl`` from the Arena Space without running
+    arbitrary code: only pandas/numpy reconstructors (and ``builtins.slice``)
+    resolve; plotly figures -- the only other globals those files reference --
+    become inert stubs. Anything else raises."""
+    import importlib
+    import pickle
+
+    class _Stub:
+        def __init__(self, *a, **k):
+            pass
+
+        def __setstate__(self, state):
+            pass
+
+    class _Unpickler(pickle.Unpickler):
+        def find_class(self, module, name):
+            if module.startswith("plotly"):
+                return _Stub
+            if module == "builtins" and name == "slice":
+                return slice
+            if module in ("pandas", "numpy") or module.startswith(("pandas.", "numpy.")):
+                return getattr(importlib.import_module(module), name)
+            raise pickle.UnpicklingError(f"blocked global {module}.{name}")
+
+    with Path(path).open("rb") as fh:
+        return _Unpickler(fh).load()
+
+
+def arena_category_elo_rows(elo_results: dict) -> list[dict]:
+    """Flatten an unpickled ``elo_results`` dict into long rows
+    ``{category, arena_key, rating, rating_q025, rating_q975, num_battles}`` --
+    one per (text category, model). Vision tables are skipped."""
+    rows: list[dict] = []
+    for category, block in (elo_results.get("text") or {}).items():
+        table = block.get("leaderboard_table_df")
+        if table is None:
+            continue
+        for key, r in table.iterrows():
+            rows.append({"category": str(category), "arena_key": str(key),
+                         "rating": float(r["rating"]),
+                         "rating_q025": float(r["rating_q025"]),
+                         "rating_q975": float(r["rating_q975"]),
+                         "num_battles": int(r["num_battles"])})
+    return rows
+
+
+def fetch_arena_category_elo(cfg: Optional[Config] = None, *, snapshot_date: str,
+                             filename: str, revision: str, force: bool = False) -> Path:
+    """Per-category Arena Elo (full, coding, math, chinese, ...) for one PINNED
+    snapshot, cached as a long CSV at
+    ``data/raw/public_benchmarks/arena_category_elo_<snapshot_date>.csv``.
+
+    From 2024 on the Space's ``leaderboard_table_<date>.csv`` no longer carries
+    an Elo column -- ratings live only in ``elo_results_<date>.pkl``, loaded
+    here through :func:`_restricted_unpickle`. ``filename``/``revision`` are an
+    explicit pair from config, never guessed from the date."""
+    cfg = cfg or load_config()
+    dest = cfg.resolve(f"data/raw/public_benchmarks/arena_category_elo_{snapshot_date}.csv")
+    if force and dest.exists():
+        dest.unlink()
+    if not dest.exists():
+        import pandas as pd
+        from huggingface_hub import hf_hub_download
+
+        path = hf_hub_download(repo_id="lmarena-ai/chatbot-arena-leaderboard", repo_type="space",
+                               filename=filename, revision=revision)
+        rows = arena_category_elo_rows(_restricted_unpickle(Path(path)))
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(rows).to_csv(dest, index=False)
     return dest
 
 

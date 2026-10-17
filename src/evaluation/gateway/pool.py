@@ -31,6 +31,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from training.data.download import fetch as _download
+
 POOL_DIR = Path.home() / ".cache" / "aar" / "routing-pool"
 ARENA_URL = ("https://huggingface.co/datasets/lmarena-ai/arena-human-preference-140k/resolve/main/"
              "data/train-0000{shard}-of-00007.parquet")
@@ -45,22 +47,6 @@ explanation of why it is correct. Do not run the test suite.
 <issue>
 {issue}
 </issue>"""
-
-
-def _download(url: str, dest: Path) -> Path:
-    if dest.exists():
-        return dest
-    import httpx
-
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dest.with_suffix(".part")
-    with httpx.stream("GET", url, follow_redirects=True, timeout=600) as resp:
-        resp.raise_for_status()
-        with tmp.open("wb") as f:
-            for chunk in resp.iter_bytes(1 << 20):
-                f.write(chunk)
-    tmp.replace(dest)
-    return dest
 
 
 def _row(prompt: str, **extra) -> dict:
