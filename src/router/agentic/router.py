@@ -423,6 +423,13 @@ class AgenticRouter:
             )
         return rr
 
+    def _skip_decomposition(self, prompt: str, depth: int) -> bool:
+        """The gate in :meth:`decompose_plan`: nothing for an LLM decomposer to split."""
+        atomic = not self._is_multipart(prompt)
+        if depth == 0:
+            atomic = atomic and looks_atomic(prompt)
+        return atomic
+
     @_standalone_scope
     def decompose_plan(self, prompt: str, depth: int, *, sequential: bool = False) -> list[SubTask]:
         """Split ``prompt`` into dependency-aware :class:`SubTask`\\ s --
