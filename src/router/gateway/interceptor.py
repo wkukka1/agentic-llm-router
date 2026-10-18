@@ -680,7 +680,17 @@ class _Turn:
             asked = (_cc_sessions.get(self.claude_session) or {}).get("requested") or self.requested
         prev_tokens = self.session.get("prompt_tokens") or 0
         baseline = _warm_usage(usage, max(prev_tokens, self.shared_before))
-        strongest = _settings.get("strongest")
+        self._remember_served(status, usage, lane)
+        cost = cost_usd(price_for(_settings, self.target), usage)
+        cost_asked = cost_usd(price_for(_settings, asked), baseline)
+        self._tally_claude_session(status, cost, cost_asked, asked)
+        record = self._log_record(status, usage, lane, asked, baseline, cost, cost_asked)
+        _append_record(record)
+        share.record(record, self.human)  # opt-in only; a background thread, no prompt text
+
+    def _remember_served(self, status: int, usage: dict, lane: str) -> None:
+        """What a served request teaches the router: the message's model, the
+        cache it warmed, the conversation's token profile."""
         if status == 200 and self.message_id and lane == "anthropic":
             _remember_message(self.message_id, self.target)
         if status == 200 and usage:
@@ -697,9 +707,10 @@ class _Turn:
                      _MAX_SESSIONS)
             if self.body.get("tools"):
                 _global_profile.update(_update_profile(_global_profile, usage))
-        d = self.decision
-        cost = cost_usd(price_for(_settings, self.target), usage)
-        cost_asked = cost_usd(price_for(_settings, asked), baseline)
+
+    def _tally_claude_session(self, status: int, cost: float | None, cost_asked: float | None,
+                              asked: str | None) -> None:
+        """Running totals for the Claude Code status line."""
         if self.claude_session and status == 200:
             tot = _cc_sessions.setdefault(self.claude_session, {"cost_usd": 0.0, "cost_if_requested_usd": 0.0,
                                                                 "requests": 0, "rerouted": 0})
@@ -711,7 +722,12 @@ class _Turn:
                 tot.update(model=self.target, requested=self.requested)
             tot["rerouted"] += self.target != asked
             _lru_set(_cc_sessions, self.claude_session, tot, _MAX_SESSIONS)
-        record = {
+
+    def _log_record(self, status: int, usage: dict, lane: str, asked: str | None, baseline: dict,
+                    cost: float | None, cost_asked: float | None) -> dict:
+        d = self.decision
+        strongest = _settings.get("strongest")
+        return {
             "ts": datetime.now(UTC).isoformat(timespec="seconds"),
             "claude_session": self.claude_session[:12] or None,
             "conversation": self.key,
@@ -750,8 +766,6 @@ class _Turn:
             "quality_margin": d.get("quality_margin"),
             "quality_source": d.get("quality_source"),
         }
-        _append_record(record)
-        share.record(record, self.human)  # opt-in only; a background thread, no prompt text
 
 
 def _forget_cold(now: float) -> None:
