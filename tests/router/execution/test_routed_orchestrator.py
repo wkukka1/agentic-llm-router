@@ -742,6 +742,15 @@ def test_over_budget_message_reports_the_remaining_budget():
     assert "budget remaining 0.001" in agent.run(COMPOUND).answer
 
 
+def test_refused_repair_after_every_step_failed_does_not_invent_an_answer():
+    agent = _planning_agent(
+        THREE_STEP, clients=_clients(fail=POOL), router=TextRouter(costs=[0.001, 0.005, 0.01]),
+        orchestrator=plan_orchestrator(budget=0.02, limits=ExecutionLimits(max_cost=0.02, max_replans=1)))
+    res = agent.run(COMPOUND)                         # every call fails; the pricier escalation doesn't fit
+    assert res.steps[-1].error == "over_budget"
+    assert res.answer == "[error: no step of the plan succeeded]"
+
+
 def test_a_repair_round_with_nothing_to_repair_makes_no_calls():
     sent, synth = [], []
     checker = _ScriptedChecker(_fail(4))

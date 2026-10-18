@@ -656,9 +656,7 @@ class PlanOrchestratorBridge:
                 return refusal.answer, [refusal]
             # a refused repair round must not discard the work already paid for
             steps = _all_steps(orch)
-            done = [sc for sc in steps if sc.error is None and not sc.meta.get("superseded")]
-            answer = done[0].answer if len(done) == 1 else orch.synthesize(prompt, done)
-            return answer, steps + [refusal]
+            return _partial_answer(orch, prompt, steps), steps + [refusal]
         steps = _all_steps(orch)
         if result.success:
             return result.output, steps
