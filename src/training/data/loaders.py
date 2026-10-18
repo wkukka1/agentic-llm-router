@@ -43,6 +43,21 @@ _SPLIT_TOKENS = {"dev", "test", "train", "val", "valid", "validation"}
 # --------------------------------------------------------------------------- #
 # helpers                                                                     #
 # --------------------------------------------------------------------------- #
+def canonical_row(*, query_id, model_id, query, score, metric_type, dataset, source,
+                  split=None, is_multiple_choice=False, n_choices=None,
+                  input_tokens=None, output_tokens=None, latency=None, cost=None) -> dict:
+    """One observation in the canonical response schema. Values may be scalars
+    or per-row arrays; key order is the schema's column order. Callers that
+    carry ``metadata`` add it after."""
+    return {
+        "query_id": query_id, "model_id": model_id, "query": query, "score": score,
+        "metric_type": metric_type, "dataset": dataset, "split": split, "source": source,
+        "is_multiple_choice": is_multiple_choice, "n_choices": n_choices,
+        "input_tokens": input_tokens, "output_tokens": output_tokens,
+        "latency": latency, "cost": cost,
+    }
+
+
 def _mc_choices(eval_name: str, cfg: Config) -> Optional[int]:
     """Number of answer choices for an eval task, or None if not MC."""
     mc = section(cfg, "multiple_choice")
@@ -191,28 +206,23 @@ def _melt_routerbench(wide: pd.DataFrame, shot: str, cfg: Config,
         cost = pd.to_numeric(wide[f"{m}|total_cost"], errors="coerce")
         keep = score.notna()
         dropped_na += int((~keep).sum())
-        part = pd.DataFrame(
-            {
-                "query_id": base["query_id"],
-                "model_id": canonical_model_id(m),
-                "query": base["query"],
-                "score": score,
-                "metric_type": is_mc.map(
-                    lambda x: schemas.MetricType.MC_ACCURACY
-                    if x
-                    else schemas.MetricType.ACCURACY
-                ),
-                "dataset": base["eval_name"],
-                "split": base["split"],
-                "source": schemas.Source.ROUTERBENCH,
-                "is_multiple_choice": is_mc,
-                "n_choices": n_choices_by_task,
-                "input_tokens": None,     # RouterBench reports cost, not tokens
-                "output_tokens": None,
-                "latency": None,
-                "cost": cost,
-            }
-        )
+        part = pd.DataFrame(canonical_row(
+            query_id=base["query_id"],
+            model_id=canonical_model_id(m),
+            query=base["query"],
+            score=score,
+            metric_type=is_mc.map(
+                lambda x: schemas.MetricType.MC_ACCURACY
+                if x
+                else schemas.MetricType.ACCURACY
+            ),
+            dataset=base["eval_name"],
+            split=base["split"],
+            source=schemas.Source.ROUTERBENCH,
+            is_multiple_choice=is_mc,
+            n_choices=n_choices_by_task,
+            cost=cost,  # RouterBench reports cost, not tokens
+        ))
         part["metadata"] = [
             {
                 "native_sample_id": sid,
@@ -288,20 +298,8 @@ def _load_pairwise(
         ):
             records.append(
                 {
-                    "query_id": qid,
-                    "model_id": model_id,
-                    "query": prompt,
-                    "score": score,
-                    "metric_type": metric_type,
-                    "dataset": dataset_name,
-                    "split": None,
-                    "source": source,
-                    "is_multiple_choice": False,
-                    "n_choices": None,
-                    "input_tokens": None,
-                    "output_tokens": None,
-                    "latency": None,
-                    "cost": None,
+                    **canonical_row(query_id=qid, model_id=model_id, query=prompt, score=score,
+                                    metric_type=metric_type, dataset=dataset_name, source=source),
                     "metadata": {
                         "battle_id": battle_id,
                         "pair_id": pair_id,
@@ -437,20 +435,11 @@ def _parse_lm_harness_samples(path: Path, cfg: Config) -> list[dict]:
             ) and n_choices is not None
             out.append(
                 {
-                    "query_id": qid,
-                    "model_id": model_id,
-                    "query": doc_text,
-                    "score": float(row[metric_key]),
-                    "metric_type": metric_type,
-                    "dataset": task,
-                    "split": row.get("split") or doc.get("split"),
-                    "source": schemas.Source.LM_HARNESS,
-                    "is_multiple_choice": bool(is_mc),
-                    "n_choices": n_choices if is_mc else None,
-                    "input_tokens": None,
-                    "output_tokens": None,
-                    "latency": None,
-                    "cost": None,
+                    **canonical_row(query_id=qid, model_id=model_id, query=doc_text,
+                                    score=float(row[metric_key]), metric_type=metric_type,
+                                    dataset=task, split=row.get("split") or doc.get("split"),
+                                    source=schemas.Source.LM_HARNESS, is_multiple_choice=bool(is_mc),
+                                    n_choices=n_choices if is_mc else None),
                     "metadata": {
                         "native_task": task,
                         "native_model_name": model_native,
@@ -527,32 +516,25 @@ def _melt_irt_router(df: pd.DataFrame, origin: str, pool: set[str],
     is_mc = n_choices.notna()
     score = pd.to_numeric(df["performance"], errors="coerce")
 
-    part = pd.DataFrame(
-        {
-            "query_id": [
-                make_query_id(schemas.Source.IRT_ROUTER, t, q)
-                for t, q in zip(task, question)
-            ],
-            "model_id": [canonical_model_id(m) for m in df["llm"]],
-            "query": question.to_numpy(),
-            "score": score.to_numpy(),
-            "metric_type": is_mc.map(
-                lambda x: schemas.MetricType.MC_ACCURACY if x
-                else schemas.MetricType.ACCURACY
-            ).to_numpy(),
-            "dataset": task.to_numpy(),
-            "split": None,
-            "source": schemas.Source.IRT_ROUTER,
-            "is_multiple_choice": is_mc.to_numpy(),
-            "n_choices": n_choices.to_numpy(),
-            # some rows average token counts over repeats -> round to int for the
-            # canonical schema (cost is precomputed and used verbatim regardless).
-            "input_tokens": pd.to_numeric(df["input_tokens"], errors="coerce").round().to_numpy(),
-            "output_tokens": pd.to_numeric(df["output_tokens"], errors="coerce").round().to_numpy(),
-            "latency": None,
-            "cost": pd.to_numeric(df["cost"], errors="coerce").to_numpy(),
-        }
-    )
+    # some rows average token counts over repeats -> round to int for the
+    # canonical schema (cost is precomputed and used verbatim regardless).
+    part = pd.DataFrame(canonical_row(
+        query_id=[make_query_id(schemas.Source.IRT_ROUTER, t, q) for t, q in zip(task, question)],
+        model_id=[canonical_model_id(m) for m in df["llm"]],
+        query=question.to_numpy(),
+        score=score.to_numpy(),
+        metric_type=is_mc.map(
+            lambda x: schemas.MetricType.MC_ACCURACY if x
+            else schemas.MetricType.ACCURACY
+        ).to_numpy(),
+        dataset=task.to_numpy(),
+        source=schemas.Source.IRT_ROUTER,
+        is_multiple_choice=is_mc.to_numpy(),
+        n_choices=n_choices.to_numpy(),
+        input_tokens=pd.to_numeric(df["input_tokens"], errors="coerce").round().to_numpy(),
+        output_tokens=pd.to_numeric(df["output_tokens"], errors="coerce").round().to_numpy(),
+        cost=pd.to_numeric(df["cost"], errors="coerce").to_numpy(),
+    ))
     part["metadata"] = [
         {
             "native_model_name": m,
@@ -634,20 +616,9 @@ def load_anchor_judge(cfg: Config) -> pd.DataFrame:
             (row.candidate_model_id, row.anchor_model_id, "b", 1.0 - outcome_anchor),
         ):
             records.append({
-                "query_id": qid,
-                "model_id": model_id,
-                "query": prompt,
-                "score": score,
-                "metric_type": schemas.MetricType.JUDGE_PREFERENCE,
-                "dataset": "anchor_judge",
-                "split": None,
-                "source": schemas.Source.ANCHOR_JUDGE,
-                "is_multiple_choice": False,
-                "n_choices": None,
-                "input_tokens": None,
-                "output_tokens": None,
-                "latency": None,
-                "cost": None,
+                **canonical_row(query_id=qid, model_id=model_id, query=prompt, score=score,
+                                metric_type=schemas.MetricType.JUDGE_PREFERENCE,
+                                dataset="anchor_judge", source=schemas.Source.ANCHOR_JUDGE),
                 "metadata": {
                     "battle_id": battle_id,
                     "pair_id": pair_id,
@@ -803,20 +774,12 @@ def load_llmrouterbench(cfg: Config) -> pd.DataFrame:
                     counts[k] = None
                     nulled_negative += 1
             records.append({
-                "query_id": qid,
-                "model_id": model_id,
-                "query": prompt,
-                "score": float(row["score"]),
-                "metric_type": metric_type,
-                "dataset": dataset,
-                "split": split,
-                "source": schemas.Source.LLMROUTERBENCH,
-                "is_multiple_choice": is_mc,
-                "n_choices": n_choices,
-                "input_tokens": counts["prompt_tokens"],
-                "output_tokens": counts["completion_tokens"],
-                "latency": None,
-                "cost": counts["cost"],
+                **canonical_row(query_id=qid, model_id=model_id, query=prompt,
+                                score=float(row["score"]), metric_type=metric_type, dataset=dataset,
+                                split=split, source=schemas.Source.LLMROUTERBENCH,
+                                is_multiple_choice=is_mc, n_choices=n_choices,
+                                input_tokens=counts["prompt_tokens"],
+                                output_tokens=counts["completion_tokens"], cost=counts["cost"]),
                 "metadata": {
                     "native_model_name": model_native,
                     "record_index": row.get("index"),
