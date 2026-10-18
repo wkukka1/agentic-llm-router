@@ -33,7 +33,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .config import atomic_write_text, gateway_home, locked_file, read_jsonl
+from .config import atomic_write_text, gateway_home, locked_file, read_json, read_jsonl
 
 #: the compressed embedding: this many dimensions, from this fixed projection
 DIMS = 64
@@ -103,8 +103,8 @@ def set_token(value: str) -> None:
 
 def state() -> dict:
     try:
-        return json.loads(state_path().read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        return read_json(state_path())
+    except OSError:
         return {}
 
 
@@ -174,15 +174,16 @@ def enabled() -> bool:
     writes it; the gateway runs in another process)."""
     path = consent_path()
     try:
-        mtime = path.stat().st_mtime
+        st = path.stat()
     except OSError:
         return False
-    if mtime != _consent["mtime"]:
+    stamp = (st.st_mtime_ns, st.st_size)  # a coarse clock can give a rewrite the old mtime; the size rarely matches too
+    if stamp != _consent["mtime"]:
         try:
-            on = bool(json.loads(path.read_text(encoding="utf-8")).get("share_usage"))
-        except (OSError, ValueError):
+            on = bool(read_json(path).get("share_usage"))
+        except OSError:
             on = False
-        _consent.update(mtime=mtime, on=on)
+        _consent.update(mtime=stamp, on=on)
     return _consent["on"]
 
 

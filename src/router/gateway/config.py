@@ -232,3 +232,25 @@ def append_jsonl(path: Path, *records: dict) -> None:
     with path.open("a", encoding="utf-8") as f:
         for record in records:
             f.write(json.dumps(record) + "\n")
+
+
+def read_json(path: Path, default: dict | None = None, *, strict: bool = False) -> dict:
+    """A small json object file. Missing is ``default``. A file that is not a
+    json object is logged (its path, never its content) and is ``default`` too,
+    unless ``strict``, which raises ``ValueError`` so a caller about to rewrite
+    the file can set the unreadable one aside instead of erasing it."""
+    default = {} if default is None else default
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return default
+    try:
+        value = json.loads(text)
+        if not isinstance(value, dict):
+            raise ValueError("not a json object")
+    except ValueError:
+        log.warning("%s is not a readable json object", path)
+        if strict:
+            raise
+        return default
+    return value

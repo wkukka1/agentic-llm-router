@@ -49,7 +49,15 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from . import share
-from .config import append_jsonl, atomic_write_text, load_settings, log_path, read_jsonl, safe_append_jsonl
+from .config import (
+    append_jsonl,
+    atomic_write_text,
+    load_settings,
+    log_path,
+    read_json,
+    read_jsonl,
+    safe_append_jsonl,
+)
 from .pricing import canonical_model, cost_usd
 from .routing import ModelPicker, price_for, unavailable_reason
 from .subagents import DEFAULT_ROLE_MODELS, role_decision, spawn_decision
@@ -249,8 +257,8 @@ def preferences_path() -> Path:
 
 def _read_preferences() -> dict:
     try:
-        return json.loads(preferences_path().read_text())
-    except (OSError, ValueError):
+        return read_json(preferences_path())
+    except OSError:
         return {}
 
 
@@ -302,7 +310,12 @@ def overrides_path() -> Path:
 def _save_preferences(**changes) -> None:
     path = preferences_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(path, json.dumps({**_read_preferences(), **changes}))
+    try:
+        current = read_json(path, strict=True)
+    except ValueError:  # unreadable (cut short, hand-edited): keep it aside rather than erase the rest
+        path.replace(path.with_name(path.name + ".corrupt"))
+        current = {}
+    atomic_write_text(path, json.dumps({**current, **changes}))
 
 
 def _log_override(record: dict) -> None:
