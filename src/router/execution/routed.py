@@ -24,7 +24,7 @@ Every model call goes through the agent (``agent._call_model``), so the run's
 :class:`AgenticRouter`'s; worker threads get a copy of the caller's context so
 they see that run's state. Steps are leaves: a plan is fully known (and
 priceable) up front, so steps are not re-triaged or recursively decomposed --
-deeper recursion is what :meth:`Orchestrator.spawn` is for.
+deeper recursion is ``AgenticRouter``'s own (``max_depth``).
 
 ``PlanOrchestratorBridge`` adapts the two interfaces: ``AgenticRouter`` calls
 ``orchestrator.run(prompt, agent, depth) -> (answer, [SubCall])``, while an
@@ -529,12 +529,6 @@ class RoutedOrchestrator(Orchestrator):
         self.task.plan = new
         self.plan_history.append(new)
         return new
-
-    def _child_kwargs(self) -> dict:
-        return {**super()._child_kwargs(), "agent": self.agent, "objective": self.objective,
-                "registry": self.registry, "max_workers": self.max_workers,
-                "sequential": self.sequential, "route_late": self.route_late,
-                "checker": self.checker, "length_budgets": self.length_budgets}
 
 
 def _levels(plan: Plan) -> list[list[PlanStep]]:

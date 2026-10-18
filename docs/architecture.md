@@ -537,7 +537,6 @@ classDiagram
         +plan(AgentTask task) Plan
         +execute(Plan plan) ExecutionResult
         +replan(Plan plan) Plan
-        +spawn(AgentTask child) Agent
         +canSpawn(AgentTask child) boolean
     }
 

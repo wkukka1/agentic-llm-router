@@ -4,10 +4,8 @@ point in the production router design (``docs/architecture.md``).
 This is the diagram's top-level ``Router`` -- the class name was previously
 free only after :class:`router.routing.base.Router` (the per-``(query,
 model)`` scorer) was renamed to :class:`router.routing.base.RouterModel` to
-make room for it. Still missing the diagram's ``agentFactory`` wiring
-(``orchestrator_factory`` below is typed but nothing constructs an
-``Orchestrator`` from it yet -- that's :mod:`router.execution`, out of scope
-for this pass).
+make room for it. It does not build an ``Orchestrator``
+(:mod:`router.execution` is separate).
 
 Composes real, working pieces (:class:`~decompose.decomposer.PromptDecomposer`,
 :class:`~router.routing.base.RouterModel`, :class:`~router.llm.registry.LLMRegistry`,
@@ -34,7 +32,6 @@ from .decision import ModelScore, RoutingDecision
 from .policy import DefaultRoutingPolicy, RoutingPolicy
 
 if TYPE_CHECKING:  # pragma: no cover - type hints only, not a runtime import
-    from .execution.orchestrator import OrchestratorFactory
     from .llm.registry import LLMRegistry
     from .routing.base import RouterModel
 
@@ -49,7 +46,6 @@ class Router:
         prompt_decomposer: Optional[PromptDecomposer] = None,
         routing_policy: Optional[RoutingPolicy] = None,
         llm_registry: Optional["LLMRegistry"] = None,
-        orchestrator_factory: Optional["OrchestratorFactory"] = None,
     ):
         self.name = name
         self.version = version
@@ -57,7 +53,6 @@ class Router:
         self.prompt_decomposer = prompt_decomposer or PromptDecomposer()
         self.routing_policy = routing_policy or DefaultRoutingPolicy()
         self.llm_registry = llm_registry
-        self.orchestrator_factory = orchestrator_factory
 
     def build_context(self, request: RoutingRequest) -> RoutingContext:
         signals = self.prompt_decomposer.extract_signals(
