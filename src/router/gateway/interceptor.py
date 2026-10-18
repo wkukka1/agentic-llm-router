@@ -37,6 +37,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 from collections import OrderedDict
 from collections.abc import Mapping
@@ -241,8 +242,10 @@ def _reset_state() -> None:
     for state in (_sessions, _cc_sessions, _global_profile, _prefixes, _warm, _blocked, _spawns, _message_models):
         state.clear()
     _message_models_loaded = False
-    _log_cache.update(key=None, offset=0, partial=b"", records=[])
-    _rotated_cache.update(key=None, records=[])
+    with _records_lock:
+        _log_cache.update(key=None, offset=0, partial=b"", records=[])
+        _rotated_cache.update(key=None, records=[])
+        _summary_cache.update(key=None, value=None)
 
 
 def configure(settings: dict, picker: ModelPicker | None, router_error: str | None = None) -> None:
@@ -1183,6 +1186,10 @@ async def forward(request: Request, path: str) -> Response:
 #: the request log as parsed so far: a dashboard refresh parses only the
 #: lines appended since the last one, not the whole file
 _log_cache: dict = {"key": None, "offset": 0, "partial": b"", "records": []}
+#: held while the caches above are read or advanced: /stats runs in worker threads
+_records_lock = threading.RLock()
+#: the last ``summarize()``, valid while the log it was computed from is unchanged
+_summary_cache: dict = {"key": None, "value": None}
 #: the rotated log (``.1``), parsed once per rotation
 _rotated_cache: dict = {"key": None, "records": []}
 
@@ -1209,7 +1216,8 @@ def read_records() -> list[dict]:
     """Every logged request, oldest first: the rotated log (``.1``) and the
     current one -- so totals don't reset when the log rotates at
     ``MAX_LOG_BYTES``. Older rotations are gone."""
-    return _rotated_records() + _current_records()
+    with _records_lock:
+        return _rotated_records() + _current_records()
 
 
 def _current_records() -> list[dict]:
@@ -1251,7 +1259,15 @@ def _expected_thread_expiry(record: dict) -> bool:
 
 def summarize(records: list[dict] | None = None) -> dict:
     """Totals and per-model rows for ``GET /stats`` and the dashboard."""
-    records = read_records() if records is None else records
+    if records is None:
+        with _records_lock:
+            records = read_records()
+            key = (_rotated_cache["key"], _log_cache["key"], _log_cache["offset"], _settings.get("strongest"))
+            if _summary_cache["key"] == key:
+                return _summary_cache["value"]
+            value = summarize(records)
+            _summary_cache.update(key=key, value=value)
+            return value
     token_keys = ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
 
     def blank() -> dict:

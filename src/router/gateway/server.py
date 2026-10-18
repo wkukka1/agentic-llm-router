@@ -155,12 +155,12 @@ async def health():
 
 
 @app.get("/stats")
-async def stats():
+def stats():  # plain def: FastAPI runs it in a worker thread, off the event loop
     return interceptor.summarize()
 
 
 @app.get("/api/statusline")
-async def statusline(session_id: str = ""):
+def statusline(session_id: str = ""):
     return interceptor.session_summary(session_id)
 
 
