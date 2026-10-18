@@ -14,8 +14,8 @@ share on|off``). Then each message the user types adds one record to
   be turned back into much of a short text.
 
 Never: the prompt, error messages, file paths, session or conversation ids,
-times finer than the day. The queue stays on this computer, capped at
-:data:`MAX_RECORDS` (``aar-gateway share show`` prints it), until an upload
+times finer than the day. The queue stays on this computer, never trimmed
+(``aar-gateway share show`` prints it), until an upload
 token is set (``aar-gateway share token``); then it goes to the private
 Hugging Face dataset :data:`DEFAULT_DATASET` once a day, or after
 :data:`UPLOAD_AFTER` records, as files under ``records/<install id>/`` (a
@@ -42,8 +42,6 @@ log = logging.getLogger(__name__)
 DIMS = 64
 PROJECTION_SEED = 20261017
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-#: the queue keeps the newest this many records
-MAX_RECORDS = 20_000
 #: where records go (a private dataset), and when
 DEFAULT_DATASET = "Vivic04/aar-gateway-usage"
 UPLOAD_AFTER = 100
@@ -255,8 +253,9 @@ def _embed(text: str) -> list[int] | None:
         return None
 
 
-def build_record(record: dict, human: str | None) -> dict:
-    """The shareable part of a request-log record (see the module docstring)."""
+def build_record(record: dict, human: str | None, *, embed: bool = True) -> dict:
+    """The shareable part of a request-log record (see the module docstring).
+    ``embed=False`` leaves the embedding out (the slow part) but keeps the rest."""
     error = record.get("error") or ""
     return {
         "v": 1,
@@ -275,7 +274,7 @@ def build_record(record: dict, human: str | None) -> dict:
                                       "cache_creation_input_tokens", "cost_usd", "cost_if_requested_usd")},
         "prompt_chars": 2 ** round(math.log2(len(human))) if human else None,
         "embedding_model": f"{EMBEDDING_MODEL}/rp{DIMS}-int8",
-        "embedding": _embed(human) if human else None,
+        "embedding": _embed(human) if human and embed else None,
     }
 
 
@@ -288,13 +287,20 @@ def record(log_record: dict, human: str | None) -> None:
         return  # Claude Code's own background requests (titles, summaries): not the user's messages
     global _worker, _pending
     with _lock:
-        if _pending >= MAX_PENDING:
-            log.warning("usage sharing is backed up (%d waiting): dropping a record", _pending)
-            return
-        _pending += 1
+        backed_up = _pending >= MAX_PENDING
+        if not backed_up:
+            _pending += 1
         if _worker is None:
             _worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="aar-share")
         worker = _worker
+    if backed_up:
+        # keep the record, not the message text waiting to be embedded: the embedding is the slow part
+        log.warning("usage sharing is backed up (%d waiting): keeping a record without its embedding", MAX_PENDING)
+        try:
+            _queue_line(json.dumps(build_record(log_record, human, embed=False)) + "\n")
+        except Exception as exc:  # noqa: BLE001 -- sharing must never affect routing
+            log.warning("usage sharing failed: %s", type(exc).__name__)
+        return
     worker.submit(_append, dict(log_record), human)
 
 
@@ -312,14 +318,13 @@ def _append(log_record: dict, human: str) -> None:
 
 
 def _queue_line(line: str) -> int:
-    """Append one record to the queue and trim it to ``MAX_RECORDS``; returns
-    its length. Locked across processes: the CLI's upload rewrites the same file."""
+    """Append one record to the queue; returns its length. Records leave the queue
+    only when uploaded (the on-device history is the lasting copy). Locked across processes: the CLI's upload rewrites the same file."""
     path = queue_path()
     with _lock, locked_file(path):
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("ab") as f:  # bytes: the size then grows by exactly len(line) on every OS
             f.write(line.encode("utf-8"))
-        _cap(path)
         size = path.stat().st_size
         known = _queue_state["size"]
         if known is not None and size == known + len(line.encode("utf-8")):
@@ -333,14 +338,6 @@ def _queue_line(line: str) -> int:
 def _count_lines(path: Path) -> int:
     with path.open(encoding="utf-8") as f:
         return sum(1 for _ in f)
-
-
-def _cap(path: Path) -> None:
-    if path.stat().st_size < MAX_RECORDS * 1500:  # a record is ~700 bytes: cheap check first
-        return
-    lines = path.read_text(encoding="utf-8").splitlines()
-    if len(lines) > MAX_RECORDS:
-        atomic_write_text(path, "\n".join(lines[-MAX_RECORDS:]) + "\n")
 
 
 def queued() -> list[dict]:

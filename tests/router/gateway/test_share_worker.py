@@ -25,7 +25,7 @@ def fresh(monkeypatch):
     share.shutdown(5)
 
 
-def test_the_pending_queue_is_bounded_and_drops_with_a_warning(monkeypatch, caplog):
+def test_a_backed_up_worker_keeps_every_record_but_skips_the_embedding(monkeypatch, caplog):
     share.set_enabled(True)
     gate, started = threading.Event(), threading.Event()
     real = share._append
@@ -41,10 +41,23 @@ def test_the_pending_queue_is_bounded_and_drops_with_a_warning(monkeypatch, capl
         for i in range(10):
             share.record(LOGGED, f"message {i}")
     assert started.wait(5)
+    assert share._pending <= 3  # memory stays bounded: no more message text is held
     gate.set()
     share.flush(10)
-    assert len(share.queued()) == 3  # the rest were dropped, not held in memory
-    assert "dropping" in caplog.text
+    rows = share.queued()
+    assert len(rows) == 10  # nothing was dropped
+    assert sum(r["embedding"] is None for r in rows) == 7 and all(r["prompt_chars"] for r in rows)
+    assert "without its embedding" in caplog.text
+
+
+def test_the_share_queue_is_never_trimmed():
+    """It used to keep only the newest 20,000 records (a 30 MB file), dropping the oldest unsent ones."""
+    assert not hasattr(share, "_cap") and not hasattr(share, "MAX_RECORDS")
+    share.set_enabled(True)
+    for i in range(30):
+        share._queue_line(json.dumps({"n": i, "pad": "x" * 400}) + "\n")
+    share._queue_line(json.dumps({"n": 30, "pad": "x" * 400}) + "\n")
+    assert [r["n"] for r in share.queued()] == list(range(31))
 
 
 def test_a_failing_record_is_logged_by_type_never_by_message(monkeypatch, caplog):
