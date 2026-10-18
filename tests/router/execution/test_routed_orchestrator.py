@@ -185,6 +185,16 @@ def test_independent_steps_run_concurrently():
     wall = time.perf_counter() - t0
     assert res.success and len(orch.subcalls) == 3
     assert wall < 0.45                                            # ~0.2 s, not ~0.6 s sequential
+def test_plan_steps_are_routed_with_the_agents_margin():
+    """with_margin() is the caller's cost preference for the request: every
+    decomposed step must honour it, not only the root prompt."""
+    router = TextRouter(costs=[0.1, 10.0, 5.0])        # small is far cheaper; big scores 0.2 higher
+    agent = AgenticRouter(router, _clients(), margin=0.3)
+    assert agent.route_decision("x").selected_model_ids[0] == "small"
+    (model, _), = _orchestrator(agent)._route_batch(["x"])
+    assert model == "small"
+
+
 def test_an_exhausted_call_budget_is_not_replanned(monkeypatch):
     """Running out of max_calls says nothing about the steps: a repair round
     would only be refused call by call. The failed step is marked, no replan."""
