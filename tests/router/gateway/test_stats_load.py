@@ -7,7 +7,7 @@ import threading
 
 from fastapi.testclient import TestClient
 
-from router.gateway import interceptor, server
+from router.gateway import interceptor, rollup, server
 
 
 def _write(n, start=0):
@@ -31,13 +31,13 @@ def test_stats_and_statusline_run_off_the_event_loop(monkeypatch):
 
 def test_an_unchanged_log_is_summarised_once(monkeypatch):
     calls = []
-    real = interceptor.summarize_sessions
-    monkeypatch.setattr(interceptor, "summarize_sessions", lambda records: calls.append(len(records)) or real(records))
+    real = rollup.accumulate
+    monkeypatch.setattr(rollup, "accumulate", lambda state, r: calls.append(1) or real(state, r))
     _write(5)
     first = interceptor.summarize()
-    assert interceptor.summarize() == first and calls == [5]  # second call: nothing new, nothing recomputed
+    assert interceptor.summarize() == first and len(calls) == 5  # second call: nothing new, nothing recomputed
     _write(2, start=5)
-    assert interceptor.summarize()["totals"]["requests"] == 7 and calls == [5, 7]
+    assert interceptor.summarize()["totals"]["requests"] == 7 and len(calls) == 7  # only the 2 new records
 
 
 def test_concurrent_stats_calls_never_double_count_or_drop_records():

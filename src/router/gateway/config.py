@@ -8,6 +8,7 @@ lane model names the environment variable its key is read from.
 from __future__ import annotations
 
 import contextlib
+import gzip
 import json
 import logging
 import os
@@ -254,3 +255,27 @@ def read_json(path: Path, default: dict | None = None, *, strict: bool = False) 
             raise
         return default
     return value
+
+
+def log_archives() -> list[Path]:
+    """The rotated request logs, oldest first: the single legacy ``<log>.1``, then
+    ``<log stem>-<UTC time>.jsonl`` and its gzip ``.jsonl.gz``. Unfinished
+    ``.part`` files and the summaries stored beside archives are not archives."""
+    path = log_path()
+    legacy = path.with_name(path.name + ".1")
+    dated = sorted(p for p in path.parent.glob(f"{path.stem}-*") if p.name.endswith((".jsonl", ".jsonl.gz")))
+    return ([legacy] if legacy.exists() else []) + dated
+
+
+def iter_jsonl(path: Path):
+    """The records of a jsonl file (gzip too, by its ``.gz`` name), one at a time, oldest
+    first: for logs too large to hold. An undecodable line is skipped and logged by position."""
+    opener = gzip.open if path.name.endswith(".gz") else open
+    with opener(path, "rb") as f:
+        for n, line in enumerate(f, 1):
+            if not line.strip():
+                continue
+            try:
+                yield json.loads(line)
+            except ValueError:
+                log.warning("skipping an undecodable line %d of %s", n, path)

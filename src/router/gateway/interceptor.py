@@ -32,6 +32,7 @@ which needs a full ``RoutingDecision``/``PromptSignals`` per request.
 from __future__ import annotations
 
 import asyncio
+import collections
 import hashlib
 import json
 import logging
@@ -49,19 +50,21 @@ from fastapi import Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from . import share
+from . import rollup, share
 from .config import (
     DEFAULT_ROUTER,
     DEFAULT_SUBAGENTS,
     append_jsonl,
     atomic_write_text,
+    iter_jsonl,
     load_settings,
+    log_archives,
     log_path,
     read_json,
     read_jsonl,
     safe_append_jsonl,
 )
-from .pricing import canonical_model, cost_usd
+from .pricing import canonical_model, cost_usd, prompt_tokens
 from .routing import ModelPicker, price_for, unavailable_reason
 from .subagents import DEFAULT_ROLE_MODELS, role_decision, spawn_decision
 from .subagents import detect as detect_subagent
@@ -243,8 +246,8 @@ def _reset_state() -> None:
         state.clear()
     _message_models_loaded = False
     with _records_lock:
-        _log_cache.update(key=None, offset=0, partial=b"", records=[])
-        _rotated_cache.update(key=None, records=[])
+        _reset_log_cache()
+        _archive_cache.clear()
         _summary_cache.update(key=None, value=None)
 
 
@@ -252,7 +255,7 @@ def configure(settings: dict, picker: ModelPicker | None, router_error: str | No
     global _settings, _picker, _router_error
     _settings, _picker, _router_error = settings, picker, router_error
     _reset_state()
-    for r in read_records()[-500:]:  # seed the default profile from past agent traffic
+    for r in recent_records(ARCHIVE_TAIL):  # seed the default profile from past agent traffic
         side = (r.get("reason") or "").startswith("side request")
         if r.get("status") == 200 and r.get("lane") == "anthropic" and not side:
             _global_profile.update(_update_profile(_global_profile, r))
@@ -588,11 +591,6 @@ def _conversation_key(request: Request, body: Mapping) -> str:
     return hashlib.sha1((sid + seed).encode()).hexdigest()[:16]
 
 
-def _prompt_tokens(usage: Mapping) -> int:
-    return sum(usage.get(k) or 0 for k in
-               ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
-
-
 def prefix_signature(body: Mapping) -> str:
     """What a prompt cache is keyed on, roughly: system prompt and tools.
     Claude Code sends the same ones in every session, so a new session
@@ -615,7 +613,7 @@ def _warm_usage(usage: Mapping, warm: int) -> dict:
     tokens in cache: that much of what was written is a read instead."""
     out = dict(usage)
     read = usage.get("cache_read_input_tokens") or 0
-    moved = min(max(min(warm, _prompt_tokens(usage)) - read, 0), usage.get("cache_creation_input_tokens") or 0)
+    moved = min(max(min(warm, prompt_tokens(usage)) - read, 0), usage.get("cache_creation_input_tokens") or 0)
     if moved:
         out["cache_creation_input_tokens"] -= moved
         out["cache_read_input_tokens"] = read + moved
@@ -741,7 +739,7 @@ class _Turn:
         if status == 200 and self.message_id and lane == "anthropic":
             _remember_message(self.message_id, self.target)
         if status == 200 and usage:
-            now, tokens = time.monotonic(), _prompt_tokens(usage)
+            now, tokens = time.monotonic(), prompt_tokens(usage)
             if lane == "anthropic":
                 _warm[(canonical_model(self.target), self.sig)] = now
             fewest = min(self.shared_before or tokens, tokens)
@@ -1194,41 +1192,71 @@ async def forward(request: Request, path: str) -> Response:
     return await _relay_anthropic(upstream, lambda *_: None)  # passed through, not logged
 
 
-#: the request log as parsed so far: a dashboard refresh parses only the
-#: lines appended since the last one, not the whole file
-_log_cache: dict = {"key": None, "offset": 0, "partial": b"", "records": []}
-#: held while the caches above are read or advanced: /stats runs in worker threads
+#: the live request log as parsed so far: a dashboard refresh parses only the
+#: lines appended since the last one, not the whole file. ``state`` is its
+#: rollup, ``folded`` how many of ``records`` it already counts.
+_log_cache: dict = {"key": None, "offset": 0, "partial": b"", "records": [], "state": None, "folded": 0}
+#: held while the cache above and ``_archive_cache`` are read or advanced: /stats runs in worker threads
 _records_lock = threading.RLock()
-#: the last ``summarize()``, valid while the log it was computed from is unchanged
+#: the last ``summarize()``, valid while the logs it was computed from are unchanged
 _summary_cache: dict = {"key": None, "value": None}
-#: the rotated log (``.1``), parsed once per rotation
-_rotated_cache: dict = {"key": None, "records": []}
+#: archived logs: path -> (their size and mtime, rollup state, newest records)
+_archive_cache: dict = {}
+#: how many of an archive's newest records are kept beside its rollup (for the dashboard's recent list
+#: and for seeding the token profile after a restart)
+ARCHIVE_TAIL = 500
 
 
-def _rotated_records() -> list[dict]:
-    path = log_path().with_name(log_path().name + ".1")
-    try:
-        st = path.stat()
-    except FileNotFoundError:
-        return []
-    key = (str(path), st.st_ino, st.st_size)
-    if _rotated_cache["key"] != key:
-        records = []
-        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-            try:
-                records.append(json.loads(line))
-            except ValueError:  # a line cut short when the log was rotated
-                continue
-        _rotated_cache.update(key=key, records=records)
-    return _rotated_cache["records"]
+def _reset_log_cache() -> None:
+    _log_cache.update(key=None, offset=0, partial=b"", records=[], state=None, folded=0)
+
+
+def _archive_info(path: Path) -> tuple[dict, list]:
+    """``(rollup state, newest records)`` of one archived log. Computed once by streaming
+    the archive and stored beside it (``<archive>.summary.json``), so an archive is never
+    read again unless it changed."""
+    st = path.stat()
+    key = [st.st_size, st.st_mtime_ns]
+    cached = _archive_cache.get(str(path))
+    if cached and cached[0] == key:
+        return cached[1], cached[2]
+    side = path.with_name(path.name + ".summary.json")
+    stored = read_json(side)
+    if stored.get("key") == key and "state" in stored:
+        state, tail = stored["state"], stored["tail"]
+    else:
+        state, newest = rollup.new_state(), collections.deque(maxlen=ARCHIVE_TAIL)
+        for record in iter_jsonl(path):
+            rollup.accumulate(state, record)
+            newest.append(record)
+        tail = list(newest)
+        try:
+            atomic_write_text(side, json.dumps({"key": key, "state": state, "tail": tail}))
+        except OSError as exc:  # the summary is a cache: rebuilt next time
+            log.warning("could not store %s: %s", side, type(exc).__name__)
+    _archive_cache[str(path)] = (key, state, tail)
+    return state, tail
 
 
 def read_records() -> list[dict]:
-    """Every logged request, oldest first: the rotated log (``.1``) and the
-    current one -- so totals don't reset when the log rotates at
-    ``MAX_LOG_BYTES``. Older rotations are gone."""
+    """Every logged request, oldest first: all archived logs and the live one. Reads
+    everything: for tests and tools, not for the dashboard (see :func:`summarize`)."""
     with _records_lock:
-        return _rotated_records() + _current_records()
+        out: list[dict] = []
+        for path in log_archives():
+            out.extend(iter_jsonl(path))
+        return out + _current_records()
+
+
+def recent_records(n: int) -> list[dict]:
+    """The newest ``n`` logged requests (fewer if the history is shorter)."""
+    with _records_lock:
+        out = _current_records()[-n:]
+        for path in reversed(log_archives()):
+            if len(out) >= n:
+                break
+            out = (_archive_info(path)[1] + out)[-n:]
+        return list(out)
 
 
 def _current_records() -> list[dict]:
@@ -1236,11 +1264,12 @@ def _current_records() -> list[dict]:
     try:
         st = path.stat()
     except FileNotFoundError:
-        _log_cache.update(key=None, offset=0, partial=b"", records=[])
+        _reset_log_cache()
         return []
     key = (str(path), st.st_ino)
     if _log_cache["key"] != key or st.st_size < _log_cache["offset"]:  # new, rotated or rewritten
-        _log_cache.update(key=key, offset=0, partial=b"", records=[])
+        _reset_log_cache()
+        _log_cache["key"] = key
     if st.st_size > _log_cache["offset"]:
         with path.open("rb") as f:
             f.seek(_log_cache["offset"])
@@ -1255,140 +1284,58 @@ def _current_records() -> list[dict]:
                 _log_cache["records"].append(json.loads(line))
             except ValueError:  # a line cut short by a crash: skip it, keep the rest
                 log.warning("skipping an undecodable line of %s", path)
-    return _log_cache["records"]  # read_records() joins it into a new list; no second copy here
+    return _log_cache["records"]
 
 
 #: newest requests sent to the dashboard, which pages through them
 RECENT_RECORDS = 200
 
 
-def _expected_thread_expiry(record: dict) -> bool:
-    """A 404 for a server-side thread the API has let go of: Claude Code
-    replays the conversation itself, so it isn't a failure of the gateway."""
-    return record.get("status") == 404 and "No thread state" in (record.get("error") or "")
-
-
 def summarize(records: list[dict] | None = None) -> dict:
-    """Totals and per-model rows for ``GET /stats`` and the dashboard."""
-    if records is None:
-        with _records_lock:
-            records = read_records()
-            key = (_rotated_cache["key"], _log_cache["key"], _log_cache["offset"], _settings.get("strongest"))
-            if _summary_cache["key"] == key:
-                return _summary_cache["value"]
-            value = summarize(records)
-            _summary_cache.update(key=key, value=value)
-            return value
-    token_keys = ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
-
-    def blank() -> dict:
-        return {"requests": 0, "errors": 0, "rerouted": 0, "fallbacks": 0,
-                **dict.fromkeys(token_keys, 0), "cost_usd": 0.0}
-
-    total = {**blank(), "cost_if_requested_usd": 0.0, "cost_if_strongest_usd": 0.0,
-             "priced_requests": 0, "turns_routed": 0}
-    models: dict = {}
-    quality, best_quality = [], []
-    for r in records:
-        m = models.setdefault(r.get("routed_model") or "unknown", blank())
-        for row in (total, m):
-            row["requests"] += 1
-            row["errors"] += r.get("status") != 200 and not _expected_thread_expiry(r)
-            row["rerouted"] += r.get("routed_model") != r.get("requested_model")
-            row["fallbacks"] += bool(r.get("fallback"))
-            for k in token_keys:
-                row[k] += r.get(k) or 0
-            row["cost_usd"] += r.get("cost_usd") or 0.0
-        if None not in (r.get("cost_usd"), r.get("cost_if_requested_usd"), r.get("cost_if_strongest_usd")):
-            total["priced_requests"] += 1
-            total["cost_if_requested_usd"] += r["cost_if_requested_usd"]
-            total["cost_if_strongest_usd"] += r["cost_if_strongest_usd"]
-        if r.get("predicted_quality") is not None:
-            total["turns_routed"] += 1
-            quality.append(r["predicted_quality"])
-            best_quality.append(r.get("best_predicted_quality") or r["predicted_quality"])
-    total["predicted_quality"] = sum(quality) / len(quality) if quality else None
-    total["subagent_requests"] = sum(1 for r in records if r.get("subagent"))
-    total["best_predicted_quality"] = sum(best_quality) / len(best_quality) if best_quality else None
-    strongest = next((r.get("strongest_model") for r in reversed(records) if r.get("strongest_model")),
-                     _settings.get("strongest"))
-    return {"log": str(log_path()), "strongest_model": strongest, "totals": total, "models": models,
-            "subagents": summarize_subagents(records), "sessions": summarize_sessions(records),
-            "recent": list(reversed(records[-RECENT_RECORDS:]))}
-
-
-def _baseline_cost(r: dict, key: str) -> float:
-    """A record's cost on a baseline model (``cost_if_requested_usd`` ...), or,
-    when the baseline had no price, what the request really cost: unpriced work
-    shows no saving rather than a negative one. (``summarize``'s totals instead
-    skip the request, so their saving is only over fully priced traffic.)"""
-    return r[key] if r.get(key) is not None else (r.get("cost_usd") or 0.0)
-
-
-#: Claude Code sessions listed on the dashboard, newest first
-SESSION_ROWS = 30
+    """Totals and per-model rows for ``GET /stats`` and the dashboard: over ``records`` if
+    given, else over every request ever logged. The archives are rollups computed once, so
+    this costs the live log only, however long the history."""
+    if records is not None:
+        state = rollup.new_state()
+        for record in records:
+            rollup.accumulate(state, record)
+        return rollup.finish(state, recent=records[-RECENT_RECORDS:], log=str(log_path()),
+                             default_strongest=_settings.get("strongest"))
+    with _records_lock:
+        archives = [(p, *_archive_info(p)) for p in log_archives()]
+        live = _current_records()
+        key = (tuple((str(p), tuple(_archive_cache[str(p)][0])) for p, _, _ in archives), _log_cache["key"],
+               _log_cache["offset"], _settings.get("strongest"))
+        if _summary_cache["key"] == key:
+            return _summary_cache["value"]
+        if _log_cache["state"] is None or _log_cache["folded"] > len(live):
+            _log_cache.update(state=rollup.new_state(), folded=0)
+        for record in live[_log_cache["folded"]:]:
+            rollup.accumulate(_log_cache["state"], record)
+        _log_cache["folded"] = len(live)
+        state = _log_cache["state"]
+        for _, older, _ in reversed(archives):
+            state = rollup.merge(older, state)
+        recent = live[-RECENT_RECORDS:]
+        for _, _, tail in reversed(archives):
+            if len(recent) >= RECENT_RECORDS:
+                break
+            recent = (tail + recent)[-RECENT_RECORDS:]
+        value = rollup.finish(state, recent=recent, log=str(log_path()), default_strongest=_settings.get("strongest"))
+        _summary_cache.update(key=key, value=value)
+        return value
 
 
 def summarize_sessions(records: list[dict]) -> list[dict]:
-    """Plan usage per Claude Code session, against the same work on the
-    models it asked for and on the strongest. Requests logged before the
-    gateway recorded session ids are one row, ``session: None``."""
-    rows: dict = {}
-    for r in records:
-        sid = r.get("claude_session")
-        row = rows.setdefault(sid, {"session": sid, "first_ts": r.get("ts"), "last_ts": r.get("ts"),
-                                    "requests": 0, "turns": 0, "subagent_spawns": set(), "rerouted": 0,
-                                    "models": {}, "cost_usd": 0.0, "cost_if_requested_usd": 0.0,
-                                    "cost_if_strongest_usd": 0.0})
-        row["last_ts"] = r.get("ts") or row["last_ts"]
-        row["requests"] += 1
-        row["turns"] += bool(r.get("new_turn") and not r.get("subagent")
-                             and not (r.get("reason") or "").startswith("side request"))
-        if r.get("subagent"):
-            row["subagent_spawns"].add(r.get("conversation"))
-        row["rerouted"] += r.get("routed_model") != r.get("requested_model")
-        model = r.get("routed_model") or "unknown"
-        row["models"][model] = row["models"].get(model, 0) + 1
-        row["cost_usd"] += r.get("cost_usd") or 0.0
-        row["cost_if_requested_usd"] += _baseline_cost(r, "cost_if_requested_usd")
-        row["cost_if_strongest_usd"] += _baseline_cost(r, "cost_if_strongest_usd")
-    out = [{**row, "subagent_spawns": len(row["subagent_spawns"])} for row in rows.values()]
-    return sorted(out, key=lambda x: x["last_ts"] or "", reverse=True)[:SESSION_ROWS]
+    """Plan usage per Claude Code session, against the same work on the models it asked
+    for and on the strongest (requests logged before session ids existed are one row)."""
+    return summarize(records)["sessions"]
 
 
 def summarize_subagents(records: list[dict]) -> list[dict]:
-    """One row per subagent role: spawns, the models that answered, plan
-    usage against the session's own model, and how much of the prompt was
-    read from cache."""
-    rows: dict = {}
-    for r in records:
-        if not r.get("subagent"):
-            continue
-        role = r.get("agent_role") or "unrecognised"
-        row = rows.setdefault(role, {"role": role, "source": r.get("role_source"), "conversations": set(),
-                                     "requests": 0, "models": {}, "cost_usd": 0.0,
-                                     "cost_if_requested_usd": 0.0, "cache_read_input_tokens": 0,
-                                     "prompt_tokens": 0, "latency_s": 0.0, "reports": []})
-        row["conversations"].add(r.get("conversation"))
-        row["requests"] += 1
-        model = r.get("routed_model") or "unknown"
-        row["models"][model] = row["models"].get(model, 0) + 1
-        row["cost_usd"] += r.get("cost_usd") or 0.0
-        row["cost_if_requested_usd"] += _baseline_cost(r, "cost_if_requested_usd")
-        row["cache_read_input_tokens"] += r.get("cache_read_input_tokens") or 0
-        row["prompt_tokens"] += _prompt_tokens(r)
-        row["latency_s"] += r.get("latency_s") or 0.0
-        if r.get("report_tokens") is not None:
-            row["reports"].append(r["report_tokens"])
-    out = []
-    for row in rows.values():
-        spawns = len(row.pop("conversations"))
-        reports = row.pop("reports")
-        row["avg_report_tokens"] = round(sum(reports) / len(reports)) if reports else None
-        prompt = row["prompt_tokens"]
-        out.append({**row, "spawns": spawns,
-                    "cache_hit_rate": row["cache_read_input_tokens"] / prompt if prompt else None})
-    return sorted(out, key=lambda x: -x["cost_usd"])
+    """One row per subagent role: spawns, the models that answered, plan usage against the
+    session's own model, and how much of the prompt was read from cache."""
+    return summarize(records)["subagents"]
 
 
 def session_summary(session_id: str) -> dict:

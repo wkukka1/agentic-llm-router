@@ -58,14 +58,19 @@ def cache_read_rate(price: Mapping[str, float]) -> float:
     return price.get("cache_read", 0.1 * price["input"])
 
 
+def prompt_tokens(usage: Mapping) -> int:
+    """Every token of the prompt: fresh input, cache reads and cache writes."""
+    return sum(usage.get(k) or 0 for k in
+               ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+
+
 def cost_usd(price: Mapping[str, float] | None, usage: Mapping | None) -> float | None:
     """``None`` when the model has no price or there is no usage -- unknown,
     never silently ``0.0``. A write with no TTL breakdown is priced at the
     5-minute rate (the API default)."""
     if not price or not usage or price.get("input") is None or price.get("output") is None:
         return None
-    price = price_at(price, sum(usage.get(k) or 0 for k in
-                                ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")))
+    price = price_at(price, prompt_tokens(usage))
     per = 1e-6
     written = usage.get("cache_creation_input_tokens") or 0
     split = usage.get("cache_creation") or {}

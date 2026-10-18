@@ -11,7 +11,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from router.gateway import interceptor, server
+from router.gateway import interceptor, rollup, server
 from router.gateway.config import load_settings
 from router.gateway.pricing import CLAUDE_PRICES, cost_usd
 
@@ -503,8 +503,8 @@ def test_a_correction_after_an_answer_on_the_asked_model_holds_nothing(env):
 def test_an_expired_thread_is_not_counted_as_an_error():
     expired = {"status": 404, "error": "not_found_error: No thread state was found for the requested `previous_message_id`."}
     real = {"status": 404, "error": "not_found_error: model not found"}
-    assert interceptor._expected_thread_expiry(expired)
-    assert not interceptor._expected_thread_expiry(real)
+    assert rollup.expected_thread_expiry(expired)
+    assert not rollup.expected_thread_expiry(real)
     stats = interceptor.summarize([{**expired, "requested_model": "claude-opus-5-5", "routed_model": "claude-opus-5-5"},
                                    {"status": 200, "requested_model": "claude-opus-5-5", "routed_model": "claude-opus-5-5"}])
     assert stats["totals"]["errors"] == 0

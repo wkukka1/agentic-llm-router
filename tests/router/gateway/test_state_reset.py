@@ -24,13 +24,13 @@ def test_importing_the_interceptor_survives_a_broken_local_models_file(tmp_path)
 def test_configure_clears_every_cache_it_owns():
     interceptor._log_cache["records"].append({"x": 1})
     interceptor._log_cache["offset"] = 99
-    interceptor._rotated_cache.update(key=("k",), records=[{"x": 1}])
+    interceptor._archive_cache["some-archive"] = ([1, 2], {}, [])
     interceptor._message_models["m"] = "claude-haiku-5-5"
     interceptor._message_models_loaded = True
     interceptor._blocked[("model", "ua")] = ("why", 0.0)
     interceptor.configure(load_settings(None), None)
     assert interceptor._log_cache["records"] == [] and interceptor._log_cache["offset"] == 0
-    assert interceptor._rotated_cache["key"] is None and interceptor._rotated_cache["records"] == []
+    assert interceptor._archive_cache == {}
     assert not interceptor._message_models and interceptor._message_models_loaded is False
     assert not interceptor._blocked
 
