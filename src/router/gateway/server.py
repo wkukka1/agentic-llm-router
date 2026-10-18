@@ -164,11 +164,22 @@ async def statusline(session_id: str = ""):
     return interceptor.session_summary(session_id)
 
 
+async def _json_object(request: Request) -> dict:
+    """The request's JSON body, which must be an object: else a 400, not a 500."""
+    try:
+        body = await request.json()
+    except ValueError as exc:  # includes undecodable bytes
+        raise HTTPException(400, "send a JSON object") from exc
+    if not isinstance(body, dict):
+        raise HTTPException(400, "send a JSON object")
+    return body
+
+
 @app.post("/api/subagent-spawn")
 async def subagent_spawn(request: Request):
     """Asked by the ``PreToolUse`` hook (``aar-gateway hook``) before Claude
     Code spawns a subagent: which model it should run on."""
-    body = await request.json()
+    body = await _json_object(request)
     return interceptor.record_spawn(str(body.get("session_id") or ""), body.get("subagent_type"),
                                     str(body.get("prompt") or ""), body.get("model"))
 
@@ -180,7 +191,7 @@ async def get_preferences():
 
 @app.post("/api/preferences")
 async def update_preferences(request: Request):
-    body = await request.json()
+    body = await _json_object(request)
     try:
         if "mode" in body:
             return interceptor.set_routing(body["mode"], body.get("pinned_model"))
@@ -188,18 +199,18 @@ async def update_preferences(request: Request):
             return interceptor.set_allow_upgrade(bool(body["allow_upgrade"]))
         if "role" in body:
             return interceptor.set_role_model(body["role"], body.get("model"))
-    except ValueError as exc:
+    except (TypeError, ValueError) as exc:  # TypeError: a list or object where a name or number belongs
         raise HTTPException(400, str(exc)) from exc
     margin = body.get("quality_margin")
-    if body.get("preset") is not None:
-        if body["preset"] not in interceptor.PRESETS:
-            raise HTTPException(400, f"unknown preset {body['preset']!r}")
-        margin = interceptor.PRESETS[body["preset"]]
-    if margin is None:
-        raise HTTPException(400, "send quality_margin or preset")
     try:
+        if body.get("preset") is not None:
+            if body["preset"] not in interceptor.PRESETS:
+                raise HTTPException(400, f"unknown preset {body['preset']!r}")
+            margin = interceptor.PRESETS[body["preset"]]
+        if margin is None:
+            raise HTTPException(400, "send quality_margin or preset")
         return interceptor.set_quality_margin(margin)
-    except ValueError as exc:
+    except (TypeError, ValueError) as exc:
         raise HTTPException(400, str(exc)) from exc
 
 

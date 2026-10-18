@@ -1013,9 +1013,22 @@ def error_summary(content: bytes) -> str:
     return " ".join(text.split())[:240]
 
 
-def _error(status: int, message: str) -> JSONResponse:
-    return JSONResponse({"type": "error", "error": {"type": "api_error", "message": message}},
+def _error(status: int, message: str, kind: str = "api_error") -> JSONResponse:
+    return JSONResponse({"type": "error", "error": {"type": kind, "message": message}},
                         status_code=status)
+
+
+def _invalid_request(message: str) -> JSONResponse:
+    return _error(400, message, "invalid_request_error")
+
+
+def _json_object(raw: bytes) -> dict | None:
+    """``raw`` parsed as a JSON object, else ``None`` (not JSON, or not an object)."""
+    try:
+        body = json.loads(raw or b"{}")
+    except ValueError:  # includes undecodable bytes
+        return None
+    return body if isinstance(body, dict) else None
 
 
 async def _via_openai(turn: _Turn) -> Response:
@@ -1031,8 +1044,13 @@ async def _via_openai_unguarded(turn: _Turn) -> Response:
     headers = {"content-type": "application/json"}
     if key_env:
         headers["authorization"] = f"Bearer {os.environ[key_env]}"
-    payload = anthropic_to_openai(turn.body, spec.get("upstream_model", turn.target),
-                                  max_tokens_param=spec.get("max_tokens_param", "max_tokens"))
+    try:
+        payload = anthropic_to_openai(turn.body, spec.get("upstream_model", turn.target),
+                                      max_tokens_param=spec.get("max_tokens_param", "max_tokens"))
+    except (KeyError, TypeError, AttributeError) as exc:  # a message or block missing a field the API requires
+        turn.error = f"untranslatable request: {type(exc).__name__}"
+        turn.finish(400, None, "openai")
+        return _invalid_request("the request has a message or content block that is missing a required field")
     client = _get_client()
     upstream = await client.send(client.build_request(
         "POST", spec["base_url"].rstrip("/") + "/chat/completions", headers=headers, json=payload),
@@ -1077,7 +1095,9 @@ async def handle_messages(request: Request) -> Response | None:
     """``None`` means "not mine": no credentials to forward and the model is
     not on an ``openai`` lane -- the server answers 401."""
     raw = await request.body()
-    body = json.loads(raw or b"{}")
+    body = _json_object(raw)
+    if body is None:
+        return _invalid_request("the request body must be a JSON object")
     turn = _Turn(request, raw, body)
     await _decide(turn)
     if _settings.get("capture_prompts") and turn.human is not None and body.get("tools"):
@@ -1095,7 +1115,7 @@ async def forward(request: Request, path: str) -> Response:
     so token counts are estimated at ~4 characters per token."""
     raw = await request.body()
     if path == "v1/messages/count_tokens" and raw:
-        model = json.loads(raw).get("model")
+        model = (_json_object(raw) or {}).get("model")  # unreadable: the upstream says so itself
         if lane_of(model) == "openai":
             return JSONResponse({"input_tokens": len(raw) // 4})
     try:
