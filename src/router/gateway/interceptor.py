@@ -768,6 +768,15 @@ def _warm_tokens(sig: str) -> dict[str, int]:
     return {m: shared for (m, s), t in _warm.items() if s == sig and now - t < _ttl()} if shared else {}
 
 
+def _remember_block(turn: _Turn, status: int, detail: str) -> None:
+    """A 400 for the routed model, when the request is valid for the client's
+    own: the model rejects this client. Remember it for ``BLOCK_SECONDS`` so
+    the router stops choosing it (both lanes). A 400 about this one request
+    (too long, bad image...) says nothing about the model."""
+    if status == 400 and not _REQUEST_SPECIFIC.search(detail):
+        _blocked[(turn.target, turn.request.headers.get("user-agent", ""))] = (detail[:160], time.monotonic())
+
+
 def _blocked_for(turn: _Turn) -> dict[str, str]:
     ua = turn.request.headers.get("user-agent", "")
     now = time.monotonic()
@@ -942,9 +951,7 @@ async def _via_anthropic_unguarded(turn: _Turn) -> Response:
     if upstream.status_code >= 400 and turn.target != turn.requested:
         detail = (await upstream.aread()).decode(errors="replace")[:300]
         await upstream.aclose()
-        if upstream.status_code == 400:  # the request is valid for the client's model, not this one
-            if not _REQUEST_SPECIFIC.search(detail):
-                _blocked[(turn.target, turn.request.headers.get("user-agent", ""))] = (detail[:160], time.monotonic())
+        _remember_block(turn, upstream.status_code, detail)
         turn.error = f"{turn.target}: {error_summary(detail.encode())}"  # kept if the fallback succeeds
         turn.fallback, turn.attempted, turn.target = True, turn.target, turn.requested
         turn.decision = {**turn.decision, "reason": f"fell back: {turn.attempted} returned "
@@ -1022,6 +1029,8 @@ async def _via_openai_unguarded(turn: _Turn) -> Response:
     if upstream.status_code >= 400:
         detail = (await upstream.aread()).decode(errors="replace")[:500]
         await upstream.aclose()
+        if turn.target != turn.requested:
+            _remember_block(turn, upstream.status_code, detail)
         if turn.target != turn.requested and lane_of(turn.requested) == "anthropic" \
                 and has_client_credentials(turn.request):
             turn.fallback, turn.attempted, turn.target = True, turn.target, turn.requested

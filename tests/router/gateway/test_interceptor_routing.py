@@ -58,6 +58,8 @@ interceptor:
         body = json.loads(req.content) if req.content else {}
         if req.url.host == "local.test":
             calls["openai"].append(body)
+            if state.get("openai_status", 200) != 200:
+                return httpx.Response(state["openai_status"], json={"error": {"message": state.get("openai_error", "nope")}})
             if body.get("stream"):
                 return httpx.Response(200, text=OPENAI_STREAM, headers={"content-type": "text/event-stream"})
             return httpx.Response(200, json=OPENAI_TOOL_CALL)
@@ -282,6 +284,29 @@ def test_a_400_about_the_request_itself_does_not_block_the_model(env):
     state["error_message"] = "prompt is too long: 210000 tokens > 200000 maximum"
     seen = []
     interceptor.configure(settings, lambda body, ctx: seen.append(dict(ctx["blocked"])) or "claude-haiku-4-5")
+    client.post("/v1/messages", json=turn("one"), headers=AUTH)
+    client.post("/v1/messages", json={**turn("two"), "messages": [{"role": "user", "content": "x"}]}, headers=AUTH)
+    assert seen == [{}, {}]
+
+
+def test_an_openai_lane_400_blocks_that_model_like_an_anthropic_one_does(env):
+    client, settings, calls, state = env
+    state["openai_status"] = 400
+    state["openai_error"] = "this model does not support the request"
+    seen = []
+    interceptor.configure(settings, lambda body, ctx: seen.append(dict(ctx["blocked"])) or "local-coder")
+    first = client.post("/v1/messages", json=turn("one"), headers=AUTH)
+    client.post("/v1/messages", json={**turn("two"), "messages": [{"role": "user", "content": "x"}]}, headers=AUTH)
+    assert first.status_code == 200  # fell back to the client's own model
+    assert seen[0] == {} and list(seen[1]) == ["local-coder"]
+
+
+def test_an_openai_lane_400_about_the_request_itself_does_not_block_the_model(env):
+    client, settings, calls, state = env
+    state["openai_status"] = 400
+    state["openai_error"] = "prompt is too long: 210000 tokens > 200000 maximum"
+    seen = []
+    interceptor.configure(settings, lambda body, ctx: seen.append(dict(ctx["blocked"])) or "local-coder")
     client.post("/v1/messages", json=turn("one"), headers=AUTH)
     client.post("/v1/messages", json={**turn("two"), "messages": [{"role": "user", "content": "x"}]}, headers=AUTH)
     assert seen == [{}, {}]
