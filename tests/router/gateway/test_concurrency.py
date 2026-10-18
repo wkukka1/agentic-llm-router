@@ -14,6 +14,8 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
+
 from router.gateway import cli
 from router.gateway.config import atomic_write_text
 
@@ -47,7 +49,7 @@ def test_settings_changes_from_many_processes_are_never_lost(tmp_path):
     assert all(p.wait(timeout=60) == 0 for p in procs)
     final = json.loads(settings.read_text())
     assert final["model"] == "opus" and sorted(final["env"]) == sorted(f"KEY_{i}" for i in range(20))
-    assert not list(tmp_path.glob("*.tmp")) and not (tmp_path / "settings.json.aar-lock").exists()
+    assert not list(tmp_path.glob("*.tmp"))
 
 
 def test_a_reader_never_sees_half_a_file_while_writers_replace_it(tmp_path):
@@ -80,14 +82,43 @@ def test_a_reader_never_sees_half_a_file_while_writers_replace_it(tmp_path):
     assert bad == [] and json.loads(path.read_text())["n"] in range(50)
 
 
-def test_a_lock_left_by_a_dead_process_is_taken_over(tmp_path):
+def _hold_in_a_process(path: Path) -> subprocess.Popen:
+    code = "\n".join([
+        "import sys, time",
+        "from pathlib import Path",
+        "from router.gateway import cli",
+        "with cli._settings_lock(Path(sys.argv[1])):",
+        "    print('held', flush=True)",
+        "    time.sleep(60)",
+    ])
+    proc = subprocess.Popen([sys.executable, "-c", code, str(path)], env={**os.environ, "PYTHONPATH": SRC},
+                            stdout=subprocess.PIPE, text=True)
+    assert proc.stdout.readline().strip() == "held"
+    return proc
+
+
+def test_a_lock_held_by_a_process_that_died_is_free_at_once(tmp_path):
+    """The OS drops a dead process's lock: no stale-file timeout to wait out."""
     settings = tmp_path / "settings.json"
-    lock = tmp_path / "settings.json.aar-lock"
-    lock.touch()
-    os.utime(lock, (time.time() - 60, time.time() - 60))
-    with cli._settings_lock(settings, wait=2):
-        assert lock.exists()
-    assert not lock.exists()
+    holder = _hold_in_a_process(settings)
+    holder.kill()
+    holder.wait()
+    t0 = time.monotonic()
+    with cli._settings_lock(settings, wait=5):
+        pass
+    assert time.monotonic() - t0 < 3
+
+
+def test_a_lock_held_by_a_live_process_is_never_taken_over(tmp_path):
+    settings = tmp_path / "settings.json"
+    holder = _hold_in_a_process(settings)
+    try:
+        with pytest.raises(SystemExit, match="held by another"):
+            with cli._settings_lock(settings, wait=1):
+                raise AssertionError("took a lock a live process holds")
+    finally:
+        holder.kill()
+        holder.wait()
 
 
 class _Health(http.server.BaseHTTPRequestHandler):

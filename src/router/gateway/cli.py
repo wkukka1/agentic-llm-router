@@ -897,33 +897,19 @@ def _write_claude_settings(path: Path, settings: dict) -> None:
 
 
 @contextlib.contextmanager
-def _settings_lock(path: Path, *, wait: float = 10.0, stale: float = 10.0):
+def _settings_lock(path: Path, *, wait: float = 10.0):
     """Holds a lock on Claude Code's settings file while it is read, changed
     and written: every session's hooks change it, and without the lock two of
     them at once can each write back what they read, losing the other's
-    change. A lock older than ``stale`` seconds was left by a process that
-    died, and is taken over."""
-    lock = path.with_name(path.name + ".aar-lock")
-    lock.parent.mkdir(parents=True, exist_ok=True)
-    deadline = time.monotonic() + wait
-    while True:
-        try:
-            os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
-            break
-        except FileExistsError:
-            try:
-                if time.time() - lock.stat().st_mtime > stale:
-                    lock.unlink(missing_ok=True)
-                    continue
-            except FileNotFoundError:
-                continue
-            if time.monotonic() > deadline:
-                raise SystemExit(f"{lock} is held by another aar-gateway command; try again") from None
-            time.sleep(0.05)
+    change. An OS file lock (:func:`router.gateway.config.locked_file`): a
+    process that dies releases it, and a slow live holder is never robbed of it."""
+    from .config import locked_file
+
     try:
-        yield
-    finally:
-        lock.unlink(missing_ok=True)
+        with locked_file(path, timeout=wait):
+            yield
+    except TimeoutError:
+        raise SystemExit(f"{path} is held by another aar-gateway command; try again") from None
 
 
 def auto_enabled() -> bool:
