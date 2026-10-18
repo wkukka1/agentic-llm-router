@@ -134,8 +134,7 @@ def _remember_message(message_id: str, model: str) -> None:
     try:
         _append_jsonl(path, {"m": message_id, "model": model})
         if path.stat().st_size > _MAX_MESSAGES * 200:  # ~2x the entries kept: compact
-            atomic_write_text(path, "".join(json.dumps({"m": k, "model": v}) + "
-" for k, v in _message_models.items()))
+            atomic_write_text(path, "".join(json.dumps({"m": k, "model": v}) + "\n" for k, v in _message_models.items()))
     except OSError:
         pass  # memory still has it; a lost entry only costs one retried request
 
