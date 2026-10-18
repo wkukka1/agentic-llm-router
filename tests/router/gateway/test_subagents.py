@@ -186,7 +186,7 @@ def test_agents_install_writes_files_and_keeps_existing_ones(tmp_path, capsys):
     (tmp_path / "lookup.md").write_text("mine")
     cli.main(["agents", "--install", str(tmp_path)])
     assert (tmp_path / "lookup.md").read_text() == "mine"
-    assert (tmp_path / "make.md").read_text() == agent_markdown("make")
+    assert (tmp_path / "make.md").read_text(encoding="utf-8") == agent_markdown("make")  # UTF-8, not the console codepage
 
 
 def main_turn(text, model="claude-opus-5-5"):

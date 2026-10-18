@@ -317,6 +317,13 @@ def _ollama_name(model: str) -> str:
     return model if ":" in model else f"{model}:latest"
 
 
+def _write_file(path: Path, text: str) -> None:
+    """Replace ``path`` atomically (config is imported lazily: it pulls in yaml)."""
+    from .config import atomic_write_text
+
+    atomic_write_text(path, text)
+
+
 def _write_local_models(models: dict) -> None:
     import yaml
 
@@ -327,9 +334,9 @@ def _write_local_models(models: dict) -> None:
     if not models:
         path.unlink(missing_ok=True)
         return
-    path.write_text("# Local models added with `aar-gateway local add` (Ollama). Remove one with\n"
-                    "# `aar-gateway local remove <model>`, or delete this file to remove them all.\n"
-                    + yaml.safe_dump({"models": models}, sort_keys=False))
+    _write_file(path, "# Local models added with `aar-gateway local add` (Ollama). Remove one with\n"
+                      "# `aar-gateway local remove <model>`, or delete this file to remove them all.\n"
+                      + yaml.safe_dump({"models": models}, sort_keys=False))
 
 
 def _local(argv: list[str]) -> int:
@@ -449,8 +456,8 @@ def _setup(router: str | None, force: bool, enable: bool | None = False, share: 
     if config.exists() and not force:
         print(f"kept your config: {config}  (--force rewrites it)")
     else:
-        config.write_text(CONFIG_TEMPLATE.format(enabled="true" if router_file.exists() else "false",
-                                                 artifact=json.dumps(str(router_file))))
+        _write_file(config, CONFIG_TEMPLATE.format(enabled="true" if router_file.exists() else "false",
+                                                   artifact=json.dumps(str(router_file))))
         print(f"wrote {config}")
     if _healthy(_base_url()):
         print("restarting the running gateway so it picks this up ...")
@@ -691,7 +698,7 @@ def _service(action: str, run=subprocess.run, *, at_next_login: bool = False) ->
         return 0 if path.exists() else 1
     if action == "install":
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(launchd_plist() if kind == "launchd" else systemd_unit())
+        _write_file(path, launchd_plist() if kind == "launchd" else systemd_unit())
         if at_next_login:  # launchd loads ~/Library/LaunchAgents at login by itself
             if kind == "systemd":
                 run(["systemctl", "--user", "daemon-reload"], check=True)
@@ -930,7 +937,7 @@ def _check(session_start: bool) -> None:
                 notice = "AAR gateway is answering again: routing is back on."
             elif not healthy and not bypassed.exists():
                 bypassed.parent.mkdir(parents=True, exist_ok=True)
-                bypassed.write_text(url)
+                _write_file(bypassed, url)
                 _set_base_url(False)
                 switched_off = True
     except SystemExit:
@@ -1128,7 +1135,7 @@ def _agents(argv: list[str]) -> None:
         if path.exists():
             print(f"kept   {path} (already exists)")
             continue
-        path.write_text(agent_markdown(name))
+        _write_file(path, agent_markdown(name))
         print(f"wrote  {path}")
 
 
