@@ -37,6 +37,12 @@ def canonical_model(model: str | None) -> str | None:
     return model.split("[", 1)[0] if model else model
 
 
+def has_price(price: Mapping | None) -> bool:
+    """Both an input and an output rate. Free (``0``) is a price; a missing or
+    half-given one is unknown -- never Claude's rate, never zero."""
+    return bool(price) and price.get("input") is not None and price.get("output") is not None
+
+
 def price_at(price: Mapping | None, prompt_tokens: float) -> Mapping | None:
     """The rates that apply to a prompt of this many tokens (input + cache
     read + cache write): the ``over`` tier past its threshold, else the base."""

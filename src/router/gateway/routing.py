@@ -38,7 +38,7 @@ from ..context import RoutingContext, RoutingRequest
 from ..decision import ModelScore
 from ..llm.profile import LLMProfile
 from ..policy import MarginRoutingPolicy
-from .pricing import CLAUDE_PRICES, WRITE_1H, WRITE_5M, cache_read_rate, canonical_model, price_at
+from .pricing import CLAUDE_PRICES, WRITE_1H, WRITE_5M, cache_read_rate, canonical_model, has_price, price_at
 from .translate import untranslatable_reason
 
 #: ``(body, ctx) -> decision dict`` or ``None`` (keep the client's model).
@@ -89,7 +89,8 @@ def unavailable_reason(model: str, body: Mapping, settings: Mapping, blocked: Ma
 def price_for(settings: Mapping, model: str | None) -> Mapping | None:
     model = canonical_model(model)
     spec = settings["models"].get(model) or {}
-    return spec.get("prices") or CLAUDE_PRICES.get(model)
+    prices = spec.get("prices")  # an empty one is the config saying "no price", not "use Claude's"
+    return prices if prices is not None else CLAUDE_PRICES.get(model)
 
 
 def load_router_model(rcfg: Mapping):
@@ -268,9 +269,9 @@ def build_picker(settings: Mapping, router_model=None, graded=None,
                     reason = "no graded data for this model"
                 elif not use_graded and proxy not in pool:
                     reason = f"proxy {proxy!r} not in the router's pool"
-                elif not price or price.get("input") is None:
+                elif not has_price(price):
                     reason = "no price"
-                elif ceiling and (price["input"] > ceiling["input"] or price["output"] > ceiling["output"]):
+                elif has_price(ceiling) and (price["input"] > ceiling["input"] or price["output"] > ceiling["output"]):
                     reason = "pricier than the requested model"
             if reason is not None:
                 quality = math.nan

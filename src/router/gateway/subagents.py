@@ -41,7 +41,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 
-from .pricing import canonical_model
+from .pricing import canonical_model, has_price
 from .routing import price_for, unavailable_reason
 
 SUBAGENT_MARK = "cc_is_subagent=true"
@@ -129,7 +129,7 @@ def role_model(role: str | None, settings: Mapping) -> tuple[bool, str | None]:
 
 def _pricier(settings: Mapping, model: str, than: str | None) -> bool:
     mine, other = price_for(settings, model), price_for(settings, than)
-    return bool(mine and other and mine["output"] > other["output"])
+    return has_price(mine) and has_price(other) and mine["output"] > other["output"]
 
 
 def role_decision(agent: Mapping, body: Mapping, requested: str | None, settings: Mapping,
