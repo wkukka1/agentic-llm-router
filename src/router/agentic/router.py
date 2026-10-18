@@ -511,9 +511,12 @@ class AgenticRouter:
     def _is_multipart(self, prompt: str) -> bool:
         """The triage heuristic's lexical multi-part check (an ``LLMTriage``'s
         fallback heuristic, or default ``HeuristicTriage`` settings)."""
-        heuristic = getattr(self.triage, "_fallback", self.triage)
-        check = (getattr(heuristic, "is_multipart", None)
-                 or HeuristicTriage(structure=StructureClassifier()).is_multipart)
+        check = self.__dict__.get("_multipart_check")
+        if check is None:  # resolved once: not a fresh classifier per prompt
+            heuristic = getattr(self.triage, "_fallback", self.triage)
+            check = (getattr(heuristic, "is_multipart", None)
+                     or HeuristicTriage(structure=StructureClassifier()).is_multipart)
+            self._multipart_check = check
         return check(prompt)
 
     def cached_decision(self, prompt: str) -> Optional[TriageDecision]:
