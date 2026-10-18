@@ -23,6 +23,7 @@ policy takes the cheapest model within ``margin`` predicted quality of the best.
 
 from __future__ import annotations
 
+import logging
 import math
 import os
 import threading
@@ -47,6 +48,8 @@ from .translate import untranslatable_reason
 #: warm_tokens ({model: prefix tokens it has cached recently}), blocked
 #: ({model: why the upstream rejected it for this client}).
 ModelPicker = Callable[[dict, dict], dict | None]
+
+log = logging.getLogger(__name__)
 
 
 def incompatibility(body: Mapping, spec: Mapping) -> str | None:
@@ -166,7 +169,9 @@ def build_picker(settings: Mapping, router_model=None, graded=None,
         router_model.route_text(["warm up the encoder"])  # first encode is slow
     policy = MarginRoutingPolicy(margin=float(rcfg.get("margin", 0.05)))
     lock = threading.Lock()  # one encoder forward at a time; requests run in a thread pool
-    calibration: dict = {"mtime": None, "offsets": {}, "n": 0}
+    #: ``(graded file mtime, graded prompts, per-model shifts)`` as one tuple, replaced whole,
+    #: so a reader without the lock never sees a half-updated calibration
+    calibration: dict = {"state": (None, 0, {})}
 
     def offsets() -> dict[str, float]:
         """Recomputed when the graded file changes; called under ``lock``."""
@@ -176,20 +181,28 @@ def build_picker(settings: Mapping, router_model=None, graded=None,
             mtime = os.path.getmtime(graded_file)
         except OSError:
             return {}
-        if mtime != calibration["mtime"]:
+        if mtime != calibration["state"][0]:
             from .graded import load_graded
 
-            calibration.update(mtime=mtime, n=len(load_graded(graded_file)[0]), offsets=calibration_offsets(
-                graded_file, router_model, settings, float(rcfg.get("calibration_shrink", 20))))
-        return calibration["offsets"]
+            calibration["state"] = (
+                mtime, len(load_graded(graded_file)[0]),
+                calibration_offsets(graded_file, router_model, settings,
+                                    float(rcfg.get("calibration_shrink", 20))))
+        return calibration["state"][2]
 
     def calibration_status() -> dict:
-        """For ``/health``: the current per-model shifts and how many graded
-        prompts they rest on (refreshed if the graded file changed)."""
+        """For ``/health``: the per-model shifts and how many graded prompts
+        they rest on, as last computed. Never takes ``lock`` (held across an
+        encoder forward): a ``/health`` that waited for it would time out and
+        read as a dead gateway. ``pick`` refreshes it when the graded file changes."""
+        _, n, shifts = calibration["state"]
+        return {"graded_prompts": n, "offsets": {m: round(v, 3) for m, v in sorted(shifts.items())}}
+
+    try:
         with lock:
-            shifts = offsets()
-        return {"graded_prompts": calibration["n"],
-                "offsets": {m: round(v, 3) for m, v in sorted(shifts.items())}}
+            offsets()  # known from the start, not only after the first request
+    except Exception:  # noqa: BLE001 -- a bad graded file must not stop the picker; pick() retries
+        log.warning("could not read the graded file at startup", exc_info=True)
     pool = set(router_model.model_ids)
     write_mult = WRITE_1H if rcfg.get("cache_ttl", "1h") == "1h" else WRITE_5M
     out_tokens = float(rcfg.get("expected_output_tokens", 800))

@@ -257,3 +257,37 @@ def test_a_turns_prediction_is_blended_with_the_previous_turns(settings, router)
     settings["router"]["turn_smoothing"] = 1.0
     assert build_picker(settings, router_model=router)(BODY, ctx(prev_quality=first["model_quality"]))[
         "model_quality"] == alone["model_quality"]
+
+
+def test_calibration_status_never_waits_for_the_picker_lock(settings, router, tmp_path):
+    """/health reports calibration; the picker lock is held across encoder forwards,
+    so a /health that took it would stall the event loop and read as 'gateway down'."""
+    import json as _json
+    import threading
+
+    graded = tmp_path / "graded.jsonl"
+    graded.write_text("\n".join(_json.dumps({"prompt_hash": f"h{i}", "prompt": f"q{i}",
+                                             "model": "claude-opus-5", "score": 0.9}) for i in range(3)))
+    pick = build_picker(settings, router_model=router, graded_file=graded)
+    assert pick.calibration_status()["graded_prompts"] == 3  # known from the start, not after a first request
+
+    inside, release = threading.Event(), threading.Event()
+    real = router.route_text
+
+    def slow(texts):
+        inside.set()
+        release.wait(10)
+        return real(texts)
+
+    router.route_text = slow
+    worker = threading.Thread(target=lambda: pick(BODY, ctx()), daemon=True)
+    worker.start()
+    assert inside.wait(5)  # the picker now holds its lock inside an encoder forward
+    answered = []
+    probe = threading.Thread(target=lambda: answered.append(pick.calibration_status()), daemon=True)
+    probe.start()
+    probe.join(2)
+    still_held = not answered  # checked while the lock is still held
+    release.set()
+    worker.join(5)
+    assert not still_held and answered[0]["graded_prompts"] == 3
