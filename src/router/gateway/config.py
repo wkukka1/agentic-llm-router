@@ -211,3 +211,12 @@ def locked_file(path: Path, *, timeout: float = 30.0):
                 import fcntl
 
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+
+def append_jsonl(path: Path, *records: dict) -> None:
+    """Append ``records`` to a jsonl file, one line each, creating its folder.
+    Raises ``OSError`` if the write fails; callers choose whether that matters."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        for record in records:
+            f.write(json.dumps(record) + "\n")

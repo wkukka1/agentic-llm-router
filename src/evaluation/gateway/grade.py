@@ -41,7 +41,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import UTC, datetime
 from pathlib import Path
 
-from router.gateway.config import gateway_home, read_jsonl
+from router.gateway.config import append_jsonl, gateway_home, read_jsonl
 from router.llm.adapters.claude_subscription import ClaudeSubscriptionAdapter
 
 DEFAULT_TIERS = ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5")
@@ -217,9 +217,7 @@ def grade(n: int, *, tiers: tuple[str, ...] = DEFAULT_TIERS, judge_model: str = 
             done, running = wait(running, return_when=FIRST_COMPLETED)
             for future in done:
                 rows = future.result()
-                with out_file.open("a", encoding="utf-8") as f:
-                    for r in rows:
-                        f.write(json.dumps(r) + "\n")
+                append_jsonl(out_file, *rows)
                 written.extend(rows)
                 print(f"  {rows[0]['prompt'][:60]!r}: " + ", ".join(_fmt(r) for r in rows), file=sys.stderr)
                 if all(r["score"] is None and _LIMIT.search(r.get("error") or "") for r in rows):

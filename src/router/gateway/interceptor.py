@@ -49,7 +49,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from . import share
-from .config import atomic_write_text, load_settings, log_path, read_jsonl
+from .config import append_jsonl, atomic_write_text, load_settings, log_path, read_jsonl
 from .pricing import canonical_model, cost_usd
 from .routing import ModelPicker, price_for, unavailable_reason
 from .subagents import DEFAULT_ROLE_MODELS, role_decision, spawn_decision
@@ -100,12 +100,6 @@ def _lru_set(cache: OrderedDict, key, value, max_size: int) -> None:
         cache.popitem(last=False)
 
 
-def _append_jsonl(path: Path, record: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(record) + "\n")
-
-
 def _thread_models_path() -> Path:
     return log_path().parent / "thread-models.jsonl"
 
@@ -132,7 +126,7 @@ def _remember_message(message_id: str, model: str) -> None:
     _lru_set(_message_models, message_id, model, _MAX_MESSAGES)
     path = _thread_models_path()
     try:
-        _append_jsonl(path, {"m": message_id, "model": model})
+        append_jsonl(path, {"m": message_id, "model": model})
         if path.stat().st_size > _MAX_MESSAGES * 200:  # ~2x the entries kept: compact
             atomic_write_text(path, "".join(json.dumps({"m": k, "model": v}) + "\n" for k, v in _message_models.items()))
     except OSError:
@@ -305,7 +299,7 @@ def _save_preferences(**changes) -> None:
 
 
 def _log_override(record: dict) -> None:
-    _append_jsonl(overrides_path(), {"ts": datetime.now(UTC).isoformat(timespec="seconds"), **record})
+    append_jsonl(overrides_path(), {"ts": datetime.now(UTC).isoformat(timespec="seconds"), **record})
 
 
 def set_routing(mode: str, pinned_model: str | None = None) -> dict:
@@ -439,7 +433,7 @@ def _capture(turn: _Turn) -> None:
     """Only the human's own words of a new agent turn, plus where it ran --
     never the conversation, tool results or credentials. For a subagent,
     the "human" is the main agent and its words are the subagent's task."""
-    _append_jsonl(turns_path(), {
+    append_jsonl(turns_path(), {
         "ts": datetime.now(UTC).isoformat(timespec="seconds"),
         "conversation": turn.key,
         "prompt_hash": hashlib.sha1(turn.human.encode()).hexdigest()[:16],
@@ -466,7 +460,7 @@ def _append_record(record: dict) -> None:
     except OSError as exc:  # e.g. Windows, another program has the log open: append to it, rotate next time
         log.warning("could not rotate the request log %s: %s", path, type(exc).__name__)
     try:
-        _append_jsonl(path, record)
+        append_jsonl(path, record)
     except OSError as exc:  # disk full, permissions: the response was already served; losing one record is the lesser harm
         log.warning("could not write the request log %s: %s", path, type(exc).__name__)
         return

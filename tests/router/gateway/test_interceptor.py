@@ -140,7 +140,7 @@ def test_a_log_write_failure_does_not_break_a_served_response(client, upstream_c
     def broken(path, record):
         raise OSError(28, "No space left on device")
 
-    monkeypatch.setattr(interceptor, "_append_jsonl", broken)
+    monkeypatch.setattr(interceptor, "append_jsonl", broken)
     resp = client.post("/v1/messages", json={**CLAUDE_CODE_BODY, "stream": stream}, headers={"authorization": SECRET})
     assert resp.status_code == 200
     assert resp.content == SSE if stream else resp.json()["content"][0]["text"] == "pong"
