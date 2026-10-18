@@ -49,7 +49,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from . import share
-from .config import atomic_write_text, load_settings
+from .config import atomic_write_text, load_settings, read_jsonl
 from .pricing import canonical_model, cost_usd
 from .routing import ModelPicker, price_for, unavailable_reason
 from .subagents import DEFAULT_ROLE_MODELS, role_decision, spawn_decision
@@ -110,27 +110,39 @@ def _thread_models_path() -> Path:
     return log_path().parent / "thread-models.jsonl"
 
 
+def _load_thread_models() -> None:
+    """Read ``thread-models.jsonl`` into memory once per process. Entries
+    already in memory are newer than the file's and win."""
+    global _message_models_loaded
+    if _message_models_loaded:
+        return
+    _message_models_loaded = True
+    persisted: dict[str, str] = {}
+    try:
+        for entry in read_jsonl(_thread_models_path())[-_MAX_MESSAGES:]:
+            persisted[entry["m"]] = entry["model"]
+    except (OSError, KeyError, TypeError):
+        pass
+    for message_id, model in persisted.items():
+        _message_models.setdefault(message_id, model)
+
+
 def _remember_message(message_id: str, model: str) -> None:
+    _load_thread_models()  # compaction below rewrites the file from memory: memory must hold what the file does
     _lru_set(_message_models, message_id, model, _MAX_MESSAGES)
     path = _thread_models_path()
     try:
         _append_jsonl(path, {"m": message_id, "model": model})
         if path.stat().st_size > _MAX_MESSAGES * 200:  # ~2x the entries kept: compact
-            atomic_write_text(path, "".join(json.dumps({"m": k, "model": v}) + "\n" for k, v in _message_models.items()))
+            atomic_write_text(path, "".join(json.dumps({"m": k, "model": v}) + "
+" for k, v in _message_models.items()))
     except OSError:
         pass  # memory still has it; a lost entry only costs one retried request
 
 
 def _message_model(message_id: str) -> str | None:
-    global _message_models_loaded
-    if message_id not in _message_models and not _message_models_loaded:
-        _message_models_loaded = True
-        try:
-            for line in _thread_models_path().read_text(encoding="utf-8").splitlines()[-_MAX_MESSAGES:]:
-                entry = json.loads(line)
-                _message_models.setdefault(entry["m"], entry["model"])
-        except (OSError, ValueError, KeyError, TypeError):
-            pass
+    if message_id not in _message_models:
+        _load_thread_models()
     return _message_models.get(message_id)
 #: running per-request token profile of all agent traffic -- the default for a
 #: conversation that has none of its own yet

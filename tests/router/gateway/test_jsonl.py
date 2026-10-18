@@ -57,3 +57,16 @@ def test_a_corrupt_share_queue_line_is_skipped():
     share.queue_path().parent.mkdir(parents=True, exist_ok=True)
     share.queue_path().write_text('{"a": 1}\n{corrupt\n', encoding="utf-8")
     assert share.queued() == [{"a": 1}]
+
+
+def test_compacting_thread_models_after_a_restart_keeps_the_persisted_entries(monkeypatch):
+    path = interceptor._thread_models_path()
+    monkeypatch.setattr(interceptor, "_MAX_MESSAGES", 10)  # compacts once the file passes 2000 bytes
+    old = [{"m": f"old{i}", "model": "m" * 200} for i in range(9)]  # persisted before the restart
+    path.write_text("".join(json.dumps(r) + "
+" for r in old), encoding="utf-8")
+    interceptor._message_models.clear()  # a restart: memory empty, nothing looked up yet
+    interceptor._message_models_loaded = False
+    interceptor._remember_message("new", "x")  # pushes the file past the threshold -> compaction
+    kept = {json.loads(line)["m"] for line in path.read_text(encoding="utf-8").splitlines()}
+    assert kept == {f"old{i}" for i in range(9)} | {"new"}
