@@ -550,8 +550,12 @@ def build_store(
     rows_done = 0
     if resume and not force and ppath.exists() and vpath.exists():
         prog = json.loads(ppath.read_text("utf-8"))
+        # same vectors <=> same vector-affecting settings; a progress file from
+        # before vector_fingerprint existed is compared on the full config instead
+        same_encoder = (prog["vector_fingerprint"] == vec_fp if "vector_fingerprint" in prog
+                        else prog.get("config_fingerprint") == cfg_fp)
         if (prog.get("ids_fingerprint") == id_fp
-                and prog.get("config_fingerprint") == cfg_fp
+                and same_encoder
                 and prog.get("texts_fingerprint", txt_fp) == txt_fp
                 and prog.get("dim") == dim):
             rows_done = int(prog.get("rows_done", 0))
@@ -577,7 +581,7 @@ def build_store(
             "rows_done": int(done), "count": n, "dim": dim,
             "batch_size": encoder.cfg.batch_size,
             "ids_fingerprint": id_fp, "config_fingerprint": cfg_fp,
-            "texts_fingerprint": txt_fp,
+            "vector_fingerprint": vec_fp, "texts_fingerprint": txt_fp,
         }), encoding="utf-8")
 
     since_flush = 0
