@@ -184,6 +184,19 @@ def _wait_healthy(url: str, seconds: float, proc: subprocess.Popen | None = None
     return False
 
 
+def _request_shutdown() -> bool:
+    """Ask the running gateway to exit by itself; whether it said it would."""
+    import urllib.request
+
+    request = urllib.request.Request(_base_url() + "/api/shutdown", data=b"{}", method="POST",
+                                     headers={"content-type": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=3) as resp:
+            return resp.status == 200
+    except OSError:
+        return False
+
+
 def _stop() -> bool:
     """Stops the gateway this machine is running, however it was started.
     ``True`` if one was stopped."""
@@ -194,12 +207,16 @@ def _stop() -> bool:
         _pid_file().unlink(missing_ok=True)
         print("the gateway is not running")
         return False
-    os.kill(pid, signal.SIGTERM)  # on Windows: TerminateProcess
-    # gone, not just quiet: a gateway closes its port first, then waits for
-    # open connections (the dashboard's live stream never ends by itself)
-    if not _wait_exit(pid, 10) and not WINDOWS:
-        os.kill(pid, signal.SIGKILL)
-        _wait_exit(pid, 5)
+    # Windows has no SIGTERM -- os.kill there is TerminateProcess, which skips the
+    # gateway's cleanup (open streams unlogged, the share queue unflushed) -- so
+    # it is asked to exit itself first, and only killed if it does not.
+    if not (WINDOWS and _request_shutdown() and _wait_exit(pid, 10)):
+        os.kill(pid, signal.SIGTERM)  # on Windows: TerminateProcess
+        # gone, not just quiet: a gateway closes its port first, then waits for
+        # open connections (the dashboard's live stream never ends by itself)
+        if not _wait_exit(pid, 10) and not WINDOWS:
+            os.kill(pid, signal.SIGKILL)
+            _wait_exit(pid, 5)
     if _healthy(_base_url()):
         print(f"sent stop to pid {pid}; something is still answering on {_base_url()}")
         return False
@@ -1342,7 +1359,9 @@ def main(argv: list[str] | None = None) -> int:
     except OSError as exc:
         raise SystemExit(f"can't listen on {host}:{port} ({exc}): another gateway may be running -- "
                          f"see `aar-gateway status`") from None
-    uvicorn.Server(config).run(sockets=[sock])
+    running = uvicorn.Server(config)
+    app.state.uvicorn = running  # POST /api/shutdown asks it to exit
+    running.run(sockets=[sock])
     return 0
 
 

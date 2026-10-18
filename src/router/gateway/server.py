@@ -154,6 +154,18 @@ async def health():
     return {"status": "ok", "pid": os.getpid(), "router": status}
 
 
+@app.post("/api/shutdown")
+async def shutdown():
+    """Ask this server to exit cleanly (``aar-gateway stop`` on Windows, which has
+    no SIGTERM: killing the process skips the lifespan cleanup). Callable only
+    as the CLI is: the Host/Origin middleware refuses a web page."""
+    running = getattr(app.state, "uvicorn", None)
+    if running is None:
+        raise HTTPException(503, "not running under `aar-gateway serve`")
+    running.should_exit = True
+    return {"status": "stopping"}
+
+
 @app.get("/stats")
 def stats():  # plain def: FastAPI runs it in a worker thread, off the event loop
     return interceptor.summarize()
