@@ -1218,6 +1218,14 @@ def summarize(records: list[dict] | None = None) -> dict:
             "recent": list(reversed(records[-RECENT_RECORDS:]))}
 
 
+def _baseline_cost(r: dict, key: str) -> float:
+    """A record's cost on a baseline model (``cost_if_requested_usd`` ...), or,
+    when the baseline had no price, what the request really cost: unpriced work
+    shows no saving rather than a negative one. (``summarize``'s totals instead
+    skip the request, so their saving is only over fully priced traffic.)"""
+    return r[key] if r.get(key) is not None else (r.get("cost_usd") or 0.0)
+
+
 #: Claude Code sessions listed on the dashboard, newest first
 SESSION_ROWS = 30
 
@@ -1242,10 +1250,9 @@ def summarize_sessions(records: list[dict]) -> list[dict]:
         row["rerouted"] += r.get("routed_model") != r.get("requested_model")
         model = r.get("routed_model") or "unknown"
         row["models"][model] = row["models"].get(model, 0) + 1
-        cost = r.get("cost_usd") or 0.0
-        row["cost_usd"] += cost
-        row["cost_if_requested_usd"] += r["cost_if_requested_usd"] if r.get("cost_if_requested_usd") is not None else cost
-        row["cost_if_strongest_usd"] += r["cost_if_strongest_usd"] if r.get("cost_if_strongest_usd") is not None else cost
+        row["cost_usd"] += r.get("cost_usd") or 0.0
+        row["cost_if_requested_usd"] += _baseline_cost(r, "cost_if_requested_usd")
+        row["cost_if_strongest_usd"] += _baseline_cost(r, "cost_if_strongest_usd")
     out = [{**row, "subagent_spawns": len(row["subagent_spawns"])} for row in rows.values()]
     return sorted(out, key=lambda x: x["last_ts"] or "", reverse=True)[:SESSION_ROWS]
 
@@ -1268,8 +1275,7 @@ def summarize_subagents(records: list[dict]) -> list[dict]:
         model = r.get("routed_model") or "unknown"
         row["models"][model] = row["models"].get(model, 0) + 1
         row["cost_usd"] += r.get("cost_usd") or 0.0
-        asked = r.get("cost_if_requested_usd")
-        row["cost_if_requested_usd"] += asked if asked is not None else (r.get("cost_usd") or 0.0)
+        row["cost_if_requested_usd"] += _baseline_cost(r, "cost_if_requested_usd")
         row["cache_read_input_tokens"] += r.get("cache_read_input_tokens") or 0
         row["prompt_tokens"] += _prompt_tokens(r)
         row["latency_s"] += r.get("latency_s") or 0.0
