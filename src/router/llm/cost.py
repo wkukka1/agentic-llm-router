@@ -5,10 +5,9 @@ in :class:`~router.llm.client.LLMResponse`, never here -- see
 input; nothing routing-facing should read observed cost.
 
 This is intentionally simple: a per-model output-token *prior* (a plain
-lookup), not a learned regressor. The diagram's two ``predictCost`` overloads
-(by token counts, and by a whole ``RoutingContext``) become two distinctly-
-named methods here -- :meth:`predict_cost` and :meth:`predict_cost_for_context`
--- since Python has no signature-based overloading.
+lookup), not a learned regressor. Cost is predicted from token counts
+(:meth:`predict_cost`); a caller with a prompt estimates its tokens with
+:func:`estimate_tokens`.
 """
 
 from __future__ import annotations
@@ -18,7 +17,6 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - type hints only, not a runtime import
-    from ..context import RoutingContext
     from .profile import LLMProfile
 
 #: fallback output-token estimate for a model with no entry in
@@ -26,7 +24,7 @@ if TYPE_CHECKING:  # pragma: no cover - type hints only, not a runtime import
 _DEFAULT_OUTPUT_TOKENS = 256
 
 #: characters-per-token used to turn a raw prompt string into an input-token
-#: estimate for :meth:`CostModel.predict_cost_for_context` -- a rough English-text
+#: estimate (:func:`estimate_tokens`) -- a rough English-text
 #: average, not a real tokenizer count.
 _CHARS_PER_TOKEN = 4
 
@@ -45,13 +43,6 @@ class CostModel:
     def predict_cost(self, model: LLMProfile, input_tokens: int, output_tokens: int) -> float:
         return float(input_tokens * model.input_cost_per_token
                      + output_tokens * model.output_cost_per_token)
-
-    def predict_cost_for_context(self, model: LLMProfile, context: RoutingContext) -> float:
-        """Estimates ``input_tokens`` from the raw prompt length (no tokenizer
-        call), then delegates to :meth:`predict_output_tokens`/:meth:`predict_cost`."""
-        input_tokens = estimate_tokens(len(context.request.prompt))
-        output_tokens = self.predict_output_tokens(model, input_tokens)
-        return self.predict_cost(model, input_tokens, output_tokens)
 
 
 def estimate_tokens(chars: int) -> int:

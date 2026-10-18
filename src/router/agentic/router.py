@@ -409,9 +409,7 @@ class AgenticRouter:
 
         Deliberately scoped to the router's own narrow, dispatchable pool
         (:attr:`RouterModel.model_ids`) -- a routed call must be something
-        :attr:`clients` can actually reach. See :meth:`score_all_models` for
-        the broader, every-registered-model view; don't widen this method to
-        use it."""
+        :attr:`clients` can actually reach."""
         if self._resolver is not None:
             alpha, lam, eligible = self._routing_knobs()
             rr = self.router.route([self._resolver(prompt)], lam=lam, alpha=alpha,
@@ -424,63 +422,6 @@ class AgenticRouter:
                 f"(query_id={rr.query_ids[0]!r}); refusing to dispatch to a default model"
             )
         return rr
-
-    def score_all_models(
-        self, prompt: str, *, impute_unknown: bool = False, knn_k: int = 10,
-        knn_weighting: str = "similarity",
-    ) -> RoutingResult:
-        """Score ``prompt`` against every model currently *registered in the
-        pool* -- every ``configs/model_profiles.yaml`` entry, unioned with
-        this router's own trained pool -- not just the narrow, dispatchable
-        set :meth:`route_decision` scores. A model with no profile embedding
-        built yet is rendered + embedded on the fly
-        (:mod:`router.routing.model_profiles`), with :attr:`encoder` reused as
-        the embedder (profile and query text share one pathway here, so
-        there's no second model to load); ``impute_unknown=True`` additionally
-        kNN-blends any model with no training observations toward the trained
-        pool's nearest profiles (see that module's caveat docstring before
-        turning this on by default).
-
-        Needs a :class:`~router.routing.routers.NIRTRouter` in
-        ``model_params="projected"`` mode (cold-start capable by
-        construction) -- raises ``TypeError`` otherwise.
-
-        Scoring a model here never implies it can be *called*: dispatching
-        still goes through :attr:`clients` (:class:`ClientRegistry`), which
-        raises its own ``LookupError`` for an id with no registered adapter,
-        independently of whether this method can score it.
-        """
-        import numpy as np
-
-        from ..nirt.routing_decision import cost_aware_utility, no_selectable_rows, routing_decision
-        from ..routing import NIRTRouter, model_profiles
-
-        router = self.router
-        if not isinstance(router, NIRTRouter):
-            raise TypeError(
-                f"score_all_models needs a NIRTRouter (cold-start pool scoring), "
-                f"got {type(router).__name__}"
-            )
-        cfg = getattr(router._data, "cfg", None)
-        pool_ids = sorted(set(router.model_ids) | set(model_profiles.list_profiled_model_ids(cfg)))
-        scores = router.predict_pool_scores_text(
-            [prompt], pool_ids, impute_unknown=impute_unknown, knn_k=knn_k,
-            knn_weighting=knn_weighting, encoder=self.encoder, profile_encoder=self.encoder,
-        )
-        mat = scores.to_numpy(np.float64)
-        util = cost_aware_utility(mat, lam=0.0, model_costs=None, eligible=None)
-        return RoutingResult(
-            query_ids=["0"], model_ids=list(scores.columns), scores=mat,
-            selected=routing_decision(mat, lam=0.0, model_costs=None, eligible=None),
-            lam=0.0, fallback=no_selectable_rows(util), alpha=None,
-        )
-
-    def _skip_decomposition(self, prompt: str, depth: int) -> bool:
-        """The gate in :meth:`decompose_plan`: nothing for an LLM decomposer to split."""
-        atomic = not self._is_multipart(prompt)
-        if depth == 0:
-            atomic = atomic and looks_atomic(prompt)
-        return atomic
 
     @_standalone_scope
     def decompose_plan(self, prompt: str, depth: int, *, sequential: bool = False) -> list[SubTask]:
@@ -536,9 +477,7 @@ class AgenticRouter:
         helper costs no extra routing call.
 
         Deliberately scoped to :meth:`route_decision`'s narrow pool, like it
-        -- a helper LLM must be something :attr:`clients` can actually call,
-        unlike :meth:`score_all_models`'s broader, every-registered-model
-        view."""
+        -- a helper LLM must be something :attr:`clients` can actually call."""
         known = self.cached_decision(request)
         scores = (known.scores if known is not None and known.scores
                   else self.route_decision(request).row_scores(0))
