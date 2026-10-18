@@ -521,17 +521,3 @@ def test_thread_models_survive_a_restart(env):
     interceptor._message_models_loaded = False
     assert interceptor._message_model("msg_kept") == "claude-haiku-4-5"
 
-
-def test_stats_show_what_switching_cost_in_cache():
-    """A switch writes the cheaper model's cache; that write is the switch's cost
-    over reading a warm cache. Counted, not hidden."""
-    switched = {"requested_model": "claude-opus-5-5", "routed_model": "claude-haiku-5-5", "status": 200,
-                "cost_usd": 0.10, "cost_if_requested_usd": 0.5, "cost_if_strongest_usd": 0.5,
-                "input_tokens": 2, "output_tokens": 10, "cache_read_input_tokens": 0,
-                "cache_creation_input_tokens": 100_000}
-    same = {**switched, "routed_model": "claude-opus-5-5", "cost_usd": 0.1, "cache_creation_input_tokens": 0,
-            "cache_read_input_tokens": 100_000}
-    stats = interceptor.summarize([switched, same])["totals"]
-    assert stats["switch_cache_written_tokens"] == 100_000
-    assert stats["switch_cache_cost_usd"] > 0  # the write costs more than the read it could have been
-    assert interceptor.summarize([same])["totals"]["switch_cache_cost_usd"] == 0

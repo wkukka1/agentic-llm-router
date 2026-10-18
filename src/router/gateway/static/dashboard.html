@@ -213,9 +213,9 @@
       <div class="bars" id="k-asked-bars"></div>
     </div>
     <div class="card kpi">
-      <span class="eyebrow">Cache cost of switching</span>
-      <span class="big" id="k-cache-cost">–</span>
-      <div class="hint" id="k-cache-note">rebuilding the cache after a model switch; already included in the numbers above</div>
+      <span class="eyebrow" id="k-strong-label">Plan usage vs always Opus 5.5</span>
+      <span class="big" id="k-strong-pct">–</span>
+      <div class="bars" id="k-strong-bars"></div>
     </div>
   </div>
 
@@ -570,8 +570,8 @@ async function refresh() {
     tween($("k-req"), t.requests, (v) => num(Math.round(v)));
     $("k-req-tags").textContent = "now";
     saving($("k-asked-pct"), $("k-asked-bars"), t.cost_usd, t.cost_if_requested_usd, "No router");
-    $("k-cache-cost").textContent = usd(t.switch_cache_cost_usd || 0);
-    $("k-cache-note").textContent = `${num(Math.round((t.switch_cache_written_tokens || 0) / 1000))}k tokens re-cached after switches; already in the numbers above`;
+    $("k-strong-label").textContent = `Plan usage vs always ${s.strongest_model ? pretty(s.strongest_model) : "Opus 5.5"}`;
+    saving($("k-strong-pct"), $("k-strong-bars"), t.cost_usd, t.cost_if_strongest_usd, "Always Opus");
 
     // sessions with no turn of their own (just Claude Code naming the session) are noise here
     const sessions = (s.sessions || []).filter((r) => r.turns > 0 || r.subagent_spawns > 0);

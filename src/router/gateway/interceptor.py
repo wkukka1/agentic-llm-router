@@ -1130,16 +1130,6 @@ def _current_records() -> list[dict]:
 RECENT_RECORDS = 200
 
 
-def _cache_as_warm(record: dict) -> dict:
-    """A request's usage as if its prompt had been in the cache already:
-    every token written to the cache is a read instead."""
-    usage = {k: record.get(k) for k in ("input_tokens", "output_tokens", "cache_read_input_tokens",
-                                        "cache_creation_input_tokens")}
-    usage["cache_read_input_tokens"] = (usage["cache_read_input_tokens"] or 0) + (usage["cache_creation_input_tokens"] or 0)
-    usage["cache_creation_input_tokens"] = 0
-    return usage
-
-
 def _expected_thread_expiry(record: dict) -> bool:
     """A 404 for a server-side thread the API has let go of: Claude Code
     replays the conversation itself, so it isn't a failure of the gateway."""
@@ -1156,8 +1146,7 @@ def summarize(records: list[dict] | None = None) -> dict:
                 **dict.fromkeys(token_keys, 0), "cost_usd": 0.0}
 
     total = {**blank(), "cost_if_requested_usd": 0.0, "cost_if_strongest_usd": 0.0,
-             "priced_requests": 0, "turns_routed": 0, "switch_cache_cost_usd": 0.0,
-             "switch_cache_written_tokens": 0}
+             "priced_requests": 0, "turns_routed": 0}
     models: dict = {}
     quality, best_quality = [], []
     for r in records:
@@ -1174,15 +1163,6 @@ def summarize(records: list[dict] | None = None) -> dict:
             total["priced_requests"] += 1
             total["cost_if_requested_usd"] += r["cost_if_requested_usd"]
             total["cost_if_strongest_usd"] += r["cost_if_strongest_usd"]
-        if r.get("routed_model") != r.get("requested_model") and r.get("cost_usd") is not None:
-            # what the switch cost in cache: the new model wrote the prefix it could have read
-            # from a warm cache. Counted in the actual cost already; shown on its own.
-            written = r.get("cache_creation_input_tokens") or 0
-            warm = _cache_as_warm(r)
-            warm_cost = cost_usd(price_for(_settings, r["routed_model"]), warm)
-            if warm_cost is not None:
-                total["switch_cache_cost_usd"] += r["cost_usd"] - warm_cost
-                total["switch_cache_written_tokens"] += written
         if r.get("predicted_quality") is not None:
             total["turns_routed"] += 1
             quality.append(r["predicted_quality"])
