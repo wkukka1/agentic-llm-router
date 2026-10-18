@@ -26,6 +26,7 @@ next time and never affects routing.
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import threading
@@ -34,6 +35,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .config import atomic_write_text, gateway_home, locked_file, read_json, read_jsonl
+
+log = logging.getLogger(__name__)
 
 #: the compressed embedding: this many dimensions, from this fixed projection
 DIMS = 64
@@ -51,8 +54,16 @@ _REASONS = (("continues a server-side thread", "thread"), ("same turn", "same_tu
             ("side request", "side_request"), ("fell back", "fallback"), ("router error", "router_error"),
             ("client's choice", "client_choice"), ("subagent", "subagent"))
 
+#: records waiting for the worker (each holds the user's message text in memory)
+MAX_PENDING = 200
+#: one upload gets this long; the records stay queued for the next attempt
+UPLOAD_TIMEOUT_S = 120.0
+
 _lock = threading.Lock()
 _worker: ThreadPoolExecutor | None = None
+_pending = 0
+#: ``(queue file size, records)`` after our last append: valid while the size adds up
+_queue_state: dict = {"size": None, "count": 0}
 _encoder = None
 _projection = None
 _consent: dict = {"mtime": None, "on": False}
@@ -120,6 +131,27 @@ def _install_id() -> str:
         return value
 
 
+def _call_with_timeout(fn, seconds: float):
+    """``fn()``'s result, or ``TimeoutError`` after ``seconds`` (the call, which
+    cannot be interrupted, is left to finish on its own daemon thread)."""
+    box: dict = {}
+
+    def run():
+        try:
+            box["value"] = fn()
+        except BaseException as exc:  # noqa: BLE001 -- re-raised in the caller
+            box["error"] = exc
+
+    thread = threading.Thread(target=run, name="aar-share-upload", daemon=True)
+    thread.start()
+    thread.join(seconds)
+    if thread.is_alive():
+        raise TimeoutError("upload timed out")
+    if "error" in box:
+        raise box["error"]
+    return box.get("value")
+
+
 def upload(*, api=None) -> dict:
     """Send the queued records to the dataset as one file; on success they
     leave the queue. ``{"sent": n}``, or ``{"error": ...}`` / ``{"skipped": why}``."""
@@ -142,15 +174,17 @@ def upload(*, api=None) -> dict:
             from huggingface_hub import HfApi
 
             api = HfApi(token=tok)
-        api.upload_file(path_or_fileobj="".join(lines).encode("utf-8"), path_in_repo=name,
-                        repo_id=dataset(), repo_type="dataset", commit_message=f"usage records ({len(lines)})")
+        _call_with_timeout(lambda: api.upload_file(
+            path_or_fileobj="".join(lines).encode("utf-8"), path_in_repo=name,
+            repo_id=dataset(), repo_type="dataset", commit_message=f"usage records ({len(lines)})"), UPLOAD_TIMEOUT_S)
     except Exception as exc:  # noqa: BLE001 -- kept for next time; the type only, never the message (it can echo the token)
         st.update(last_error=type(exc).__name__, last_attempt=now.isoformat(timespec="seconds"))
         atomic_write_text(state_path(), json.dumps(st))
         return {"error": type(exc).__name__}
     with _lock, locked_file(path):  # drop exactly what was sent; anything written meanwhile stays
         current = path.read_text(encoding="utf-8").splitlines(keepends=True) if path.exists() else []
-        remaining = current[len(lines):] if current[:len(lines)] == lines else [x for x in current if x not in set(lines)]
+        sent = set(lines)
+        remaining = current[len(lines):] if current[:len(lines)] == lines else [x for x in current if x not in sent]
         atomic_write_text(path, "".join(remaining))
     st.update(last_upload=now.isoformat(timespec="seconds"), sent_total=st.get("sent_total", 0) + len(lines),
               last_error=None, last_attempt=now.isoformat(timespec="seconds"))
@@ -252,19 +286,29 @@ def record(log_record: dict, human: str | None) -> None:
         return
     if reason_category(log_record.get("reason")) == "side_request":
         return  # Claude Code's own background requests (titles, summaries): not the user's messages
-    global _worker
-    if _worker is None:
-        _worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="aar-share")
-    _worker.submit(_append, dict(log_record), human)
+    global _worker, _pending
+    with _lock:
+        if _pending >= MAX_PENDING:
+            log.warning("usage sharing is backed up (%d waiting): dropping a record", _pending)
+            return
+        _pending += 1
+        if _worker is None:
+            _worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="aar-share")
+        worker = _worker
+    worker.submit(_append, dict(log_record), human)
 
 
 def _append(log_record: dict, human: str) -> None:
+    global _pending
     try:
         n = _queue_line(json.dumps(build_record(log_record, human)) + "\n")
         if _upload_due(n):
             upload()
-    except Exception:  # noqa: BLE001 -- sharing must never affect routing
-        pass
+    except Exception as exc:  # noqa: BLE001 -- sharing must never affect routing
+        log.warning("usage sharing failed: %s", type(exc).__name__)  # the type only: a message can echo a token
+    finally:
+        with _lock:
+            _pending -= 1
 
 
 def _queue_line(line: str) -> int:
@@ -273,11 +317,22 @@ def _queue_line(line: str) -> int:
     path = queue_path()
     with _lock, locked_file(path):
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as f:
-            f.write(line)
+        with path.open("ab") as f:  # bytes: the size then grows by exactly len(line) on every OS
+            f.write(line.encode("utf-8"))
         _cap(path)
-        with path.open(encoding="utf-8") as f:
-            return sum(1 for _ in f)
+        size = path.stat().st_size
+        known = _queue_state["size"]
+        if known is not None and size == known + len(line.encode("utf-8")):
+            count = _queue_state["count"] + 1
+        else:  # first append, a trim, or another process wrote: count the file
+            count = _count_lines(path)
+        _queue_state.update(size=size, count=count)
+        return count
+
+
+def _count_lines(path: Path) -> int:
+    with path.open(encoding="utf-8") as f:
+        return sum(1 for _ in f)
 
 
 def _cap(path: Path) -> None:
@@ -290,6 +345,14 @@ def _cap(path: Path) -> None:
 
 def queued() -> list[dict]:
     return read_jsonl(queue_path())
+
+
+def shutdown(timeout: float | None = 10) -> None:
+    """Write what is pending, then stop the worker (the server's shutdown)."""
+    global _worker
+    worker, _worker = _worker, None
+    if worker is not None:
+        worker.shutdown(wait=True, cancel_futures=False)
 
 
 def flush(timeout: float | None = None) -> None:

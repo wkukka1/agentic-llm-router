@@ -13,7 +13,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from . import interceptor
+from . import interceptor, share
 from .config import graded_path, pid_file
 
 _router_status: dict = {"enabled": False}
@@ -58,6 +58,7 @@ async def _lifespan(_app: FastAPI):
     finally:
         if pid_file.exists() and pid_file.read_text().strip() == str(os.getpid()):
             pid_file.unlink()
+        share.shutdown()  # write the records still waiting
         await interceptor.aclose()
 
 
