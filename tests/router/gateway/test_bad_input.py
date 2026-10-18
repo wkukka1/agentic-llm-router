@@ -39,10 +39,21 @@ def test_messages_with_a_body_that_is_not_a_json_object_is_a_400(client, raw):
     assert r.json()["type"] == "error" and r.json()["error"]["type"] == "invalid_request_error"
 
 
-def test_a_message_the_openai_lane_cannot_translate_is_a_400(client):
-    body = {"model": "claude-opus-5", "max_tokens": 8, "messages": [{"content": "no role"}]}
+def test_a_content_block_the_openai_lane_cannot_translate_is_a_400(client):
+    """A prior tool_use with no id passes the routing pre-check but not the translation."""
+    body = {"model": "claude-opus-5", "max_tokens": 8, "tools": [{"name": "Read", "input_schema": {"type": "object"}}],
+            "messages": [{"role": "user", "content": "start"},
+                         {"role": "assistant", "content": [{"type": "tool_use", "input": {}}]},
+                         {"role": "user", "content": "go on"}]}
     r = client.post("/v1/messages", json=body, headers=AUTH)
     assert r.status_code == 400 and r.json()["error"]["type"] == "invalid_request_error"
+
+
+def test_a_message_with_no_role_stays_on_the_anthropic_lane(client):
+    """The routing pre-check keeps what it cannot translate off the openai lane; the upstream judges it."""
+    body = {"model": "claude-opus-5", "max_tokens": 8, "messages": [{"content": "no role"}]}
+    assert client.post("/v1/messages", json=body, headers=AUTH).status_code == 200  # the mock upstream
+    assert len(client.seen) == 1
 
 
 def test_count_tokens_with_an_unreadable_body_is_left_to_the_upstream(client):
