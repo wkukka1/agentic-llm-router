@@ -574,14 +574,13 @@ class AgenticRouter:
         req = self._begin(prompt, conversation_id, alpha)
         token = _current_run.set(req.state)
         try:
-            decision = self.triage_prompt(req.latest, routing_text=routing_text(req.messages))
+            decision = self._triage_request(req)
             t0 = time.perf_counter()
             root = self._solve(req.latest, 0, decision=decision)
             req.state.timings["dispatch"] = time.perf_counter() - t0
         finally:
             _current_run.reset(token)
-        req.state.timings["total"] = time.perf_counter() - t_start
-        result = self._result(req, decision, root)
+        result = self._finish(req, decision, root, t_start)
         if debug:
             _write_debug_trace(result, debug)
         self._emit(result)
@@ -612,7 +611,7 @@ class AgenticRouter:
 
         def setup() -> TriageDecision:
             _current_run.set(req.state)
-            return self.triage_prompt(req.latest, routing_text=routing_text(req.messages))
+            return self._triage_request(req)
 
         decision = ctx.run(setup)
         timings = req.state.timings
@@ -640,8 +639,7 @@ class AgenticRouter:
             timings["dispatch"] = time.perf_counter() - t0
             timings["ttft"] = time.perf_counter() - t_start
             yield root.answer
-        timings["total"] = time.perf_counter() - t_start
-        result = self._result(req, decision, root)
+        result = self._finish(req, decision, root, t_start)
         if on_result is not None:
             _bookkeeping_executor().submit(on_result, result)
         self._emit(result)
@@ -696,6 +694,16 @@ class AgenticRouter:
             steps=root.children, orchestrator=getattr(self.orchestrator, "name", "?"),
             cost=root.cost, **context,
         )
+
+    def _triage_request(self, req: "_Request") -> TriageDecision:
+        """The triage verdict for a request's latest turn, with its conversation as context."""
+        return self.triage_prompt(req.latest, routing_text=routing_text(req.messages))
+
+    def _finish(self, req: "_Request", decision: TriageDecision, root: SubCall,
+                t_start: float) -> AgenticResult:
+        """Stamp the request's total time and assemble its result (run and stream both end here)."""
+        req.state.timings["total"] = time.perf_counter() - t_start
+        return self._result(req, decision, root)
 
     # -- recursion unit ------------------------------------------------
     def _solve(self, prompt: str, depth: int, *, decision: TriageDecision | None = None) -> SubCall:
