@@ -618,15 +618,19 @@ class PlanOrchestratorBridge:
         self.checker = checker
         self.length_budgets = length_budgets
 
+    def _options(self) -> dict:
+        """The settings every per-request :class:`RoutedOrchestrator` is built with."""
+        return {"objective": self.objective, "registry": self.registry, "max_workers": self.max_workers,
+                "sequential": self.sequential, "route_late": self.route_late, "checker": self.checker,
+                "length_budgets": self.length_budgets}
+
     def run(self, prompt: str, agent: "AgenticRouter", depth: int) -> tuple[str, list[SubCall]]:
         root_id = f"plan-{uuid.uuid4().hex[:12]}"
         limits = self.limits or ExecutionLimits(max_cost=self.budget, max_depth=agent.max_depth)
         orch = RoutedOrchestrator(
             OrchestratorConfig(name=self.name, version="0", llm=None,
                                ledger=BudgetLedger(root_id, self.budget), limits=limits),
-            agent=agent, plan_forecaster=self.forecaster(agent), objective=self.objective,
-            registry=self.registry, max_workers=self.max_workers, sequential=self.sequential,
-            route_late=self.route_late, checker=self.checker, length_budgets=self.length_budgets,
+            agent=agent, plan_forecaster=self.forecaster(agent), **self._options(),
         )
         if self.checker is not None and hasattr(self.checker, "on_call"):
             self.checker.on_call = agent._use_call
@@ -716,5 +720,5 @@ def plan_orchestrator(**kwargs) -> PlanOrchestratorBridge:
     """The plan orchestrator, ready to pass as ``AgenticRouter(orchestrator=...)``.
     Keyword arguments are :class:`PlanOrchestratorBridge`'s (``budget``,
     ``limits``, ``forecaster``, ``objective``, ``registry``, ``max_workers``,
-    ``sequential``, ``route_late``, ``checker``)."""
+    ``sequential``, ``route_late``, ``checker``, ``length_budgets``)."""
     return PlanOrchestratorBridge(**kwargs)
