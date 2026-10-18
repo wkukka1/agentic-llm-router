@@ -33,7 +33,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .config import atomic_write_text, read_jsonl
+from .config import atomic_write_text, locked_file, read_jsonl
 
 #: the compressed embedding: this many dimensions, from this fixed projection
 DIMS = 64
@@ -150,7 +150,7 @@ def upload(*, api=None) -> dict:
         st.update(last_error=type(exc).__name__, last_attempt=now.isoformat(timespec="seconds"))
         atomic_write_text(state_path(), json.dumps(st))
         return {"error": type(exc).__name__}
-    with _lock:  # drop exactly what was sent; anything written meanwhile stays
+    with _lock, locked_file(path):  # drop exactly what was sent; anything written meanwhile stays
         current = path.read_text(encoding="utf-8").splitlines(keepends=True) if path.exists() else []
         remaining = current[len(lines):] if current[:len(lines)] == lines else [x for x in current if x not in set(lines)]
         atomic_write_text(path, "".join(remaining))
@@ -261,18 +261,24 @@ def record(log_record: dict, human: str | None) -> None:
 
 def _append(log_record: dict, human: str) -> None:
     try:
-        line = json.dumps(build_record(log_record, human)) + "\n"
-        with _lock:
-            path = queue_path()
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with path.open("a", encoding="utf-8") as f:
-                f.write(line)
-            _cap(path)
-            n = sum(1 for _ in path.open(encoding="utf-8"))
+        n = _queue_line(json.dumps(build_record(log_record, human)) + "\n")
         if _upload_due(n):
             upload()
     except Exception:  # noqa: BLE001 -- sharing must never affect routing
         pass
+
+
+def _queue_line(line: str) -> int:
+    """Append one record to the queue and trim it to ``MAX_RECORDS``; returns
+    its length. Locked across processes: the CLI's upload rewrites the same file."""
+    path = queue_path()
+    with _lock, locked_file(path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(line)
+        _cap(path)
+        with path.open(encoding="utf-8") as f:
+            return sum(1 for _ in f)
 
 
 def _cap(path: Path) -> None:

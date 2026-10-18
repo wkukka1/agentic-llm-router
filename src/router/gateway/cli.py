@@ -1057,7 +1057,8 @@ def _share(argv: list[str]) -> int:
               f"{share.queue_path()} until `aar-gateway share delete`.")
         return 0
     if action == "delete":
-        share.queue_path().unlink(missing_ok=True)
+        with share.locked_file(share.queue_path()):
+            share.queue_path().unlink(missing_ok=True)
         print("deleted every kept record")
         return 0
     if action == "show":

@@ -7,6 +7,7 @@ lane model names the environment variable its key is read from.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -155,3 +156,44 @@ def read_jsonl(path: Path) -> list[dict]:
         except ValueError:
             log.warning("skipping an undecodable line %d of %s", n, path)
     return records
+
+
+@contextlib.contextmanager
+def locked_file(path: Path, *, timeout: float = 30.0):
+    """Hold an exclusive lock on ``path`` across processes (the gateway and
+    the CLI both rewrite the share queue). The lock lives on a sidecar
+    ``<name>.lock`` file, so replacing ``path`` itself does not release it.
+    Every writer of ``path`` must take it; readers need not (replacement is
+    atomic)."""
+    lock = path.with_name(path.name + ".lock")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + timeout
+    with open(lock, "a+b") as f:
+        while True:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+
+                    f.seek(0)
+                    msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise TimeoutError(f"could not lock {lock} within {timeout:.0f}s") from None
+                time.sleep(0.02)
+        try:
+            yield
+        finally:
+            if os.name == "nt":
+                import msvcrt
+
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
