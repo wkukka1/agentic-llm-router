@@ -188,14 +188,11 @@ class RoutedOrchestrator(Orchestrator):
             # query_resolver, or the documented TypeError for a text-less router)
             rrs = [agent.route_decision(p) for p in prompts]
             return [(rr.selected_model_ids[0], rr.row_scores()) for rr in rrs]
-        # same alpha-override resolution as AgenticRouter.route_decision: a
-        # run(prompt, alpha=...) override must hold for every plan step too,
-        # not just the root (AGENTICROUTER-alpha-plan).
-        alpha = agent._run_state().alpha
-        lam = 0.0 if alpha is not None else agent.lam
+        # the agent's own routing (alpha override, lam, margin, eligibility): a
+        # run(prompt, alpha=...) or with_margin() preference holds for every
+        # plan step too, not just the root
+        rr = agent.route_texts(prompts)
         eligible = agent.clients.eligible_mask(agent.router.model_ids)
-        rr = agent.router.route_text(prompts, encoder=agent.encoder, lam=lam, alpha=alpha,
-                                     eligible=eligible)
         servable = {m for m, ok in zip(agent.router.model_ids, eligible) if ok}
         fallback = getattr(rr, "fallback", None)
         out = []

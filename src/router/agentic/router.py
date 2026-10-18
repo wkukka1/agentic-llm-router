@@ -57,6 +57,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Generator, Optional
 
+import numpy as np
+
 from decompose.classifiers.prompt_heads import StructureClassifier
 
 from ..routing.base import RouterModel, RoutingResult
@@ -369,6 +371,28 @@ class AgenticRouter:
     # ------------------------------------------------------------------ #
     # routing a single prompt                                            #
     # ------------------------------------------------------------------ #
+    def _routing_knobs(self) -> tuple[Optional[float], float, np.ndarray]:
+        """``(alpha, lam, eligible)`` for a routing call: this run's ``alpha``
+        override (which replaces ``lam``), else the static ``lam``; only models
+        :attr:`clients` can reach are eligible."""
+        alpha = self._run_state().alpha
+        return alpha, (0.0 if alpha is not None else self.lam), self.clients.eligible_mask(self.router.model_ids)
+
+    def route_texts(self, prompts: list[str]) -> RoutingResult:
+        """One router call over raw ``prompts`` with this agent's cost
+        preference (``lam``/``alpha``/``margin``) and eligibility. The single
+        place root prompts and plan steps are routed, so they cannot drift.
+        Does not check for fallback rows; callers decide what an unscorable
+        prompt means."""
+        if not getattr(self.router, "can_route_text", False):
+            raise TypeError(
+                f"{type(self.router).__name__} cannot score raw text; pass "
+                "query_resolver= or use NIRTRouter / KNNRouter"
+            )
+        alpha, lam, eligible = self._routing_knobs()
+        return self.router.route_text(prompts, encoder=self.encoder, lam=lam, alpha=alpha,
+                                      eligible=eligible, margin=self.margin)
+
     def route_decision(self, prompt: str) -> RoutingResult:
         """One-row :class:`RoutingResult` for ``prompt`` (encoder-backed, or via a
         ``query_resolver`` that maps text -> an existing ``query_id``).
@@ -388,20 +412,12 @@ class AgenticRouter:
         :attr:`clients` can actually reach. See :meth:`score_all_models` for
         the broader, every-registered-model view; don't widen this method to
         use it."""
-        alpha = self._run_state().alpha
-        lam = 0.0 if alpha is not None else self.lam
-        eligible = self.clients.eligible_mask(self.router.model_ids)
         if self._resolver is not None:
+            alpha, lam, eligible = self._routing_knobs()
             rr = self.router.route([self._resolver(prompt)], lam=lam, alpha=alpha,
                                    eligible=eligible, margin=self.margin)
-        elif not getattr(self.router, "can_route_text", False):
-            raise TypeError(
-                f"{type(self.router).__name__} cannot score raw text; pass "
-                "query_resolver= or use NIRTRouter / KNNRouter"
-            )
         else:
-            rr = self.router.route_text([prompt], encoder=self.encoder, lam=lam, alpha=alpha,
-                                        eligible=eligible, margin=self.margin)
+            rr = self.route_texts([prompt])
         if rr.any_fallback:
             raise LookupError(
                 f"{self.router.name}: no usable score for this prompt "
