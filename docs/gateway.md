@@ -126,7 +126,7 @@ trained run from `data/processed/nirt_runs/` (or set `interceptor.router.runs_di
 curl -s localhost:8787/health          # router on? graded prompts + calibration offsets
 aar-gateway code -p "Read src/router/gateway/graded.py and explain min_prompts in two sentences."
 tail -3 ~/.aar-gateway/requests.jsonl  # requested vs routed model, why, cost vs no-router
-tail -1 ~/.aar-gateway/turns.jsonl     # the turn was captured (capture_prompts: true)
+aar-gateway history show 1             # the turn was kept in the on-device history
 aar-gateway-grade --n 2                # grade pending turns on the real tiers
 curl -s localhost:8787/health          # graded_prompts went up; offsets recomputed, no restart
 ```
@@ -418,10 +418,13 @@ syncing them stalls every file operation in the project.
 The benchmark stand-ins are a starting point. The real fix is routing data
 from your own Claude Code work, graded on the actual Claude tiers.
 
-1. **Capture.** Set `interceptor.capture_prompts: true`. For every new turn
-   of an agent conversation, the gateway appends your message (only your
-   words, never the conversation or tool results) and the folder Claude Code
-   ran in to `~/.aar-gateway/turns.jsonl`.
+1. **Capture.** Nothing to switch on: for every new turn of an agent
+   conversation, the gateway keeps your message (only your words, never the
+   conversation or tool results), the folder Claude Code ran in, and how the
+   turn went, in the on-device history `~/.aar-gateway/history/` (on this
+   computer only; `aar-gateway history off` stops it). `aar-gateway-grade`
+   reads it, plus messages mined from Claude Code's own history into
+   `~/.aar-gateway/turns.jsonl`.
 2. **Grade.** Run `aar-gateway-grade --n 20`
    ([`evaluation/gateway/grade.py`](../src/evaluation/gateway/grade.py)).
    * **Replay:** each captured message is replayed on Opus 5.5, Sonnet 5.5
@@ -650,8 +653,8 @@ the kind's model. This measures usage, not quality.
 
 **Grading subagent tasks.** `aar-gateway-grade --from-subagents --subagents
 only --n 10` adds past subagent tasks that can still be replayed and grades
-them on each tier. With `capture_prompts: true`, the gateway also captures
-each new subagent's task, tagged with its kind.
+them on each tier. The on-device history also keeps each new subagent's
+task, tagged with its kind.
 
 ## Configuration
 

@@ -19,12 +19,6 @@ interceptor:
   # the newest Opus, not the priciest (Opus 5 costs more than Opus 5.5)
   strongest: claude-opus-5-5
 
-  # Save the human's own message (and the folder Claude Code ran in) for each
-  # new turn to ~/.aar-gateway/turns.jsonl, so `aar-gateway-grade` can replay
-  # it on each Claude tier and grade the answers -- routing data from your own
-  # work. Local only; never the conversation, tool results or credentials.
-  capture_prompts: false
-
   # Claude Code subagents (Agent tool spawns) get a model by kind, set at
   # spawn time by the PreToolUse hook `aar-gateway code` installs (and at the
   # gateway for any it missed): lookup / Explore -> Haiku 5.5; make / Plan ->

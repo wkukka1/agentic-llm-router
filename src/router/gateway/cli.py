@@ -1157,7 +1157,8 @@ def _history(argv: list[str]) -> int:
 # --------------------------------------------------------------------------- #
 SHARE_QUESTION = ("Share anonymous usage data to help improve routing? Never your prompts, file paths or ids:\n"
                   "which models answered, cost, tokens, and a compressed embedding of each message.\n"
-                  "Kept on this computer until a destination is set up (`aar-gateway share show` shows it). [y/N] ")
+                  "It is sent to the project's collection server, to retrain the router, once one is set up;\n"
+                  "until then it stays on this computer (`aar-gateway share show` shows it). [y/N] ")
 
 
 def _share(argv: list[str]) -> int:
