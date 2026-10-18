@@ -30,6 +30,7 @@ import json
 import logging
 import math
 import os
+import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -283,6 +284,23 @@ def _embed(text: str) -> list[int] | None:
         return None
 
 
+_NAME = re.compile(r"^[A-Za-z0-9_.:/\[\]+\-]{1,80}$")   # the collection server's formats (ingest.schema)
+_TOKEN = re.compile(r"^[A-Za-z0-9_.\-]{1,64}$")
+
+
+def _name(value) -> str | None:
+    """A model id or version in the server's format, else ``None``: a name with spaces or
+    free text is not sent."""
+    return value if isinstance(value, str) and _NAME.match(value) else None
+
+
+def _token(value) -> str | None:
+    """A short category in the server's format; anything else that is not empty becomes ``"other"``."""
+    if not value:
+        return None
+    return value if isinstance(value, str) and _TOKEN.match(value) else "other"
+
+
 def build_record(record: dict, human: str | None, *, embed: bool = True) -> dict:
     """The shareable part of a request-log record (see the module docstring).
     ``embed=False`` leaves the embedding out (the slow part) but keeps the rest."""
@@ -290,15 +308,15 @@ def build_record(record: dict, human: str | None, *, embed: bool = True) -> dict
     return {
         "v": 1,
         "day": (record.get("ts") or datetime.now(UTC).isoformat())[:10],
-        "gateway": _version(),
-        "requested_model": record.get("requested_model"),
-        "routed_model": record.get("routed_model"),
+        "gateway": _name(_version()) or "dev",
+        "requested_model": _name(record.get("requested_model")),
+        "routed_model": _name(record.get("routed_model")),
         "decision": reason_category(record.get("reason")),
-        "subagent_role": record.get("agent_role"),
+        "subagent_role": _token(record.get("agent_role")),
         "correction": bool(record.get("correction")),
-        "thread": record.get("thread"),
+        "thread": _token(record.get("thread")),
         "status": record.get("status"),
-        "error_type": error.split(":", 1)[0].strip() if error else None,
+        "error_type": _token(error.split(":", 1)[0].strip()) if error else None,
         "latency_s": record.get("latency_s"),
         **{k: record.get(k) for k in ("input_tokens", "output_tokens", "cache_read_input_tokens",
                                       "cache_creation_input_tokens", "cost_usd", "cost_if_requested_usd")},

@@ -160,6 +160,8 @@ include = [
   "src/evaluation/gateway/**/*.py",
   "src/router/llm/**/*.py",
   "tests/router/gateway/**/*.py",
+  "src/ingest/**/*.py",
+  "tests/ingest/**/*.py",
 ]
 
 [tool.ruff.lint]
