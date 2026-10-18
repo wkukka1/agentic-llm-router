@@ -156,6 +156,7 @@ def _ensure_running(url: str, *, quiet: bool = False, timeout: float = 90) -> bo
             return True
     log = _log_file()
     log.parent.mkdir(parents=True, exist_ok=True)
+    _rotate_log(log)
     # detached, so it outlives this command and the terminal it ran in
     detach = ({"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
               if WINDOWS else {"start_new_session": True})
@@ -294,14 +295,44 @@ def _text(raw: bytes) -> str:
     return raw.decode(errors="replace").replace("\r\n", "\n")
 
 
+def _tail(path: Path, lines: int, block: int = 8192) -> list[bytes]:
+    """The last ``lines`` lines of ``path`` (newlines kept), reading blocks from
+    the end: the daemon's log can be large and ``logs`` wants only the end."""
+    if lines <= 0:
+        return []
+    with path.open("rb") as f:
+        f.seek(0, os.SEEK_END)
+        end = f.tell()
+        data = b""
+        while end > 0 and data.count(b"\n") <= lines:
+            start = max(0, end - block)
+            f.seek(start)
+            data = f.read(end - start) + data
+            end = start
+    return data.splitlines(keepends=True)[-lines:]
+
+
+#: the daemon's stdout/stderr file is set aside past this size when a gateway starts
+MAX_GATEWAY_LOG_BYTES = 10 * 1024 * 1024
+
+
+def _rotate_log(log: Path, max_bytes: int = MAX_GATEWAY_LOG_BYTES) -> None:
+    """Keep one previous file (``.1``) so ``gateway.log`` cannot grow for ever
+    across restarts. (A running daemon holds the file as its stdout, so it can
+    only be moved aside between runs.)"""
+    try:
+        if log.stat().st_size > max_bytes:
+            os.replace(log, log.with_name(log.name + ".1"))
+    except OSError:
+        pass  # missing, or held open elsewhere: append to it as before
+
+
 def _logs(lines: int, follow: bool) -> int:
     log = _log_file()
     if not log.exists():
         print(f"no log yet ({log})")
         return 1
-    with log.open("rb") as f:
-        tail = f.readlines()[-lines:] if lines > 0 else []
-    sys.stdout.write(_text(b"".join(tail)))
+    sys.stdout.write(_text(b"".join(_tail(log, lines))))
     if not follow:
         return 0
     with log.open("rb") as f:
