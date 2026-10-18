@@ -213,6 +213,18 @@ def locked_file(path: Path, *, timeout: float = 30.0):
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 
+def safe_append_jsonl(path: Path, *records: dict) -> bool:
+    """:func:`append_jsonl` for records that must never cost a request: a full
+    disk or a locked file is logged (the exception type only) and ``False`` is
+    returned; the caller carries on."""
+    try:
+        append_jsonl(path, *records)
+    except OSError as exc:
+        log.warning("could not write %s: %s", path, type(exc).__name__)
+        return False
+    return True
+
+
 def append_jsonl(path: Path, *records: dict) -> None:
     """Append ``records`` to a jsonl file, one line each, creating its folder.
     Raises ``OSError`` if the write fails; callers choose whether that matters."""

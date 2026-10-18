@@ -137,10 +137,7 @@ def test_catch_all_refuses_requests_without_credentials(client, upstream_calls):
 
 @pytest.mark.parametrize("stream", [False, True])
 def test_a_log_write_failure_does_not_break_a_served_response(client, upstream_calls, monkeypatch, stream):
-    def broken(path, record):
-        raise OSError(28, "No space left on device")
-
-    monkeypatch.setattr(interceptor, "append_jsonl", broken)
+    interceptor.log_path().mkdir()  # appending to a directory fails like a full disk or a locked file
     resp = client.post("/v1/messages", json={**CLAUDE_CODE_BODY, "stream": stream}, headers={"authorization": SECRET})
     assert resp.status_code == 200
     assert resp.content == SSE if stream else resp.json()["content"][0]["text"] == "pong"
@@ -158,3 +155,13 @@ def test_a_log_rotation_blocked_by_another_program_does_not_break_the_response(c
     monkeypatch.setattr(Path, "replace", blocked)
     resp = client.post("/v1/messages", json=CLAUDE_CODE_BODY, headers={"authorization": SECRET})
     assert resp.status_code == 200
+
+
+def test_a_failed_prompt_capture_does_not_stop_the_request(client, upstream_calls, monkeypatch):
+    """capture_prompts writes turns.jsonl before the request is forwarded: a full disk
+    there must cost one captured turn, not the user's request."""
+    monkeypatch.setitem(interceptor._settings, "capture_prompts", True)
+    interceptor.turns_path().mkdir()  # appending to a directory fails like a full disk or a locked file
+    resp = client.post("/v1/messages", json=CLAUDE_CODE_BODY, headers={"authorization": SECRET})
+    assert resp.status_code == 200
+    assert len(upstream_calls) == 1

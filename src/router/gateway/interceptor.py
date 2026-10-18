@@ -49,7 +49,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from . import share
-from .config import append_jsonl, atomic_write_text, load_settings, log_path, read_jsonl
+from .config import append_jsonl, atomic_write_text, load_settings, log_path, read_jsonl, safe_append_jsonl
 from .pricing import canonical_model, cost_usd
 from .routing import ModelPicker, price_for, unavailable_reason
 from .subagents import DEFAULT_ROLE_MODELS, role_decision, spawn_decision
@@ -305,7 +305,7 @@ def _save_preferences(**changes) -> None:
 
 
 def _log_override(record: dict) -> None:
-    append_jsonl(overrides_path(), {"ts": datetime.now(UTC).isoformat(timespec="seconds"), **record})
+    safe_append_jsonl(overrides_path(), {"ts": datetime.now(UTC).isoformat(timespec="seconds"), **record})
 
 
 def set_routing(mode: str, pinned_model: str | None = None) -> dict:
@@ -439,7 +439,7 @@ def _capture(turn: _Turn) -> None:
     """Only the human's own words of a new agent turn, plus where it ran --
     never the conversation, tool results or credentials. For a subagent,
     the "human" is the main agent and its words are the subagent's task."""
-    append_jsonl(turns_path(), {
+    safe_append_jsonl(turns_path(), {
         "ts": datetime.now(UTC).isoformat(timespec="seconds"),
         "conversation": turn.key,
         "prompt_hash": hashlib.sha1(turn.human.encode()).hexdigest()[:16],
@@ -465,12 +465,9 @@ def _append_record(record: dict) -> None:
         pass
     except OSError as exc:  # e.g. Windows, another program has the log open: append to it, rotate next time
         log.warning("could not rotate the request log %s: %s", path, type(exc).__name__)
-    try:
-        append_jsonl(path, record)
-    except OSError as exc:  # disk full, permissions: the response was already served; losing one record is the lesser harm
-        log.warning("could not write the request log %s: %s", path, type(exc).__name__)
-        return
-    _notify()
+    # the response was already served: losing one record is the lesser harm
+    if safe_append_jsonl(path, record):
+        _notify()
 
 
 #: open dashboard streams (``GET /api/events``): (their event loop, queue)
