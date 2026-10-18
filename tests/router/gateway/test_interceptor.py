@@ -11,7 +11,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from router.gateway import interceptor, server
+from router.gateway import history, interceptor, server
 
 SECRET = "Bearer sk-ant-oat-not-a-real-token"
 CLAUDE_CODE_BODY = {
@@ -157,11 +157,10 @@ def test_a_log_rotation_blocked_by_another_program_does_not_break_the_response(c
     assert resp.status_code == 200
 
 
-def test_a_failed_prompt_capture_does_not_stop_the_request(client, upstream_calls, monkeypatch):
-    """capture_prompts writes turns.jsonl before the request is forwarded: a full disk
-    there must cost one captured turn, not the user's request."""
-    monkeypatch.setitem(interceptor._settings, "capture_prompts", True)
-    interceptor.turns_path().mkdir()  # appending to a directory fails like a full disk or a locked file
+def test_a_failed_history_write_does_not_stop_the_request(client, upstream_calls):
+    """A full disk under the history costs one kept turn, not the user's request."""
+    history.history_path().parent.mkdir(parents=True, exist_ok=True)
+    history.history_path().mkdir()  # appending to a directory fails like a full disk or a locked file
     resp = client.post("/v1/messages", json=CLAUDE_CODE_BODY, headers={"authorization": SECRET})
     assert resp.status_code == 200
     assert len(upstream_calls) == 1

@@ -11,7 +11,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from router.gateway import interceptor, rollup, server
+from router.gateway import history, interceptor, rollup, server
 from router.gateway.config import load_settings
 from router.gateway.pricing import CLAUDE_PRICES, cost_usd
 
@@ -381,21 +381,26 @@ def test_an_unreachable_provider_is_a_logged_502_not_a_crash(tmp_path, monkeypat
     assert rec["status"] == 502 and "unreachable" in rec["reason"]
 
 
-def test_capture_is_opt_in_and_keeps_only_the_humans_words_and_folder(env, tmp_path):
+def test_history_keeps_each_users_turn_with_its_outcome_and_folder(env, tmp_path):
     client, settings, _, _ = env
     interceptor.configure(settings, None)
-    client.post("/v1/messages", json=turn("first"), headers=AUTH)
-    assert not interceptor.turns_path().exists()
-
-    interceptor.configure({**settings, "capture_prompts": True}, None)
     env_block = {"type": "text", "text": "<system-reminder>\n - Primary working directory: /repo/x\n</system-reminder>"}
     body = turn([env_block, {"type": "text", "text": "refactor the loader"}])
     client.post("/v1/messages", json=body, headers=AUTH)
     client.post("/v1/messages", json=turn([{"type": "tool_result", "tool_use_id": "t", "content": "ok"}]),
-                headers=AUTH)
-    (rec,) = [json.loads(line) for line in interceptor.turns_path().read_text().splitlines()]
+                headers=AUTH)  # the same turn's tool loop: not another row
+    (rec,) = history.read()
     assert rec["prompt"] == "refactor the loader" and rec["cwd"] == "/repo/x"
     assert "system-reminder" not in rec["prompt"]
+    assert rec["status"] == 200 and rec["routed_model"] and rec["prompt_hash"]
+
+
+def test_history_off_keeps_nothing(env):
+    client, settings, _, _ = env
+    interceptor.configure(settings, None)
+    history.set_enabled(False)
+    client.post("/v1/messages", json=turn("fix it"), headers=AUTH)
+    assert history.read() == [] and records()  # the request itself was still logged, without text
 
 
 def test_the_log_says_what_started_a_turn_without_its_text():

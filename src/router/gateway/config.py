@@ -124,7 +124,6 @@ def load_settings(config_path: str | Path | None = None) -> dict:
     anthropic_priced = [k for k, m in models.items() if m["lane"] == "anthropic" and m.get("prices")]
     strongest = section.get("strongest") or next(iter(anthropic_priced), None)
     return {"models": models, "strongest": strongest,
-            "capture_prompts": bool(section.get("capture_prompts", False)),
             "router": {**DEFAULT_ROUTER, **(section.get("router") or {})},
             "subagents": {**DEFAULT_SUBAGENTS, **(section.get("subagents") or {})}}
 

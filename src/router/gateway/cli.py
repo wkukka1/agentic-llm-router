@@ -452,9 +452,6 @@ CONFIG_TEMPLATE = """# AAR gateway config, written by `aar-gateway setup`.
 # Every option is explained in configs/gateway.example.yaml in the repository,
 # and in docs/gateway.md.
 interceptor:
-  # true: keep the messages you type (locally, never sent anywhere) so
-  # `aar-gateway-grade` can learn which model suits your own work
-  capture_prompts: false
   router:
     enabled: {enabled}
     kind: knn

@@ -3,8 +3,8 @@ from the user's own work instead of benchmark stand-ins.
 
     aar-gateway-grade --n 20        # replay + judge up to 20 ungraded turns
 
-For each captured turn (``~/.aar-gateway/turns.jsonl``, written by the
-gateway when ``interceptor.capture_prompts: true``):
+For each kept turn (the gateway's on-device history, ``~/.aar-gateway/history/``,
+plus messages mined from Claude Code's own history into ``turns.jsonl``):
 
 1. **Replay** the human's message on each tier (default Opus 5.5, Sonnet 5.5,
    Haiku 5.5) through the ``claude`` CLI on the user's own login, in the turn's
@@ -188,13 +188,28 @@ def grade_turn(turn: dict, tiers: tuple[str, ...], judge_model: str, *, timeout:
     return rows
 
 
+def _turns(turns_file: Path | None) -> list[dict]:
+    """The turns to grade: ``turns_file`` alone when given (e.g. a prompt pool), else the
+    messages mined from Claude Code's history (``turns.jsonl``) and the on-device history
+    the gateway keeps. A message in both is graded once (the first, ``turns.jsonl``, wins)."""
+    if turns_file is not None:
+        return read_jsonl(turns_file)
+    from router.gateway import history
+
+    out, seen = [], set()
+    for turn in [*read_jsonl(_home() / "turns.jsonl"), *history.read()]:
+        if turn.get("prompt_hash") not in seen:
+            seen.add(turn.get("prompt_hash"))
+            out.append(turn)
+    return out
+
+
 def grade(n: int, *, tiers: tuple[str, ...] = DEFAULT_TIERS, judge_model: str = DEFAULT_JUDGE,
           workers: int = 2, timeout: float = 600.0, seed: int = 0,
           turns_file: Path | None = None, out_file: Path | None = None,
           subagents: bool | None = None) -> list[dict]:
-    turns_file = turns_file or _home() / "turns.jsonl"
     out_file = out_file or _home() / "graded.jsonl"
-    todo = pending_turns(read_jsonl(turns_file), read_jsonl(out_file), subagents=subagents)
+    todo = pending_turns(_turns(turns_file), read_jsonl(out_file), subagents=subagents)
     rng = random.Random(seed)
     rng.shuffle(todo)
     todo = todo[:n]
@@ -275,7 +290,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--timeout", type=float, default=600.0, help="seconds per CLI call")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--summary", action="store_true", help="only summarize what is already graded")
-    ap.add_argument("--turns", help="turns to grade (default ~/.aar-gateway/turns.jsonl); "
+    ap.add_argument("--turns", help="turns to grade (default: the on-device history and turns.jsonl); "
                                     "e.g. a prompt pool from evaluation.gateway.pool")
     ap.add_argument("--out", help="graded rows (default ~/.aar-gateway/graded.jsonl, which the gateway reads)")
     ap.add_argument("--from-history", action="store_true",

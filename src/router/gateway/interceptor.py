@@ -50,7 +50,7 @@ from fastapi import Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from . import archive, rollup, share
+from . import archive, history, rollup, share
 from .config import (
     DEFAULT_ROUTER,
     DEFAULT_SUBAGENTS,
@@ -104,7 +104,7 @@ def _boot_settings() -> dict:
         return load_settings(None)
     except Exception as exc:  # noqa: BLE001 -- yaml errors and ValueErrors alike
         log.warning("default gateway settings not loadable (%s); starting with none", type(exc).__name__)
-        return {"models": {}, "strongest": None, "capture_prompts": False,
+        return {"models": {}, "strongest": None,
                 "router": dict(DEFAULT_ROUTER), "subagents": dict(DEFAULT_SUBAGENTS)}
 
 
@@ -441,12 +441,6 @@ def lane_of(model: str | None) -> str:
     return (_settings["models"].get(canonical_model(model)) or {}).get("lane", "anthropic")
 
 
-def turns_path() -> Path:
-    """Captured human turns (opt-in, ``interceptor.capture_prompts``): the raw
-    material ``aar-gateway-grade`` replays and grades."""
-    return log_path().parent / "turns.jsonl"
-
-
 _CWD = re.compile(r"Primary working directory: ([^\n]+)")
 
 
@@ -459,23 +453,6 @@ def working_directory(body: Mapping) -> str | None:
         if found:
             return found.group(1).strip()
     return None
-
-
-def _capture(turn: _Turn) -> None:
-    """Only the human's own words of a new agent turn, plus where it ran --
-    never the conversation, tool results or credentials. For a subagent,
-    the "human" is the main agent and its words are the subagent's task."""
-    safe_append_jsonl(turns_path(), {
-        "ts": datetime.now(UTC).isoformat(timespec="seconds"),
-        "conversation": turn.key,
-        "prompt_hash": hashlib.sha1(turn.human.encode()).hexdigest()[:16],
-        "prompt": turn.human,
-        "cwd": working_directory(turn.body),
-        "requested_model": turn.requested,
-        "routed_model": turn.target,
-        "subagent": turn.agent is not None,
-        "agent_role": (turn.agent or {}).get("role"),
-    })
 
 
 #: rotate the request log past this size: it becomes a dated archive (``requests-<UTC>.jsonl.gz``),
@@ -751,6 +728,9 @@ class _Turn:
         record = self._log_record(status, usage, lane, asked, baseline, cost, cost_asked)
         _append_record(record)
         share.record(record, self.human)  # opt-in only; a background thread, no prompt text
+        if self.body.get("tools") and not (record.get("reason") or "").startswith("side request"):
+            # kept on this computer for personalization; never uploaded (share has its own record)
+            history.record(record, self.human, working_directory(self.body))
 
     def _remember_served(self, status: int, usage: dict, lane: str) -> None:
         """What a served request teaches the router: the message's model, the
@@ -1186,8 +1166,6 @@ async def handle_messages(request: Request) -> Response | None:
         return _invalid_request("the request body must be a JSON object")
     turn = _Turn(request, raw, body)
     await _decide(turn)
-    if _settings.get("capture_prompts") and turn.human is not None and body.get("tools"):
-        _capture(turn)
     if lane_of(turn.target) == "openai":
         return await _via_openai(turn)
     if not has_client_credentials(request):
