@@ -77,7 +77,7 @@ from .decompose import (
     concat_synthesizer,
     looks_atomic,
 )
-from .result import AgenticResult, SubCall, total_cost
+from .result import AgenticResult, CallBudgetExceeded, SubCall, total_cost
 from .triage import HeuristicTriage, LLMTriage, TriageDecision, best_from_result
 
 __all__ = ["AgenticRouter", "flush_bookkeeping"]
@@ -128,7 +128,7 @@ class _RunState:
         worker threads sharing this state."""
         with self._lock:
             if enforce and self.max_calls is not None and self.calls + n > self.max_calls:
-                raise RuntimeError(f"max_calls={self.max_calls} model calls exhausted for this run")
+                raise CallBudgetExceeded(f"max_calls={self.max_calls} model calls exhausted for this run")
             self.calls += n
 
 
@@ -778,7 +778,9 @@ class AgenticRouter:
             return SubCall(
                 prompt=prompt, model_id=model_id, predicted_quality=float(predicted_quality),
                 answer=f"[error: {type(exc).__name__}: {exc}]", mode="single", depth=depth,
-                cost=None, error=repr(exc), meta={**expected, "cost_source": "failed", "sent_prompt": sent},
+                cost=None, error=repr(exc),
+                meta={**expected, "cost_source": "failed", "sent_prompt": sent,
+                      **({"budget_exhausted": True} if isinstance(exc, CallBudgetExceeded) else {})},
             )
         return self._leaf(prompt, model_id, depth, predicted_quality, resp, expected, sent_prompt=sent)
 

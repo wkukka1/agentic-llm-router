@@ -58,7 +58,7 @@ from ..agentic.decompose import (
     budget_mid_tokens,
     derive_final_budget,
 )
-from ..agentic.result import SubCall, total_cost
+from ..agentic.result import CallBudgetExceeded, SubCall, total_cost
 from ..llm.cost import estimate_tokens
 from ..llm.profile import LLMProfile
 from .budget import BudgetLedger, ExecutionLimits
@@ -288,7 +288,8 @@ class RoutedOrchestrator(Orchestrator):
         self.subcalls = [self._calls[s.step_id] for s in plan.steps if s.step_id in self._calls]
         failed = [sc for sc in self.subcalls if sc.error is not None]
         output = ""
-        error_code = "step_failed" if failed else None
+        error_code = ("budget_exhausted" if any(sc.meta.get("budget_exhausted") for sc in failed)
+                      else "step_failed") if failed else None
         if not failed:
             if len(self.subcalls) == 1:
                 output = self.subcalls[0].answer
@@ -636,11 +637,10 @@ class PlanOrchestratorBridge:
                          prompt=prompt, depth=depth)
         try:
             result = orch.run(task)
-        except RuntimeError:
+        except CallBudgetExceeded:
             # the run's max_calls ran out inside a helper (synthesizer / judge): a
             # checked answer from an earlier round is still worth returning, flagged
-            rs = agent._run_state()
-            if orch.best is None or rs.max_calls is None or rs.calls < rs.max_calls:
+            if orch.best is None:
                 raise
             agent._run_state().plans.extend(_plan_records(orch, self.budget))
             return _best_answer(orch, agent, stopped_early="max_calls")

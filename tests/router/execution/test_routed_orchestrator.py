@@ -185,6 +185,20 @@ def test_independent_steps_run_concurrently():
     wall = time.perf_counter() - t0
     assert res.success and len(orch.subcalls) == 3
     assert wall < 0.45                                            # ~0.2 s, not ~0.6 s sequential
+def test_an_exhausted_call_budget_is_not_replanned(monkeypatch):
+    """Running out of max_calls says nothing about the steps: a repair round
+    would only be refused call by call. The failed step is marked, no replan."""
+    replans = []
+    real = RoutedOrchestrator.replan
+    monkeypatch.setattr(RoutedOrchestrator, "replan", lambda self, plan: replans.append(1) or real(self, plan))
+    agent = AgenticRouter(TextRouter(), _clients(), decomposer=_decomposer(["a", "b", "c"]),
+                          orchestrator=plan_orchestrator(), max_calls=2)
+    res = agent.run(COMPOUND)
+    (failed,) = res.errors()
+    assert failed.meta["budget_exhausted"] is True
+    assert replans == []
+
+
     assert res.actual_cost == pytest.approx(0.03) and orch.ledger.spent == pytest.approx(0.03)
 
 

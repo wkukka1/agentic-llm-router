@@ -124,7 +124,7 @@ class Orchestrator(abc.ABC):
                     plan.status = PlanStatus.COMPLETED
                     return self._finish(task, TaskStatus.COMPLETED, result)
                 plan.status = PlanStatus.FAILED
-                if replans >= self.limits.max_replans:
+                if result.error_code == "budget_exhausted" or replans >= self.limits.max_replans:
                     return self._finish(task, TaskStatus.FAILED, result)
                 replans += 1
                 task.status = TaskStatus.PLANNING
