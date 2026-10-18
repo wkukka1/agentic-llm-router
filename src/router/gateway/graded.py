@@ -10,13 +10,14 @@ when it changes, so grades added while the gateway runs are picked up.
 
 from __future__ import annotations
 
-import json
 import os
 import threading
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import numpy as np
+
+from .config import read_jsonl
 
 Encoder = Callable[[Sequence[str]], np.ndarray]  # unit-normalized rows
 GradedPredictor = Callable[[str], dict | None]
@@ -25,10 +26,7 @@ GradedPredictor = Callable[[str], dict | None]
 def load_graded(path: Path) -> tuple[list[str], list[str], np.ndarray]:
     """``(prompts, models, scores)``: one row per graded prompt, ``nan`` where
     a model has no grade for it (failed replay, unparseable verdict)."""
-    rows = []
-    if path.exists():
-        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
-    rows = [r for r in rows if r.get("score") is not None]
+    rows = [r for r in read_jsonl(path) if r.get("score") is not None]
     prompts: dict[str, str] = {}
     for r in rows:
         prompts.setdefault(r["prompt_hash"], r["prompt"])

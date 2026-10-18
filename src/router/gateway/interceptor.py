@@ -34,6 +34,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import re
 import time
@@ -61,6 +62,8 @@ from .translate import (
     iter_openai_sse,
     openai_to_anthropic,
 )
+
+log = logging.getLogger(__name__)
 
 _REQUEST_HOP_HEADERS = {"host", "content-length", "connection", "accept-encoding",
                         "transfer-encoding", "keep-alive"}
@@ -1116,7 +1119,13 @@ def _current_records() -> list[dict]:
         _log_cache["offset"] += len(data)
         lines = (_log_cache["partial"] + data).split(b"\n")
         _log_cache["partial"] = lines.pop()  # an unfinished last line waits for the rest
-        _log_cache["records"].extend(json.loads(line) for line in lines if line.strip())
+        for line in lines:
+            if not line.strip():
+                continue
+            try:
+                _log_cache["records"].append(json.loads(line))
+            except ValueError:  # a line cut short by a crash: skip it, keep the rest
+                log.warning("skipping an undecodable line of %s", path)
     return list(_log_cache["records"])
 
 

@@ -33,7 +33,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .config import atomic_write_text
+from .config import atomic_write_text, read_jsonl
 
 #: the compressed embedding: this many dimensions, from this fixed projection
 DIMS = 64
@@ -284,10 +284,7 @@ def _cap(path: Path) -> None:
 
 
 def queued() -> list[dict]:
-    path = queue_path()
-    if not path.exists():
-        return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return read_jsonl(queue_path())
 
 
 def flush(timeout: float | None = None) -> None:

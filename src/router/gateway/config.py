@@ -7,12 +7,16 @@ lane model names the environment variable its key is read from.
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import tempfile
 import time
 from pathlib import Path
 
 import yaml
+
+log = logging.getLogger(__name__)
 
 #: what the interceptor may route Claude Code's requests to when no config
 #: says otherwise. ``proxy`` is the router's pool model whose predicted quality
@@ -131,3 +135,23 @@ def atomic_write_text(path: Path, text: str) -> None:
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
+
+
+def read_jsonl(path: Path) -> list[dict]:
+    """Every record in a jsonl file, oldest first. A missing file is empty; an
+    unreadable one raises. A line that does not decode (cut short by a crash or
+    rotation, or half-written) is skipped and logged by position, never by
+    content: one bad line must not cost the rest of the file."""
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        return []
+    records = []
+    for n, line in enumerate(text.splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            records.append(json.loads(line))
+        except ValueError:
+            log.warning("skipping an undecodable line %d of %s", n, path)
+    return records

@@ -18,6 +18,7 @@ import re
 from collections.abc import Iterable
 from pathlib import Path
 
+from router.gateway.config import read_jsonl
 from router.gateway.translate import REMINDER as _REMINDER
 
 PROJECTS_DIR = Path.home() / ".claude" / "projects"
@@ -66,10 +67,7 @@ def history_turns(projects_dir: Path = PROJECTS_DIR) -> list[dict]:
 
 def merge_into(turns_file: Path, rows: Iterable[dict]) -> int:
     """Append the rows ``turns_file`` doesn't already have; returns how many."""
-    have = set()
-    if turns_file.exists():
-        have = {json.loads(line)["prompt_hash"] for line in turns_file.read_text(encoding="utf-8").splitlines()
-                if line.strip()}
+    have = {r["prompt_hash"] for r in read_jsonl(turns_file) if "prompt_hash" in r}
     new = [r for r in rows if r["prompt_hash"] not in have]
     turns_file.parent.mkdir(parents=True, exist_ok=True)
     with turns_file.open("a", encoding="utf-8") as f:
