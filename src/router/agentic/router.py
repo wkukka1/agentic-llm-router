@@ -516,6 +516,11 @@ class AgenticRouter:
                  or HeuristicTriage(structure=StructureClassifier()).is_multipart)
         return check(prompt)
 
+    def cached_decision(self, prompt: str) -> Optional[TriageDecision]:
+        """This run's triage decision for ``prompt``, if it was already made
+        (scoped to the run, so its alpha/margin are the ones in force)."""
+        return self._run_state().decisions.get(prompt)
+
     @_standalone_scope
     def pick_helper_model(self, request: str, min_quality: float) -> tuple[str, float]:
         """The pool model an LLM helper (decomposer / synthesizer) runs on for
@@ -531,7 +536,7 @@ class AgenticRouter:
         -- a helper LLM must be something :attr:`clients` can actually call,
         unlike :meth:`score_all_models`'s broader, every-registered-model
         view."""
-        known = self._run_state().decisions.get(request)
+        known = self.cached_decision(request)
         scores = (known.scores if known is not None and known.scores
                   else self.route_decision(request).row_scores(0))
         scores = {m: float(q) for m, q in scores.items()
@@ -782,7 +787,7 @@ class AgenticRouter:
     ) -> SubCall:
         """Route ``prompt`` (if the model was not already chosen) and invoke it."""
         if model_id is None:
-            known = self._run_state().decisions.get(prompt)
+            known = self.cached_decision(prompt)
             if known is not None:          # triage already routed this prompt
                 model_id, predicted_quality = known.selected_model_id, self._quality_of(known)
             else:

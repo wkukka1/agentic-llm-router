@@ -173,7 +173,7 @@ class RoutedOrchestrator(Orchestrator):
     def _route_known(self, prompt: str) -> tuple[str, dict[str, float]]:
         """A request that doesn't decompose: reuse the route triage already
         computed for it (as ``RecursiveOrchestrator`` does), else route it."""
-        known = self.agent._run_state().decisions.get(prompt)
+        known = self.agent.cached_decision(prompt)
         if known is not None:
             return known.selected_model_id, dict(known.scores)
         return self._route_batch([prompt])[0]
