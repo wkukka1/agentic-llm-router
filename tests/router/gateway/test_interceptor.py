@@ -133,3 +133,28 @@ def test_without_credentials_nothing_is_forwarded(client, upstream_calls):
 def test_catch_all_refuses_requests_without_credentials(client, upstream_calls):
     assert client.post("/v1/messages/count_tokens", json={}).status_code == 401
     assert upstream_calls == []
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_a_log_write_failure_does_not_break_a_served_response(client, upstream_calls, monkeypatch, stream):
+    def broken(path, record):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(interceptor, "_append_jsonl", broken)
+    resp = client.post("/v1/messages", json={**CLAUDE_CODE_BODY, "stream": stream}, headers={"authorization": SECRET})
+    assert resp.status_code == 200
+    assert resp.content == SSE if stream else resp.json()["content"][0]["text"] == "pong"
+
+
+def test_a_log_rotation_blocked_by_another_program_does_not_break_the_response(client, upstream_calls, monkeypatch):
+    from pathlib import Path
+
+    interceptor.log_path().write_text('{"model": "a"}\n', encoding="utf-8")
+    monkeypatch.setattr(interceptor, "MAX_LOG_BYTES", 1)
+
+    def blocked(self, target):
+        raise PermissionError(13, "in use by another process")
+
+    monkeypatch.setattr(Path, "replace", blocked)
+    resp = client.post("/v1/messages", json=CLAUDE_CODE_BODY, headers={"authorization": SECRET})
+    assert resp.status_code == 200

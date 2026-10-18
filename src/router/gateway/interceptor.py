@@ -467,7 +467,13 @@ def _append_record(record: dict) -> None:
             path.replace(path.with_name(path.name + ".1"))
     except FileNotFoundError:
         pass
-    _append_jsonl(path, record)
+    except OSError as exc:  # e.g. Windows, another program has the log open: append to it, rotate next time
+        log.warning("could not rotate the request log %s: %s", path, type(exc).__name__)
+    try:
+        _append_jsonl(path, record)
+    except OSError as exc:  # disk full, permissions: the response was already served; losing one record is the lesser harm
+        log.warning("could not write the request log %s: %s", path, type(exc).__name__)
+        return
     _notify()
 
 
