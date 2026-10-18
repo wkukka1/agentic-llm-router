@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import contextvars
 import copy
+import functools
 import hashlib
 import logging
 import math
@@ -201,6 +202,22 @@ def _bookkeeping_executor() -> ThreadPoolExecutor:
 _current_run: "contextvars.ContextVar[Optional[_RunState]]" = contextvars.ContextVar(
     "agentic_router_current_run", default=None
 )
+
+
+def _standalone_scope(method):
+    """A public helper called outside :meth:`AgenticRouter.run` gets a run state
+    of its own for the call, removed afterwards -- never one that outlives it
+    and counts against (or pollutes) the next caller."""
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        if _current_run.get() is not None:
+            return method(self, *args, **kwargs)
+        token = _current_run.set(_RunState(max_calls=self.max_calls))
+        try:
+            return method(self, *args, **kwargs)
+        finally:
+            _current_run.reset(token)
+    return wrapper
 
 
 class AgenticRouter:
@@ -449,6 +466,7 @@ class AgenticRouter:
             atomic = atomic and looks_atomic(prompt)
         return atomic
 
+    @_standalone_scope
     def decompose_plan(self, prompt: str, depth: int, *, sequential: bool = False) -> list[SubTask]:
         """Split ``prompt`` into dependency-aware :class:`SubTask`\\ s --
         the one path the orchestrator decomposes through, so the policy for
@@ -482,6 +500,7 @@ class AgenticRouter:
                  or HeuristicTriage(structure=StructureClassifier()).is_multipart)
         return check(prompt)
 
+    @_standalone_scope
     def pick_helper_model(self, request: str, min_quality: float) -> tuple[str, float]:
         """The pool model an LLM helper (decomposer / synthesizer) runs on for
         ``request``: the cheapest model whose predicted quality is at least
@@ -529,6 +548,7 @@ class AgenticRouter:
 
         return call
 
+    @_standalone_scope
     def triage_prompt(self, prompt: str, *, routing_text: Optional[str] = None) -> TriageDecision:
         """Route ``routing_text`` (default: ``prompt``) and triage ``prompt``.
 
@@ -835,12 +855,10 @@ class AgenticRouter:
     def _run_state(self) -> _RunState:
         """The active run's state. Falls back to a fresh, context-local one
         for calls made outside :meth:`run` (e.g. driving ``_solve``/
-        ``_call_model`` directly, as the LangChain tool tests do)."""
+        ``_call_model`` directly, as the LangChain tool tests do): that state
+        is not installed, so it cannot outlive the call."""
         rs = _current_run.get()
-        if rs is None:
-            rs = _RunState(max_calls=self.max_calls)
-            _current_run.set(rs)
-        return rs
+        return rs if rs is not None else _RunState(max_calls=self.max_calls)
 
     def _use_call(self, n: int = 1, *, enforce: bool = True) -> None:
         """Count ``n`` model call(s) against this run's shared budget. Every
