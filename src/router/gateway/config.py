@@ -47,11 +47,25 @@ DEFAULT_ROUTER = {"enabled": False, "kind": "knn", "data_config": "configs/llmro
 DEFAULT_SUBAGENTS = {"enabled": True, "roles": {}}
 
 
-def gateway_home() -> Path:
-    """Where the gateway keeps its files: the request log's folder
-    (``AAR_GATEWAY_LOG``), else ``~/.aar-gateway``."""
+def log_path() -> Path:
+    """The request log: ``AAR_GATEWAY_LOG`` (``~`` expanded), else
+    ``~/.aar-gateway/requests.jsonl``. Every other gateway file lives beside it."""
     log = os.environ.get("AAR_GATEWAY_LOG")
-    return Path(log).expanduser().parent if log else Path.home() / ".aar-gateway"
+    return Path(log).expanduser() if log else Path.home() / ".aar-gateway" / "requests.jsonl"
+
+
+def gateway_home() -> Path:
+    """Where the gateway keeps its files: the request log's folder."""
+    return log_path().parent
+
+
+def pid_file() -> Path:
+    return gateway_home() / "gateway.pid"
+
+
+def graded_path() -> Path:
+    """The user's graded turns (``aar-gateway-grade`` writes, the router reads)."""
+    return gateway_home() / "graded.jsonl"
 
 
 def config_path() -> Path | None:

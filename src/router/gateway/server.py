@@ -14,6 +14,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from . import interceptor
+from .config import graded_path, pid_file
 
 _router_status: dict = {"enabled": False}
 
@@ -35,7 +36,7 @@ async def _lifespan(_app: FastAPI):
     router_error = None
     try:
         picker = build_picker(settings, graded=_graded_predictor(settings),
-                              graded_file=interceptor.log_path().parent / "graded.jsonl" if use_graded else None)
+                              graded_file=graded_path() if use_graded else None)
     except Exception as exc:  # noqa: BLE001 -- no router must not mean no Claude Code
         # The router (its data, encoder or run) failed to load: forward
         # everything as asked instead of refusing to start, and say why.
@@ -61,7 +62,7 @@ async def _lifespan(_app: FastAPI):
 
 
 def _pid_file() -> Path:
-    return interceptor.log_path().parent / "gateway.pid"
+    return pid_file()
 
 
 def _graded_predictor(settings: dict):
@@ -74,7 +75,7 @@ def _graded_predictor(settings: dict):
     from .graded import graded_predictor
 
     encoder = TextEncoder(EncoderConfig(name="gateway-graded", backend=light_backend()))
-    return graded_predictor(interceptor.log_path().parent / "graded.jsonl", encoder.encode,
+    return graded_predictor(graded_path(), encoder.encode,
                             min_prompts=int(rcfg.get("min_graded_prompts", 20)))
 
 

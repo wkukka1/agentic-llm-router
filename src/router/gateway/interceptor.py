@@ -49,7 +49,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from . import share
-from .config import atomic_write_text, load_settings, read_jsonl
+from .config import atomic_write_text, load_settings, log_path, read_jsonl
 from .pricing import canonical_model, cost_usd
 from .routing import ModelPicker, price_for, unavailable_reason
 from .subagents import DEFAULT_ROLE_MODELS, role_decision, spawn_decision
@@ -450,10 +450,6 @@ def _capture(turn: _Turn) -> None:
         "subagent": turn.agent is not None,
         "agent_role": (turn.agent or {}).get("role"),
     })
-
-
-def log_path() -> Path:
-    return Path(os.environ.get("AAR_GATEWAY_LOG", Path.home() / ".aar-gateway" / "requests.jsonl"))
 
 
 #: rotate the request log past this size (one previous file is kept, ``.1``)

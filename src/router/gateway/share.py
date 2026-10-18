@@ -33,7 +33,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .config import atomic_write_text, locked_file, read_jsonl
+from .config import atomic_write_text, gateway_home, locked_file, read_jsonl
 
 #: the compressed embedding: this many dimensions, from this fixed projection
 DIMS = 64
@@ -59,9 +59,7 @@ _consent: dict = {"mtime": None, "on": False}
 
 
 def share_dir() -> Path:
-    from .interceptor import log_path
-
-    return log_path().parent / "share"
+    return gateway_home() / "share"
 
 
 def consent_path() -> Path:

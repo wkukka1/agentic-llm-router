@@ -41,7 +41,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import UTC, datetime
 from pathlib import Path
 
-from router.gateway.config import read_jsonl
+from router.gateway.config import gateway_home, read_jsonl
 from router.llm.adapters.claude_subscription import ClaudeSubscriptionAdapter
 
 DEFAULT_TIERS = ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5")
@@ -82,9 +82,7 @@ is fine; one that contradicts the reference on the root cause is not correct."""
 
 
 def _home() -> Path:
-    from router.gateway.interceptor import log_path  # same folder as the gateway's own files
-
-    return log_path().parent
+    return gateway_home()  # the folder of the gateway's own files
 
 
 def pending_turns(turns: Iterable[dict], graded: Iterable[dict], *,

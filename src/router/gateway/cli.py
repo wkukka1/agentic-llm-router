@@ -49,8 +49,9 @@ WINDOWS = os.name == "nt"
 # where things are                                                            #
 # --------------------------------------------------------------------------- #
 def _home() -> Path:
-    log = os.environ.get("AAR_GATEWAY_LOG")
-    return Path(log).expanduser().parent if log else Path.home() / ".aar-gateway"
+    from .config import gateway_home
+
+    return gateway_home()
 
 
 def _config_path() -> Path | None:
@@ -60,7 +61,9 @@ def _config_path() -> Path | None:
 
 
 def _pid_file() -> Path:
-    return _home() / "gateway.pid"
+    from .config import pid_file
+
+    return pid_file()
 
 
 def _log_file() -> Path:
