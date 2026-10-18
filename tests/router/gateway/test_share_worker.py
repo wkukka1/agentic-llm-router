@@ -75,17 +75,16 @@ def test_a_failing_record_is_logged_by_type_never_by_message(monkeypatch, caplog
 
 def test_an_upload_that_hangs_is_given_up_and_the_records_are_kept(monkeypatch):
     share.set_enabled(True)
-    share.set_token("tok")
+    share.set_endpoint("https://collect.example.org/v1/records")
     share.record(LOGGED, "hello")
     share.flush(5)
     monkeypatch.setattr(share, "UPLOAD_TIMEOUT_S", 0.3)
 
-    class Hung:
-        def upload_file(self, **kw):
-            time.sleep(5)
+    def hung(url, body, headers):
+        time.sleep(5)
 
     t0 = time.monotonic()
-    assert share.upload(api=Hung()) == {"error": "TimeoutError"}
+    assert share.upload(post=hung) == {"error": "TimeoutError"}
     assert time.monotonic() - t0 < 3 and len(share.queued()) == 1
 
 

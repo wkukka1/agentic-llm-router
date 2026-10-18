@@ -38,7 +38,7 @@ def test_a_record_queued_by_another_process_during_the_trim_survives(tmp_path, m
     sent = [json.dumps({"n": i}) + "\n" for i in range(3)]
     queue.parent.mkdir(parents=True, exist_ok=True)
     queue.write_text("".join(sent), encoding="utf-8")
-    monkeypatch.setattr(share, "token", lambda: "tok")
+    share.set_endpoint("https://collect.example.org/v1/records")
     child: list[subprocess.Popen] = []
     real_write = share.atomic_write_text
 
@@ -53,10 +53,6 @@ def test_a_record_queued_by_another_process_during_the_trim_survives(tmp_path, m
 
     monkeypatch.setattr(share, "atomic_write_text", write_while_cli_appends)
 
-    class Api:
-        def upload_file(self, **kw):
-            pass
-
-    assert share.upload(api=Api())["sent"] == 3
+    assert share.upload(post=lambda url, body, headers: 200)["sent"] == 3
     assert child[0].wait(timeout=60) == 0
     assert [json.loads(line) for line in queue.read_text(encoding="utf-8").splitlines()] == [{"late": 1}]

@@ -3,6 +3,7 @@ and never in the way of a request."""
 
 from __future__ import annotations
 
+import gzip
 import json
 
 import pytest
@@ -92,16 +93,22 @@ def test_setup_asks_once_and_only_a_yes_opts_in(monkeypatch, capsys):
     assert share.enabled()
 
 
-class FakeHub:
-    def __init__(self, fail=False, during=None):
-        self.files, self.fail, self.during = [], fail, during
+class FakeEndpoint:
+    """The collection server: records what each POST carried and answers with a status."""
 
-    def upload_file(self, *, path_or_fileobj, path_in_repo, repo_id, repo_type, commit_message):
+    def __init__(self, status=200, fail=False, during=None):
+        self.posts, self.status, self.fail, self.during = [], status, fail, during
+
+    def __call__(self, url, body, headers):
         if self.during:
             self.during()
         if self.fail:
-            raise ConnectionError("hub down: token=hf_SECRET123")
-        self.files.append((repo_id, repo_type, path_in_repo, path_or_fileobj.decode()))
+            raise ConnectionError("endpoint down: key=SECRET123")
+        self.posts.append((url, gzip.decompress(body).decode(), headers))
+        return self.status
+
+
+URL = "https://collect.example.org/v1/records"
 
 
 def _queue(n):
@@ -111,50 +118,79 @@ def _queue(n):
     share.flush(5)
 
 
-def test_without_a_token_nothing_is_sent():
+def test_without_an_endpoint_nothing_is_sent():
     _queue(2)
-    assert "skipped" in share.upload(api=FakeHub()) and len(share.queued()) == 2
+    server = FakeEndpoint()
+    assert "skipped" in share.upload(post=server) and len(share.queued()) == 2 and server.posts == []
 
 
-def test_an_upload_sends_the_queue_to_the_private_dataset_and_empties_it():
-    share.set_token("hf_SECRET123")
+def test_an_upload_posts_the_queue_as_gzip_jsonl_and_empties_it():
+    share.set_endpoint(URL)
     _queue(3)
-    hub = FakeHub()
-    assert share.upload(api=hub)["sent"] == 3
-    ((repo, kind, name, body),) = hub.files
-    assert repo == share.DEFAULT_DATASET and kind == "dataset" and name.startswith("records/")
-    assert len(body.splitlines()) == 3 and share.queued() == []
+    server = FakeEndpoint()
+    assert share.upload(post=server)["sent"] == 3
+    ((url, body, headers),) = server.posts
+    assert url == URL and len(body.splitlines()) == 3 and share.queued() == []
+    assert headers["content-encoding"] == "gzip" and headers["x-aar-schema"] == "1"
+    assert headers["x-aar-install"] == share._install_id() and "message number" not in body
     assert share.state()["sent_total"] == 3
 
 
 def test_a_failed_upload_keeps_the_records_and_never_stores_the_error_text():
-    share.set_token("hf_SECRET123")
+    share.set_endpoint(URL)
     _queue(2)
-    assert share.upload(api=FakeHub(fail=True)) == {"error": "ConnectionError"}
-    assert len(share.queued()) == 2 and "hf_SECRET123" not in share.state_path().read_text()
+    assert share.upload(post=FakeEndpoint(fail=True)) == {"error": "ConnectionError"}
+    assert len(share.queued()) == 2 and "SECRET123" not in share.state_path().read_text()
+
+
+@pytest.mark.parametrize("status", [400, 429, 500, 503])
+def test_a_refused_upload_keeps_the_records(status):
+    share.set_endpoint(URL)
+    _queue(2)
+    assert share.upload(post=FakeEndpoint(status=status)) == {"error": f"http_{status}"}
+    assert len(share.queued()) == 2
 
 
 def test_records_written_during_an_upload_stay_queued():
-    share.set_token("hf_SECRET123")
+    share.set_endpoint(URL)
     _queue(2)
     late = lambda: share._append(LOGGED, "a late message")  # noqa: E731
-    assert share.upload(api=FakeHub(during=late))["sent"] == 2
+    assert share.upload(post=FakeEndpoint(during=late))["sent"] == 2
     assert len(share.queued()) == 1
 
 
-def test_the_token_is_never_printed(capsys):
-    cli.main(["share", "token", "hf_SECRET123"])
+@pytest.mark.parametrize("url", ["http://collect.example.org/v1/records", "ftp://x/y", "collect.example.org", ""])
+def test_only_https_or_a_local_address_is_accepted_as_the_endpoint(url):
+    with pytest.raises(ValueError):
+        share.set_endpoint(url)
+
+
+def test_a_local_http_endpoint_is_allowed_for_testing():
+    share.set_endpoint("http://127.0.0.1:9000/v1/records")
+    share.set_endpoint("http://localhost:9000/v1/records")
+    assert share.endpoint() == "http://localhost:9000/v1/records"
+
+
+def test_the_endpoint_can_come_from_the_environment(monkeypatch):
+    monkeypatch.setenv("AAR_GATEWAY_SHARE_ENDPOINT", URL)
+    assert share.endpoint() == URL
+    monkeypatch.setenv("AAR_GATEWAY_SHARE_ENDPOINT", "http://evil.example/x")
+    assert share.endpoint() is None  # an unsafe address is ignored, never posted to
+
+
+def test_status_names_the_endpoint_and_the_old_token_command_points_to_it(capsys):
+    cli.main(["share", "endpoint", URL])
     cli.main(["share", "status"])
-    out = capsys.readouterr().out
-    assert "hf_SECRET123" not in out and share.DEFAULT_DATASET in out
-    assert share.token() == "hf_SECRET123"
+    assert URL in capsys.readouterr().out
+    with pytest.raises(SystemExit, match="endpoint"):
+        cli.main(["share", "token", "hf_whatever"])
 
 
 def test_it_uploads_by_itself_once_enough_records_are_queued(monkeypatch):
     sent = []
-    monkeypatch.setattr(share, "upload", lambda api=None: sent.append(1) or {"sent": 0})
+    monkeypatch.setattr(share, "upload", lambda post=None: sent.append(1) or {"sent": 0})
     monkeypatch.setattr(share, "UPLOAD_AFTER", 3)
-    share.set_token("hf_SECRET123")
+    share.set_endpoint(URL)
     share.state_path().parent.mkdir(parents=True, exist_ok=True)
     share.state_path().write_text('{"last_attempt": "2999-01-01T00:00:00+00:00"}')  # not due by time
     _queue(2)

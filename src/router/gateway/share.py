@@ -15,12 +15,13 @@ share on|off``). Then each message the user types adds one record to
 
 Never: the prompt, error messages, file paths, session or conversation ids,
 times finer than the day. The queue stays on this computer, never trimmed
-(``aar-gateway share show`` prints it), until an upload
-token is set (``aar-gateway share token``); then it goes to the private
-Hugging Face dataset :data:`DEFAULT_DATASET` once a day, or after
-:data:`UPLOAD_AFTER` records, as files under ``records/<install id>/`` (a
-random id, not tied to the person). A failed upload keeps the records for
-next time and never affects routing.
+(``aar-gateway share show`` prints it), until a collection endpoint is set
+(``aar-gateway share endpoint``); then it is posted there as one gzip'd jsonl
+body once a day, or after :data:`UPLOAD_AFTER` records, with a random install
+id (not tied to the person) and the record format version. The collection
+server holds the credentials for the project's dataset; nothing on this
+computer can write to it directly. A failed upload keeps the records for next
+time and never affects routing.
 """
 
 from __future__ import annotations
@@ -42,8 +43,11 @@ log = logging.getLogger(__name__)
 DIMS = 64
 PROJECTION_SEED = 20261017
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-#: where records go (a private dataset), and when
-DEFAULT_DATASET = "Vivic04/aar-gateway-usage"
+#: where records go, and when. No address is built in: until one is set (``aar-gateway share
+#: endpoint`` or AAR_GATEWAY_SHARE_ENDPOINT) the queue stays on this computer.
+DEFAULT_ENDPOINT: str | None = None
+#: the record format version sent with every upload
+SCHEMA = 1
 UPLOAD_AFTER = 100
 UPLOAD_EVERY_S = 24 * 3600
 #: why a model was used, as categories (the gateway's reasons are free text)
@@ -79,35 +83,47 @@ def queue_path() -> Path:
     return share_dir() / "queue.jsonl"
 
 
-def token_path() -> Path:
-    return share_dir() / "token"
+def endpoint_path() -> Path:
+    return share_dir() / "endpoint"
 
 
-def state_path() -> Path:
-    return share_dir() / "state.json"
+def _valid_endpoint(url: str) -> bool:
+    """HTTPS, or plain http only to this computer (a collection server under test)."""
+    from urllib.parse import urlparse
+
+    parts = urlparse(url.strip())
+    if not parts.hostname:
+        return False
+    return parts.scheme == "https" or (parts.scheme == "http" and parts.hostname in ("localhost", "127.0.0.1", "::1"))
 
 
-def dataset() -> str:
-    return os.environ.get("AAR_GATEWAY_SHARE_DATASET") or DEFAULT_DATASET
+def endpoint() -> str | None:
+    """Where records are sent: ``AAR_GATEWAY_SHARE_ENDPOINT``, else the one saved by
+    ``aar-gateway share endpoint``, else :data:`DEFAULT_ENDPOINT`. An address that is
+    not HTTPS (or local) is ignored, never posted to; with none, records stay on this computer."""
+    for candidate in (os.environ.get("AAR_GATEWAY_SHARE_ENDPOINT"), _saved_endpoint(), DEFAULT_ENDPOINT):
+        if candidate and _valid_endpoint(candidate):
+            return candidate.strip()
+        if candidate:
+            log.warning("ignoring a usage-sharing endpoint that is not https")
+    return None
 
 
-def token() -> str | None:
-    """The upload token: ``AAR_GATEWAY_SHARE_TOKEN``, else the one saved by
-    ``aar-gateway share token``. Never printed or logged."""
-    if os.environ.get("AAR_GATEWAY_SHARE_TOKEN"):
-        return os.environ["AAR_GATEWAY_SHARE_TOKEN"]
+def _saved_endpoint() -> str | None:
     try:
-        return token_path().read_text(encoding="utf-8").strip() or None
+        return endpoint_path().read_text(encoding="utf-8").strip() or None
     except OSError:
         return None
 
 
-def set_token(value: str) -> None:
-    atomic_write_text(token_path(), value.strip())
-    try:
-        os.chmod(token_path(), 0o600)  # readable by this user only (no-op on Windows)
-    except OSError:
-        pass
+def set_endpoint(url: str) -> None:
+    if not _valid_endpoint(url):
+        raise ValueError("the usage-sharing endpoint must be an https:// address")
+    atomic_write_text(endpoint_path(), url.strip())
+
+
+def state_path() -> Path:
+    return share_dir() / "state.json"
 
 
 def state() -> dict:
@@ -150,32 +166,46 @@ def _call_with_timeout(fn, seconds: float):
     return box.get("value")
 
 
-def upload(*, api=None) -> dict:
-    """Send the queued records to the dataset as one file; on success they
-    leave the queue. ``{"sent": n}``, or ``{"error": ...}`` / ``{"skipped": why}``."""
-    tok = token()
-    if not tok:
-        return {"skipped": "no upload token (aar-gateway share token <token>)"}
+def _post(url: str, body: bytes, headers: dict) -> int:
+    """POST ``body``; the HTTP status (an error status is returned, a network failure raises)."""
+    import urllib.error
+    import urllib.request
+
+    request = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=UPLOAD_TIMEOUT_S) as resp:
+            return resp.status
+    except urllib.error.HTTPError as exc:
+        return exc.code
+
+
+def upload(*, post=None) -> dict:
+    """Send the queued records to the collection server as one gzip'd jsonl body; on a 2xx
+    they leave the queue. ``{"sent": n}``, or ``{"error": ...}`` / ``{"skipped": why}``.
+    ``post(url, body, headers) -> status`` is for tests."""
+    import gzip
+
+    url = endpoint()
+    if not url:
+        return {"skipped": "no collection endpoint (aar-gateway share endpoint <https url>)"}
     with _lock:
         path = queue_path()
         lines = path.read_text(encoding="utf-8").splitlines(keepends=True) if path.exists() else []
     lines = [line for line in lines if line.strip()]
     if not lines:
         return {"skipped": "nothing queued"}
-    import uuid
-
     now = datetime.now(UTC)
-    name = f"records/{_install_id()}/{now.date().isoformat()}-{uuid.uuid4().hex[:8]}.jsonl"
     st = state()
+    headers = {"content-type": "application/x-ndjson", "content-encoding": "gzip", "x-aar-schema": str(SCHEMA),
+               "x-aar-install": _install_id(), "user-agent": f"aar-gateway/{_version()}"}
+    body = gzip.compress("".join(lines).encode("utf-8"))
     try:
-        if api is None:
-            from huggingface_hub import HfApi
-
-            api = HfApi(token=tok)
-        _call_with_timeout(lambda: api.upload_file(
-            path_or_fileobj="".join(lines).encode("utf-8"), path_in_repo=name,
-            repo_id=dataset(), repo_type="dataset", commit_message=f"usage records ({len(lines)})"), UPLOAD_TIMEOUT_S)
-    except Exception as exc:  # noqa: BLE001 -- kept for next time; the type only, never the message (it can echo the token)
+        status = _call_with_timeout(lambda: (post or _post)(url, body, headers), UPLOAD_TIMEOUT_S)
+        if not 200 <= status < 300:
+            st.update(last_error=f"http_{status}", last_attempt=now.isoformat(timespec="seconds"))
+            atomic_write_text(state_path(), json.dumps(st))
+            return {"error": f"http_{status}"}
+    except Exception as exc:  # noqa: BLE001 -- kept for next time; the type only, never the message
         st.update(last_error=type(exc).__name__, last_attempt=now.isoformat(timespec="seconds"))
         atomic_write_text(state_path(), json.dumps(st))
         return {"error": type(exc).__name__}
@@ -187,11 +217,11 @@ def upload(*, api=None) -> dict:
     st.update(last_upload=now.isoformat(timespec="seconds"), sent_total=st.get("sent_total", 0) + len(lines),
               last_error=None, last_attempt=now.isoformat(timespec="seconds"))
     atomic_write_text(state_path(), json.dumps(st))
-    return {"sent": len(lines), "file": name}
+    return {"sent": len(lines)}
 
 
 def _upload_due(n_queued: int) -> bool:
-    if not token() or n_queued == 0:
+    if not endpoint() or n_queued == 0:
         return False
     if n_queued >= UPLOAD_AFTER:
         return True

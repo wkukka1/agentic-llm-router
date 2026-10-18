@@ -643,12 +643,12 @@ def _doctor() -> int:
 
     if not sharing.enabled():
         report(True, "usage sharing", "off (optional; `aar-gateway share` explains)")
-    elif not sharing.token():
-        report(True, "usage sharing", f"on, {len(sharing.queued())} record(s) kept locally; no upload token yet")
+    elif not sharing.endpoint():
+        report(True, "usage sharing", f"on, {len(sharing.queued())} record(s) kept locally; no collection endpoint yet")
     else:
         last = sharing.state().get("last_error")
-        report(not last, "usage sharing", f"on, sent to {sharing.dataset()}" + (f"; last upload failed ({last})" if last else ""),
-               "check the token: aar-gateway share token <token>, then aar-gateway share upload")
+        report(not last, "usage sharing", f"on, sent to {sharing.endpoint()}" + (f"; last upload failed ({last})" if last else ""),
+               "check the address: aar-gateway share endpoint <https url>, then aar-gateway share upload")
     print("\nall good" if problems == 0 else f"\n{problems} problem(s) to fix")
     return 0 if problems == 0 else 1
 
@@ -1167,8 +1167,8 @@ def _share(argv: list[str]) -> int:
     action = argv[0] if argv else "status"
     if action == "on":
         share.set_enabled(True)
-        dest = (f"sent to the private dataset {share.dataset()} once a day" if share.token()
-                else "kept on this computer until an upload token is set (`aar-gateway share token`)")
+        dest = (f"sent to {share.endpoint()} once a day" if share.endpoint()
+                else "kept on this computer until a collection endpoint is set (`aar-gateway share endpoint <https url>`)")
         print(f"sharing on: each message you type adds an anonymous record (no prompt text), {dest}.\n"
               "`aar-gateway share show` prints them; `aar-gateway share off` stops it.")
         return 0
@@ -1190,17 +1190,22 @@ def _share(argv: list[str]) -> int:
             print(json.dumps({**row, "embedding": f"{len(emb)} small integers" if emb else None}, indent=2))
         print(f"{len(rows)} record(s) kept in {share.queue_path()}")
         return 0
-    if action == "token":
-        if len(argv) < 2 or not argv[1].strip():
-            raise SystemExit("usage: aar-gateway share token <hugging face token with write access to the dataset>")
-        share.set_token(argv[1])
-        print(f"upload token saved ({share.token_path()}, readable by you only); records go to "
-              f"the private dataset {share.dataset()} once a day")
+    if action == "endpoint":
+        if len(argv) < 2:
+            raise SystemExit("usage: aar-gateway share endpoint <https address of the collection server>")
+        try:
+            share.set_endpoint(argv[1])
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from None
+        print(f"collection endpoint saved; records go to {share.endpoint()} once a day")
         return 0
+    if action == "token":
+        raise SystemExit("uploads no longer use a Hugging Face token: records go to the project's collection "
+                         "server. Set its address with `aar-gateway share endpoint <https url>`.")
     if action == "upload":
         result = share.upload()
         if "sent" in result:
-            print(f"sent {result['sent']} record(s) to {share.dataset()}")
+            print(f"sent {result['sent']} record(s) to {share.endpoint()}")
             return 0
         print(result.get("skipped") or f"upload failed ({result['error']}); the records are kept for next time")
         return 0 if "skipped" in result else 1
@@ -1208,14 +1213,14 @@ def _share(argv: list[str]) -> int:
         st = share.state()
         print(f"sharing      {'on' if share.enabled() else 'off'}")
         print(f"kept         {len(share.queued())} record(s) waiting in {share.queue_path()}")
-        print(f"sent to      {share.dataset()} (private Hugging Face dataset)" if share.token()
-              else "sent to      nowhere yet (no upload token: aar-gateway share token <token>)")
+        print(f"sent to      {share.endpoint()}" if share.endpoint()
+              else "sent to      nowhere yet (no collection endpoint: aar-gateway share endpoint <https url>)")
         if st.get("sent_total"):
             print(f"sent so far  {st['sent_total']} record(s), last {st.get('last_upload')}")
         if st.get("last_error"):
             print(f"last upload  failed ({st['last_error']}); retried later")
         return 0
-    raise SystemExit(f"unknown share action {action!r}: on, off, status, show [N], delete, token or upload")
+    raise SystemExit(f"unknown share action {action!r}: on, off, status, show [N], delete, endpoint or upload")
 
 
 def _agents(argv: list[str]) -> None:
