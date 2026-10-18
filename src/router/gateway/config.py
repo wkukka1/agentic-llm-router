@@ -277,3 +277,28 @@ def iter_jsonl(path: Path):
                 yield json.loads(line)
             except ValueError:
                 log.warning("skipping an undecodable line %d of %s", n, path)
+
+
+def preferences_path() -> Path:
+    """The user's saved choices (routing mode, quality margin, subagent models, history on/off)."""
+    return gateway_home() / "preferences.json"
+
+
+def read_preferences() -> dict:
+    try:
+        return read_json(preferences_path())
+    except OSError:
+        return {}
+
+
+def save_preferences(**changes) -> None:
+    """Merge ``changes`` into the preferences file. An unreadable file (cut short,
+    hand-edited) is kept aside as ``preferences.json.corrupt`` rather than erased."""
+    path = preferences_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        current = read_json(path, strict=True)
+    except ValueError:
+        path.replace(path.with_name(path.name + ".corrupt"))
+        current = {}
+    atomic_write_text(path, json.dumps({**current, **changes}))

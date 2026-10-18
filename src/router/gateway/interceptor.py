@@ -62,7 +62,9 @@ from .config import (
     log_path,
     read_json,
     read_jsonl,
+    read_preferences,
     safe_append_jsonl,
+    save_preferences,
 )
 from .pricing import canonical_model, cost_usd, prompt_tokens
 from .routing import ModelPicker, price_for, unavailable_reason
@@ -260,7 +262,7 @@ def configure(settings: dict, picker: ModelPicker | None, router_error: str | No
         side = (r.get("reason") or "").startswith("side request")
         if r.get("status") == 200 and r.get("lane") == "anthropic" and not side:
             _global_profile.update(_update_profile(_global_profile, r))
-    saved = _read_preferences()
+    saved = read_preferences()
     if saved.get("quality_margin") is not None:
         _settings["router"]["margin"] = saved["quality_margin"]
     _settings["routing"] = {"mode": saved.get("mode", "auto"), "pinned_model": saved.get("pinned_model"),
@@ -280,20 +282,9 @@ MARGIN_HEADER = "x-aar-quality-margin"
 PRESETS = {"best_quality": 0.01, "balanced": 0.05, "save_more": 0.08}
 
 
-def preferences_path() -> Path:
-    return log_path().parent / "preferences.json"
-
-
-def _read_preferences() -> dict:
-    try:
-        return read_json(preferences_path())
-    except OSError:
-        return {}
-
-
 def preferences() -> dict:
     routing = _settings.get("routing") or {"mode": "auto", "pinned_model": None}
-    overrides = _read_preferences().get("role_models") or {}
+    overrides = read_preferences().get("role_models") or {}
     defaults = {**DEFAULT_ROLE_MODELS, **_config_roles}
     return {"quality_margin": _settings["router"]["margin"], "presets": PRESETS,
             "router_enabled": _picker is not None, "router_error": _router_error,
@@ -336,15 +327,7 @@ def overrides_path() -> Path:
     return log_path().parent / "overrides.jsonl"
 
 
-def _save_preferences(**changes) -> None:
-    path = preferences_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        current = read_json(path, strict=True)
-    except ValueError:  # unreadable (cut short, hand-edited): keep it aside rather than erase the rest
-        path.replace(path.with_name(path.name + ".corrupt"))
-        current = {}
-    atomic_write_text(path, json.dumps({**current, **changes}))
+_save_preferences = save_preferences
 
 
 def _log_override(record: dict) -> None:
@@ -386,7 +369,7 @@ def set_role_model(role: str, model: str | None) -> dict:
         raise ValueError(f"unknown subagent role {role!r}")
     if model not in ("session", "default") and canonical_model(model) not in _settings["models"]:
         raise ValueError(f"unknown model {model!r}")
-    overrides = dict(_read_preferences().get("role_models") or {})
+    overrides = dict(read_preferences().get("role_models") or {})
     before = _settings["subagents"]["roles"].get(role, defaults[role])
     if model == "default":
         overrides.pop(role, None)

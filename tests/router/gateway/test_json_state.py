@@ -8,7 +8,7 @@ import os
 import pytest
 
 from router.gateway import interceptor, share
-from router.gateway.config import load_settings, read_json
+from router.gateway.config import load_settings, preferences_path, read_json
 
 
 def test_read_json_missing_is_the_default_and_corrupt_is_logged_by_path(tmp_path, caplog):
@@ -26,20 +26,20 @@ def test_read_json_missing_is_the_default_and_corrupt_is_logged_by_path(tmp_path
 
 def test_saving_a_preference_over_a_corrupt_file_keeps_the_corrupt_one_aside():
     interceptor.configure(load_settings(None), None)
-    path = interceptor.preferences_path()
+    path = preferences_path()
     path.write_text('{"quality_margin": 0.3, "mode": "pinn', encoding="utf-8")  # cut short by a crash
     interceptor.set_allow_upgrade(True)
     kept = path.with_name(path.name + ".corrupt")
     assert kept.read_text(encoding="utf-8").startswith('{"quality_margin": 0.3')  # recoverable by hand
-    assert interceptor._read_preferences() == {"allow_upgrade": True}
+    assert interceptor.read_preferences() == {"allow_upgrade": True}
 
 
 def test_a_good_preferences_file_is_merged_not_replaced():
     interceptor.configure(load_settings(None), None)
     interceptor.set_quality_margin(0.2)
     interceptor.set_allow_upgrade(True)
-    assert interceptor._read_preferences() == {"quality_margin": 0.2, "allow_upgrade": True}
-    assert not interceptor.preferences_path().with_name("preferences.json.corrupt").exists()
+    assert interceptor.read_preferences() == {"quality_margin": 0.2, "allow_upgrade": True}
+    assert not preferences_path().with_name("preferences.json.corrupt").exists()
 
 
 def test_consent_toggled_within_the_same_mtime_is_still_seen():
