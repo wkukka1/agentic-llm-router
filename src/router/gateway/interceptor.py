@@ -50,6 +50,8 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from . import share
 from .config import (
+    DEFAULT_ROUTER,
+    DEFAULT_SUBAGENTS,
     append_jsonl,
     atomic_write_text,
     load_settings,
@@ -87,7 +89,20 @@ def _relay_headers(upstream: httpx.Response) -> dict[str, str]:
     return {k: v for k, v in upstream.headers.items() if k.lower() not in _RESPONSE_HOP_HEADERS}
 
 
-_settings: dict = load_settings(None)
+def _boot_settings() -> dict:
+    """The settings before the server's lifespan calls :func:`configure` with the
+    user's own: the defaults. A broken ``local-models.yaml`` or an unset
+    ``api_key_env`` must not make ``import`` fail -- the lifespan loads the real
+    config and reports that error where it can be read."""
+    try:
+        return load_settings(None)
+    except Exception as exc:  # noqa: BLE001 -- yaml errors and ValueErrors alike
+        log.warning("default gateway settings not loadable (%s); starting with none", type(exc).__name__)
+        return {"models": {}, "strongest": None, "capture_prompts": False,
+                "router": dict(DEFAULT_ROUTER), "subagents": dict(DEFAULT_SUBAGENTS)}
+
+
+_settings: dict = _boot_settings()
 _picker: ModelPicker | None = None
 _client: httpx.AsyncClient | None = None
 _sessions: OrderedDict[str, dict] = OrderedDict()
@@ -183,7 +198,9 @@ _MAX_SPAWNS = 500
 _cc_sessions: OrderedDict[str, dict] = OrderedDict()
 #: (model, client user-agent) -> why the upstream rejected that model for
 #: that client (e.g. "Claude Code x.y does not support this model")
-_blocked: dict[tuple[str, str], tuple[str, float]] = {}
+_blocked: OrderedDict[tuple[str, str], tuple[str, float]] = OrderedDict()
+#: how many (model, client) blocks are remembered: the key includes a client-sent header
+_MAX_BLOCKED = 500
 #: a block is retried after this long: a 400 can be passing (a model briefly
 #: unavailable to this client) and a permanent block silently ends all savings
 BLOCK_SECONDS = 600.0
@@ -217,16 +234,21 @@ def is_correction(text: str | None) -> bool:
 _router_error: str | None = None
 
 
+def _reset_state() -> None:
+    """Every cache and running total the interceptor keeps, emptied: what
+    :func:`configure` starts from (and what a test needs between cases)."""
+    global _message_models_loaded
+    for state in (_sessions, _cc_sessions, _global_profile, _prefixes, _warm, _blocked, _spawns, _message_models):
+        state.clear()
+    _message_models_loaded = False
+    _log_cache.update(key=None, offset=0, partial=b"", records=[])
+    _rotated_cache.update(key=None, records=[])
+
+
 def configure(settings: dict, picker: ModelPicker | None, router_error: str | None = None) -> None:
     global _settings, _picker, _router_error
     _settings, _picker, _router_error = settings, picker, router_error
-    _sessions.clear()
-    _cc_sessions.clear()
-    _global_profile.clear()
-    _prefixes.clear()
-    _warm.clear()
-    _blocked.clear()
-    _spawns.clear()
+    _reset_state()
     for r in read_records()[-500:]:  # seed the default profile from past agent traffic
         side = (r.get("reason") or "").startswith("side request")
         if r.get("status") == 200 and r.get("lane") == "anthropic" and not side:
@@ -801,7 +823,8 @@ def _remember_block(turn: _Turn, status: int, detail: str) -> None:
     the router stops choosing it (both lanes). A 400 about this one request
     (too long, bad image...) says nothing about the model."""
     if status == 400 and not _REQUEST_SPECIFIC.search(detail):
-        _blocked[(turn.target, turn.request.headers.get("user-agent", ""))] = (detail[:160], time.monotonic())
+        _lru_set(_blocked, (turn.target, turn.request.headers.get("user-agent", "")),
+                 (detail[:160], time.monotonic()), _MAX_BLOCKED)
 
 
 def _blocked_for(turn: _Turn) -> dict[str, str]:
