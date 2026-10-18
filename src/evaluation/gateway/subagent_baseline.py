@@ -27,6 +27,7 @@ from router.gateway.config import load_settings
 from router.gateway.pricing import cost_usd
 from router.gateway.routing import price_for
 from router.gateway.subagents import identify, role_decision
+from router.gateway.translate import text_of
 
 from .history import PROJECTS_DIR
 
@@ -34,10 +35,7 @@ from .history import PROJECTS_DIR
 def _first_task(records: list[dict]) -> str:
     for r in records:
         if r.get("type") == "user":
-            content = (r.get("message") or {}).get("content")
-            if isinstance(content, str):
-                return content
-            return " ".join(b.get("text", "") for b in content or [] if isinstance(b, dict))
+            return text_of((r.get("message") or {}).get("content"), sep=" ", typed=False)
     return ""
 
 

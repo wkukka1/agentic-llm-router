@@ -20,6 +20,7 @@ from pathlib import Path
 
 from router.gateway.config import append_jsonl, read_jsonl
 from router.gateway.translate import REMINDER as _REMINDER
+from router.gateway.translate import text_of
 
 PROJECTS_DIR = Path.home() / ".claude" / "projects"
 MIN_CHARS = 20
@@ -27,10 +28,7 @@ _TEMP_PROJECTS = ("-private-tmp", "-private-var-folders", "-tmp-")
 
 
 def _text(content) -> str:
-    if isinstance(content, str):
-        return content
-    return "\n".join(b.get("text", "") for b in content or []
-                     if isinstance(b, dict) and b.get("type") == "text")
+    return text_of(content, sep="\n")
 
 
 def _typed(record: dict) -> str | None:

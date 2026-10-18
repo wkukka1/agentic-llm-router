@@ -71,8 +71,12 @@ def untranslatable_reason(body: Mapping, *, max_tools: int | None = None) -> str
     return None
 
 
-def _text(blocks) -> str:
-    return "".join(b.get("text", "") for b in _blocks(blocks) if b.get("type") == "text")
+def text_of(content, *, sep: str = "", typed: bool = True) -> str:
+    """The text of a message ``content`` (a string, or content blocks), joined
+    by ``sep``. ``typed``: only ``type: text`` blocks count; otherwise every
+    block's ``text`` field does (a block without one adds an empty piece)."""
+    return sep.join(b.get("text", "") for b in _blocks(content)
+                    if isinstance(b, Mapping) and (not typed or b.get("type") == "text"))
 
 
 def _image_url(source: Mapping) -> str:
@@ -84,14 +88,14 @@ def _image_url(source: Mapping) -> str:
 def anthropic_to_openai(body: Mapping, model: str, *, max_tokens_param: str = "max_tokens") -> dict:
     msgs: list[dict] = []
     if body.get("system"):
-        msgs.append({"role": "system", "content": _text(body["system"])})
+        msgs.append({"role": "system", "content": text_of(body["system"])})
     for m in body.get("messages", []):
         blocks = _blocks(m.get("content"))
         if m["role"] == "system":  # mid-conversation operator message
-            msgs.append({"role": "system", "content": _text(blocks)})
+            msgs.append({"role": "system", "content": text_of(blocks)})
             continue
         if m["role"] == "assistant":
-            out: dict = {"role": "assistant", "content": _text(blocks) or None}
+            out: dict = {"role": "assistant", "content": text_of(blocks) or None}
             calls = [{"id": b["id"], "type": "function",
                       "function": {"name": b["name"], "arguments": json.dumps(b.get("input") or {})}}
                      for b in blocks if b.get("type") == "tool_use"]
@@ -104,7 +108,7 @@ def anthropic_to_openai(body: Mapping, model: str, *, max_tokens_param: str = "m
         for b in blocks:
             kind = b.get("type")
             if kind == "tool_result":
-                text = _text(b.get("content"))
+                text = text_of(b.get("content"))
                 msgs.append({"role": "tool", "tool_call_id": b["tool_use_id"],
                              "content": f"Error: {text}" if b.get("is_error") else text})
             elif kind == "text":

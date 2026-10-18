@@ -43,6 +43,7 @@ from collections.abc import Mapping
 
 from .pricing import canonical_model, has_price
 from .routing import price_for, unavailable_reason
+from .translate import text_of
 
 SUBAGENT_MARK = "cc_is_subagent=true"
 _ROLE_MARK = re.compile(r"\baar-role:\s*([a-z-]+)")
@@ -87,10 +88,7 @@ def classify_task(task: str) -> tuple[str, str] | None:
 
 
 def _system_text(body: Mapping) -> str:
-    system = body.get("system")
-    if isinstance(system, str):
-        return system
-    return "\n".join(b.get("text", "") for b in system or [] if isinstance(b, Mapping))
+    return text_of(body.get("system"), sep="\n", typed=False)
 
 
 def identify(subagent_type: str | None, task: str | None, system: str = "") -> dict:
