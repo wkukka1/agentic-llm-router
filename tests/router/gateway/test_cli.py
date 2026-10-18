@@ -102,7 +102,7 @@ def test_windows_never_probes_with_a_signal_and_needs_no_shell_env(tmp_path, mon
     def boom(*a):
         raise AssertionError("os.kill must not be used to probe on Windows")
     monkeypatch.setattr(cli.os, "kill", boom)
-    monkeypatch.setattr(cli, "_healthy", lambda url: True)
+    monkeypatch.setattr(cli, "_get", lambda url, timeout=1.0: {"pid": 4242})  # the gateway names itself
     assert cli._running_pid() == 4242
     command = cli._self_command()
     assert "PYTHONPATH=" not in command and command.endswith("-m router.gateway.cli")

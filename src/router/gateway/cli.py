@@ -100,22 +100,33 @@ def _healthy(url: str) -> bool:
 
 
 def _running_pid() -> int | None:
-    """The gateway's pid, if its pid file names a live process. On Windows
-    ``os.kill(pid, 0)`` would *terminate* the process (any signal but Ctrl-C/
-    Ctrl-Break is TerminateProcess there), so liveness is the health check."""
+    """The gateway's pid. The gateway names itself at ``/health``, and that
+    answer wins over the pid file. If nothing answers, the file's pid counts
+    only while that process really is a gateway (it may be hung): a crash
+    leaves a stale file, and its pid can since belong to an unrelated process
+    that ``stop`` must never signal. (On Windows ``os.kill(pid, 0)`` would
+    *terminate* the process, so liveness is never probed that way.)"""
+    answering = (_get(f"{_base_url()}/health") or {}).get("pid")
+    if isinstance(answering, int):
+        return answering
     try:
-        pid = int(_pid_file().read_text().strip())
+        filed = int(_pid_file().read_text().strip())
     except (OSError, ValueError):
-        # no pid file (an older gateway could lose it): ask the one answering
-        pid = (_get(f"{_base_url()}/health") or {}).get("pid")
-        return pid if isinstance(pid, int) else None
-    if WINDOWS:
-        return pid if _healthy(_base_url()) else None
-    try:
-        os.kill(pid, 0)
-        return pid
-    except OSError:
         return None
+    return filed if _is_gateway_process(filed) else None
+
+
+def _is_gateway_process(pid: int) -> bool:
+    """Whether ``pid`` is a running ``router.gateway`` process, by its command
+    line (``ps``; Windows has no such cheap probe and relies on ``/health``)."""
+    if WINDOWS:
+        return False
+    try:
+        out = subprocess.run(["ps", "-p", str(pid), "-o", "command="], capture_output=True,
+                             text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return "router.gateway" in out
 
 
 # --------------------------------------------------------------------------- #
