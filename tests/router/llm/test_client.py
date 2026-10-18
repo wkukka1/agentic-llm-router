@@ -1,9 +1,9 @@
-"""Regressions for known_bugs/LLMClient, LLMClientFactory, LLMResponse fixes."""
+"""Regressions for known_bugs/LLMClient, LLMResponse fixes."""
 
 from __future__ import annotations
 
 from router.llm.adapters.fakes import EchoAdapter
-from router.llm.client import LLMClient, LLMClientFactory, LLMResponse
+from router.llm.client import LLMClient, LLMResponse
 from router.llm.profile import LLMProfile
 
 
@@ -27,20 +27,6 @@ def test_price_only_requires_the_side_actually_used():
     client = LLMClient(adapter=None, profile=_profile(output_cost_per_token=5e-6))
     assert client.price(0, 1000) == 5e-6 * 1000
     assert client.price(1000, 0) is None  # needs the unset input price
-
-
-def test_client_factory_serves_a_repriced_profile_with_fresh_prices():
-    """LLMCLIENTFACTORY-001: the adapter/SDK client may be cached, but a
-    later ``client_for`` call with a re-priced profile for the same
-    provider/model must not keep the first profile's prices."""
-    factory = LLMClientFactory(adapters={"echo": EchoAdapter})
-    old = _profile(output_cost_per_token=1e-6)
-    new = _profile(output_cost_per_token=5e-6)
-
-    factory.client_for(old)
-    client = factory.client_for(new)
-
-    assert client.price(0, 1000) == 5e-6 * 1000
 
 
 def test_llm_response_carries_raw_and_meta():

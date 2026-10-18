@@ -61,8 +61,8 @@ crashes the run. `ClientRegistry.langchain(pool)` serves every id through
 every pool id through Claude per [`configs/serve_anthropic.yaml`](../configs/serve_anthropic.yaml):
 pool id → capability tier → Claude model (with prices). The router's pool is
 mostly non-Claude models, so that map is a rough tiering for exercising real
-latency / cost / caching, not a basis for quality claims. (`OpenAIAdapter` and
-`GoogleAdapter` are still stubs; reach those providers through `LangChainAdapter`.)
+latency / cost / caching, not a basis for quality claims. (There are no
+direct OpenAI or Google adapters; reach those providers through `LangChainAdapter`.)
 
 ## Orchestrators
 

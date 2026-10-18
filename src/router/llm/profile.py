@@ -12,7 +12,7 @@ class LLMProfile:
     """``provider`` may be the model's *author* (as ``configs/model_registry.yaml``
     records it: ``meta``, ``mistralai`` ...); ``serving_provider`` is who is
     called (``openai``, ``together``, an OpenAI-compatible endpoint ...) and is
-    what :class:`~router.llm.client.LLMClientFactory` dispatches on when set.
+    what an adapter dispatches on when set.
 
     ``input_cost_per_token``/``output_cost_per_token`` default to ``None``
     (*unset/unknown*), not ``0.0`` -- a genuinely free model should set its

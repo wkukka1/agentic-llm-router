@@ -254,7 +254,7 @@ LLMClient(AnthropicAdapter("claude-haiku-4-5", max_tokens=64)).complete("Reply w
 To check that your credentials work with one cheap call, run the opt-in live
 test: `ANTHROPIC_LIVE_TEST=1 pytest tests/router/llm/adapters/test_anthropic_adapter.py -k live`.
 
-`OpenAIAdapter` and `GoogleAdapter` are not implemented. Reach those providers
+There are no direct OpenAI or Google adapters. Reach those providers
 through `ClientRegistry.langchain([...])` (needs the `agentic` extra).
 
 ### 4.5 Plan orchestrator, with a budget

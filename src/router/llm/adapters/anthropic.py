@@ -6,8 +6,7 @@ imported from ``router``; this is the serving-side adapter.
 
 * ``max_tokens`` is required by the Messages API: taken from the call's
   ``generation_kwargs``, else ``client_kwargs["max_tokens"]`` (both reach the
-  adapter through :meth:`~router.llm.client.LLMClientFactory.client_for` /
-  ``LLMClient.complete``), else ``ValueError``.
+  adapter through ``client_kwargs`` / ``LLMClient.complete``), else ``ValueError``.
 * A chat-list prompt's leading ``system`` messages become the ``system=``
   parameter; the rest is sent as ``messages``.
 * **Prompt caching** is on by default (``cache=False`` turns it off): the API
