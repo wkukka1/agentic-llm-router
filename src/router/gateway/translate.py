@@ -207,6 +207,15 @@ class OpenAIStreamTranslator:
         self._index = -1
         self._finish: str | None = None
         self._saw_tool = False
+        #: the upstream's ``[DONE]`` marker was seen (the caller sets it)
+        self.done = False
+
+    @property
+    def truncated(self) -> bool:
+        """The stream ended without the model finishing: no ``finish_reason``
+        and no ``[DONE]``. Reporting that as a clean ``end_turn`` would hand the
+        client a cut-off answer as if it were whole."""
+        return self._finish is None and not self.done
 
     def _start(self) -> list[bytes]:
         if self._started:
@@ -261,6 +270,8 @@ class OpenAIStreamTranslator:
 
     def finish(self) -> list[bytes]:
         out = self._start() + self._close()
+        if self.truncated:
+            return out + [stream_error("the upstream stream ended before the model finished")]
         stop = _STOP.get(self._finish, "end_turn")
         if stop == "end_turn" and self._saw_tool:
             stop = "tool_use"
@@ -270,6 +281,11 @@ class OpenAIStreamTranslator:
                       "input_tokens": self.usage.get("input_tokens", 0)}}))
         out.append(sse("message_stop", {"type": "message_stop"}))
         return out
+
+
+def stream_error(message: str) -> bytes:
+    """An Anthropic ``error`` SSE event: how a stream that has begun reports a failure."""
+    return sse("error", {"type": "error", "error": {"type": "api_error", "message": message}})
 
 
 def iter_openai_sse(lines: Iterable[str]) -> Iterable[dict]:

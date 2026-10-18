@@ -61,6 +61,7 @@ from .translate import (
     anthropic_to_openai,
     iter_openai_sse,
     openai_to_anthropic,
+    stream_error,
 )
 
 log = logging.getLogger(__name__)
@@ -887,13 +888,20 @@ async def _relay_anthropic(upstream: httpx.Response, on_done) -> Response:
         tap = _SSEUsageTap()
 
         async def relay():
+            aborted = None
             try:
                 async for chunk in upstream.aiter_bytes():
                     tap.feed(chunk)
                     yield chunk
+            except httpx.HTTPError as exc:  # the connection dropped mid-stream
+                aborted = type(exc).__name__
+                yield stream_error("the upstream connection was lost")
             finally:
                 await upstream.aclose()
-                on_done(upstream.status_code, tap.usage, tap.stop_reason, tap.error, tap.message_id)
+                if aborted:
+                    on_done(502, tap.usage, tap.stop_reason, f"stream aborted: {aborted}", tap.message_id)
+                else:
+                    on_done(upstream.status_code, tap.usage, tap.stop_reason, tap.error, tap.message_id)
 
         return StreamingResponse(relay(), status_code=upstream.status_code, headers=headers)
 
@@ -1072,16 +1080,27 @@ async def _via_openai_unguarded(turn: _Turn) -> Response:
         translator = OpenAIStreamTranslator(turn.target)
 
         async def relay():
+            aborted = None
             try:
                 async for line in upstream.aiter_lines():
+                    if line.strip() == "data: [DONE]":
+                        translator.done = True
                     for chunk in iter_openai_sse([line]):
                         for event in translator.feed(chunk):
                             yield event
                 for event in translator.finish():
                     yield event
+            except httpx.HTTPError as exc:  # the connection dropped mid-stream
+                aborted = type(exc).__name__
+                for event in translator.finish():  # a model that had already finished is not an error
+                    yield event
             finally:
                 await upstream.aclose()
-                turn.finish(200, translator.usage, "openai")
+                if translator.truncated:
+                    turn.error = f"stream aborted: {aborted}" if aborted else "stream ended early"
+                    turn.finish(502, translator.usage, "openai")
+                else:
+                    turn.finish(200, translator.usage, "openai")
 
         return StreamingResponse(relay(), media_type="text/event-stream")
 
