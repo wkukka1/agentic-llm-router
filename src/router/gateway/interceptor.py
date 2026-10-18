@@ -72,6 +72,12 @@ _RESPONSE_HOP_HEADERS = {"content-length", "content-encoding", "transfer-encodin
                          "keep-alive"}
 _MAX_SESSIONS = 2000
 
+
+def _relay_headers(upstream: httpx.Response) -> dict[str, str]:
+    """The upstream response's headers minus the ones httpx already decoded."""
+    return {k: v for k, v in upstream.headers.items() if k.lower() not in _RESPONSE_HOP_HEADERS}
+
+
 _settings: dict = load_settings(None)
 _picker: ModelPicker | None = None
 _client: httpx.AsyncClient | None = None
@@ -655,6 +661,12 @@ class _Turn:
     def body_for(self, model: str) -> bytes:
         return self.raw if model == self.requested else json.dumps({**self.body, "model": model}).encode()
 
+    def fall_back(self, status: int, detail: str) -> None:
+        """The routed model refused (``status``): answer with the client's own
+        model instead, and say why in the log."""
+        self.fallback, self.attempted, self.target = True, self.target, self.requested
+        self.decision = {**self.decision, "reason": f"fell back: {self.attempted} returned {status}: {detail[:160]}"}
+
     def finish(self, status: int, usage: Mapping | None, lane: str) -> None:
         """Baselines ("on the model you asked for", "on the strongest") assume
         that model had served all the traffic: it would hold this
@@ -859,7 +871,7 @@ async def _send_anthropic(request: Request, path: str, content: bytes) -> httpx.
 
 
 async def _relay_anthropic(upstream: httpx.Response, on_done) -> Response:
-    headers = {k: v for k, v in upstream.headers.items() if k.lower() not in _RESPONSE_HOP_HEADERS}
+    headers = _relay_headers(upstream)
     if upstream.headers.get("content-type", "").startswith("text/event-stream"):
         tap = _SSEUsageTap()
 
@@ -932,7 +944,7 @@ async def _find_thread_model(turn: _Turn, upstream: httpx.Response, *, tried: se
 
 def _replay(upstream: httpx.Response, text: str) -> httpx.Response:
     """A response already read, as a fresh one that can be relayed."""
-    headers = {k: v for k, v in upstream.headers.items() if k.lower() not in _RESPONSE_HOP_HEADERS}
+    headers = _relay_headers(upstream)
     return httpx.Response(upstream.status_code, headers=headers, content=text.encode())
 
 
@@ -943,9 +955,7 @@ async def _via_anthropic_unguarded(turn: _Turn) -> Response:
         await upstream.aclose()
         _remember_block(turn, upstream.status_code, detail)
         turn.error = f"{turn.target}: {error_summary(detail.encode())}"  # kept if the fallback succeeds
-        turn.fallback, turn.attempted, turn.target = True, turn.target, turn.requested
-        turn.decision = {**turn.decision, "reason": f"fell back: {turn.attempted} returned "
-                                                    f"{upstream.status_code}: {detail[:160]}"}
+        turn.fall_back(upstream.status_code, detail)
         upstream = await _send_anthropic(turn.request, "v1/messages", turn.raw)
         if upstream.status_code == 400 and thread_previous(turn.body):
             upstream = await _find_thread_model(turn, upstream, tried={turn.attempted, turn.requested})
@@ -1023,9 +1033,7 @@ async def _via_openai_unguarded(turn: _Turn) -> Response:
             _remember_block(turn, upstream.status_code, detail)
         if turn.target != turn.requested and lane_of(turn.requested) == "anthropic" \
                 and has_client_credentials(turn.request):
-            turn.fallback, turn.attempted, turn.target = True, turn.target, turn.requested
-            turn.decision = {**turn.decision, "reason": f"fell back: {turn.attempted} returned "
-                                                        f"{upstream.status_code}: {detail[:160]}"}
+            turn.fall_back(upstream.status_code, detail)
             return await _via_anthropic(turn)
         turn.error = error_summary(detail.encode())
         turn.finish(upstream.status_code, None, "openai")
