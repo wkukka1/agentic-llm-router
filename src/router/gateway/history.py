@@ -128,14 +128,17 @@ def read(n: int | None = None) -> list[dict]:
     return list(reversed(out[-n:]))
 
 
-def stats() -> dict:
+def stats(*, rows: bool = True) -> dict:
+    """Size and (unless ``rows=False``, which skips reading the files) the row count."""
     files = [*archives(), *([history_path()] if history_path().exists() else [])]
-    rows = 0
-    for path in files:
-        opener = gzip.open if path.name.endswith(".gz") else open
-        with opener(path, "rb") as f:
-            rows += sum(1 for line in f if line.strip())
-    return {"rows": rows, "bytes": sum(p.stat().st_size for p in files), "files": len(files),
+    count = None
+    if rows:
+        count = 0
+        for path in files:
+            opener = gzip.open if path.name.endswith(".gz") else open
+            with opener(path, "rb") as f:
+                count += sum(1 for line in f if line.strip())
+    return {"rows": count, "bytes": sum(p.stat().st_size for p in files), "files": len(files),
             "enabled": enabled(), "path": str(history_path())}
 
 

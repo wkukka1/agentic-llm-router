@@ -8,6 +8,7 @@ gateway process.
     aar-gateway setup [--router FILE|URL]   first-time setup: the router + a config
     aar-gateway doctor                  check the setup, with a fix for each problem
     aar-gateway local [add|remove] M    optional: a local model through Ollama
+    aar-gateway history [on|off|show|export|delete]   the messages kept on this computer
     aar-gateway config                  which config is in use
     aar-gateway dashboard               open the dashboard
     aar-gateway service install|uninstall|status   start at login (launchd / systemd)
@@ -265,6 +266,9 @@ def _status(as_json: bool = False) -> int:
         info["requests"] = totals.get("requests")
         base = totals.get("cost_if_requested_usd") or 0
         info["plan_usage_saved"] = round(1 - totals.get("cost_usd", 0) / base, 3) if base else None
+        from . import history
+
+        info["history"] = history.stats(rows=False)
         if pid and _pid_file().exists():  # the pid can come from /health with no file
             info["up_since"] = time.strftime("%Y-%m-%d %H:%M", time.localtime(_pid_file().stat().st_mtime))
     if as_json:
@@ -532,6 +536,8 @@ def _setup(router: str | None, force: bool, enable: bool | None = False, share: 
               "(or run `aar-gateway enable` once to use the gateway in every session)")
     from . import share as sharing
 
+    print()
+    print(HISTORY_NOTE)
     if share is None and sys.stdin.isatty() and not sharing.consent_path().exists():
         print()
         share = input(SHARE_QUESTION).strip().lower() in ("y", "yes")  # opt in: only a yes
@@ -1090,6 +1096,63 @@ def _disable_settings(path: Path) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# the on-device history                                                       #
+# --------------------------------------------------------------------------- #
+HISTORY_NOTE = ("Keeping each message you type, with the model it got and how it went, on this computer only\n"
+                "(personalization and `aar-gateway-grade`; never uploaded). `aar-gateway history off` stops it.")
+
+
+def _size(n: int) -> str:
+    return f"{n / 1_048_576:.1f} MB" if n >= 1_048_576 else f"{n / 1024:.0f} KB" if n >= 1024 else f"{n} B"
+
+
+def _history(argv: list[str]) -> int:
+    """``aar-gateway history [on|off|status|show [N]|export FILE|delete [--yes]]``."""
+    from . import history
+
+    action = argv[0] if argv else "status"
+    if action == "on":
+        history.set_enabled(True)
+        print(f"history on: your messages are kept in {history.history_dir()} (this computer only)")
+        return 0
+    if action == "off":
+        history.set_enabled(False)
+        print("history off: nothing new is kept. What is already there stays until `aar-gateway history delete`.")
+        return 0
+    if action == "status":
+        info = history.stats()
+        print(f"history      {'on' if info['enabled'] else 'off'}")
+        print(f"kept         {info['rows']} message(s), {_size(info['bytes'])} in {info['files']} file(s)")
+        print(f"where        {info['path']}  (plus gzip archives beside it)")
+        print("never uploaded; `aar-gateway share` is a separate, anonymous record without any text")
+        return 0
+    if action == "show":
+        n = int(argv[1]) if len(argv) > 1 and argv[1].isdigit() else 5
+        for row in history.read(n):
+            text = " ".join(str(row.get("prompt", "")).split())
+            print(f"{row.get('ts', '')}  {row.get('routed_model') or '?'}  status {row.get('status')}  "
+                  f"{text[:160]}{'...' if len(text) > 160 else ''}")
+        return 0
+    if action == "export":
+        if len(argv) < 2:
+            raise SystemExit("usage: aar-gateway history export <file>")
+        dest = Path(argv[1]).expanduser()
+        print(f"wrote {history.export(dest)} message(s) to {dest}")
+        return 0
+    if action == "delete":
+        if "--yes" not in argv[1:]:
+            if not sys.stdin.isatty():
+                raise SystemExit("history delete removes every kept message; run it in a terminal, or add --yes")
+            if input("Delete every message the history has kept? This cannot be undone. [y/N] ").strip().lower() not in (
+                    "y", "yes"):
+                print("kept")
+                return 0
+        print(f"deleted {history.delete()} message(s)")
+        return 0
+    raise SystemExit(f"unknown history action {action!r}: on, off, status, show [N], export <file> or delete")
+
+
+# --------------------------------------------------------------------------- #
 # opt-in usage sharing                                                        #
 # --------------------------------------------------------------------------- #
 SHARE_QUESTION = ("Share anonymous usage data to help improve routing? Never your prompts, file paths or ids:\n"
@@ -1252,6 +1315,8 @@ def main(argv: list[str] | None = None) -> int:
         return _local(argv[1:])
     if argv[:1] == ["share"]:
         return _share(argv[1:])
+    if argv[:1] == ["history"]:
+        return _history(argv[1:])
 
     parser = argparse.ArgumentParser(prog="aar-gateway", description="Route Claude Code through the AAR gateway.")
     sub = parser.add_subparsers(dest="command", metavar="command")
