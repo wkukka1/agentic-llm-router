@@ -1244,7 +1244,7 @@ def _current_records() -> list[dict]:
                 _log_cache["records"].append(json.loads(line))
             except ValueError:  # a line cut short by a crash: skip it, keep the rest
                 log.warning("skipping an undecodable line of %s", path)
-    return list(_log_cache["records"])
+    return _log_cache["records"]  # read_records() joins it into a new list; no second copy here
 
 
 #: newest requests sent to the dashboard, which pages through them

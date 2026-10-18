@@ -56,3 +56,9 @@ def test_concurrent_stats_calls_never_double_count_or_drop_records():
     [t.join(30) for t in threads]
     assert not errors and set(results) == {300}
     assert json.loads(json.dumps(interceptor.summarize()))["totals"]["requests"] == 300
+
+
+def test_read_records_hands_out_a_list_the_caller_may_change():
+    _write(4)
+    interceptor.read_records().clear()
+    assert len(interceptor.read_records()) == 4
