@@ -633,20 +633,31 @@ def _warm_usage(usage: Mapping, warm: int) -> dict:
 class _SSEUsageTap:
     """Token usage read off an Anthropic SSE stream as it passes through."""
 
+    #: an event larger than this is junk (or a stream that never separates events):
+    #: the buffer is dropped rather than grown for the rest of the stream
+    MAX_EVENT_BYTES = 1_000_000
+
     def __init__(self):
         self._buf = b""
+        self._cr = b""  # a trailing CR: the LF of a CRLF may arrive in the next chunk
         self.usage: dict = {}
         self.stop_reason: str | None = None
         self.error: str | None = None  # an error event mid-stream (overloaded, ...)
         self.message_id: str | None = None
 
     def feed(self, chunk: bytes) -> None:
-        self._buf += chunk
+        data = self._cr + chunk
+        self._cr = b"\r" if data.endswith(b"\r") else b""
+        if self._cr:
+            data = data[:-1]
+        self._buf += data.replace(b"\r\n", b"\n")
         while b"\n\n" in self._buf:
             event, self._buf = self._buf.split(b"\n\n", 1)
             for line in event.split(b"\n"):
                 if line.startswith(b"data:"):
                     self._read(line[5:].strip())
+        if len(self._buf) > self.MAX_EVENT_BYTES:
+            self._buf = b""
 
     def _read(self, data: bytes) -> None:
         try:

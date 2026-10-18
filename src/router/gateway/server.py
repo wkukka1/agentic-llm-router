@@ -128,9 +128,10 @@ async def events(request: Request):
 
     from fastapi.responses import StreamingResponse
 
-    queue = interceptor.subscribe()
-
     async def stream():
+        # subscribed here, not before the response: a client that drops before
+        # the body starts never runs this generator, so nothing would unsubscribe
+        queue = interceptor.subscribe()
         try:
             yield "retry: 3000\n\n"
             while not await request.is_disconnected():
