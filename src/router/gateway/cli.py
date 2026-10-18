@@ -54,6 +54,12 @@ def _home() -> Path:
     return gateway_home()
 
 
+def _log_path() -> Path:
+    from .config import log_path
+
+    return log_path()
+
+
 def _config_path() -> Path | None:
     from .config import config_path
 
@@ -230,7 +236,7 @@ def _status(as_json: bool = False) -> int:
     pid = _running_pid()
     cfg = _config_path()
     info = {"running": health is not None, "url": url, "pid": pid, "config": str(cfg) if cfg else None,
-            "log": str(_log_file()), "requests_log": str(_home() / "requests.jsonl"),
+            "log": str(_log_file()), "requests_log": str(_log_path()),
             "dashboard": url + "/dashboard"}
     if health:
         router = health.get("router") or {}
@@ -241,7 +247,7 @@ def _status(as_json: bool = False) -> int:
         info["requests"] = totals.get("requests")
         base = totals.get("cost_if_requested_usd") or 0
         info["plan_usage_saved"] = round(1 - totals.get("cost_usd", 0) / base, 3) if base else None
-        if pid:
+        if pid and _pid_file().exists():  # the pid can come from /health with no file
             info["up_since"] = time.strftime("%Y-%m-%d %H:%M", time.localtime(_pid_file().stat().st_mtime))
     if as_json:
         print(json.dumps(info, indent=2))
