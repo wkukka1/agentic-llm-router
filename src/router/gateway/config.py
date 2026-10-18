@@ -263,7 +263,11 @@ def log_archives() -> list[Path]:
     ``.part`` files and the summaries stored beside archives are not archives."""
     path = log_path()
     legacy = path.with_name(path.name + ".1")
-    dated = sorted(p for p in path.parent.glob(f"{path.stem}-*") if p.name.endswith((".jsonl", ".jsonl.gz")))
+    dated = sorted((p for p in path.parent.glob(f"{path.stem}-*") if p.name.endswith((".jsonl", ".jsonl.gz"))),
+                   key=lambda p: p.name.removesuffix(".gz").removesuffix(".jsonl"))  # rotation order
+    done = {p.name for p in dated}
+    # a plain archive whose gzip exists is a compression that had not yet removed it: count the gzip only
+    dated = [p for p in dated if not (p.name.endswith(".jsonl") and p.name + ".gz" in done)]
     return ([legacy] if legacy.exists() else []) + dated
 
 

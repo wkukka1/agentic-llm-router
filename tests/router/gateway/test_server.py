@@ -67,6 +67,7 @@ def test_the_log_rotates(tmp_path, monkeypatch):
     monkeypatch.setattr(interceptor, "MAX_LOG_BYTES", 5)
     interceptor._append_record({"a": 1})
     interceptor._append_record({"b": 2})
-    assert (tmp_path / "requests.jsonl.1").exists()
+    interceptor.join_archivers(10)
+    assert len(list(tmp_path.glob("requests-*.jsonl.gz"))) == 1  # dated and gzipped, never overwritten
     assert (tmp_path / "requests.jsonl").read_text().strip() == '{"b": 2}'
     assert interceptor.read_records() == [{"a": 1}, {"b": 2}]  # the rotated one still counts
