@@ -258,17 +258,11 @@ def read_json(path: Path, default: dict | None = None, *, strict: bool = False) 
 
 
 def log_archives() -> list[Path]:
-    """The rotated request logs, oldest first: the single legacy ``<log>.1``, then
-    ``<log stem>-<UTC time>.jsonl`` and its gzip ``.jsonl.gz``. Unfinished
-    ``.part`` files and the summaries stored beside archives are not archives."""
-    path = log_path()
-    legacy = path.with_name(path.name + ".1")
-    dated = sorted((p for p in path.parent.glob(f"{path.stem}-*") if p.name.endswith((".jsonl", ".jsonl.gz"))),
-                   key=lambda p: p.name.removesuffix(".gz").removesuffix(".jsonl"))  # rotation order
-    done = {p.name for p in dated}
-    # a plain archive whose gzip exists is a compression that had not yet removed it: count the gzip only
-    dated = [p for p in dated if not (p.name.endswith(".jsonl") and p.name + ".gz" in done)]
-    return ([legacy] if legacy.exists() else []) + dated
+    """The rotated request logs, oldest first (see :func:`router.gateway.archive.archives_of`)
+    including the single ``<log>.1`` older versions kept."""
+    from .archive import archives_of
+
+    return archives_of(log_path(), legacy=True)
 
 
 def iter_jsonl(path: Path):

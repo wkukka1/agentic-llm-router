@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import asyncio
 import collections
-import gzip
 import hashlib
 import json
 import logging
@@ -51,7 +50,7 @@ from fastapi import Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from . import rollup, share
+from . import archive, rollup, share
 from .config import (
     DEFAULT_ROUTER,
     DEFAULT_SUBAGENTS,
@@ -500,69 +499,39 @@ def _capture(turn: _Turn) -> None:
 #: and is never deleted -- the history is what the router is retrained and personalised from
 MAX_LOG_BYTES = 50 * 1024 * 1024
 
-#: threads gzipping a rotated log (joined by tests; daemon threads, so exit never waits for one)
-_archivers: list[threading.Thread] = []
-
-
 def join_archivers(timeout: float | None = None) -> None:
-    for thread in list(_archivers):
-        thread.join(timeout)
-    _archivers[:] = [t for t in _archivers if t.is_alive()]
+    archive.join_background(timeout)
 
 
 def _rotate_log(path: Path) -> Path:
-    """Move the full log to ``<stem>-<UTC time>.jsonl`` (never over an existing file) and
-    start gzipping it. The next append starts a new log."""
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f")  # microseconds: names sort in rotation order
-    dest = path.with_name(f"{path.stem}-{stamp}{path.suffix}")
-    n = 0
-    while dest.exists() or dest.with_name(dest.name + ".gz").exists():
-        n += 1
-        dest = path.with_name(f"{path.stem}-{stamp}-{n}{path.suffix}")
-    path.replace(dest)
-    _start_archiver(dest)
+    """Move the full log to a dated archive and start gzipping it; the next append starts a new log."""
+    dest = archive.rotate_to_archive(path)
+    archive.run_in_background(_gzip_archive, dest)
     return dest
-
-
-def _start_archiver(plain: Path) -> None:
-    thread = threading.Thread(target=_gzip_archive, args=(plain,), name="aar-archive", daemon=True)
-    _archivers.append(thread)
-    thread.start()
 
 
 def _gzip_archive(plain: Path) -> None:
     """Gzip a rotated log in one pass that also builds its rollup, so the archive is
-    never read again to be summarised. The gzip is complete only once renamed from
-    ``.part``; until then the plain file is the archive (``log_archives`` ignores a
-    plain file once its gzip exists), so a crash at any point loses nothing."""
-    gz = plain.with_name(plain.name + ".gz")
-    part = gz.with_name(gz.name + ".part")
-    try:
-        state, newest = rollup.new_state(), collections.deque(maxlen=ARCHIVE_TAIL)
-        with plain.open("rb") as src, gzip.open(part, "wb") as dst:
-            for line in src:
-                dst.write(line)
-                try:
-                    record = json.loads(line)
-                except ValueError:
-                    continue
-                rollup.accumulate(state, record)
-                newest.append(record)
-        os.replace(part, gz)
+    never read again to be summarised."""
+    state, newest = rollup.new_state(), collections.deque(maxlen=ARCHIVE_TAIL)
+
+    def seen(record: dict) -> None:
+        rollup.accumulate(state, record)
+        newest.append(record)
+
+    def store(gz: Path) -> None:
         st = gz.stat()
-        side = gz.with_name(gz.name + ".summary.json")
-        atomic_write_text(side, json.dumps({"key": [st.st_size, st.st_mtime_ns], "state": state,
-                                            "tail": list(newest)}))
-        plain.unlink()
-    except OSError as exc:  # e.g. disk full: the plain archive stays and is retried at the next start
-        log.warning("could not compress %s: %s", plain, type(exc).__name__)
+        atomic_write_text(gz.with_name(gz.name + ".summary.json"),
+                          json.dumps({"key": [st.st_size, st.st_mtime_ns], "state": state, "tail": list(newest)}))
+
+    archive.gzip_archive(plain, each=seen, done=store)
 
 
 def _compress_pending() -> None:
     """Finish what a stopped gateway left: rotated logs not yet gzipped."""
     for path in log_archives():
         if path.name.endswith(".jsonl"):
-            _start_archiver(path)
+            archive.run_in_background(_gzip_archive, path)
 
 
 def _append_record(record: dict) -> None:
