@@ -662,7 +662,7 @@ class AgenticRouter:
                 try:
                     chunk = ctx.run(next, inner)
                 except StopIteration as stop:
-                    resp = stop.value
+                    resp = self._require_answer(model_id, stop.value)
                     break
                 timings.setdefault("ttft", time.perf_counter() - t_start)
                 yield chunk
@@ -677,7 +677,7 @@ class AgenticRouter:
             yield root.answer
         result = self._finish(req, decision, root, t_start)
         if on_result is not None:
-            _bookkeeping_executor().submit(on_result, result)
+            _bookkeeping_executor().submit(_run_sink, on_result, result)
         self._emit(result)
         return result
 
@@ -805,9 +805,7 @@ class AgenticRouter:
         try:
             self._use_call()
             expected = self._expected_cost(model_id, prompt, history)
-            resp = self.clients.complete(model_id, sent, **generation_kwargs)
-            if not resp.content or not resp.content.strip():
-                raise RuntimeError(f"{model_id} returned no answer (empty response)")
+            resp = self._require_answer(model_id, self.clients.complete(model_id, sent, **generation_kwargs))
         except Exception as exc:
             if depth == 0:
                 raise
@@ -819,6 +817,15 @@ class AgenticRouter:
                       **({"budget_exhausted": True} if isinstance(exc, CallBudgetExceeded) else {})},
             )
         return self._leaf(prompt, model_id, depth, predicted_quality, resp, expected, sent_prompt=sent)
+
+    @staticmethod
+    def _require_answer(model_id: str, resp: LLMResponse) -> LLMResponse:
+        """``resp``, or a ``RuntimeError`` when it has no text: the model
+        didn't answer, so a blank must not read as a successful empty answer
+        (:meth:`_call_model` and :meth:`stream` both apply this)."""
+        if not resp.content or not resp.content.strip():
+            raise RuntimeError(f"{model_id} returned no answer (empty response)")
+        return resp
 
     @staticmethod
     def _leaf(prompt: str, model_id: str, depth: int, predicted_quality: float,
