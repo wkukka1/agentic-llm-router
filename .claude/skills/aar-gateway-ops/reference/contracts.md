@@ -32,11 +32,11 @@ Legend: **read** = changes nothing. **confirm** = ask the user first, every time
 
 | Command | What it changes | Notes |
 |---|---|---|
-| `aar-gateway start` | starts the gateway if it isn't answering | via the login service when installed |
-| `aar-gateway stop` | stops the gateway via its pid file | never by name |
+| `aar-gateway start` | starts the gateway and turns on every-session routing (the settings half is `enable`) | via the login service when installed |
+| `aar-gateway stop` | turns every-session routing off and stops the gateway via its pid file | never by name |
 | `aar-gateway restart` | stop then start | the usual fix for a stuck gateway |
 | `aar-gateway service install` / `uninstall` | the start-at-login entry | macOS and Linux only |
-| `aar-gateway enable` / `disable` | Claude Code's user settings (every session) | `enable` refuses a copy in a temp folder |
+| (`start` and `stop` also do the settings; `enable`/`disable` remain, hidden) | Claude Code's user settings (every session) | `start` refuses a copy in a temp folder |
 | `aar-gateway setup [--force]` | router file and config | `--force` rewrites the config: confirm twice |
 | `aar-gateway share on` / `off` | whether usage records are kept | |
 | `aar-gateway share delete` | deletes records not yet sent | |
