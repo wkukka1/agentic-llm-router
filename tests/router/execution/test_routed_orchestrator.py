@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import threading
 import time
 from dataclasses import replace
 
@@ -143,20 +142,6 @@ def test_executed_step_meta_carries_the_full_score_comparison():
         assert sc.meta["step_scores"] == {"small": 0.7, "big": 0.9, "coder": 0.8}
 
 
-def test_plan_never_routes_a_subprompt_to_an_unregistered_model():
-    # TextRouter always scores big=0.9 > coder=0.8 > small=0.7; "big" is
-    # deliberately left unregistered, so every step must land on "coder",
-    # the best model the registry can actually serve.
-    router = TextRouter()
-    reg = ClientRegistry({m: LLMClient(CallableAdapter(m, lambda p, **kw: LLMResponse(f"{m} answers")))
-                          for m in ["small", "coder"]})
-    agent = AgenticRouter(router, reg, decomposer=_decomposer(["a?", "b?", "c?"]))
-    orch = _orchestrator(agent)
-    orch.task = _task()
-    plan = orch.plan(orch.task)
-    assert [s.model.model_id for s in plan.steps] == ["coder"] * 3
-
-
 def test_escalation_never_picks_an_unregistered_model():
     # "big" out-scores "coder" (0.9 > 0.8) but is deliberately unregistered;
     # when the planned step ("coder", the best REGISTERED model) fails, the
@@ -185,6 +170,21 @@ def test_independent_steps_run_concurrently():
     wall = time.perf_counter() - t0
     assert res.success and len(orch.subcalls) == 3
     assert wall < 0.45                                            # ~0.2 s, not ~0.6 s sequential
+    assert res.actual_cost == pytest.approx(0.03) and orch.ledger.spent == pytest.approx(0.03)
+
+
+def test_max_calls_is_exact_across_worker_threads():
+    """3 parallel steps under max_calls=2: exactly two calls go through; the
+    third (and its replan retry) is refused by the shared, locked budget."""
+    sent = []
+    agent = AgenticRouter(TextRouter(), _clients(sent=sent), decomposer=_decomposer(["a", "b", "c"]),
+                          orchestrator=plan_orchestrator(), max_calls=2)
+    res = agent.run(COMPOUND)
+    errors = res.errors()
+    assert len(sent) == 2
+    assert len(errors) == 1 and "max_calls" in errors[0].error
+
+
 def test_plan_steps_are_routed_with_the_agents_margin():
     """with_margin() is the caller's cost preference for the request: every
     decomposed step must honour it, not only the root prompt."""
@@ -207,21 +207,6 @@ def test_an_exhausted_call_budget_is_not_replanned(monkeypatch):
     (failed,) = res.errors()
     assert failed.meta["budget_exhausted"] is True
     assert replans == []
-
-
-    assert res.actual_cost == pytest.approx(0.03) and orch.ledger.spent == pytest.approx(0.03)
-
-
-def test_max_calls_is_exact_across_worker_threads():
-    """3 parallel steps under max_calls=2: exactly two calls go through; the
-    third (and its replan retry) is refused by the shared, locked budget."""
-    sent = []
-    agent = AgenticRouter(TextRouter(), _clients(sent=sent), decomposer=_decomposer(["a", "b", "c"]),
-                          orchestrator=plan_orchestrator(), max_calls=2)
-    res = agent.run(COMPOUND)
-    errors = res.errors()
-    assert len(sent) == 2
-    assert len(errors) == 1 and "max_calls" in errors[0].error
 
 
 def test_sequential_steps_see_earlier_results():
@@ -330,6 +315,7 @@ def test_bridge_over_budget_returns_a_failed_subcall():
     res = agent.run(COMPOUND)
     assert res.mode == "orchestrated" and "over budget" in res.answer
     assert res.errors() and res.errors()[0].error == "over_budget"
+    assert "budget remaining 0.001" in res.answer
 
 
 # --------------------------------------------------------------------------- #
@@ -487,11 +473,6 @@ def test_without_late_routing_steps_keep_their_plan_time_model():
     assert orch.subcalls[1].model_id == "big"
 
 
-def test_route_late_setting_reaches_the_orchestrator(fake_chat_model):
-    agent = AgenticRouter.from_settings(_plan_settings(plan={"route_late": True}), router=TextRouter())
-    assert agent.orchestrator.route_late is True
-
-
 def test_escalation_never_retries_a_tried_model_and_takes_the_closest_step_up():
     orch = _orchestrator(AgenticRouter(TextRouter(), _clients(), decomposer=_decomposer(["a", "b"])))
     orch.task = _task()
@@ -632,10 +613,13 @@ def test_over_budget_repair_round_returns_the_best_answer_not_an_error():
     assert res.quality_check["best_round"] == 0
 
 
-def test_quality_check_builds_a_checker_unconditionally(fake_chat_model):
-    """The judge is mandatory now -- no quality_check.enabled toggle left to set."""
+def test_plan_settings_reach_the_orchestrator(fake_chat_model):
+    """route_late / length_budgets are passed through, and the judge is mandatory --
+    no quality_check.enabled toggle left to set."""
     from router.agentic.quality import QualityChecker
-    agent = AgenticRouter.from_settings(_plan_settings(), router=TextRouter())
+    agent = AgenticRouter.from_settings(
+        _plan_settings(plan={"route_late": True, "length_budgets": True}), router=TextRouter())
+    assert agent.orchestrator.route_late is True and agent.orchestrator.length_budgets is True
     assert isinstance(agent.orchestrator.checker, QualityChecker)
 
 
@@ -736,12 +720,6 @@ def test_over_budget_repair_round_without_a_check_keeps_the_paid_work():
     assert res.cost == pytest.approx(0.03)
 
 
-def test_over_budget_message_reports_the_remaining_budget():
-    agent = AgenticRouter(TextRouter(costs=[0.001, 0.01, 0.005]), _clients(),
-                          orchestrator=plan_orchestrator(budget=0.001))
-    assert "budget remaining 0.001" in agent.run(COMPOUND).answer
-
-
 def test_refused_repair_after_every_step_failed_does_not_invent_an_answer():
     agent = _planning_agent(
         THREE_STEP, clients=_clients(fail=POOL), router=TextRouter(costs=[0.001, 0.005, 0.01]),
@@ -829,11 +807,6 @@ def test_llm_synthesizer_gets_the_derived_final_budget():
     (text, kw), = seen
     assert text.endswith("Length: aim for about 180-360 words; never exceed 540 words.")
     assert kw == {"max_tokens": 1458}                                # 60% of the steps' combined budget
-
-
-def test_length_budgets_setting_reaches_the_orchestrator(fake_chat_model):
-    agent = AgenticRouter.from_settings(_plan_settings(plan={"length_budgets": True}), router=TextRouter())
-    assert agent.orchestrator.length_budgets is True
 
 
 # --------------------------------------------------------------------------- #

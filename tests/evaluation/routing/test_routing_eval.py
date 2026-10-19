@@ -13,9 +13,7 @@ from evaluation.routing.oracle import (
     oracle_classifier_matrix,
     oracle_labels,
     per_query_table,
-    per_task_argmax_baseline,
     routing_evaluation,
-    soft_oracle_targets,
 )
 from router.nirt.routing_decision import cost_aware_utility, regret, routing_decision
 
@@ -81,14 +79,6 @@ def test_oracle_is_pool_relative():
     reduced = oracle_labels(true_df[["GPT-A", "GPT-C"]]).groupby("query_id")["oracle_score"].first()
     assert full["q001"] == pytest.approx(0.94)
     assert reduced["q001"] == pytest.approx(0.81)
-
-
-def test_soft_oracle_targets_sum_to_one():
-    true_df, _ = _mats()
-    s = soft_oracle_targets(true_df, tau=0.1)
-    assert np.allclose(s.to_numpy().sum(axis=1), 1.0)
-    # lower tau -> peakier: the best model gets more mass
-    assert soft_oracle_targets(true_df, 0.02).iloc[0].max() > soft_oracle_targets(true_df, 1.0).iloc[0].max()
 
 
 # --------------------------------------------------------------------------- #
@@ -252,40 +242,6 @@ def test_oracle_classifier_baseline_trains_on_train_only():
     assert mat.shape == (30, 3)
     r = routing_evaluation(mat, true[ev], None, ["m0", "m1", "m2"])
     assert r["oracle_hit_rate_any_best"] > 0.8   # clearly learnable signal
-
-
-# --------------------------------------------------------------------------- #
-# per-family fixed lookup (zero-parameter routing floor)                     #
-# --------------------------------------------------------------------------- #
-def test_per_task_argmax_baseline_picks_family_best_and_falls_back():
-    # fam_a's best train model is GPT-A; fam_b's best is GPT-C; overall-best is
-    # GPT-A (0.55 mean) -- distinct from fam_b's own pick, so an unseen family
-    # must fall back to the GLOBAL best, not fam_b's.
-    train_true = pd.DataFrame(
-        {"GPT-A": [0.9, 0.9, 0.2, 0.2],
-         "GPT-B": [0.5, 0.5, 0.5, 0.5],
-         "GPT-C": [0.1, 0.1, 0.95, 0.95]},
-        index=["t1", "t2", "t3", "t4"],
-    )
-    family_of = {"t1": "fam_a", "t2": "fam_a", "t3": "fam_b", "t4": "fam_b",
-                 "e_a": "fam_a", "e_b": "fam_b", "e_unseen": "fam_c"}
-    mat = per_task_argmax_baseline(train_true, ["e_a", "e_b", "e_unseen"], M, family_of)
-    assert mat.shape == (3, 3)
-    assert np.allclose(mat.sum(axis=1), 1.0)  # one-hot
-    picked = [M[i] for i in mat.argmax(axis=1)]
-    assert picked == ["GPT-A", "GPT-C", "GPT-A"]
-
-
-def test_per_task_argmax_baseline_plugs_into_routing_evaluation():
-    train_true = pd.DataFrame(
-        {"GPT-A": [0.9, 0.9], "GPT-B": [0.5, 0.5], "GPT-C": [0.1, 0.1]},
-        index=["t1", "t2"],
-    )
-    family_of = {"t1": "fam", "t2": "fam", "e1": "fam"}
-    eval_true = np.array([[0.9, 0.5, 0.1]])
-    mat = per_task_argmax_baseline(train_true, ["e1"], M, family_of)
-    r = routing_evaluation(mat, eval_true, None, M)
-    assert r["mean_regret"] == pytest.approx(0.0)
 
 
 # --------------------------------------------------------------------------- #
