@@ -1123,6 +1123,37 @@ def _share(argv: list[str]) -> int:
     raise SystemExit(f"unknown share action {action!r}: on, off, status, show [N], delete, token or upload")
 
 
+def _view(argv: list[str]) -> int:
+    """``aar-gateway view [--host ADDRESS] [--port N]``: the read-only dashboard
+    on an address other devices can reach (your Tailscale address by default)."""
+    import argparse
+    import shutil as _sh
+    import subprocess as _sp
+
+    ap = argparse.ArgumentParser(prog="aar-gateway view", description="read-only dashboard for your phone")
+    ap.add_argument("--host", help="address to serve on (default: this computer's Tailscale IPv4)")
+    ap.add_argument("--port", type=int, default=8788)
+    args = ap.parse_args(argv)
+    host = args.host
+    if not host:
+        tailscale = _sh.which("tailscale") or "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+        try:
+            host = _sp.run([tailscale, "ip", "-4"], capture_output=True, text=True, timeout=10).stdout.split()[0]
+        except (OSError, IndexError, _sp.SubprocessError):
+            raise SystemExit("Tailscale isn't running here. Install it from https://tailscale.com/download, "
+                             "sign in, then run `aar-gateway view` again (or pass --host).") from None
+    if host in ("0.0.0.0", "::"):
+        raise SystemExit("refusing to serve on every address: name the one device-reachable address (--host)")
+    import uvicorn
+
+    from .view import build_app
+
+    print(f"read-only dashboard on http://{host}:{args.port}/dashboard (no changes possible from there)")
+    config = os.environ.get("AAR_GATEWAY_CONFIG")
+    uvicorn.run(build_app(host, config), host=host, port=args.port, log_level="warning")
+    return 0
+
+
 def _agents(argv: list[str]) -> None:
     """``aar-gateway agents``: print the kinds as ``--agents`` JSON;
     ``--install [DIR]``: write them as agent files (default
@@ -1222,6 +1253,8 @@ def main(argv: list[str] | None = None) -> int:
         return _local(argv[1:])
     if argv[:1] == ["share"]:
         return _share(argv[1:])
+    if argv[:1] == ["view"]:
+        return _view(argv[1:])
 
     parser = argparse.ArgumentParser(prog="aar-gateway", description="Route Claude Code through the AAR gateway.")
     sub = parser.add_subparsers(dest="command", metavar="command")
@@ -1254,6 +1287,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("stats", help="the gateway's totals as JSON (savings, requests, errors)")
     sub.add_parser("local", help="optional local models via Ollama: local [add|remove] <model>")
     sub.add_parser("share", help="opt-in anonymous usage sharing: share [on|off|status|show|delete|token|upload]")
+    sub.add_parser("view", help="read-only dashboard for your phone over Tailscale: view [--host ADDRESS]")
     sub.add_parser("config", help="which config file is in use")
     sub.add_parser("dashboard", help="open the dashboard in a browser")
     service = sub.add_parser("service", help="start the gateway at login (launchd on macOS, systemd on Linux)")
