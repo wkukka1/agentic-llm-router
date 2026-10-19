@@ -38,6 +38,8 @@ import sys
 import time
 from pathlib import Path
 
+from . import listen
+
 SERVICE_LABEL = "com.aar.gateway"
 #: the router ``aar-gateway setup`` installs when not given one: a trained
 #: network (weights only, 0.4 MB) shipped inside the package.
@@ -77,8 +79,17 @@ def _log_file() -> Path:
     return _home() / "gateway.log"
 
 
+def _listen() -> tuple[str, int]:
+    """Where the gateway listens, or a one-line exit for a bad AAR_GATEWAY_PORT."""
+    try:
+        return listen.listen_address()
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
+
+
 def _base_url() -> str:
-    return f"http://{os.environ.get('AAR_GATEWAY_HOST', '127.0.0.1')}:{os.environ.get('AAR_GATEWAY_PORT', '8787')}"
+    host, port = _listen()
+    return f"http://{host}:{port}"
 
 
 def _src() -> str:
@@ -612,8 +623,7 @@ def _doctor() -> int:
 
         with socket.socket() as sock:
             sock.settimeout(0.5)
-            taken = sock.connect_ex((os.environ.get("AAR_GATEWAY_HOST", "127.0.0.1"),
-                                     int(os.environ.get("AAR_GATEWAY_PORT", "8787")))) == 0
+            taken = sock.connect_ex(_listen()) == 0
         if taken:
             report(False, "port", f"something else is listening on {url}",
                    "stop it, or pick another port with AAR_GATEWAY_PORT")
@@ -1429,7 +1439,7 @@ def main(argv: list[str] | None = None) -> int:
 
     import socket
 
-    host, port = os.environ.get("AAR_GATEWAY_HOST", "127.0.0.1"), int(os.environ.get("AAR_GATEWAY_PORT", "8787"))
+    host, port = _listen()
     config = uvicorn.Config(app, host=host, port=port,
                             timeout_graceful_shutdown=5)  # open dashboard streams never close by themselves
     # the port first, before anything loads: a second gateway started at the

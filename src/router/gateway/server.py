@@ -13,7 +13,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from . import interceptor, share
+from . import interceptor, listen, share
 from .config import graded_path, models_dir, pid_file
 
 _router_status: dict = {"enabled": False}
@@ -90,7 +90,14 @@ _LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]", "::1"}
 
 def _allowed_hosts() -> set[str]:
     extra = os.environ.get("AAR_GATEWAY_ALLOWED_HOSTS", "")
-    return _LOCAL_HOSTS | {h.strip().lower() for h in extra.split(",") if h.strip()}
+    names = _LOCAL_HOSTS | {h.strip().lower() for h in extra.split(",") if h.strip()}
+    try:
+        bound = listen.listen_address()[0].lower()
+    except ValueError:
+        return names
+    if bound not in ("0.0.0.0", "::"):  # a wildcard says nothing about which names clients use
+        names |= {bound, f"[{bound}]" if ":" in bound and not bound.startswith("[") else bound}
+    return names
 
 
 def _hostname(netloc: str) -> str:
