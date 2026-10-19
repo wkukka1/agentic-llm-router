@@ -23,7 +23,7 @@ import re
 import sys
 from pathlib import Path
 
-from router.gateway.config import load_settings
+from router.gateway.config import iter_jsonl, load_settings
 from router.gateway.pricing import cost_usd
 from router.gateway.routing import price_for
 from router.gateway.subagents import identify, role_decision
@@ -47,7 +47,7 @@ def subagent_runs(projects_dir: Path = PROJECTS_DIR) -> list[dict]:
         meta_path = path.with_name(path.stem + ".meta.json")
         try:
             meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
-            records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+            records = list(iter_jsonl(path))  # a corrupt line is skipped, not the whole run
         except (OSError, ValueError):
             continue
         messages = [(m.get("model"), m["usage"]) for r in records if r.get("type") == "assistant"

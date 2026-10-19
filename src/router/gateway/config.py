@@ -289,7 +289,7 @@ def iter_jsonl(path: Path):
             if not line.strip():
                 continue
             try:
-                yield json.loads(line)
+                yield json.loads(line.decode("utf-8", "replace"))
             except ValueError:
                 log.warning("skipping an undecodable line %d of %s", n, path)
 

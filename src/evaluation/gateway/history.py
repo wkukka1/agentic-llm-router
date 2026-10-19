@@ -18,7 +18,7 @@ import re
 from collections.abc import Iterable
 from pathlib import Path
 
-from router.gateway.config import append_jsonl, read_jsonl
+from router.gateway.config import append_jsonl, iter_jsonl, read_jsonl
 from router.gateway.translate import REMINDER as _REMINDER
 from router.gateway.translate import text_of
 
@@ -49,11 +49,7 @@ def history_turns(projects_dir: Path = PROJECTS_DIR) -> list[dict]:
     for transcript in sorted(projects_dir.glob("*/*.jsonl")):
         if transcript.parent.name.startswith(_TEMP_PROJECTS):
             continue
-        for line in transcript.open(encoding="utf-8", errors="replace"):
-            try:
-                record = json.loads(line)
-            except ValueError:
-                continue
+        for record in iter_jsonl(transcript):
             text = _typed(record)
             if text is None:
                 continue
