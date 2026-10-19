@@ -18,7 +18,7 @@ Legend: **read** = changes nothing. **confirm** = ask the user first, every time
 | `aar-gateway logs -n N` | last N log lines (text) | N up to 200 |
 | `aar-gateway config` | the config file path in use | |
 | `aar-gateway service status` | installed or not | |
-| `aar-gateway share status --json` | sharing on/off, counts, dataset, token set (yes/no only) | never prints the token |
+| `aar-gateway share status --json` | sharing on/off, counts, collection endpoint, last upload | |
 | `GET http://127.0.0.1:8787/health` | status, pid, router | use `curl -m 3` |
 | `GET http://127.0.0.1:8787/stats` | the same as `stats` | |
 | `GET http://127.0.0.1:8787/api/preferences` | mode, pin, margin, roles | |
@@ -40,7 +40,7 @@ Legend: **read** = changes nothing. **confirm** = ask the user first, every time
 | `aar-gateway setup [--force]` | router file and config | `--force` rewrites the config: confirm twice |
 | `aar-gateway share on` / `off` | whether usage records are kept | |
 | `aar-gateway share delete` | deletes records not yet sent | |
-| `aar-gateway share upload` | sends records to the configured dataset | only when the user asks |
+| `aar-gateway share upload` | sends records to the configured collection endpoint | only when the user asks |
 | preference changes via `POST /api/preferences` | routing mode, pin, margin, allow-upgrade, subagent tiers | show the change first |
 
 ## Never
@@ -48,9 +48,9 @@ Legend: **read** = changes nothing. **confirm** = ask the user first, every time
 - `kill`, `pkill`, `killall` on anything matching `aar-gateway`, `router.gateway`
   or `python`. Use `aar-gateway stop` or a pid read from `/health`.
 - Editing `~/.claude/settings.json`, `~/.aar-gateway/config.yaml`,
-  `~/.aar-gateway/share/token`, or any file under `~/Library/LaunchAgents`.
-- `share token <value>` with a value the user typed in the chat. The user sets the
-  token in their own terminal.
+  or any file under `~/Library/LaunchAgents`.
+- `share endpoint <url>` with an address the user did not ask for. The user sets the
+  collection endpoint.
 - Reading or printing `turns.jsonl`, prompts, file contents from a session, or
   `Authorization` headers.
 - Any network request except to `127.0.0.1:8787`, and the upload in `share upload`

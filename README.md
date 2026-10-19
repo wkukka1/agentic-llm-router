@@ -130,13 +130,25 @@ whether you corrected the answer, a rounded prompt length, and a compressed
 embedding of the message (64 small numbers). Never your prompts, error
 messages, file paths, or session ids, and no time finer than the day.
 
-Records wait in `~/.aar-gateway/share/` on your computer until you add the
-upload token the project gave you (`aar-gateway share token <token>`); then
-they go once a day to the project's private Hugging Face dataset, filed
-under a random id that isn't tied to you. `aar-gateway share show` prints
-what's waiting, `aar-gateway share status` shows what's been sent,
-`aar-gateway share off` stops it, `aar-gateway share delete` removes what
-hasn't been sent.
+Records wait in `~/.aar-gateway/share/` on your computer until a collection
+endpoint is set (`aar-gateway share endpoint <https address>`); then they go
+once a day to the project's collection server, which adds them to a dataset
+used to retrain the router, filed under a random id that isn't tied to you.
+`aar-gateway share show` prints what's waiting, `aar-gateway share status`
+shows what's been sent, `aar-gateway share off` stops it,
+`aar-gateway share delete` removes what hasn't been sent. (The server and
+its Kaggle publisher are in [`src/ingest`](src/ingest/README.md).)
+
+## Your history on this computer
+
+Separately from sharing, the gateway keeps each message you type, with the
+model it got and how it went, in `~/.aar-gateway/history/` so routing can be
+personalized to your own work and `aar-gateway-grade` has something to
+grade. It stays on your computer: nothing in it is ever uploaded, and the
+shared record above is built without the text. Nothing is deleted
+automatically (old data is compressed). `aar-gateway history status|show|
+export <file>` look at it, `aar-gateway history off` stops keeping messages,
+`aar-gateway history delete` removes everything kept.
 
 ## What it never does
 
@@ -148,8 +160,10 @@ hasn't been sent.
   MCP servers and settings reach Claude unchanged.
 * **Never sends your data anywhere new:** Claude requests go to Anthropic on
   your own login, as before. The gateway keeps a local log of models, token
-  counts and costs — never your prompts or credentials. It only accepts
-  connections from programs on your own computer, not from web pages.
+  counts and costs (never your credentials), and, on this computer only, the
+  messages you type (see "Your history on this computer"; `aar-gateway history
+  off` stops it). It only accepts connections from programs on your own
+  computer, not from web pages.
 
 ## If something looks wrong
 

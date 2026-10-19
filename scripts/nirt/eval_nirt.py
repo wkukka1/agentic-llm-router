@@ -11,10 +11,8 @@ from __future__ import annotations
 import json
 import sys
 
-import yaml
 
-from training.cli import raw_parser, resolve, write_json
-from router.config import load_config
+from training.cli import get_phase0_config, load_yaml, raw_parser, resolve, write_json
 from router.nirt.checkpoint import load_run
 from evaluation.nirt.evaluate import evaluate_split
 
@@ -27,11 +25,11 @@ def main() -> int:
     ap.add_argument("--phase0-config", default=None)
     args = ap.parse_args()
 
-    nirt_cfg = yaml.safe_load(resolve(args.config).read_text(encoding="utf-8"))
+    nirt_cfg = load_yaml(args.config)
     runs_dir = resolve(nirt_cfg.get("runs_dir", "data/processed/nirt_runs"))
 
     model, run_cfg, model_index = load_run(args.run, runs_dir=runs_dir)
-    p0 = load_config(args.phase0_config) if args.phase0_config else load_config()
+    p0 = get_phase0_config(args)
     pathway = run_cfg.get("data", {}).get("pathway", "irt")
 
     metrics = evaluate_split(model, model_index, args.split, phase0_cfg=p0, pathway=pathway)

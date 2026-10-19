@@ -20,10 +20,9 @@ from ..cost import price_tokens
 from .base import Prompt, ProviderAdapter
 
 #: LangChain `model_provider` names, for `init_chat_model`. A different,
-#: non-interacting provider vocabulary from `router.llm.client`'s `_ADAPTERS`
-#: (`openai`/`anthropic`/`google` only) and `configs/model_registry.yaml`'s
+#: non-interacting provider vocabulary from `configs/model_registry.yaml`'s
 #: `provider:` field (model-author names) -- no translation exists between
-#: any of the three (XA-10).
+#: the two (XA-10).
 _PROVIDER_HINTS = [
     ("gpt", "openai"), ("o1", "openai"), ("o3", "openai"), ("davinci", "openai"),
     ("claude", "anthropic"),

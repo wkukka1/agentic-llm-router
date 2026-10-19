@@ -93,27 +93,8 @@ METRIC_RANGES: dict[str, tuple[float, float]] = {
 
 
 # --------------------------------------------------------------------------- #
-# Dataclasses (documentation + single-row construction / tests)               #
+# Dataclasses                                                                 #
 # --------------------------------------------------------------------------- #
-@dataclass
-class ResponseObservation:
-    query_id: str
-    model_id: str
-    query: str
-    score: float
-    metric_type: str
-    dataset: str
-    split: Optional[str]
-    source: str
-    is_multiple_choice: bool
-    input_tokens: Optional[int] = None
-    output_tokens: Optional[int] = None
-    latency: Optional[float] = None
-    cost: Optional[float] = None
-    n_choices: Optional[int] = None
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-
 @dataclass
 class Query:
     query_id: str

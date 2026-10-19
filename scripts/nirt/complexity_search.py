@@ -27,6 +27,7 @@ import pandas as pd
 import yaml
 
 from router.config import load_config
+from training.cli import get_phase0_config
 from router.nirt.checkpoint import load_run
 from router.nirt.predict import predict_dataset, predict_matrix
 from training.data.facade import load_training_data
@@ -134,7 +135,7 @@ def main() -> int:
     root = Path(load_config().root)
     cfg_path = Path(args.config)
     base = yaml.safe_load((cfg_path if cfg_path.is_absolute() else root / cfg_path).read_text("utf-8"))
-    p0 = load_config(args.phase0_config) if args.phase0_config else load_config()
+    p0 = get_phase0_config(args)
     qp = None if str(args.query_pathway).lower() == "none" else args.query_pathway
     d = load_training_data(p0)
     true_df, cost_df = eval_matrices(d, split="test")

@@ -34,9 +34,8 @@ from evaluation.nirt.routing_benchmark import (
     source_picks,
     summarize,
 )
-from router.config import load_config
 from router.nirt.frames import pivot_qm
-from training.cli import raw_parser, resolve, write_json
+from training.cli import get_phase0_config, raw_parser, resolve, write_json
 from training.data.facade import load_training_data
 
 
@@ -73,7 +72,7 @@ def main() -> int:
     args = ap.parse_args()
     lams = [float(x) for x in args.lams.split(",")]
 
-    cfg = load_config(args.phase0_config) if args.phase0_config else load_config()
+    cfg = get_phase0_config(args)
     d = load_training_data(cfg)
     ckpt = resolve(args.zoib_ckpt, cfg.root)
     long, _ = baseline_cell_predictions(ckpt, cfg, d, args.split)

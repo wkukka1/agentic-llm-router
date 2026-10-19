@@ -1,11 +1,11 @@
 """Train a Phase 2 continuous response model (or the Bernoulli control) on the
 same representation + splits as Phase 1.
 
-    python scripts/train_continuous.py --response normal
-    python scripts/train_continuous.py --response beta   --epochs 40
-    python scripts/train_continuous.py --response zoib
-    python scripts/train_continuous.py --response zoib --cost   # + expected-cost probe
-    python scripts/train_continuous.py --response zoib --cost-length --knn-warmup learn
+    python scripts/nirt/baseline/train_continuous.py --response normal
+    python scripts/nirt/baseline/train_continuous.py --response beta   --epochs 40
+    python scripts/nirt/baseline/train_continuous.py --response zoib
+    python scripts/nirt/baseline/train_continuous.py --response zoib --cost   # + expected-cost probe
+    python scripts/nirt/baseline/train_continuous.py --response zoib --cost-length --knn-warmup learn
 
 Writes artifacts/phase2/<response>/{model.pt, config.yaml, metrics.json,
 training_history.json, provenance.json}.
@@ -21,6 +21,7 @@ from pathlib import Path
 import yaml
 
 from router.config import load_config
+from training.cli import get_phase0_config
 from training.nirt.baseline.train import fit
 from training.nirt.baseline.response_head import RESPONSE_MODELS
 
@@ -79,7 +80,7 @@ def main() -> int:
     if args.response == "bernoulli":
         cfg.setdefault("train", {})["target"] = "binary"
 
-    p0 = load_config(args.phase0_config) if args.phase0_config else load_config()
+    p0 = get_phase0_config(args)
     res = fit(cfg, phase0_cfg=p0)
     print(f"\n=== {args.response} — validation (best epoch {res.best_epoch}) ===")
     print(json.dumps({k: v for k, v in res.val_metrics.items() if isinstance(v, (int, float))},

@@ -185,6 +185,30 @@ def test_independent_steps_run_concurrently():
     wall = time.perf_counter() - t0
     assert res.success and len(orch.subcalls) == 3
     assert wall < 0.45                                            # ~0.2 s, not ~0.6 s sequential
+def test_plan_steps_are_routed_with_the_agents_margin():
+    """with_margin() is the caller's cost preference for the request: every
+    decomposed step must honour it, not only the root prompt."""
+    router = TextRouter(costs=[0.1, 10.0, 5.0])        # small is far cheaper; big scores 0.2 higher
+    agent = AgenticRouter(router, _clients(), margin=0.3)
+    assert agent.route_decision("x").selected_model_ids[0] == "small"
+    (model, _), = _orchestrator(agent)._route_batch(["x"])
+    assert model == "small"
+
+
+def test_an_exhausted_call_budget_is_not_replanned(monkeypatch):
+    """Running out of max_calls says nothing about the steps: a repair round
+    would only be refused call by call. The failed step is marked, no replan."""
+    replans = []
+    real = RoutedOrchestrator.replan
+    monkeypatch.setattr(RoutedOrchestrator, "replan", lambda self, plan: replans.append(1) or real(self, plan))
+    agent = AgenticRouter(TextRouter(), _clients(), decomposer=_decomposer(["a", "b", "c"]),
+                          orchestrator=plan_orchestrator(), max_calls=2)
+    res = agent.run(COMPOUND)
+    (failed,) = res.errors()
+    assert failed.meta["budget_exhausted"] is True
+    assert replans == []
+
+
     assert res.actual_cost == pytest.approx(0.03) and orch.ledger.spent == pytest.approx(0.03)
 
 
@@ -716,6 +740,15 @@ def test_over_budget_message_reports_the_remaining_budget():
     agent = AgenticRouter(TextRouter(costs=[0.001, 0.01, 0.005]), _clients(),
                           orchestrator=plan_orchestrator(budget=0.001))
     assert "budget remaining 0.001" in agent.run(COMPOUND).answer
+
+
+def test_refused_repair_after_every_step_failed_does_not_invent_an_answer():
+    agent = _planning_agent(
+        THREE_STEP, clients=_clients(fail=POOL), router=TextRouter(costs=[0.001, 0.005, 0.01]),
+        orchestrator=plan_orchestrator(budget=0.02, limits=ExecutionLimits(max_cost=0.02, max_replans=1)))
+    res = agent.run(COMPOUND)                         # every call fails; the pricier escalation doesn't fit
+    assert res.steps[-1].error == "over_budget"
+    assert res.answer == "[error: no step of the plan succeeded]"
 
 
 def test_a_repair_round_with_nothing_to_repair_makes_no_calls():

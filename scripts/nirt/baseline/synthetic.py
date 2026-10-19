@@ -1,8 +1,8 @@
 """Synthetic IRT recovery gate for the NIRT model (Bernoulli or a continuous head).
 
-    python scripts/synthetic.py                       # Bernoulli (Phase 1)
-    python scripts/synthetic.py --response zoib
-    python scripts/synthetic.py --response beta --k 4 --queries 2000 --epochs 60
+    python scripts/nirt/baseline/synthetic.py                       # Bernoulli (Phase 1)
+    python scripts/nirt/baseline/synthetic.py --response zoib
+    python scripts/nirt/baseline/synthetic.py --response beta --k 4 --queries 2000 --epochs 60
 
 Generates a well-specified IRT world, trains ``BaselineNIRT`` with the chosen
 response head on it, and checks recovery of predictive quality + difficulty /

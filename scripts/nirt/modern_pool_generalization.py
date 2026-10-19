@@ -19,9 +19,8 @@ from __future__ import annotations
 
 import sys
 
-import yaml
 
-from training.cli import float_table, raw_parser, resolve, write_json
+from training.cli import float_table, load_yaml, raw_parser, resolve, write_json
 from training.data.modern_pool_battles import download_modern_pool_battles, modern_pool_profile_texts
 from evaluation.nirt.modern_pool import sweep_projected_runs
 
@@ -40,7 +39,7 @@ def main() -> int:
     ap.add_argument("--knn-weighting", default="similarity", choices=["similarity", "uniform"])
     args = ap.parse_args()
 
-    ncfg = yaml.safe_load(resolve(args.config).read_text(encoding="utf-8"))
+    ncfg = load_yaml(args.config)
     runs_dir = resolve(ncfg.get("runs_dir", "data/processed/nirt_runs"))
 
     if args.runs:

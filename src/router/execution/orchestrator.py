@@ -1,12 +1,12 @@
 """The production ``Orchestrator``: plan a task, execute the plan, replan on
-failure, spawn depth-bounded child orchestrators.
+failure, and admit depth-bounded child tasks (:meth:`can_spawn`).
 
 Distinct from the working
 :class:`router.agentic.orchestrator.RecursiveOrchestrator` /
 :class:`~router.agentic.orchestrator.LangChainToolOrchestrator`, which
 decompose and dispatch directly with no intermediate :class:`~router.execution.plan.Plan`
 to forecast, approve, or replan -- recursion there is a bare depth counter,
-not :meth:`spawn`/:meth:`can_spawn` checked against a shared
+not ``can_spawn`` checked against a shared
 :class:`~router.execution.budget.BudgetLedger`. The concrete subclass is
 :class:`~router.execution.routed.RoutedOrchestrator`, reachable from the live
 flow as ``AgenticRouter(orchestrator=plan_orchestrator())``.
@@ -16,8 +16,8 @@ not deepest child allowed to be spawned) is deliberately kept aligned with
 ``AgenticRouter._solve``'s (XA-08) -- so if this ever does get wired up, the
 same ``max_depth`` value means the same effective depth in both places.
 
-An ``Orchestrator`` instance runs one task at a time (``self.task``); spawn a
-child orchestrator per child task.
+An ``Orchestrator`` instance runs one task at a time (``self.task``); build one
+orchestrator per task.
 """
 
 from __future__ import annotations
@@ -94,7 +94,7 @@ class Orchestrator(abc.ABC):
         if self.task is not None and self.task.status in (TaskStatus.PLANNING, TaskStatus.RUNNING):
             raise RuntimeError(
                 f"orchestrator {self.name!r} is already running task {self.task.task_id!r}; "
-                "use one orchestrator per task (spawn())"
+                "use one orchestrator per task"
             )
         self.task = task
         key = task.task_id
@@ -104,7 +104,7 @@ class Orchestrator(abc.ABC):
             replans = 0
             while True:
                 plan.validate()
-                # swap any spawn-time allocation hold for the plan's estimate in
+                # swap any allocation hold for the plan's estimate in
                 # one locked step -- release-then-reserve let a sibling take the
                 # allocation in between (ORCHESTRATOR-001)
                 if not self.ledger.resize(key, plan.budget_estimate()):
@@ -124,7 +124,7 @@ class Orchestrator(abc.ABC):
                     plan.status = PlanStatus.COMPLETED
                     return self._finish(task, TaskStatus.COMPLETED, result)
                 plan.status = PlanStatus.FAILED
-                if replans >= self.limits.max_replans:
+                if result.error_code == "budget_exhausted" or replans >= self.limits.max_replans:
                     return self._finish(task, TaskStatus.FAILED, result)
                 replans += 1
                 task.status = TaskStatus.PLANNING
@@ -163,42 +163,3 @@ class Orchestrator(abc.ABC):
         if child.allocated_budget > 0:
             return child.allocated_budget <= remaining
         return remaining > 0
-
-    def spawn(self, child: "AgentTask") -> "Orchestrator":
-        """Admit ``child``: reserve its ``allocated_budget``, link it under
-        ``self.task``, and build a sibling orchestrator for it. Subclasses with
-        extra constructor arguments extend :meth:`_child_kwargs`."""
-        if not self.can_spawn(child):
-            raise ValueError(
-                f"cannot spawn child task {child.task_id!r} at depth {child.depth} "
-                f"(max_depth={self.limits.max_depth}, max_fanout={self.limits.max_fanout}, "
-                f"remaining budget={self.ledger.remaining()})"
-            )
-        if child.allocated_budget > 0 and not self.ledger.reserve(child.task_id, child.allocated_budget):
-            raise ValueError(f"budget for child task {child.task_id!r} was taken concurrently")
-        if self.task is not None:
-            child.parent_task_id = self.task.task_id
-            self.task.children.append(child)
-        return type(self)(
-            OrchestratorConfig(
-                name=self.name, version=self.version, llm=self.llm,
-                ledger=self.ledger, limits=self.limits, tools=self.tools,
-            ),
-            **self._child_kwargs(),
-        )
-
-    def _child_kwargs(self) -> dict:
-        """Keyword arguments (beyond the config) a spawned child is built with."""
-        return {"router_tool": self.router_tool, "plan_forecaster": self.plan_forecaster}
-
-
-class OrchestratorFactory:
-    def create(self, config: OrchestratorConfig, orchestrator_cls: type[Orchestrator],
-               **kwargs) -> Orchestrator:
-        """No default ``Orchestrator`` implementation exists to construct
-        without one -- pass the concrete subclass explicitly, unlike the
-        diagram's zero-arg ``create(config)`` (which implies a single
-        registered implementation, the way :mod:`router.routing.registry`
-        picks a ``Router`` by ``kind``; no such registry exists for
-        orchestrators yet)."""
-        return orchestrator_cls(config, **kwargs)

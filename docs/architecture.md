@@ -446,11 +446,6 @@ classDiagram
         +list() List~LLMProfile~
     }
 
-    class LLMClientFactory {
-        +Map~String,ProviderAdapter~ adapters
-        +clientFor(LLMProfile profile) LLMClient
-    }
-
     class LLMClient {
         +LLMProfile profile
         +ProviderAdapter adapter
@@ -473,18 +468,11 @@ classDiagram
         +stream(String modelId, List~Message~ messages) Iterator~String~
     }
 
-    class OpenAIAdapter
     class AnthropicAdapter
-    class GoogleAdapter
 
-    ProviderAdapter <|.. OpenAIAdapter
     ProviderAdapter <|.. AnthropicAdapter
-    ProviderAdapter <|.. GoogleAdapter
 
     LLMRegistry "1" *-- "*" LLMProfile
-    LLMClientFactory o-- "*" ProviderAdapter : keyed by provider
-    LLMClientFactory ..> LLMProfile : resolves
-    LLMClientFactory ..> LLMClient : produces
     LLMClient --> LLMProfile
     LLMClient --> ProviderAdapter : delegates to
     LLMClient ..> LLMResponse : returns
@@ -532,7 +520,7 @@ classDiagram
         +String name
         +String version
         +LLMProfile llm
-        +LLMClientFactory clientFactory
+        +LLMClient client
         +List~Tool~ tools
         +BudgetLedger ledger
         +ExecutionLimits limits
@@ -549,7 +537,6 @@ classDiagram
         +plan(AgentTask task) Plan
         +execute(Plan plan) ExecutionResult
         +replan(Plan plan) Plan
-        +spawn(AgentTask child) Agent
         +canSpawn(AgentTask child) boolean
     }
 
@@ -577,7 +564,7 @@ classDiagram
     AgentConfig o-- "*" Tool
 
     Agent --> LLMProfile
-    Agent --> LLMClientFactory : calls models via
+    Agent --> LLMClient : calls models via
     Agent o-- "*" Tool
     Agent --> BudgetLedger : shares
     Agent --> ExecutionLimits : enforces
@@ -1058,8 +1045,7 @@ classDiagram
 - **A few interfaces get one concrete example, most don't.** `Classifier`,
   `Embedder`, `ArtifactStore`, `ProviderAdapter`, and `Tool` each show one or
   two example implementations (`SimpleClassifier`; `SentenceEmbedder`/
-  `PromptEmbedder`; `LocalArtifactStore`; `OpenAIAdapter`/`AnthropicAdapter`/
-  `GoogleAdapter`; `MCPTool`) just to make the interface's shape concrete.
+  `PromptEmbedder`; `LocalArtifactStore`; `AnthropicAdapter`; `MCPTool`) just to make the interface's shape concrete.
   `RouterModel`, `RouterModelTrainer`, and `Agent` deliberately get none —
   their `note for` callouts say so — because the whole point of those three
   is that concrete variants are registry entries / config, not part of the

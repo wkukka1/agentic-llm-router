@@ -971,69 +971,6 @@ def test_routed_helper_call_forwards_generation_kwargs():
 
 
 # --------------------------------------------------------------------------- #
-# score_all_models: scoring is broader than, and independent of, dispatch
-# --------------------------------------------------------------------------- #
-def _projected_nirt_router():
-    from helpers import FakeTrainingData, make_synthetic_irt, nirt_cfg, nirt_datasets
-    from router.routing.routers import NIRTRouter
-    from training.nirt.train import fit
-
-    # q_dim=6 matches the profile dim informative_profiles=True produces
-    # (K=2 -> 2+1 signal + 3 noise cols = 6) -- in production both pathways
-    # share one BERT encoder/width, so this keeps the synthetic setup
-    # faithful to that invariant instead of needing two differently-sized
-    # stub encoders in the test below.
-    train_obs, val_obs, q_store, m_store = make_synthetic_irt(
-        n_queries=500, n_models=3, seed=7, q_dim=6, informative_profiles=True,
-    )
-    train_ds, val_ds = nirt_datasets(train_obs, val_obs, q_store, m_store)
-    cfg = nirt_cfg(model_params="projected", dim=2)
-    cfg["train"].update(epochs=10, patience=5, lr=1e-2)
-    res = fit(cfg, datasets=(train_ds, val_ds), save=False, verbose=False)
-    data = FakeTrainingData(profile_store=m_store, query_store=q_store)
-    router = NIRTRouter(res.model, res.model_index, data=data, pathway="irt")
-    return router, q_store
-
-
-def test_score_all_models_includes_a_model_with_no_registered_client(monkeypatch):
-    from router.routing import model_profiles
-
-    router, q_store = _projected_nirt_router()
-    unregistered = "profiled-but-not-dispatchable"
-    # a stand-in for "every configs/model_profiles.yaml entry" -- avoids
-    # needing a real Config just to read the YAML file in this test
-    monkeypatch.setattr(model_profiles, "list_profiled_model_ids",
-                        lambda cfg: router.model_ids + [unregistered])
-    monkeypatch.setattr(model_profiles, "lookup_curated_entry",
-                        lambda cfg, mid: {"feature": "A hypothetical model."} if mid == unregistered else None)
-
-    class _StubEncoder:
-        def encode(self, texts, show_progress: bool = False):
-            return np.stack([
-                np.random.default_rng(abs(hash(t)) % (2**32)).standard_normal(q_store.dim).astype(np.float32)
-                for t in texts
-            ])
-
-    reg = ClientRegistry({m: LLMClient(EchoAdapter(m)) for m in router.model_ids})
-    agent = AgenticRouter(router, reg, encoder=_StubEncoder())
-
-    rr = agent.score_all_models("Explain quicksort.")
-    scores = rr.row_scores(0)
-    assert unregistered in scores and np.isfinite(scores[unregistered])
-    assert set(router.model_ids) <= set(scores)
-
-    # scoring never implies dispatch is possible
-    with pytest.raises(LookupError, match="no client registered"):
-        reg.get(unregistered)
-
-
-def test_score_all_models_rejects_a_non_nirt_router():
-    agent = AgenticRouter(FakeTextRouter(), ClientRegistry())
-    with pytest.raises(TypeError, match="NIRTRouter"):
-        agent.score_all_models("hello")
-
-
-# --------------------------------------------------------------------------- #
 # AgenticResult.debug_trace() / run(..., debug=...)                          #
 # --------------------------------------------------------------------------- #
 def test_debug_trace_includes_header_and_steps():

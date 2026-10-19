@@ -6,8 +6,7 @@ imported from ``router``; this is the serving-side adapter.
 
 * ``max_tokens`` is required by the Messages API: taken from the call's
   ``generation_kwargs``, else ``client_kwargs["max_tokens"]`` (both reach the
-  adapter through :meth:`~router.llm.client.LLMClientFactory.client_for` /
-  ``LLMClient.complete``), else ``ValueError``.
+  adapter through ``client_kwargs`` / ``LLMClient.complete``), else ``ValueError``.
 * A chat-list prompt's leading ``system`` messages become the ``system=``
   parameter; the rest is sent as ``messages``.
 * **Prompt caching** is on by default (``cache=False`` turns it off): the API
@@ -37,6 +36,7 @@ from collections.abc import Generator
 from typing import Any
 
 from ..client import LLMResponse
+from ..cost import price_tokens
 from .base import Prompt, ProviderAdapter
 
 #: Anthropic cache pricing relative to the base input rate
@@ -119,12 +119,9 @@ class AnthropicAdapter(ProviderAdapter):
         )
 
     def _cost(self, uncached: int, read: int, write: int, out: int) -> float | None:
-        in_price = self.client_kwargs.get("input_cost_per_token")
-        out_price = self.client_kwargs.get("output_cost_per_token")
-        if in_price is None or out_price is None:
-            return None
         effective_in = uncached + _CACHE_READ_MULTIPLIER * read + _CACHE_WRITE_MULTIPLIER * write
-        return float(effective_in * in_price + out * out_price)
+        return price_tokens(effective_in, out, self.client_kwargs.get("input_cost_per_token"),
+                            self.client_kwargs.get("output_cost_per_token"))
 
     # -- ProviderAdapter -------------------------------------------------
     def complete(self, prompt: Prompt, **generation_kwargs) -> LLMResponse:

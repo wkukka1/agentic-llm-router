@@ -37,7 +37,7 @@ SRC = str(Path(__file__).resolve().parents[2] / "src")
 #: AAR_E2E_PYTHON=<an installed copy's python> tests that copy (e.g. a fresh
 #: `uv tool install` from GitHub) instead of this checkout's source
 INSTALLED = os.environ.get("AAR_E2E_PYTHON")
-CLI = [INSTALLED or sys.executable, "-m", "router.gateway.cli"]
+CLI = [INSTALLED or sys.executable, "-m", "aar_gateway.cli"]
 CODE_PATH = {} if INSTALLED else {"PYTHONPATH": SRC}
 
 

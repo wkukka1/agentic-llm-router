@@ -1,6 +1,6 @@
 """Report the graded-score boundary statistics (y==0 / y==1 / interior).
 
-    python scripts/boundary_stats.py
+    python scripts/nirt/baseline/boundary_stats.py
 
 Writes artifacts/phase2/response_boundary_statistics.json. Run before ZOIB.
 """

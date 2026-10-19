@@ -8,6 +8,11 @@ from typing import Iterable, Optional
 __all__ = ["SubCall", "AgenticResult", "total_cost"]
 
 
+class CallBudgetExceeded(RuntimeError):
+    """A run reached its ``max_calls``. Its own type, so nothing mistakes it
+    for a provider failure to retry, escalate or replan around."""
+
+
 @dataclass
 class SubCall:
     """One model invocation the orchestrator made (a leaf), or an orchestrated

@@ -20,9 +20,8 @@ import sys
 
 import numpy as np
 import torch
-import yaml
 
-from training.cli import raw_parser, resolve, write_json
+from training.cli import load_yaml, raw_parser, resolve, write_json
 from router.config import load_config
 from router.nirt.checkpoint import load_run
 from training.data.facade import load_training_data
@@ -37,7 +36,7 @@ def main() -> int:
     ap.add_argument("--nirt-config", default="configs/nirt.yaml")
     args = ap.parse_args()
 
-    ncfg = yaml.safe_load(resolve(args.nirt_config).read_text(encoding="utf-8"))
+    ncfg = load_yaml(args.nirt_config)
     runs_dir = resolve(ncfg.get("runs_dir", "data/processed/nirt_runs"))
 
     model, cfg, midx = load_run(args.run, runs_dir=runs_dir)

@@ -24,7 +24,7 @@ Every model call goes through the agent (``agent._call_model``), so the run's
 :class:`AgenticRouter`'s; worker threads get a copy of the caller's context so
 they see that run's state. Steps are leaves: a plan is fully known (and
 priceable) up front, so steps are not re-triaged or recursively decomposed --
-deeper recursion is what :meth:`Orchestrator.spawn` is for.
+deeper recursion is ``AgenticRouter``'s own (``max_depth``).
 
 ``PlanOrchestratorBridge`` adapts the two interfaces: ``AgenticRouter`` calls
 ``orchestrator.run(prompt, agent, depth) -> (answer, [SubCall])``, while an
@@ -58,7 +58,7 @@ from ..agentic.decompose import (
     budget_mid_tokens,
     derive_final_budget,
 )
-from ..agentic.result import SubCall, total_cost
+from ..agentic.result import CallBudgetExceeded, SubCall, total_cost
 from ..llm.cost import estimate_tokens
 from ..llm.profile import LLMProfile
 from .budget import BudgetLedger, ExecutionLimits
@@ -173,7 +173,7 @@ class RoutedOrchestrator(Orchestrator):
     def _route_known(self, prompt: str) -> tuple[str, dict[str, float]]:
         """A request that doesn't decompose: reuse the route triage already
         computed for it (as ``RecursiveOrchestrator`` does), else route it."""
-        known = self.agent._run_state().decisions.get(prompt)
+        known = self.agent.cached_decision(prompt)
         if known is not None:
             return known.selected_model_id, dict(known.scores)
         return self._route_batch([prompt])[0]
@@ -188,14 +188,11 @@ class RoutedOrchestrator(Orchestrator):
             # query_resolver, or the documented TypeError for a text-less router)
             rrs = [agent.route_decision(p) for p in prompts]
             return [(rr.selected_model_ids[0], rr.row_scores()) for rr in rrs]
-        # same alpha-override resolution as AgenticRouter.route_decision: a
-        # run(prompt, alpha=...) override must hold for every plan step too,
-        # not just the root (AGENTICROUTER-alpha-plan).
-        alpha = agent._run_state().alpha
-        lam = 0.0 if alpha is not None else agent.lam
+        # the agent's own routing (alpha override, lam, margin, eligibility): a
+        # run(prompt, alpha=...) or with_margin() preference holds for every
+        # plan step too, not just the root
+        rr = agent.route_texts(prompts)
         eligible = agent.clients.eligible_mask(agent.router.model_ids)
-        rr = agent.router.route_text(prompts, encoder=agent.encoder, lam=lam, alpha=alpha,
-                                     eligible=eligible)
         servable = {m for m, ok in zip(agent.router.model_ids, eligible) if ok}
         fallback = getattr(rr, "fallback", None)
         out = []
@@ -288,7 +285,8 @@ class RoutedOrchestrator(Orchestrator):
         self.subcalls = [self._calls[s.step_id] for s in plan.steps if s.step_id in self._calls]
         failed = [sc for sc in self.subcalls if sc.error is not None]
         output = ""
-        error_code = "step_failed" if failed else None
+        error_code = ("budget_exhausted" if any(sc.meta.get("budget_exhausted") for sc in failed)
+                      else "step_failed") if failed else None
         if not failed:
             if len(self.subcalls) == 1:
                 output = self.subcalls[0].answer
@@ -532,12 +530,6 @@ class RoutedOrchestrator(Orchestrator):
         self.plan_history.append(new)
         return new
 
-    def _child_kwargs(self) -> dict:
-        return {**super()._child_kwargs(), "agent": self.agent, "objective": self.objective,
-                "registry": self.registry, "max_workers": self.max_workers,
-                "sequential": self.sequential, "route_late": self.route_late,
-                "checker": self.checker, "length_budgets": self.length_budgets}
-
 
 def _levels(plan: Plan) -> list[list[PlanStep]]:
     """Steps grouped so every step's dependencies are in an earlier group
@@ -620,15 +612,19 @@ class PlanOrchestratorBridge:
         self.checker = checker
         self.length_budgets = length_budgets
 
+    def _options(self) -> dict:
+        """The settings every per-request :class:`RoutedOrchestrator` is built with."""
+        return {"objective": self.objective, "registry": self.registry, "max_workers": self.max_workers,
+                "sequential": self.sequential, "route_late": self.route_late, "checker": self.checker,
+                "length_budgets": self.length_budgets}
+
     def run(self, prompt: str, agent: "AgenticRouter", depth: int) -> tuple[str, list[SubCall]]:
         root_id = f"plan-{uuid.uuid4().hex[:12]}"
         limits = self.limits or ExecutionLimits(max_cost=self.budget, max_depth=agent.max_depth)
         orch = RoutedOrchestrator(
             OrchestratorConfig(name=self.name, version="0", llm=None,
                                ledger=BudgetLedger(root_id, self.budget), limits=limits),
-            agent=agent, plan_forecaster=self.forecaster(agent), objective=self.objective,
-            registry=self.registry, max_workers=self.max_workers, sequential=self.sequential,
-            route_late=self.route_late, checker=self.checker, length_budgets=self.length_budgets,
+            agent=agent, plan_forecaster=self.forecaster(agent), **self._options(),
         )
         if self.checker is not None and hasattr(self.checker, "on_call"):
             self.checker.on_call = agent._use_call
@@ -636,11 +632,10 @@ class PlanOrchestratorBridge:
                          prompt=prompt, depth=depth)
         try:
             result = orch.run(task)
-        except RuntimeError:
+        except CallBudgetExceeded:
             # the run's max_calls ran out inside a helper (synthesizer / judge): a
             # checked answer from an earlier round is still worth returning, flagged
-            rs = agent._run_state()
-            if orch.best is None or rs.max_calls is None or rs.calls < rs.max_calls:
+            if orch.best is None:
                 raise
             agent._run_state().plans.extend(_plan_records(orch, self.budget))
             return _best_answer(orch, agent, stopped_early="max_calls")
@@ -659,9 +654,7 @@ class PlanOrchestratorBridge:
                 return refusal.answer, [refusal]
             # a refused repair round must not discard the work already paid for
             steps = _all_steps(orch)
-            done = [sc for sc in steps if sc.error is None and not sc.meta.get("superseded")]
-            answer = done[0].answer if len(done) == 1 else orch.synthesize(prompt, done)
-            return answer, steps + [refusal]
+            return _partial_answer(orch, prompt, steps), steps + [refusal]
         steps = _all_steps(orch)
         if result.success:
             return result.output, steps
@@ -721,5 +714,5 @@ def plan_orchestrator(**kwargs) -> PlanOrchestratorBridge:
     """The plan orchestrator, ready to pass as ``AgenticRouter(orchestrator=...)``.
     Keyword arguments are :class:`PlanOrchestratorBridge`'s (``budget``,
     ``limits``, ``forecaster``, ``objective``, ``registry``, ``max_workers``,
-    ``sequential``, ``route_late``, ``checker``)."""
+    ``sequential``, ``route_late``, ``checker``, ``length_budgets``)."""
     return PlanOrchestratorBridge(**kwargs)

@@ -45,6 +45,11 @@ def get_config(args: argparse.Namespace) -> Config:
     return load_config(args.config)
 
 
+def get_phase0_config(args: argparse.Namespace) -> Config:
+    """The Phase 0 config named by ``--phase0-config``, else the default one."""
+    return load_config(args.phase0_config) if args.phase0_config else load_config()
+
+
 def info(msg: str) -> None:
     print(f"[phase0] {msg}", file=sys.stderr)
 
@@ -57,6 +62,13 @@ def resolve(path: str | Path, root: str | Path | None = None) -> Path:
     path before any ``Config`` instance exists, so it can't become
     ``Config.resolve`` itself."""
     return _resolve_path(path, root=root)
+
+
+def load_yaml(path: str | Path, root: str | Path | None = None) -> dict:
+    """Parse the YAML file at ``path`` (relative to ``root``, as in :func:`resolve`)."""
+    import yaml
+
+    return yaml.safe_load(resolve(path, root).read_text(encoding="utf-8"))
 
 
 def json_default(obj: Any) -> Any:

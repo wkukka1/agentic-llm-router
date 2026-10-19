@@ -23,9 +23,8 @@ import sys
 
 import numpy as np
 import pandas as pd
-import yaml
 
-from training.cli import float_table, raw_parser, resolve, write_json
+from training.cli import float_table, load_yaml, raw_parser, resolve, write_json
 from router.config import load_config
 
 _REGRET_EDGES = [-1, 1e-9, 0.02, 0.1, 0.25, 0.5, 0.9, 1.01]
@@ -63,7 +62,7 @@ def main() -> int:
                     help="oracle_score >= this => a good model was available")
     args = ap.parse_args()
 
-    ncfg = yaml.safe_load(resolve(args.nirt_config).read_text(encoding="utf-8"))
+    ncfg = load_yaml(args.nirt_config)
     run_dir = resolve(ncfg.get("runs_dir", "data/processed/nirt_runs")) / args.run
     processed = load_config().path("processed")
 

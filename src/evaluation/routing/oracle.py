@@ -235,16 +235,6 @@ def oracle_labels(
     return pd.DataFrame(cols)
 
 
-def soft_oracle_targets(true_df: pd.DataFrame, tau: float = 0.1) -> pd.DataFrame:
-    """``p*(m | q) = softmax(y(q, m) / tau)`` -- a distributional oracle that keeps
-    near-tie information instead of forcing one hard winner. For the optional
-    soft-distillation baseline (§E). Rows sum to 1."""
-    z = true_df.to_numpy(np.float64) / max(float(tau), 1e-6)
-    w = np.exp(z - z.max(axis=1, keepdims=True))
-    return pd.DataFrame(w / w.sum(axis=1, keepdims=True),
-                        index=true_df.index, columns=true_df.columns)
-
-
 def _cost_aware_oracle(true: np.ndarray, C, lam: float, eligible: Optional[np.ndarray]):
     """``U(q, m) = y(q, m) - lam * C`` over the eligible cells (others ``-inf``).
     Callers pass the TRUE per-cell cost as ``C`` -- never a router's predicted
@@ -544,53 +534,6 @@ def compare_routing_strategies(
     for s in strategies.values():
         s.pop("_per_query", None)
     return summary, strategies
-
-
-# --------------------------------------------------------------------------- #
-# per-family fixed lookup -- zero-parameter routing floor                     #
-# --------------------------------------------------------------------------- #
-def per_task_argmax_baseline(
-    train_true_df: pd.DataFrame,
-    eval_query_ids: Sequence[str],
-    model_ids: Sequence[str],
-    family_of: dict,
-) -> np.ndarray:
-    """Zero-parameter routing floor: for each benchmark family, pick the single
-    model with the best mean **train** score, then apply that fixed lookup to
-    every eval query by its family. A learned router that can't beat this has
-    learned nothing beyond "which family is this" -- it is a materially harder
-    bar than "always the single best-average model" (the fixed-model row in
-    :func:`compare_routing_strategies`), which has no per-family granularity.
-
-    ``family_of`` maps ``query_id -> family label`` (e.g.
-    ``evaluation.nirt.ood.family_of_query(data)``, or a raw ``dataset`` column
-    turned into a dict). Eval queries whose family is unknown, or was never
-    observed at train time, fall back to the single best train-average model
-    overall.
-
-    Returns an ``[len(eval_query_ids), len(model_ids)]`` one-hot score matrix
-    (1.0 at the picked model) -- the same pluggable contract as
-    :func:`oracle_classifier_matrix`, ready for ``routing_evaluation`` /
-    ``compare_routing_strategies``.
-    """
-    model_ids = list(model_ids)
-    train_true_df = train_true_df.reindex(columns=model_ids)
-
-    train_family = pd.Series(
-        {qid: family_of.get(qid) for qid in train_true_df.index}, name="family"
-    ).dropna()
-    global_best = train_true_df.mean(axis=0).idxmax()
-
-    best_by_family: dict = {}
-    for fam, qids in train_family.groupby(train_family).groups.items():
-        best_by_family[fam] = train_true_df.loc[list(qids)].mean(axis=0).idxmax()
-
-    col = {m: j for j, m in enumerate(model_ids)}
-    out = np.zeros((len(eval_query_ids), len(model_ids)), dtype=np.float64)
-    for i, qid in enumerate(eval_query_ids):
-        pick = best_by_family.get(family_of.get(qid), global_best)
-        out[i, col[pick]] = 1.0
-    return out
 
 
 # --------------------------------------------------------------------------- #

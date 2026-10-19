@@ -28,7 +28,6 @@ at the project's own table (``configs/model_prices.yaml``, which
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -177,50 +176,3 @@ def load_pool(name: str, **kwargs) -> CorrectnessTable:
     if name not in POOLS:
         raise KeyError(f"unknown pool {name!r}; registered: {sorted(POOLS)}")
     return POOLS[name](**kwargs)
-
-
-def load_pool_from_frame(frame: pd.DataFrame, models: list[str], *,
-                         cost_columns: list[str] | None = None,
-                         category: str = "benchmark", name: str = "custom") -> CorrectnessTable:
-    """Wrap an arbitrary wide table -- one row per prompt, one column per model.
-
-    The path for a pool this project evaluates itself: score N models on M
-    prompts, put the scores in columns named after the models, and this reads
-    it. No loader to write.
-    """
-    missing = [m for m in models if m not in frame]
-    if missing:
-        raise KeyError(f"columns missing for models: {missing}")
-    prompts = frame[[c for c in ("sample_id", "prompt", "eval_name", category) if c in frame]].copy()
-    if "sample_id" not in prompts:
-        prompts["sample_id"] = [str(i) for i in range(len(frame))]
-    if category not in prompts:
-        raise KeyError(f"no category column {category!r} to group by")
-    prompts["split"] = hashed_split(prompts["sample_id"])
-    cost = (frame[cost_columns].to_numpy(float) if cost_columns
-            else np.full((len(frame), len(models)), np.nan))
-    return CorrectnessTable(prompts, frame[models].to_numpy(float), cost, list(models), name=name)
-
-
-def summarise_pool(table: CorrectnessTable) -> str:
-    """One line per model: accuracy, and cost when the pool has it."""
-    lines = [f"{table.name}: {len(table.prompts)} prompts x {len(table.models)} models, "
-             f"cost {'present' if table.has_cost else 'NOT priced'}"]
-    order = np.argsort(-table.correct.mean(axis=0))
-    for j in order:
-        cost = f"${table.cost[:, j].mean():.6f}" if np.isfinite(table.cost[:, j]).all() else "  --"
-        lines.append(f"  {table.models[j]:48} {table.correct[:, j].mean():.3f}  {cost}")
-    return "\n".join(lines)
-
-
-def write_pool_json(table: CorrectnessTable, path: str | Path) -> Path:
-    """Persist the per-model summary, so a pool's numbers outlive the run."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({
-        "pool": table.name, "n_prompts": len(table.prompts), "models": table.models,
-        "accuracy": dict(zip(table.models, table.correct.mean(axis=0).round(4).tolist(),
-                             strict=True)),
-        "has_cost": table.has_cost,
-    }, indent=2), encoding="utf-8")
-    return path

@@ -61,7 +61,8 @@ def test_child_keeps_its_allocation_while_resizing_to_the_plan():
                                      limits=ExecutionLimits(max_cost=10.0)))
     orch.task = AgentTask("root", None, "root", "parent prompt")
     child = AgentTask("child", "root", "root", "child prompt", depth=1, allocated_budget=6.0)
-    child_orch = orch.spawn(child)
+    assert ledger.reserve("child", 6.0)  # the allocation a parent holds for its child
+    child_orch = orch
 
     sibling = {}
     real_release = ledger.release
@@ -77,7 +78,7 @@ def test_child_keeps_its_allocation_while_resizing_to_the_plan():
     assert ledger.spent == pytest.approx(5.0)
 
 
-def test_over_budget_plan_drops_the_spawn_hold():
+def test_over_budget_plan_drops_the_allocation_hold():
     ledger = BudgetLedger("root", 10.0)
 
     class _Big(_Fixed):
@@ -87,7 +88,8 @@ def test_over_budget_plan_drops_the_spawn_hold():
     orch = _Big(OrchestratorConfig("o", "0", llm=None, ledger=ledger, limits=ExecutionLimits()))
     orch.task = AgentTask("root", None, "root", "p")
     child = AgentTask("child", "root", "root", "c", depth=1, allocated_budget=6.0)
-    res = orch.spawn(child).run(child)
+    assert ledger.reserve("child", 6.0)
+    res = orch.run(child)
     assert res.error_code == "over_budget" and ledger.reserved == 0.0
 
 

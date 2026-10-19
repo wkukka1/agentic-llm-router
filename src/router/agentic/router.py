@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import contextvars
 import copy
+import functools
 import hashlib
 import logging
 import math
@@ -55,6 +56,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Generator, Optional
+
+import numpy as np
 
 from decompose.classifiers.prompt_heads import StructureClassifier
 
@@ -77,7 +80,7 @@ from .decompose import (
     concat_synthesizer,
     looks_atomic,
 )
-from .result import AgenticResult, SubCall, total_cost
+from .result import AgenticResult, CallBudgetExceeded, SubCall, total_cost
 from .triage import HeuristicTriage, LLMTriage, TriageDecision, best_from_result
 
 __all__ = ["AgenticRouter", "flush_bookkeeping"]
@@ -128,7 +131,7 @@ class _RunState:
         worker threads sharing this state."""
         with self._lock:
             if enforce and self.max_calls is not None and self.calls + n > self.max_calls:
-                raise RuntimeError(f"max_calls={self.max_calls} model calls exhausted for this run")
+                raise CallBudgetExceeded(f"max_calls={self.max_calls} model calls exhausted for this run")
             self.calls += n
 
 
@@ -201,6 +204,22 @@ def _bookkeeping_executor() -> ThreadPoolExecutor:
 _current_run: "contextvars.ContextVar[Optional[_RunState]]" = contextvars.ContextVar(
     "agentic_router_current_run", default=None
 )
+
+
+def _standalone_scope(method):
+    """A public helper called outside :meth:`AgenticRouter.run` gets a run state
+    of its own for the call, removed afterwards -- never one that outlives it
+    and counts against (or pollutes) the next caller."""
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        if _current_run.get() is not None:
+            return method(self, *args, **kwargs)
+        token = _current_run.set(_RunState(max_calls=self.max_calls))
+        try:
+            return method(self, *args, **kwargs)
+        finally:
+            _current_run.reset(token)
+    return wrapper
 
 
 class AgenticRouter:
@@ -352,6 +371,28 @@ class AgenticRouter:
     # ------------------------------------------------------------------ #
     # routing a single prompt                                            #
     # ------------------------------------------------------------------ #
+    def _routing_knobs(self) -> tuple[Optional[float], float, np.ndarray]:
+        """``(alpha, lam, eligible)`` for a routing call: this run's ``alpha``
+        override (which replaces ``lam``), else the static ``lam``; only models
+        :attr:`clients` can reach are eligible."""
+        alpha = self._run_state().alpha
+        return alpha, (0.0 if alpha is not None else self.lam), self.clients.eligible_mask(self.router.model_ids)
+
+    def route_texts(self, prompts: list[str]) -> RoutingResult:
+        """One router call over raw ``prompts`` with this agent's cost
+        preference (``lam``/``alpha``/``margin``) and eligibility. The single
+        place root prompts and plan steps are routed, so they cannot drift.
+        Does not check for fallback rows; callers decide what an unscorable
+        prompt means."""
+        if not getattr(self.router, "can_route_text", False):
+            raise TypeError(
+                f"{type(self.router).__name__} cannot score raw text; pass "
+                "query_resolver= or use NIRTRouter / KNNRouter"
+            )
+        alpha, lam, eligible = self._routing_knobs()
+        return self.router.route_text(prompts, encoder=self.encoder, lam=lam, alpha=alpha,
+                                      eligible=eligible, margin=self.margin)
+
     def route_decision(self, prompt: str) -> RoutingResult:
         """One-row :class:`RoutingResult` for ``prompt`` (encoder-backed, or via a
         ``query_resolver`` that maps text -> an existing ``query_id``).
@@ -368,79 +409,19 @@ class AgenticRouter:
 
         Deliberately scoped to the router's own narrow, dispatchable pool
         (:attr:`RouterModel.model_ids`) -- a routed call must be something
-        :attr:`clients` can actually reach. See :meth:`score_all_models` for
-        the broader, every-registered-model view; don't widen this method to
-        use it."""
-        alpha = self._run_state().alpha
-        lam = 0.0 if alpha is not None else self.lam
-        eligible = self.clients.eligible_mask(self.router.model_ids)
+        :attr:`clients` can actually reach."""
         if self._resolver is not None:
+            alpha, lam, eligible = self._routing_knobs()
             rr = self.router.route([self._resolver(prompt)], lam=lam, alpha=alpha,
                                    eligible=eligible, margin=self.margin)
-        elif not getattr(self.router, "can_route_text", False):
-            raise TypeError(
-                f"{type(self.router).__name__} cannot score raw text; pass "
-                "query_resolver= or use NIRTRouter / KNNRouter"
-            )
         else:
-            rr = self.router.route_text([prompt], encoder=self.encoder, lam=lam, alpha=alpha,
-                                        eligible=eligible, margin=self.margin)
+            rr = self.route_texts([prompt])
         if rr.any_fallback:
             raise LookupError(
                 f"{self.router.name}: no usable score for this prompt "
                 f"(query_id={rr.query_ids[0]!r}); refusing to dispatch to a default model"
             )
         return rr
-
-    def score_all_models(
-        self, prompt: str, *, impute_unknown: bool = False, knn_k: int = 10,
-        knn_weighting: str = "similarity",
-    ) -> RoutingResult:
-        """Score ``prompt`` against every model currently *registered in the
-        pool* -- every ``configs/model_profiles.yaml`` entry, unioned with
-        this router's own trained pool -- not just the narrow, dispatchable
-        set :meth:`route_decision` scores. A model with no profile embedding
-        built yet is rendered + embedded on the fly
-        (:mod:`router.routing.model_profiles`), with :attr:`encoder` reused as
-        the embedder (profile and query text share one pathway here, so
-        there's no second model to load); ``impute_unknown=True`` additionally
-        kNN-blends any model with no training observations toward the trained
-        pool's nearest profiles (see that module's caveat docstring before
-        turning this on by default).
-
-        Needs a :class:`~router.routing.routers.NIRTRouter` in
-        ``model_params="projected"`` mode (cold-start capable by
-        construction) -- raises ``TypeError`` otherwise.
-
-        Scoring a model here never implies it can be *called*: dispatching
-        still goes through :attr:`clients` (:class:`ClientRegistry`), which
-        raises its own ``LookupError`` for an id with no registered adapter,
-        independently of whether this method can score it.
-        """
-        import numpy as np
-
-        from ..nirt.routing_decision import cost_aware_utility, no_selectable_rows, routing_decision
-        from ..routing import NIRTRouter, model_profiles
-
-        router = self.router
-        if not isinstance(router, NIRTRouter):
-            raise TypeError(
-                f"score_all_models needs a NIRTRouter (cold-start pool scoring), "
-                f"got {type(router).__name__}"
-            )
-        cfg = getattr(router._data, "cfg", None)
-        pool_ids = sorted(set(router.model_ids) | set(model_profiles.list_profiled_model_ids(cfg)))
-        scores = router.predict_pool_scores_text(
-            [prompt], pool_ids, impute_unknown=impute_unknown, knn_k=knn_k,
-            knn_weighting=knn_weighting, encoder=self.encoder, profile_encoder=self.encoder,
-        )
-        mat = scores.to_numpy(np.float64)
-        util = cost_aware_utility(mat, lam=0.0, model_costs=None, eligible=None)
-        return RoutingResult(
-            query_ids=["0"], model_ids=list(scores.columns), scores=mat,
-            selected=routing_decision(mat, lam=0.0, model_costs=None, eligible=None),
-            lam=0.0, fallback=no_selectable_rows(util), alpha=None,
-        )
 
     def _skip_decomposition(self, prompt: str, depth: int) -> bool:
         """The gate in :meth:`decompose_plan`: nothing for an LLM decomposer to split."""
@@ -449,6 +430,7 @@ class AgenticRouter:
             atomic = atomic and looks_atomic(prompt)
         return atomic
 
+    @_standalone_scope
     def decompose_plan(self, prompt: str, depth: int, *, sequential: bool = False) -> list[SubTask]:
         """Split ``prompt`` into dependency-aware :class:`SubTask`\\ s --
         the one path the orchestrator decomposes through, so the policy for
@@ -477,11 +459,20 @@ class AgenticRouter:
     def _is_multipart(self, prompt: str) -> bool:
         """The triage heuristic's lexical multi-part check (an ``LLMTriage``'s
         fallback heuristic, or default ``HeuristicTriage`` settings)."""
-        heuristic = getattr(self.triage, "_fallback", self.triage)
-        check = (getattr(heuristic, "is_multipart", None)
-                 or HeuristicTriage(structure=StructureClassifier()).is_multipart)
+        check = self.__dict__.get("_multipart_check")
+        if check is None:  # resolved once: not a fresh classifier per prompt
+            heuristic = getattr(self.triage, "_fallback", self.triage)
+            check = (getattr(heuristic, "is_multipart", None)
+                     or HeuristicTriage(structure=StructureClassifier()).is_multipart)
+            self._multipart_check = check
         return check(prompt)
 
+    def cached_decision(self, prompt: str) -> Optional[TriageDecision]:
+        """This run's triage decision for ``prompt``, if it was already made
+        (scoped to the run, so its alpha/margin are the ones in force)."""
+        return self._run_state().decisions.get(prompt)
+
+    @_standalone_scope
     def pick_helper_model(self, request: str, min_quality: float) -> tuple[str, float]:
         """The pool model an LLM helper (decomposer / synthesizer) runs on for
         ``request``: the cheapest model whose predicted quality is at least
@@ -493,10 +484,8 @@ class AgenticRouter:
         helper costs no extra routing call.
 
         Deliberately scoped to :meth:`route_decision`'s narrow pool, like it
-        -- a helper LLM must be something :attr:`clients` can actually call,
-        unlike :meth:`score_all_models`'s broader, every-registered-model
-        view."""
-        known = self._run_state().decisions.get(request)
+        -- a helper LLM must be something :attr:`clients` can actually call."""
+        known = self.cached_decision(request)
         scores = (known.scores if known is not None and known.scores
                   else self.route_decision(request).row_scores(0))
         scores = {m: float(q) for m, q in scores.items()
@@ -529,6 +518,7 @@ class AgenticRouter:
 
         return call
 
+    @_standalone_scope
     def triage_prompt(self, prompt: str, *, routing_text: Optional[str] = None) -> TriageDecision:
         """Route ``routing_text`` (default: ``prompt``) and triage ``prompt``.
 
@@ -574,14 +564,13 @@ class AgenticRouter:
         req = self._begin(prompt, conversation_id, alpha)
         token = _current_run.set(req.state)
         try:
-            decision = self.triage_prompt(req.latest, routing_text=routing_text(req.messages))
+            decision = self._triage_request(req)
             t0 = time.perf_counter()
             root = self._solve(req.latest, 0, decision=decision)
             req.state.timings["dispatch"] = time.perf_counter() - t0
         finally:
             _current_run.reset(token)
-        req.state.timings["total"] = time.perf_counter() - t_start
-        result = self._result(req, decision, root)
+        result = self._finish(req, decision, root, t_start)
         if debug:
             _write_debug_trace(result, debug)
         self._emit(result)
@@ -612,7 +601,7 @@ class AgenticRouter:
 
         def setup() -> TriageDecision:
             _current_run.set(req.state)
-            return self.triage_prompt(req.latest, routing_text=routing_text(req.messages))
+            return self._triage_request(req)
 
         decision = ctx.run(setup)
         timings = req.state.timings
@@ -627,7 +616,7 @@ class AgenticRouter:
                 try:
                     chunk = ctx.run(next, inner)
                 except StopIteration as stop:
-                    resp = stop.value
+                    resp = self._require_answer(model_id, stop.value)
                     break
                 timings.setdefault("ttft", time.perf_counter() - t_start)
                 yield chunk
@@ -640,10 +629,9 @@ class AgenticRouter:
             timings["dispatch"] = time.perf_counter() - t0
             timings["ttft"] = time.perf_counter() - t_start
             yield root.answer
-        timings["total"] = time.perf_counter() - t_start
-        result = self._result(req, decision, root)
+        result = self._finish(req, decision, root, t_start)
         if on_result is not None:
-            _bookkeeping_executor().submit(on_result, result)
+            _bookkeeping_executor().submit(_run_sink, on_result, result)
         self._emit(result)
         return result
 
@@ -697,6 +685,16 @@ class AgenticRouter:
             cost=root.cost, **context,
         )
 
+    def _triage_request(self, req: "_Request") -> TriageDecision:
+        """The triage verdict for a request's latest turn, with its conversation as context."""
+        return self.triage_prompt(req.latest, routing_text=routing_text(req.messages))
+
+    def _finish(self, req: "_Request", decision: TriageDecision, root: SubCall,
+                t_start: float) -> AgenticResult:
+        """Stamp the request's total time and assemble its result (run and stream both end here)."""
+        req.state.timings["total"] = time.perf_counter() - t_start
+        return self._result(req, decision, root)
+
     # -- recursion unit ------------------------------------------------
     def _solve(self, prompt: str, depth: int, *, decision: TriageDecision | None = None) -> SubCall:
         """Solve one (sub-)prompt: a leaf ``SubCall`` (single) or a branch whose
@@ -738,7 +736,7 @@ class AgenticRouter:
     ) -> SubCall:
         """Route ``prompt`` (if the model was not already chosen) and invoke it."""
         if model_id is None:
-            known = self._run_state().decisions.get(prompt)
+            known = self.cached_decision(prompt)
             if known is not None:          # triage already routed this prompt
                 model_id, predicted_quality = known.selected_model_id, self._quality_of(known)
             else:
@@ -761,18 +759,27 @@ class AgenticRouter:
         try:
             self._use_call()
             expected = self._expected_cost(model_id, prompt, history)
-            resp = self.clients.complete(model_id, sent, **generation_kwargs)
-            if not resp.content or not resp.content.strip():
-                raise RuntimeError(f"{model_id} returned no answer (empty response)")
+            resp = self._require_answer(model_id, self.clients.complete(model_id, sent, **generation_kwargs))
         except Exception as exc:
             if depth == 0:
                 raise
             return SubCall(
                 prompt=prompt, model_id=model_id, predicted_quality=float(predicted_quality),
                 answer=f"[error: {type(exc).__name__}: {exc}]", mode="single", depth=depth,
-                cost=None, error=repr(exc), meta={**expected, "cost_source": "failed", "sent_prompt": sent},
+                cost=None, error=repr(exc),
+                meta={**expected, "cost_source": "failed", "sent_prompt": sent,
+                      **({"budget_exhausted": True} if isinstance(exc, CallBudgetExceeded) else {})},
             )
         return self._leaf(prompt, model_id, depth, predicted_quality, resp, expected, sent_prompt=sent)
+
+    @staticmethod
+    def _require_answer(model_id: str, resp: LLMResponse) -> LLMResponse:
+        """``resp``, or a ``RuntimeError`` when it has no text: the model
+        didn't answer, so a blank must not read as a successful empty answer
+        (:meth:`_call_model` and :meth:`stream` both apply this)."""
+        if not resp.content or not resp.content.strip():
+            raise RuntimeError(f"{model_id} returned no answer (empty response)")
+        return resp
 
     @staticmethod
     def _leaf(prompt: str, model_id: str, depth: int, predicted_quality: float,
@@ -825,12 +832,10 @@ class AgenticRouter:
     def _run_state(self) -> _RunState:
         """The active run's state. Falls back to a fresh, context-local one
         for calls made outside :meth:`run` (e.g. driving ``_solve``/
-        ``_call_model`` directly, as the LangChain tool tests do)."""
+        ``_call_model`` directly, as the LangChain tool tests do): that state
+        is not installed, so it cannot outlive the call."""
         rs = _current_run.get()
-        if rs is None:
-            rs = _RunState(max_calls=self.max_calls)
-            _current_run.set(rs)
-        return rs
+        return rs if rs is not None else _RunState(max_calls=self.max_calls)
 
     def _use_call(self, n: int = 1, *, enforce: bool = True) -> None:
         """Count ``n`` model call(s) against this run's shared budget. Every

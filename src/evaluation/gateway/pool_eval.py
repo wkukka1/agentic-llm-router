@@ -31,12 +31,13 @@ picked answers' summed plan usage at API prices.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
+
+from aar_gateway.config import read_jsonl
 
 TIERS = ("claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5")  # cheapest first
 
@@ -44,10 +45,7 @@ TIERS = ("claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5")  # cheapest
 def load_prompts(graded_file: Path, tiers=TIERS) -> list[dict]:
     """Prompts with a score, a cost and a matches-best verdict for every tier."""
     by: dict[str, dict] = defaultdict(dict)
-    for line in graded_file.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        r = json.loads(line)
+    for r in read_jsonl(graded_file):
         if r.get("score") is None or r.get("model") not in tiers:
             continue
         by[r["prompt_hash"]][r["model"]] = r
@@ -149,8 +147,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     router = proxies = None
     if args.router_file:
-        from router.gateway.config import DEFAULT_MODELS
-        from router.gateway.routing import load_router_model
+        from aar_gateway.config import DEFAULT_MODELS
+        from aar_gateway.routing import load_router_model
 
         router = load_router_model({"artifact": args.router_file})
         proxies = {t: DEFAULT_MODELS[t]["proxy"] for t in TIERS}

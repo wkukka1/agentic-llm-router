@@ -1,6 +1,5 @@
 """``LLMClient``: the ``complete``/``stream`` interface a
-:class:`~router.llm.registry.LLMRegistry` entry resolves to via
-:class:`LLMClientFactory`, delegating to a
+:class:`~router.llm.registry.LLMRegistry` entry resolves to, delegating to a
 :class:`~router.llm.adapters.base.ProviderAdapter`.
 
 See :mod:`router.llm` for how this relates to the working
@@ -11,9 +10,8 @@ the live agentic flow actually calls today.
 
 from __future__ import annotations
 
-import importlib
 import time
-from collections.abc import Callable, Generator, Mapping
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -104,68 +102,3 @@ class LLMClient:
             return None
         return price_tokens(input_tokens, output_tokens,
                             self.profile.input_cost_per_token, self.profile.output_cost_per_token)
-
-
-#: serving provider -> ``"module:Class"``; imported lazily so importing the
-#: factory never requires every provider SDK
-#:
-#: A different, non-interacting provider vocabulary from
-#: ``router.agentic.llm_clients.guess_provider`` (LangChain names) and
-#: ``configs/model_registry.yaml`` (model-author names) -- no translation
-#: exists between any of the three (XA-10). Harmless today since
-#: ``LLMClientFactory``/this module have no production caller (see the module
-#: docstring above); would need reconciling before anything ever does feed
-#: ``guess_provider``'s output here.
-_ADAPTERS: dict[str, str] = {
-    "openai": "router.llm.adapters.openai:OpenAIAdapter",
-    "anthropic": "router.llm.adapters.anthropic:AnthropicAdapter",
-    "google": "router.llm.adapters.google:GoogleAdapter",
-    "ollama": "router.llm.adapters.ollama:OllamaAdapter",
-}
-
-AdapterSpec = str | type
-
-
-def _adapter_class(spec: AdapterSpec) -> type:
-    if isinstance(spec, type):
-        return spec
-    module, _, cls = spec.partition(":")
-    return getattr(importlib.import_module(module), cls)
-
-
-class LLMClientFactory:
-    """``LLMProfile -> LLMClient``, picking the adapter by the profile's
-    *serving* provider (``serving_provider``, else ``provider``).
-
-    ``adapters`` extends / overrides the provider -> adapter table;
-    ``fallback`` (e.g. an OpenAI-compatible endpoint adapter) serves any
-    provider not in it. **Adapters** (the SDK client construction) are cached
-    per ``(provider, model, api_key, client_kwargs)`` so they aren't rebuilt on
-    every request; the returned :class:`LLMClient` is always built fresh
-    around the ``profile`` passed in, so a re-priced profile (see
-    ``LLMRegistry.register(..., replace=True)``) is never served stale prices
-    from an earlier call for the same provider/model.
-    """
-
-    def __init__(self, adapters: Mapping[str, AdapterSpec] | None = None, *,
-                 fallback: AdapterSpec | None = None):
-        self._adapters: dict[str, AdapterSpec] = {**_ADAPTERS, **dict(adapters or {})}
-        self._fallback = fallback
-        self._cache: dict[tuple, ProviderAdapter] = {}
-
-    def client_for(self, profile: LLMProfile, *, api_key: str | None = None,
-                   **client_kwargs) -> LLMClient:
-        provider = (getattr(profile, "serving_provider", None) or profile.provider).lower()
-        key = (provider, profile.model_id, api_key, repr(sorted(client_kwargs.items())))
-        adapter = self._cache.get(key)
-        if adapter is None:
-            spec = self._adapters.get(provider, self._fallback)
-            if spec is None:
-                raise ValueError(
-                    f"no ProviderAdapter for provider={provider!r}; "
-                    f"supported: {sorted(self._adapters)} (pass adapters= or fallback=)"
-                )
-            Adapter = _adapter_class(spec)
-            adapter = Adapter(profile.model_id, api_key=api_key, **client_kwargs)
-            self._cache[key] = adapter
-        return LLMClient(adapter, profile)

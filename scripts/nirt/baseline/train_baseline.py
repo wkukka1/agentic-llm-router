@@ -1,8 +1,8 @@
 """Train the Phase 1 plain Bernoulli / BCE NIRT baseline.
 
-    python scripts/train_baseline.py --config configs/phase1.yaml
-    python scripts/train_baseline.py --theta-dim 4 --model-params projected
-    python scripts/train_baseline.py --resume artifacts/phase1/baseline
+    python scripts/nirt/baseline/train_baseline.py --config configs/phase1.yaml
+    python scripts/nirt/baseline/train_baseline.py --theta-dim 4 --model-params projected
+    python scripts/nirt/baseline/train_baseline.py --resume artifacts/phase1/baseline
 
 Writes artifacts/phase1/baseline/{model.pt, config.yaml, metrics.json,
 training_history.json, provenance.json}.
@@ -18,6 +18,7 @@ from pathlib import Path
 import yaml
 
 from router.config import load_config
+from training.cli import get_phase0_config
 from training.nirt.baseline.train import fit
 
 
@@ -70,7 +71,7 @@ def main() -> int:
     if args.checkpoint:
         cfg["out_dir"] = args.checkpoint
 
-    p0 = load_config(args.phase0_config) if args.phase0_config else load_config()
+    p0 = get_phase0_config(args)
     res = fit(cfg, phase0_cfg=p0, resume_from=args.resume)
 
     print("\n=== validation (best epoch %d) ===" % res.best_epoch)

@@ -26,10 +26,8 @@ import sys
 
 import numpy as np
 import pandas as pd
-import yaml
 
-from training.cli import add_source_arg, float_table, raw_parser, resolve, write_json
-from router.config import load_config
+from training.cli import add_source_arg, float_table, get_phase0_config, load_yaml, raw_parser, resolve, write_json
 from router.nirt.baselines_infer import knn_router_matrix, mlp_router_matrix
 from router.nirt.checkpoint import load_run
 from router.nirt.predict import predict_matrix_from_dataset
@@ -85,10 +83,10 @@ def main() -> int:
     if args.ood and args.source:
         ap.error("--source applies to the standard splits; --ood evaluates held-out families")
 
-    nirt_cfg = yaml.safe_load(resolve(args.config).read_text(encoding="utf-8"))
+    nirt_cfg = load_yaml(args.config)
     runs_dir = resolve(nirt_cfg.get("runs_dir", "data/processed/nirt_runs"))
 
-    p0 = load_config(args.phase0_config) if args.phase0_config else load_config()
+    p0 = get_phase0_config(args)
     d = load_training_data(p0)
     model, run_cfg, model_index = load_run(args.run, runs_dir=runs_dir)
     pathway = run_cfg.get("data", {}).get("pathway", "irt")
