@@ -77,6 +77,7 @@ from .translate import (
     OpenAIStreamTranslator,
     _blocks,
     anthropic_to_openai,
+    error_body,
     iter_openai_sse,
     openai_to_anthropic,
     stream_error,
@@ -965,7 +966,7 @@ def _unreachable(turn: _Turn | None, where: str, exc: Exception, lane: str) -> J
     if turn is not None:
         turn.decision = {**turn.decision, "reason": f"{where} unreachable: {type(exc).__name__}"}
         turn.finish(502, None, lane)
-    return _error(502, f"{where} unreachable: {exc!r}"[:300])
+    return error_response(502, f"{where} unreachable: {exc!r}"[:300])
 
 
 async def _via_anthropic(turn: _Turn) -> Response:
@@ -1060,13 +1061,12 @@ def error_summary(content: bytes) -> str:
     return " ".join(text.split())[:240]
 
 
-def _error(status: int, message: str, kind: str = "api_error") -> JSONResponse:
-    return JSONResponse({"type": "error", "error": {"type": kind, "message": message}},
-                        status_code=status)
+def error_response(status: int, message: str, kind: str = "api_error") -> JSONResponse:
+    return JSONResponse(error_body(kind, message), status_code=status)
 
 
 def _invalid_request(message: str) -> JSONResponse:
-    return _error(400, message, "invalid_request_error")
+    return error_response(400, message, "invalid_request_error")
 
 
 def _json_object(raw: bytes) -> dict | None:
@@ -1113,7 +1113,7 @@ async def _via_openai_unguarded(turn: _Turn) -> Response:
             return await _via_anthropic(turn)
         turn.error = error_summary(detail.encode())
         turn.finish(upstream.status_code, None, "openai")
-        return _error(upstream.status_code, f"{turn.target}: {detail}")
+        return error_response(upstream.status_code, f"{turn.target}: {detail}")
 
     if payload["stream"]:
         translator = OpenAIStreamTranslator(turn.target)

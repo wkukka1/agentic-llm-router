@@ -283,9 +283,14 @@ class OpenAIStreamTranslator:
         return out
 
 
+def error_body(kind: str, message: str) -> dict:
+    """The Anthropic API's error envelope, which Claude Code parses."""
+    return {"type": "error", "error": {"type": kind, "message": message}}
+
+
 def stream_error(message: str) -> bytes:
     """An Anthropic ``error`` SSE event: how a stream that has begun reports a failure."""
-    return sse("error", {"type": "error", "error": {"type": "api_error", "message": message}})
+    return sse("error", error_body("api_error", message))
 
 
 def iter_openai_sse(lines: Iterable[str]) -> Iterable[dict]:

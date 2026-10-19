@@ -111,12 +111,10 @@ async def _local_callers_only(request: Request, call_next):
     gateway."""
     host = request.headers.get("host", "")
     if _hostname(host) not in _allowed_hosts():
-        return JSONResponse({"type": "error", "error": {"type": "forbidden",
-                             "message": f"host {host!r} is not this gateway"}}, status_code=403)
+        return interceptor.error_response(403, f"host {host!r} is not this gateway", "forbidden")
     origin = request.headers.get("origin")
     if origin and origin.rstrip("/").lower() not in (f"http://{host.lower()}", f"https://{host.lower()}"):
-        return JSONResponse({"type": "error", "error": {"type": "forbidden",
-                             "message": f"requests from {origin} are not accepted"}}, status_code=403)
+        return interceptor.error_response(403, f"requests from {origin} are not accepted", "forbidden")
     return await call_next(request)
 
 
@@ -234,11 +232,9 @@ async def dashboard():
 
 
 def _no_credentials() -> JSONResponse:
-    return JSONResponse({"type": "error", "error": {
-        "type": "authentication_error",
-        "message": "no credentials: the gateway forwards the client's own Anthropic login "
-                   "(run Claude Code through it), or name a model on an `openai` lane"}},
-        status_code=401)
+    return interceptor.error_response(
+        401, "no credentials: the gateway forwards the client's own Anthropic login "
+             "(run Claude Code through it), or name a model on an `openai` lane", "authentication_error")
 
 
 @app.post("/v1/messages")
