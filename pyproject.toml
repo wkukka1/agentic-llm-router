@@ -164,6 +164,11 @@ ignore = [
   "B008",  # argparse/dataclass defaults legitimately call functions
 ]
 
+[tool.ruff.lint.isort]
+# Pinned: left to detection, `evaluation` was sorted as third-party. aar_gateway is
+# its own package (./aar-gateway), so it sorts with the third-party imports.
+known-first-party = ["decompose", "evaluation", "ingest", "router", "training"]
+
 [tool.ruff.lint.per-file-ignores]
 # Tests reach into internals deliberately, and re-import inside test bodies.
 "tests/*" = ["E402"]

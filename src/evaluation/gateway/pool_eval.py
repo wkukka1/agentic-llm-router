@@ -36,7 +36,6 @@ from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
-
 from aar_gateway.config import read_jsonl
 
 TIERS = ("claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5")  # cheapest first
