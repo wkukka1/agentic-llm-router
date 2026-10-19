@@ -151,6 +151,19 @@ def _ensure_running(url: str, *, quiet: bool = False, timeout: float = 90) -> bo
     raise SystemExit(f"the gateway did not come up within {timeout:.0f}s -- see `aar-gateway logs`")
 
 
+def _start_or_alert(url: str) -> bool:
+    """Start the gateway for ``aar-gateway code``. When it can't be started,
+    say so on stderr and return False: the session then goes straight to
+    Anthropic instead of failing. Never raises."""
+    try:
+        _ensure_running(url)
+        return True
+    except SystemExit as exc:
+        print(f"AAR gateway isn't answering ({str(exc).splitlines()[0][:120]}), so this session talks to "
+              "Anthropic directly (no routing). `aar-gateway doctor` says why.", file=sys.stderr)
+        return False
+
+
 def _wait_healthy(url: str, seconds: float, proc: subprocess.Popen | None = None) -> bool:
     """Whether ``url`` answers within ``seconds``; gives up early once
     ``proc`` (the gateway being started) has exited."""
@@ -472,13 +485,17 @@ def _setup(router: str | None, force: bool, enable: bool | None = False, share: 
 # --------------------------------------------------------------------------- #
 # doctor                                                                      #
 # --------------------------------------------------------------------------- #
-def _doctor() -> int:
+def _doctor(as_json: bool = False) -> int:
     """Checks, each with a fix: the claude CLI, the config, the router, the
-    port, the log folder."""
+    port, the log folder. ``as_json``: the same checks as a JSON list."""
     problems = 0
+    results: list[dict] = []
 
     def report(ok: bool | None, what: str, detail: str = "", fix: str = "") -> None:
         nonlocal problems
+        results.append({"check": what, "ok": ok, "detail": detail, "fix": fix if ok is not True else ""})
+        if as_json:
+            return
         mark = {True: "✓", False: "✗", None: "!"}[ok]
         problems += ok is False
         print(f"{mark} {what}" + (f": {detail}" if detail else ""))
@@ -571,6 +588,10 @@ def _doctor() -> int:
         last = sharing.state().get("last_error")
         report(not last, "usage sharing", f"on, sent to {sharing.dataset()}" + (f"; last upload failed ({last})" if last else ""),
                "check the token: aar-gateway share token <token>, then aar-gateway share upload")
+    if as_json:
+        problems = sum(r["ok"] is False for r in results)
+        print(json.dumps({"ok": problems == 0, "checks": results}, indent=2))
+        return 0 if problems == 0 else 1
     print("\nall good" if problems == 0 else f"\n{problems} problem(s) to fix")
     return 0 if problems == 0 else 1
 
@@ -1082,6 +1103,12 @@ def _share(argv: list[str]) -> int:
             return 0
         print(result.get("skipped") or f"upload failed ({result['error']}); the records are kept for next time")
         return 0 if "skipped" in result else 1
+    if action == "status" and "--json" in argv:
+        st = share.state()
+        print(json.dumps({"sharing": share.enabled(), "kept": len(share.queued()), "dataset": share.dataset(),
+                          "token_set": bool(share.token()), "sent_total": st.get("sent_total", 0),
+                          "last_upload": st.get("last_upload"), "last_error": st.get("last_error")}, indent=2))
+        return 0
     if action == "status":
         st = share.state()
         print(f"sharing      {'on' if share.enabled() else 'off'}")
@@ -1166,8 +1193,10 @@ def main(argv: list[str] | None = None) -> int:
     # Claude Code's own calls, and `code` (whose arguments belong to `claude`):
     # handled before argparse, with no heavy imports
     if argv[:1] == ["code"]:
-        _ensure_running(url)
+        up = _start_or_alert(url)
         args, env = _claude_command(url, argv[1:])
+        if not up:
+            env.pop("ANTHROPIC_BASE_URL", None)  # this session talks to Anthropic directly, as the alert says
         claude = shutil.which("claude", path=env.get("PATH"))
         if claude is None:
             raise SystemExit("`claude` is not on PATH -- install Claude Code first (see `aar-gateway doctor`)")
@@ -1220,7 +1249,9 @@ def main(argv: list[str] | None = None) -> int:
     enable = sub.add_parser("enable", help="every `claude` session goes through the gateway, no command needed")
     enable.add_argument("--force", action="store_true", help="replace another ANTHROPIC_BASE_URL in your settings")
     sub.add_parser("disable", help="undo `enable`: plain `claude` talks to Anthropic directly again")
-    sub.add_parser("doctor", help="check the setup, with a fix for each problem")
+    doctor_p = sub.add_parser("doctor", help="check the setup, with a fix for each problem")
+    doctor_p.add_argument("--json", action="store_true", help="the checks as JSON (for scripts and the ops agent)")
+    sub.add_parser("stats", help="the gateway's totals as JSON (savings, requests, errors)")
     sub.add_parser("local", help="optional local models via Ollama: local [add|remove] <model>")
     sub.add_parser("share", help="opt-in anonymous usage sharing: share [on|off|status|show|delete|token|upload]")
     sub.add_parser("config", help="which config file is in use")
@@ -1259,7 +1290,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "logs":
         return _logs(args.n, args.follow)
     if args.command == "doctor":
-        return _doctor()
+        return _doctor(as_json=args.json)
+    if args.command == "stats":
+        info = _get(f"{url}/stats")
+        if info is None:
+            print(json.dumps({"running": False, "url": url}))
+            return 1
+        print(json.dumps(info, indent=2))
+        return 0
     if args.command == "setup":
         return _setup(args.router, args.force, enable=True if args.yes else False if args.no_enable else None,
                       share=True if args.share else False if args.no_share else None)
