@@ -1,8 +1,15 @@
 {
   "name": "aar-gateway",
-  "version": "0.2.1",
-  "description": "Savings from the local AAR Gateway, shown in Claude Code. Read-only.",
-  "author": {
-    "name": "AAR"
+  "version": "0.3.0",
+  "description": "AAR Gateway inside Claude Code: a pane with each request's model, cache use and savings, and optional routing done by Claude Code itself.",
+  "author": { "name": "AAR" },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "route": {
+      "type": "boolean",
+      "title": "Route in Claude Code",
+      "description": "Switch each turn's model from inside Claude Code, using the gateway's router (off: the gateway proxy routes, as before).",
+      "default": false
+    }
   }
 }
