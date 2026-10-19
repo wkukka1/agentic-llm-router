@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from . import interceptor, share
-from .config import graded_path, pid_file
+from .config import graded_path, models_dir, pid_file
 
 _router_status: dict = {"enabled": False}
 
@@ -31,7 +31,7 @@ async def _lifespan(_app: FastAPI):
     # the text encoder's model, kept with the gateway's files: fastembed's
     # default is the system temp folder, which macOS clears, and a missing
     # model means a download before the gateway can answer
-    os.environ.setdefault("FASTEMBED_CACHE_PATH", str(interceptor.log_path().parent / "models"))
+    os.environ.setdefault("FASTEMBED_CACHE_PATH", str(models_dir()))
     use_graded = settings["router"].get("use_graded", True)
     router_error = None
     try:

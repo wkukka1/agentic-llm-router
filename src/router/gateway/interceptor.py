@@ -60,12 +60,14 @@ from .config import (
     load_settings,
     log_archives,
     log_path,
+    overrides_path,
     read_json,
     read_jsonl,
     read_preferences,
     safe_append_jsonl,
     save_preferences,
 )
+from .config import thread_models_path as _thread_models_path
 from .pricing import canonical_model, cost_usd, prompt_tokens
 from .routing import ModelPicker, price_for, unavailable_reason
 from .subagents import DEFAULT_ROLE_MODELS, role_decision, spawn_decision
@@ -134,10 +136,6 @@ def _lru_set(cache: OrderedDict, key, value, max_size: int) -> None:
     cache.move_to_end(key)
     while len(cache) > max_size:
         cache.popitem(last=False)
-
-
-def _thread_models_path() -> Path:
-    return log_path().parent / "thread-models.jsonl"
 
 
 def _load_thread_models() -> None:
@@ -319,12 +317,6 @@ def record_spawn(session_id: str, subagent_type: str | None, task: str,
         decision = spawn_decision(subagent_type, task, session_model, _settings, asked_model)
     _lru_set(_spawns, _task_key(task), decision, _MAX_SPAWNS)
     return decision
-
-
-def overrides_path() -> Path:
-    """Every manual routing change from the dashboard, one JSON line each:
-    labelled data on where the router's or a role's default was wrong."""
-    return log_path().parent / "overrides.jsonl"
 
 
 _save_preferences = save_preferences

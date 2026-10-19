@@ -64,6 +64,22 @@ def pid_file() -> Path:
     return gateway_home() / "gateway.pid"
 
 
+def thread_models_path() -> Path:
+    """Which model wrote each message id, so a server-side thread continues on it after a restart."""
+    return gateway_home() / "thread-models.jsonl"
+
+
+def overrides_path() -> Path:
+    """Every manual routing change from the dashboard, one JSON line each: labelled data on
+    where the router's or a role's default was wrong."""
+    return gateway_home() / "overrides.jsonl"
+
+
+def models_dir() -> Path:
+    """Where the router's text encoder is cached."""
+    return gateway_home() / "models"
+
+
 def graded_path() -> Path:
     """The user's graded turns (``aar-gateway-grade`` writes, the router reads)."""
     return gateway_home() / "graded.jsonl"
