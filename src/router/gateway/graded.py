@@ -23,10 +23,35 @@ Encoder = Callable[[Sequence[str]], np.ndarray]  # unit-normalized rows
 GradedPredictor = Callable[[str], dict | None]
 
 
+#: path -> ((mtime_ns, size), result): the file is parsed once per change, however many readers ask
+_loaded: dict[str, tuple[tuple, tuple]] = {}
+
+
+def _usable(row: object) -> bool:
+    """A graded row with every field the router reads. One malformed row must not make every
+    routing decision fail, so it is skipped."""
+    if not isinstance(row, dict) or row.get("score") is None:
+        return False
+    try:
+        float(row["score"])
+    except (TypeError, ValueError):
+        return False
+    return all(isinstance(row.get(k), str) for k in ("prompt_hash", "prompt", "model"))
+
+
 def load_graded(path: Path) -> tuple[list[str], list[str], np.ndarray]:
     """``(prompts, models, scores)``: one row per graded prompt, ``nan`` where
-    a model has no grade for it (failed replay, unparseable verdict)."""
-    rows = [r for r in read_jsonl(path) if r.get("score") is not None]
+    a model has no grade for it (failed replay, unparseable verdict). Cached until the
+    file changes: the picker's calibration and the predictor both read it."""
+    try:
+        st = os.stat(path)
+        stamp = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        stamp = None
+    cached = _loaded.get(str(path))
+    if stamp is not None and cached and cached[0] == stamp:
+        return cached[1]
+    rows = [r for r in read_jsonl(path) if _usable(r)]
     prompts: dict[str, str] = {}
     for r in rows:
         prompts.setdefault(r["prompt_hash"], r["prompt"])
@@ -35,7 +60,10 @@ def load_graded(path: Path) -> tuple[list[str], list[str], np.ndarray]:
     at, col = {h: i for i, h in enumerate(hashes)}, {m: j for j, m in enumerate(models)}
     for r in rows:
         scores[at[r["prompt_hash"]], col[r["model"]]] = float(r["score"])
-    return [prompts[h] for h in hashes], models, scores
+    result = ([prompts[h] for h in hashes], models, scores)
+    if stamp is not None:
+        _loaded[str(path)] = (stamp, result)
+    return result
 
 
 def graded_predictor(path: Path, encode: Encoder, *, k: int = 10, min_similarity: float = 0.5,

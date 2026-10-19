@@ -65,3 +65,32 @@ def test_new_grades_are_picked_up_without_a_restart(tmp_path):
     write(p, graded_rows(4))
     os.utime(p, (time.time() + 5, time.time() + 5))
     assert predict("sql")["quality"]["claude-opus-5-5"] == 0.9
+
+
+def _rows(n, model="claude-opus-5-5", start=0):
+    return "".join(json.dumps({"prompt_hash": f"h{i}", "prompt": f"q{i}", "model": model, "score": 0.5}) + "\n"
+                   for i in range(start, start + n))
+
+
+def test_a_malformed_graded_row_is_skipped_not_fatal(tmp_path):
+    path = tmp_path / "graded.jsonl"
+    path.write_text(_rows(3) + json.dumps({"prompt": "no hash", "model": "m", "score": 1.0}) + "\n"
+                    + json.dumps({"prompt_hash": "x", "prompt": "no model", "score": 1.0}) + "\n"
+                    + json.dumps({"prompt_hash": "y", "prompt": "bad score", "model": "m", "score": "high"}) + "\n")
+    prompts, models, scores = load_graded(path)
+    assert len(prompts) == 3 and models == ["claude-opus-5-5"]
+
+
+def test_the_graded_file_is_parsed_once_per_change_however_many_readers_ask(tmp_path, monkeypatch):
+    from router.gateway import graded
+
+    path = tmp_path / "graded.jsonl"
+    path.write_text(_rows(4))
+    reads = []
+    real = graded.read_jsonl
+    monkeypatch.setattr(graded, "read_jsonl", lambda p: reads.append(p) or real(p))
+    first = load_graded(path)
+    second = load_graded(path)
+    assert reads == [path] and first[0] == second[0]
+    path.write_text(_rows(4) + _rows(2, start=4))  # the grader appended
+    assert len(load_graded(path)[0]) == 6 and len(reads) == 2
