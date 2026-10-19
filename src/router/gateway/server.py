@@ -16,8 +16,6 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from . import interceptor, listen, share
 from .config import graded_path, models_dir, pid_file
 
-_router_status: dict = {"enabled": False}
-
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
@@ -44,12 +42,6 @@ async def _lifespan(_app: FastAPI):
         router_error = f"{type(exc).__name__}: {exc}"[:400]
         print(f"router not loaded, forwarding requests unrouted: {router_error}", file=sys.stderr)
     interceptor.configure(settings, picker, router_error=router_error)
-    rcfg = settings["router"]
-    _router_status.update(enabled=picker is not None, error=router_error,
-                          kind=getattr(picker, "router_kind", rcfg.get("kind")),
-                          source=(rcfg.get("artifact") or
-                                  (rcfg.get("data_config") if rcfg.get("kind") == "knn" else rcfg.get("run"))),
-                          models=sorted(settings["models"]))
     pid_file = _pid_file()
     pid_file.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(pid_file, str(os.getpid()))
@@ -154,11 +146,7 @@ async def events(request: Request):
 
 @app.get("/health")
 async def health():
-    status = dict(_router_status)
-    picker = getattr(interceptor, "_picker", None)
-    if picker is not None and hasattr(picker, "calibration_status"):
-        status["calibration"] = picker.calibration_status()
-    return {"status": "ok", "pid": os.getpid(), "router": status}
+    return {"status": "ok", "pid": os.getpid(), "router": interceptor.router_status()}
 
 
 @app.post("/api/shutdown")

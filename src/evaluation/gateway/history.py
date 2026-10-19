@@ -19,8 +19,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from router.gateway.config import append_jsonl, iter_jsonl, read_jsonl
-from router.gateway.translate import REMINDER as _REMINDER
-from router.gateway.translate import text_of
+from router.gateway.translate import REMINDER, text_of
 
 PROJECTS_DIR = Path.home() / ".claude" / "projects"
 MIN_CHARS = 20
@@ -36,7 +35,7 @@ def _typed(record: dict) -> str | None:
         return None
     if (record.get("origin") or {}).get("kind") != "human":
         return None
-    text = _REMINDER.sub("", _text((record.get("message") or {}).get("content"))).strip()
+    text = REMINDER.sub("", _text((record.get("message") or {}).get("content"))).strip()
     if len(text) < MIN_CHARS or text.startswith(("/", "<command-", "<local-command", "<task-notification")):
         return None
     return text

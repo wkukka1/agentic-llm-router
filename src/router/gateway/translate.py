@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 
 _TOOL_NAME = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 _PASSABLE_BLOCKS = {"text", "image", "tool_use", "tool_result", "thinking", "redacted_thinking"}
@@ -27,7 +27,7 @@ _STOP = {"stop": "end_turn", "length": "max_tokens", "tool_calls": "tool_use",
          "function_call": "tool_use", "content_filter": "refusal"}
 
 
-def _blocks(content) -> list:
+def content_blocks(content) -> list:
     if content is None:
         return []
     return [{"type": "text", "text": content}] if isinstance(content, str) else list(content)
@@ -56,16 +56,16 @@ def untranslatable_reason(body: Mapping, *, max_tools: int | None = None) -> str
     for m in body.get("messages", []):
         if m.get("role") not in ("user", "assistant", "system"):
             return f"message role {m.get('role')!r}"
-        for b in _blocks(m.get("content")):
+        for b in content_blocks(m.get("content")):
             kind = b.get("type")
             if kind not in _PASSABLE_BLOCKS:
                 return f"content block {kind!r}"
             if kind == "image" and (b.get("source") or {}).get("type") not in ("base64", "url"):
                 return "image source type"
             if kind == "tool_result" and any(
-                    x.get("type") != "text" for x in _blocks(b.get("content"))):
+                    x.get("type") != "text" for x in content_blocks(b.get("content"))):
                 return "non-text tool result (e.g. an image from Read)"
-    for b in _blocks(body.get("system")):
+    for b in content_blocks(body.get("system")):
         if b.get("type") != "text":
             return f"system block {b.get('type')!r}"
     return None
@@ -75,7 +75,7 @@ def text_of(content, *, sep: str = "", typed: bool = True) -> str:
     """The text of a message ``content`` (a string, or content blocks), joined
     by ``sep``. ``typed``: only ``type: text`` blocks count; otherwise every
     block's ``text`` field does (a block without one adds an empty piece)."""
-    return sep.join(b.get("text", "") for b in _blocks(content)
+    return sep.join(b.get("text", "") for b in content_blocks(content)
                     if isinstance(b, Mapping) and (not typed or b.get("type") == "text"))
 
 
@@ -90,7 +90,7 @@ def anthropic_to_openai(body: Mapping, model: str, *, max_tokens_param: str = "m
     if body.get("system"):
         msgs.append({"role": "system", "content": text_of(body["system"])})
     for m in body.get("messages", []):
-        blocks = _blocks(m.get("content"))
+        blocks = content_blocks(m.get("content"))
         if m["role"] == "system":  # mid-conversation operator message
             msgs.append({"role": "system", "content": text_of(blocks)})
             continue
@@ -293,15 +293,19 @@ def stream_error(message: str) -> bytes:
     return sse("error", error_body("api_error", message))
 
 
-def iter_openai_sse(lines: Iterable[str]) -> Iterable[dict]:
-    for line in lines:
-        line = line.strip()
-        if not line.startswith("data:"):
-            continue
-        data = line[5:].strip()
-        if data == "[DONE]":
-            return
-        try:
-            yield json.loads(data)
-        except ValueError:
-            continue
+def is_done_line(line: str) -> bool:
+    """The OpenAI stream's ``data: [DONE]`` end marker."""
+    return line.strip() == "data: [DONE]"
+
+
+def parse_sse_line(line: str) -> dict | None:
+    """The json object on one ``data:`` line of an OpenAI stream, else ``None`` (not a data line,
+    the ``[DONE]`` marker, or not json)."""
+    line = line.strip()
+    if not line.startswith("data:"):
+        return None
+    try:
+        value = json.loads(line[5:].strip())
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) else None

@@ -72,14 +72,15 @@ from .pricing import canonical_model, cost_usd, prompt_tokens
 from .routing import ModelPicker, price_for, unavailable_reason
 from .subagents import DEFAULT_ROLE_MODELS, role_decision, spawn_decision
 from .subagents import detect as detect_subagent
-from .translate import REMINDER as _REMINDER
 from .translate import (
+    REMINDER,
     OpenAIStreamTranslator,
-    _blocks,
     anthropic_to_openai,
+    content_blocks,
     error_body,
-    iter_openai_sse,
+    is_done_line,
     openai_to_anthropic,
+    parse_sse_line,
     stream_error,
 )
 
@@ -300,7 +301,7 @@ def preferences() -> dict:
 
 
 def _task_key(task: str) -> str:
-    return hashlib.sha1(_REMINDER.sub("", task or "").strip().encode()).hexdigest()[:16]
+    return hashlib.sha1(REMINDER.sub("", task or "").strip().encode()).hexdigest()[:16]
 
 
 def record_spawn(session_id: str, subagent_type: str | None, task: str,
@@ -440,8 +441,8 @@ _CWD = re.compile(r"Primary working directory: ([^\n]+)")
 def working_directory(body: Mapping) -> str | None:
     """Where Claude Code was run -- it states it in an environment block of
     the messages (or the system prompt). A replay of the turn runs there."""
-    for block in _blocks(body.get("system")) + [b for m in body.get("messages") or []
-                                                 for b in _blocks(m.get("content"))]:
+    for block in content_blocks(body.get("system")) + [b for m in body.get("messages") or []
+                                                 for b in content_blocks(m.get("content"))]:
         found = _CWD.search(block.get("text", "") if isinstance(block, Mapping) else "")
         if found:
             return found.group(1).strip()
@@ -536,7 +537,7 @@ _LEADING_TAG = re.compile(r"\s*<([A-Za-z][\w-]{0,40})")
 def turn_trigger(text: str | None) -> str | None:
     """What started a turn, coarsely, for the log: ``"typed"``, or the name
     of a leading tag such as ``command-name`` -- never the text itself. A
-    message Claude Code writes that isn't yet in :data:`_REMINDER` shows up
+    message Claude Code writes that isn't yet in :data:`REMINDER` shows up
     here by its tag."""
     if text is None:
         return None
@@ -548,14 +549,14 @@ def human_text(body: Mapping) -> str | None:
     """The new human text that starts a turn, or ``None`` for a tool-loop
     continuation or a message Claude Code wrote itself. Trailing ``system``
     messages (Claude Code appends hook output after the user's message) are
-    skipped, and Claude Code's own sections (:data:`_REMINDER`) removed."""
+    skipped, and Claude Code's own sections (:data:`REMINDER`) removed."""
     msgs = [m for m in body.get("messages") or [] if m.get("role") != "system"]
     if not msgs or msgs[-1].get("role") != "user":
         return None
-    blocks = _blocks(msgs[-1].get("content"))
+    blocks = content_blocks(msgs[-1].get("content"))
     if any(b.get("type") == "tool_result" for b in blocks):
         return None
-    texts = [_REMINDER.sub("", b.get("text", "")).strip() for b in blocks if b.get("type") == "text"]
+    texts = [REMINDER.sub("", b.get("text", "")).strip() for b in blocks if b.get("type") == "text"]
     text = "\n".join(t for t in texts if t)
     return text or None
 
@@ -574,7 +575,7 @@ def _conversation_key(request: Request, body: Mapping) -> str:
     """Stable across one conversation (history is append-only) and distinct
     for side requests that share Claude Code's session id -- subagents, title
     generation -- whose first message differs."""
-    first = _blocks(((body.get("messages") or [{}])[0]).get("content"))
+    first = content_blocks(((body.get("messages") or [{}])[0]).get("content"))
     seed = json.dumps([(b.get("type"), b.get("text") or b.get("id") or "") for b in first])[:4000]
     sid = request.headers.get("x-claude-code-session-id", "")
     return hashlib.sha1((sid + seed).encode()).hexdigest()[:16]
@@ -1069,6 +1070,19 @@ def _invalid_request(message: str) -> JSONResponse:
     return error_response(400, message, "invalid_request_error")
 
 
+def router_status() -> dict:
+    """What ``/health`` reports about the router: loaded or not and why, its kind and source, the
+    models, and its calibration. Read from the interceptor's own state, which is the only copy."""
+    rcfg = _settings.get("router") or {}
+    status = {"enabled": _picker is not None, "error": _router_error,
+              "kind": getattr(_picker, "router_kind", rcfg.get("kind")),
+              "source": rcfg.get("artifact") or (rcfg.get("data_config") if rcfg.get("kind") == "knn" else rcfg.get("run")),
+              "models": sorted(_settings.get("models") or {})}
+    if _picker is not None and hasattr(_picker, "calibration_status"):
+        status["calibration"] = _picker.calibration_status()
+    return status
+
+
 def _json_object(raw: bytes) -> dict | None:
     """``raw`` parsed as a JSON object, else ``None`` (not JSON, or not an object)."""
     try:
@@ -1122,9 +1136,10 @@ async def _via_openai_unguarded(turn: _Turn) -> Response:
             aborted = None
             try:
                 async for line in upstream.aiter_lines():
-                    if line.strip() == "data: [DONE]":
+                    if is_done_line(line):
                         translator.done = True
-                    for chunk in iter_openai_sse([line]):
+                    chunk = parse_sse_line(line)
+                    if chunk is not None:
                         for event in translator.feed(chunk):
                             yield event
                 for event in translator.finish():
