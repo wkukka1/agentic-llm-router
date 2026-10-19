@@ -68,7 +68,7 @@ def cost_usd(price: Mapping[str, float] | None, usage: Mapping | None) -> float 
     """``None`` when the model has no price or there is no usage -- unknown,
     never silently ``0.0``. A write with no TTL breakdown is priced at the
     5-minute rate (the API default)."""
-    if not price or not usage or price.get("input") is None or price.get("output") is None:
+    if not has_price(price) or not usage:
         return None
     price = price_at(price, prompt_tokens(usage))
     per = 1e-6

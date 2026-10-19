@@ -143,7 +143,7 @@ def role_decision(agent: Mapping, body: Mapping, requested: str | None, settings
         return {"model": requested, "reason": f"{label}: keeps the session's model"}
     if unavailable_reason(target, body, settings, blocked, est_prompt_tokens):
         return None  # e.g. too long for it, or an openai-lane model it can't be translated for
-    if not price_for(settings, target) or not price_for(settings, requested):
+    if not has_price(price_for(settings, target)) or not has_price(price_for(settings, requested)):
         return None
     if _pricier(settings, target, requested):
         return {"model": requested, "reason": f"{label}: {target} would cost more than the session's model"}

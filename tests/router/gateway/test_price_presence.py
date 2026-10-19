@@ -57,3 +57,19 @@ def test_a_half_priced_model_is_skipped_not_a_keyerror(tmp_path):
     decision = build_picker(settings, router_model=_Router())(BODY, _ctx())
     assert decision["skipped"]["claude-haiku-4-5"] == "no price"
     assert _pricier(settings, "claude-haiku-4-5", "claude-opus-5") is False
+
+
+def test_a_subagent_kind_is_not_routed_by_price_when_either_price_is_half_given(tmp_path):
+    """Comparing prices needs both rates of both models: otherwise the kind's choice is left to the general router."""
+    from router.gateway.subagents import role_decision
+
+    agent = {"role": "explore", "source": "hook", "why": "x"}
+    body = {"model": "claude-opus-5", "messages": [{"role": "user", "content": "look around"}]}
+    for haiku in ("{input: 1.0}", "{input: 1.0, output: 5.0}"):
+        settings = _settings(tmp_path, haiku)
+        settings["subagents"]["roles"] = {"explore": "claude-haiku-4-5"}
+        decision = role_decision(agent, body, "claude-opus-5", settings, {}, 1000)
+        if haiku == "{input: 1.0}":
+            assert decision is None  # half-priced target
+        else:
+            assert decision and decision["model"] == "claude-haiku-4-5"  # fully priced and cheaper: routed
