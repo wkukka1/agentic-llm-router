@@ -121,6 +121,14 @@ don't.
 | `aar-gateway local add <model>` | optional: add a local model through Ollama |
 | `aar-gateway share [on/off/show/delete]` | optional: anonymous usage sharing (off by default) |
 
+## Savings inside Claude Code (optional)
+
+Setup can also add a small Claude Code plugin that shows your savings on the
+status line (every minute) and as `/aar-savings`. It only reads the local
+gateway's numbers and changes nothing. Setup asks; `aar-gateway setup --mod`
+adds it without asking, and `aar-gateway disable` removes it. It needs
+Claude Code 2.1.287 or later.
+
 ## Sharing usage data (optional, off by default)
 
 Setup asks whether you'd like to share anonymous usage data to help improve

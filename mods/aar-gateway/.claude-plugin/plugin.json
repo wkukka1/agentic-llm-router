@@ -1,0 +1,6 @@
+{
+  "name": "aar-gateway",
+  "version": "0.1.0",
+  "description": "Savings from the local AAR Gateway, shown in Claude Code. Read-only.",
+  "author": { "name": "AAR" }
+}
