@@ -227,6 +227,12 @@ def _stop() -> bool:
     return True
 
 
+def _restart() -> None:
+    """Stop the gateway (if one runs) and start it again, quietly."""
+    _stop()
+    _ensure_running(_base_url(), quiet=True)
+
+
 def _wait_exit(pid: int, seconds: float) -> bool:
     """Whether ``pid`` exited within ``seconds``. Windows has no signal-free
     probe (see :func:`_running_pid`); there the port going quiet is the sign."""
@@ -443,8 +449,7 @@ def _local(argv: list[str]) -> int:
               f"  - pinning it on the dashboard (Advanced settings -> Pin a model), or\n"
               f"  - aar-gateway code --model {name}")
     if _healthy(_base_url()):
-        _stop()
-        _ensure_running(_base_url(), quiet=True)
+        _restart()
         print("restarted the gateway")
     return 0
 
@@ -516,8 +521,7 @@ def _setup(router: str | None, force: bool, enable: bool | None = False, share: 
         print(f"wrote {config}")
     if _healthy(_base_url()):
         print("restarting the running gateway so it picks this up ...")
-        _stop()
-        _ensure_running(_base_url(), quiet=True)
+        _restart()
     print()
     if auto_enabled():
         print("plain `claude` already goes through the gateway (`aar-gateway disable` to undo)")
@@ -1380,8 +1384,7 @@ def main(argv: list[str] | None = None) -> int:
         _stop()
         return 0
     if args.command == "restart":
-        _stop()
-        _ensure_running(url, quiet=True)
+        _restart()
         print(f"restarted: {url}")
         return 0
     if args.command == "status":
