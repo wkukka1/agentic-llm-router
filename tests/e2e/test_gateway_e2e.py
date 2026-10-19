@@ -213,20 +213,28 @@ def test_a_gateway_that_cannot_start_hands_the_session_to_anthropic_and_back(rig
     assert any(r["status"] == 200 for r in new_records(rig, before)), "routed through the gateway again"
 
 
-def test_the_gateway_dying_mid_turn_does_not_end_the_turn(rig):
+def test_the_gateway_dying_mid_turn_does_not_end_the_turn(rig, tmp_path):
     rig.ensure_up()
     rig.write_settings()
-    proc = subprocess.Popen(
-        ["claude", "-p", "Use the Bash tool to run exactly: sleep 15 ; echo done. Then reply with just: finished",
-         "--allowedTools", "Bash(sleep 15 ; echo done)"],
-        cwd=rig.project, env={k: v for k, v in os.environ.items()
-                              if not k.startswith("AAR_") and k != "ANTHROPIC_BASE_URL"},
-        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    time.sleep(8)  # inside the tool call
-    rig.write_settings(config=rig.broken)
-    rig.gateway("stop")
-    out, _ = proc.communicate(timeout=300)
-    assert "finished" in out.lower()
+    out_file = tmp_path / "stream.jsonl"
+    with out_file.open("w") as out:
+        proc = subprocess.Popen(
+            ["claude", "-p", "Use the Bash tool to run exactly: sleep 15 ; echo done. Then reply with just: finished",
+             "--output-format", "stream-json", "--verbose",
+             "--allowedTools", "Bash(sleep 15 ; echo done)"],
+            cwd=rig.project, env={k: v for k, v in os.environ.items()
+                                  if not k.startswith("AAR_") and k != "ANTHROPIC_BASE_URL"},
+            stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, text=True)
+        # stop only once the tool call has actually started: a fixed sleep raced a slow model
+        deadline = time.monotonic() + 180
+        while '"name":"Bash"' not in out_file.read_text() and time.monotonic() < deadline:
+            time.sleep(0.5)
+        assert '"name":"Bash"' in out_file.read_text(), "the tool call never started"
+        rig.write_settings(config=rig.broken)
+        rig.gateway("stop")
+        proc.wait(timeout=300)
+    text = out_file.read_text()
+    assert '"finished"' in text or "finished" in text.lower()
     assert (rig.data / "bypassed").exists()
     rig.write_settings()
     rig.ensure_up()
