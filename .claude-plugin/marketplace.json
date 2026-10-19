@@ -1,13 +1,15 @@
 {
   "name": "aar-gateway",
-  "owner": { "name": "AAR" },
+  "owner": {
+    "name": "AAR"
+  },
   "description": "AAR Gateway: see your plan-usage savings inside Claude Code",
   "plugins": [
     {
       "name": "aar-gateway",
       "source": "./mods/aar-gateway",
-      "description": "Shows your gateway savings in the session status line, and adds /aar-savings. Read-only: it only reads the local gateway's stats.",
-      "version": "0.1.0"
+      "description": "Shows your gateway savings and cache hits in Claude Code: a line under each answer, and the totals on the status line. Read-only.",
+      "version": "0.2.0"
     }
   ]
 }
