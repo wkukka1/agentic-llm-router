@@ -6,7 +6,7 @@ from __future__ import annotations
 import pandas as pd
 
 from evaluation.gateway import pool
-from evaluation.gateway.grade import judge_prompt, parse_verdicts
+from aar_gateway.grading.grade import judge_prompt, parse_verdicts
 
 
 def msg(role, text, kind="text"):

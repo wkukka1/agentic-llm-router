@@ -32,17 +32,15 @@ agentic = ["langchain>=0.3", "langchain-core>=0.3", "langchain-ollama"]
 # router.llm.adapters.ollama: serve routed calls through a local `ollama serve`
 # (OllamaAdapter, ClientRegistry.ollama). No API key, no LangChain.
 ollama = ["ollama>=0.4"]
-# router.gateway: HTTP front door (Anthropic/OpenAI wire protocols) over the
-# agentic ClientRegistry. Core install needs none of this -- deliberately
-# kept free of `research` below so `pip install -e ".[gateway]"` stays a
-# seconds-long, no-native-build install for someone who only wants to run
-# the gateway locally (see docs/gateway.md).
-gateway = ["fastapi", "uvicorn[standard]", "httpx", "fastembed", "huggingface_hub"]  # httpx: upstream client; fastembed: the router's text encoder without PyTorch; huggingface_hub: opt-in usage sharing (fastembed needs it anyway)
+# The HTTP gateway lives in ./aar-gateway (its own package, mirrored to
+# github.com/wkukka1/aar-gateway with `git subtree`). This repo uses it for
+# gateway evaluation (evaluation.gateway) and the ingest tests; `uv sync` picks
+# it up from [tool.uv.sources]; with pip: `pip install -e ./aar-gateway`.
+gateway = ["aar-gateway"]
 # The data pipeline + model training/eval stack (training/, evaluation/,
 # most of decompose/): heavy, sometimes-native-build dependencies that
-# nothing in router.agentic/router.llm/router.gateway actually imports
-# (verified: importing router.gateway pulls in numpy/pandas/pyarrow, never
-# these). Split out so those three stay installable without them.
+# nothing in router.agentic/router.llm actually imports. Split out so those
+# stay installable without them.
 research = [
     "datasets",
     "scikit-learn",
@@ -64,15 +62,12 @@ research = [
 [project.scripts]
 router-phase0 = "training.phase0:main"
 prompt-decomposition = "scripts.prompt_decomposition_cli:main"
-aar-gateway = "router.gateway.cli:main"
-aar-gateway-grade = "evaluation.gateway.grade:main"
-aar-gateway-subagents = "evaluation.gateway.subagent_baseline:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.setuptools.package-data]
-"router.gateway" = ["static/*.html", "routers/*.npz"]
+[tool.uv.sources]
+aar-gateway = { path = "aar-gateway", editable = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -156,10 +151,8 @@ include = [
   "src/evaluation/prompt_decomposition/**/*.py",
   "scripts/prompt_decomposition_cli.py",
   "tests/prompt_decomposition/**/*.py",
-  "src/router/gateway/**/*.py",
   "src/evaluation/gateway/**/*.py",
   "src/router/llm/**/*.py",
-  "tests/router/gateway/**/*.py",
   "src/ingest/**/*.py",
   "tests/ingest/**/*.py",
 ]

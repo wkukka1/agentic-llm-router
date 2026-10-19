@@ -13,7 +13,7 @@ import uvicorn
 
 from ingest.app import create_app
 from ingest.publish_kaggle import publish
-from router.gateway import share
+from aar_gateway import share
 
 LOGGED = {"ts": "2026-10-18T10:00:00+00:00", "requested_model": "claude-opus-5-5", "routed_model": "claude-haiku-5-5",
           "reason": "cheapest within 0.05", "status": 200, "subagent": False, "input_tokens": 9, "output_tokens": 3,

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from ingest.schema import validate_record
-from router.gateway import share
+from aar_gateway import share
 
 LOGGED = {"ts": "2026-10-18T10:00:00+00:00", "requested_model": "claude-opus-5-5", "routed_model": "claude-haiku-5-5",
           "reason": "cheapest within 0.05 utility of the best", "status": 200, "subagent": False, "agent_role": None,

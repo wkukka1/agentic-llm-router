@@ -18,10 +18,10 @@ pip install -e ".[dev,research]"
 
 `research` is everything the data pipeline / training / evaluation stack
 needs (torch, transformers, faiss-cpu, umap-learn, hdbscan, ...) — split out
-from the base install so `router.agentic`/`router.llm`/`router.gateway` stay
+from the base install so `router.agentic`/`router.llm` stay
 installable without it. Only running the HTTP gateway locally (no training,
-no evaluation)? Skip straight to `pip install -e ".[gateway]"` and
-[docs/gateway.md](gateway.md) — none of the above.
+no evaluation)? Skip straight to `pip install -e ./aar-gateway` and
+[aar-gateway/docs/gateway.md](../aar-gateway/docs/gateway.md) — none of the above.
 
 **GPU check** (this machine has an RTX 3050 Ti — worth 11x on embedding
 encode speed):

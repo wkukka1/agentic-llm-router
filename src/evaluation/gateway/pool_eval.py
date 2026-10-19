@@ -37,7 +37,7 @@ from pathlib import Path
 
 import numpy as np
 
-from router.gateway.config import read_jsonl
+from aar_gateway.config import read_jsonl
 
 TIERS = ("claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5")  # cheapest first
 
@@ -147,8 +147,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     router = proxies = None
     if args.router_file:
-        from router.gateway.config import DEFAULT_MODELS
-        from router.gateway.routing import load_router_model
+        from aar_gateway.config import DEFAULT_MODELS
+        from aar_gateway.routing import load_router_model
 
         router = load_router_model({"artifact": args.router_file})
         proxies = {t: DEFAULT_MODELS[t]["proxy"] for t in TIERS}

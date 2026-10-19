@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from ingest.app import create_app
-from router.gateway import share
+from aar_gateway import share
 
 LOGGED = {"ts": "2026-10-18T10:00:00+00:00", "requested_model": "claude-opus-5-5", "routed_model": "claude-haiku-5-5",
           "reason": "cheapest", "status": 200, "subagent": False, "input_tokens": 1, "output_tokens": 1}

@@ -26,7 +26,7 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[research,gateway,dev]"
+          pip install -e ./aar-gateway -e ".[research,dev]"
           pip install pytest ruff pytest-github-actions-annotate-failures
 
       - name: Lint
@@ -38,7 +38,7 @@ jobs:
         run: pytest -q
 
   gateway:
-    # What a user installs: the gateway extra alone -- no torch, none of the
+    # What a user installs: the aar-gateway package alone -- no torch, none of the
     # research stack. Its tests must pass on every OS people run Claude Code on.
     strategy:
       fail-fast: false
@@ -57,7 +57,7 @@ jobs:
       - name: Install (gateway only)
         run: |
           python -m pip install --upgrade pip
-          pip install ".[gateway]" pytest pytest-github-actions-annotate-failures
+          pip install "./aar-gateway[dev]" pytest-github-actions-annotate-failures
 
       - name: Test
-        run: pytest -q -p no:cacheprovider tests/router/gateway tests/router/llm/adapters/test_claude_subscription.py
+        run: pytest -q -p no:cacheprovider aar-gateway/tests

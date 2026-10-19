@@ -27,7 +27,7 @@ in the response and never stored or echoed. There is no way to read stored data 
 
 Point gateways at it with `aar-gateway share endpoint https://your-host/v1/records` (or
 `AAR_GATEWAY_SHARE_ENDPOINT`). To ship a default for everyone, set `DEFAULT_ENDPOINT` in
-`router/gateway/share.py`.
+`aar_gateway/share.py` (in `aar-gateway/`).
 
 ## Publish to Kaggle
 

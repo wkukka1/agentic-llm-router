@@ -151,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
         rows = arena_rows(args.n, args.seed, pool_dir)
     else:
         rows = swe_rows(args.n, args.seed, pool_dir, args.repos.split(",") if args.repos else None)
-    from .history import merge_into
+    from aar_gateway.grading.history import merge_into
 
     added = merge_into(pool_dir / "turns.jsonl", rows)
     print(f"added {added} {args.source} prompt(s) to {pool_dir / 'turns.jsonl'}", file=sys.stderr)

@@ -62,7 +62,7 @@ The README is a front door; the depth lives in `docs/`:
 | [routing_interface.md](routing_interface.md) | The `RouterModel` ABC, `RoutingResult`, registered strategies (`matrix`/`nirt`/`knn`/`mlp`/`random`) |
 | [routing_evaluation.md](routing_evaluation.md) | Oracle labels, regret/hit metrics, the prediction-vs-routing distinction |
 | [agentic_router.md](agentic_router.md) | `AgenticRouter`: triage → single call or recursive decompose/route/synthesize |
-| [gateway.md](gateway.md) | HTTP front door (Anthropic/OpenAI wire protocols) over the `ClientRegistry`, config format, Claude-subscription vs. metered-key lanes |
+| [gateway.md](../aar-gateway/docs/gateway.md) | HTTP front door (Anthropic/OpenAI wire protocols) over the `ClientRegistry`, config format, Claude-subscription vs. metered-key lanes |
 | [anchor_judge.md](anchor_judge.md) | The query-matched gold/preference overlap pipeline resolving whether correctness and human/judge preference are one utility or two |
 
 ## Installation
@@ -83,18 +83,18 @@ what you're touching doesn't pull in what you're not:
   stack: `torch`, `transformers`, `sentence-transformers`, `faiss-cpu`,
   `umap-learn`, `hdbscan`, `scikit-learn`, `matplotlib`, `scipy`,
   `huggingface_hub`, `tabulate`, `datasets`. Nothing in
-  `router.agentic`/`router.llm`/`router.gateway` imports any of this.
+  `router.agentic`/`router.llm` imports any of this.
 * `pip install -e ".[agentic]"` — `langchain` / `langchain-core`, for
   `LangChainClient` and `LangChainToolOrchestrator`. The core agentic path
   (echo/callable backends, `RecursiveOrchestrator`, `HeuristicTriage`) needs
   none of this.
 * `pip install -e ".[labeling]"` — `openai` / `anthropic` SDKs, for the
   anchor-judge pipeline and the future LLM cluster-labelling stage.
-* `pip install -e ".[gateway]"` — just `fastapi` / `uvicorn`, for the HTTP
+* `pip install -e ./aar-gateway` — just `fastapi` / `uvicorn`, for the HTTP
   gateway (`aar-gateway`) that exposes the `ClientRegistry` over the
   Anthropic/OpenAI wire protocols. A seconds-long install with no `research`
   needed — this is the path for someone who only wants to run the gateway
-  locally. See [docs/gateway.md](gateway.md).
+  locally. See [docs/gateway.md](../aar-gateway/docs/gateway.md).
 * `pip install lm-eval` — to run lm-evaluation-harness yourself.
 
 ## Quickstart: routing
@@ -224,7 +224,7 @@ Full write-up: [docs/agentic_router.md](agentic_router.md).
 
 ## Gateway
 
-[`src/router/gateway/`](../src/router/gateway/) runs Claude Code through the
+[`aar-gateway/`](../aar-gateway/) (its own package, mirrored to the standalone `aar-gateway` repo) runs Claude Code through the
 router, the way claude-code-router does: a local process Claude Code points
 at, keeping the user's own login and tools. At every new message the trained
 router picks the model for that turn. It only ever picks a model as cheap as
@@ -234,7 +234,7 @@ to Anthropic on the user's login; other models (OpenAI-compatible APIs,
 Ollama) get the request with its tools translated. A dashboard shows actual
 cost against "no router" and "always the strongest model".
 `aar-gateway code` / `aar-gateway dashboard`; walkthrough in
-[docs/gateway.md](gateway.md).
+[docs/gateway.md](../aar-gateway/docs/gateway.md).
 
 ## Configuration
 
