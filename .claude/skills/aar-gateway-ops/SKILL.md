@@ -27,11 +27,10 @@ command you may use, what it changes, and whether it needs the user's approval.
 3. **Never** kill processes by name pattern. Stop a gateway only with
    `aar-gateway stop`, which uses the pid file, or by a pid you read from
    `/health`.
-4. **Never** edit `~/.claude/settings.json`, `~/.aar-gateway/config.yaml` or any
-   token file by hand. Use the commands.
-5. **Never** print, log or quote a token, an API key, or the contents of
-   `~/.aar-gateway/share/token`.
-6. **Never** read prompt text (`turns.jsonl`) unless the user asks for a specific
+4. **Never** edit `~/.claude/settings.json`, `~/.aar-gateway/config.yaml` or
+   `~/.aar-gateway/share/endpoint` by hand. Use the commands.
+5. **Never** print, log or quote a token or an API key.
+6. **Never** read prompt text (`turns.jsonl`, `history/`, `history show`) unless the user asks for a specific
    prompt. The request log holds no prompt text; keep it that way.
 7. **Never** send anything off the machine, and never run `share upload` unless
    the user asks for that upload.
@@ -99,4 +98,4 @@ Each one is a symptom, the checks to run, and the fix to propose.
 - Linux: start-at-login uses systemd user units; check with `service status`.
 
 **Sharing usage data**
-- `share status --json`. Never show the token. Upload only on request (confirm).
+- `share status --json`. Upload only on request (confirm).
