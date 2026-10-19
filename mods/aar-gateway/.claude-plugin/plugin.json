@@ -1,6 +1,6 @@
 {
   "name": "aar-gateway",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Savings from the local AAR Gateway, shown in Claude Code. Read-only.",
   "author": {
     "name": "AAR"

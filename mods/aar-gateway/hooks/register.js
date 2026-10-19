@@ -79,7 +79,9 @@ export function register(on) {
     if (e.agentId || !turn || !turn.requests) return next(e)
     const text = turnLine(turn)
     turn = null
+    // let Claude Code and other mods finish the turn first, then add the line
+    const result = await next(e)
     $.ui.status(await statusLine($))
-    return { text }
+    return { ...(result || {}), text: result && result.text ? result.text + '\n' + text : text }
   })
 }

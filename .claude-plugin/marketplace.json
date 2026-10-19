@@ -9,7 +9,7 @@
       "name": "aar-gateway",
       "source": "./mods/aar-gateway",
       "description": "Shows your gateway savings and cache hits in Claude Code: a line under each answer, and the totals on the status line. Read-only.",
-      "version": "0.2.0"
+      "version": "0.2.1"
     }
   ]
 }
