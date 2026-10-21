@@ -14,6 +14,7 @@ function world(on: On, gateway: 'up' | 'down', picked: string | null = 'claude-h
   const routeBodies: any[] = []
   on('session.id', async () => ({ value: 'session-under-test' }))
   on('session.model', async () => ({ value: 'claude-opus-5-5' }))
+  on('classic.SessionStart', async ($, e) => e as any)  // the settings hooks beneath: none answer it
   on('turn.start', async ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', async ($, e) => ({ text: (e as any).answer ?? '' }))  // as core: the answer itself
   on('ui.status', async () => ({ value: undefined }))
@@ -170,6 +171,26 @@ test('an API error that ends a routed turn says so and keeps the session on the 
 test('a resumed session goes back to the model first asked for when the gateway says so', { options: { route: true } }, async ($, on) => {
   // the session reports the model it resumed on; the gateway says the person first asked for another
   const w = world(on, 'up', null, undefined, 'claude-sonnet-5')
+  on('env.get', async () => ({ value: undefined }))
+  await $.classic.SessionStart({ source: 'resume' } as any)
   await oneTurn($, 'next step', 1)
+  expect(w.routeBodies[0].resumed).toBe(true)
   expect(w.sent).toEqual(['claude-sonnet-5'])
+})
+
+test('only the first turn of a resumed session asks the gateway about the resume', { options: { route: true } }, async ($, on) => {
+  const w = world(on, 'up')
+  on('env.get', async () => ({ value: undefined }))
+  await $.classic.SessionStart({ source: 'resume' } as any)
+  await oneTurn($, 'first', 1)
+  await oneTurn($, 'second', 1)
+  expect(w.routeBodies.map(b => b.resumed)).toEqual([true, false])
+})
+
+test('a new session, or a /model choice, is never read as a resume', { options: { route: true } }, async ($, on) => {
+  const w = world(on, 'up')
+  on('env.get', async () => ({ value: undefined }))
+  await $.classic.SessionStart({ source: 'startup' } as any)
+  await oneTurn($, 'rename this variable', 1)
+  expect(w.routeBodies[0].resumed).toBe(false)
 })

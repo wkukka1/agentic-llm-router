@@ -122,7 +122,8 @@ export const register: Register = (on, options) => {
   let viaProxy = false
   let paneOpen = false
   const roles: Record<string, string> = {}  // subagent id -> its kind of work, for the pane
-  const failed: string[] = []  // routed models that failed in this session: not routed to again  // a plugin reload runs no session.start: the first turn opens the pane then
+  const failed: string[] = []  // routed models that failed in this session: not routed to again
+  let resumed = false  // this session was resumed (claude -c): its first turn says so to the gateway
   let sessionModel = ''
   // the current main-loop turn: what it ran on and its cache use; its routed model when routing here
   let turn: (CacheTotals & { requests: number; models: string[]; model: string | null }) | null = null
@@ -166,8 +167,15 @@ export const register: Register = (on, options) => {
     }
   })
 
+  on('classic.SessionStart', async ($, e, next) => {
+    resumed = e.source === 'resume'
+    return next(e)
+  })
+
   on('turn.start', async ($, e, next) => {
     if (e.agentId) return next(e)
+    const isResumed = resumed
+    resumed = false
     if (!paneOpen) {
       paneOpen = true
       void $.ui.open({ id: PANE, title: 'Aptic' })
@@ -180,7 +188,8 @@ export const register: Register = (on, options) => {
       const picked = await getJson($, '/api/route', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text: e.text, model: asked, session_id: String(await $.session.id()), blocked: failed }),
+        body: JSON.stringify({ text: e.text, model: asked, session_id: String(await $.session.id()), blocked: failed,
+          resumed: isResumed }),
       })
       // the gateway may correct the model asked for: a resumed session restarts on the model
       // this plugin last switched to, and the person asked for the one before
