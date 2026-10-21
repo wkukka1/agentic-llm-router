@@ -1,16 +1,24 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 // Beneath the mod: the session, a gateway answering (or not), and the model
 function world(on: On, gateway: 'up' | 'down', picked = 'claude-haiku-5-5') {
   const asked: string[] = []
   const sent: string[] = []
+  const toasts: string[] = []
+  const ran: string[] = []
   on('session.id', async () => ({ value: 'session-under-test' }))
   on('session.model', async () => ({ value: 'claude-opus-5-5' }))
   on('turn.start', async ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', async () => ({ text: '' }))
   on('ui.status', async () => ({ value: undefined }))
-  on('clock.every', async () => ({ value: { cancel() {} } }))
+  mock.clock(on)
+  on('session.start', async ($, e) => ({ cwd: (e as any).cwd }))
+  on('command.register', async () => ({ value: undefined }))
+  on('ui.open', async () => ({ value: { isPlaced: false } }))
+  on('ui.toast', async ($, e) => { toasts.push(String((e as any).text ?? e)); return { value: undefined } })
+  on('process.run', async ($, e) => { ran.push(e.argv.join(' ')); throw new Error('spawn uvx ENOENT') })
+  on('fs.exists', async () => ({ value: true }))
   on('http.fetch', async ($, e) => {
     asked.push(String(e.url).replace('http://127.0.0.1:8787', ''))
     if (gateway === 'down') throw new Error('connect ECONNREFUSED')
@@ -27,7 +35,7 @@ function world(on: On, gateway: 'up' | 'down', picked = 'claude-haiku-5-5') {
       usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 9000, cache_creation_input_tokens: 990, model: e.model },
     } as any
   })
-  return { asked, sent }
+  return { asked, sent, toasts, ran }
 }
 
 async function oneTurn($: any, text: string, steps = 2) {
@@ -47,7 +55,7 @@ test('with routing on, every request of the turn goes to the model the gateway p
   expect(done.text).toMatch(/haiku 5\.5 · cache 90% hit/)
 })
 
-test('with routing off (the default), the model is left alone and the router is not asked', async ($, on) => {
+test('with routing off, the model is left alone and the router is not asked', { options: { route: false } }, async ($, on) => {
   const w = world(on, 'up')
   await oneTurn($, 'rename this variable')
   expect(w.sent).toEqual(['claude-opus-5-5', 'claude-opus-5-5'])
@@ -67,4 +75,32 @@ test('a subagent request is neither switched nor counted in the line', { options
   const sub = $.turn.step({ turnId: 't9', index: 0, model: 'claude-opus-5-5', messageCount: 1, agentId: 'a1' })
   for await (const _ of sub) { /* drain */ }
   expect(w.sent).toEqual(['claude-opus-5-5'])
+})
+
+test('a session straight to Anthropic reports each request to the gateway; one through the proxy does not', async ($, on) => {
+  const w = world(on, 'up')
+  on('env.get', async ($, e) => ({ value: undefined }))
+  await $.session.start({ source: 'startup', cwd: '/tmp/project' } as any)
+  await oneTurn($, 'rename this variable')
+  expect(w.asked.filter(p => p === '/api/mod-record').length).toBe(2)
+})
+
+test('through the proxy, nothing is reported twice', async ($, on) => {
+  const w = world(on, 'up')
+  on('env.get', async ($, e) => ({ value: String((e as any).name ?? e).includes('ANTHROPIC_BASE_URL') ? 'http://127.0.0.1:8787' : undefined }))
+  await $.session.start({ source: 'startup', cwd: '/tmp/project' } as any)
+  await oneTurn($, 'rename this variable')
+  expect(w.asked).not.toContain('/api/mod-record')
+})
+
+test('with the gateway down and no uv, the plugin says how to get uv and Claude Code carries on', async ($, on) => {
+  const w = world(on, 'down')
+  on('env.get', async () => ({ value: '/home/someone' }))
+  await $.session.start({ source: 'startup', cwd: '/tmp/project' } as any)
+  for (let i = 0; i < 50 && w.toasts.length === 0; i++) await new Promise(r => setTimeout(r, 10))
+  expect(w.ran.length).toBeGreaterThan(0)
+  expect(w.toasts.join(' ')).toMatch(/needs uv/)
+  const done: any = await oneTurn($, 'rename this variable')
+  expect(w.sent).toEqual(['claude-opus-5-5', 'claude-opus-5-5'])
+  expect(done.text).toMatch(/opus 5\.5/)
 })

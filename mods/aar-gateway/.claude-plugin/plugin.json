@@ -1,15 +1,28 @@
 {
   "name": "aar-gateway",
-  "version": "0.3.0",
+  "displayName": "AAR Gateway",
+  "version": "0.4.0",
   "description": "AAR Gateway inside Claude Code: a pane with each request's model, cache use and savings, and optional routing done by Claude Code itself.",
-  "author": { "name": "AAR" },
+  "author": {
+    "name": "AAR",
+    "url": "https://github.com/wkukka1/agentic-llm-router"
+  },
+  "homepage": "https://github.com/wkukka1/agentic-llm-router",
+  "repository": "https://github.com/wkukka1/agentic-llm-router",
+  "keywords": [
+    "routing",
+    "cost",
+    "models",
+    "cache",
+    "savings"
+  ],
   "types": "./types/index.d.ts",
   "userConfig": {
     "route": {
       "type": "boolean",
       "title": "Route in Claude Code",
-      "description": "Switch each turn's model from inside Claude Code, using the gateway's router (off: the gateway proxy routes, as before).",
-      "default": false
+      "description": "Switch each turn's model from inside Claude Code using the gateway's router (on by default; off leaves routing to the gateway's proxy, if you enabled it).",
+      "default": true
     }
   }
 }

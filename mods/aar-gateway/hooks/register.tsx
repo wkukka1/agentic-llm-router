@@ -75,8 +75,38 @@ async function refresh($: any): Promise<void> {
   )
 }
 
+// How the plugin runs the gateway when it isn't running: uv fetches and caches it,
+// so the user installs nothing by hand. Pinned to the release this plugin ships with.
+export const GATEWAY_SPEC = 'aar-gateway @ git+https://github.com/wkukka1/agentic-llm-router@main#subdirectory=aar-gateway'
+
+// Start the gateway if nothing answers: first-time setup (router file, config,
+// nothing else changed), then a background start. Resolves to what happened.
+async function ensureGateway($: any): Promise<'running' | 'started' | 'failed' | 'no-uv'> {
+  if (await getJson($, '/health')) return 'running'
+  const home = String((await $.env.get('HOME')) || (await $.env.get('USERPROFILE')) || '')
+  const sep = home.includes('\\') ? '\\' : '/'
+  // VS Code started from the dock often lacks ~/.local/bin on PATH: try uv's own install folder too
+  for (const uvx of ['uvx', home + sep + '.local' + sep + 'bin' + sep + 'uvx']) {
+    const run = (args: string[]) => $.process.run([uvx, '--from', GATEWAY_SPEC, 'aar-gateway', ...args], { timeoutMs: 600_000 })
+    try {
+      if (home && !(await $.fs.exists(home + sep + '.aar-gateway' + sep + 'config.yaml'))) {
+        await run(['setup', '--no-enable', '--no-share', '--no-mod'])
+      }
+      await run(['start', '--quiet'])
+    } catch {
+      continue  // this uvx isn't there (or couldn't start): try the next
+    }
+    return (await getJson($, '/health')) ? 'started' : 'failed'
+  }
+  return 'no-uv'
+}
+
 export const register: Register = (on, options) => {
-  const routeInClaudeCode = Boolean(options?.route)
+  const routeInClaudeCode = options?.route !== false  // on unless turned off: a plugin-only session has no proxy
+  // set at session start: whether this session's requests go through the gateway's proxy
+  // (it logs them itself) or straight to Anthropic (the mod reports them)
+  let viaProxy = false
+  let sessionModel = ''
   // the current main-loop turn: what it ran on and its cache use; its routed model when routing here
   let turn: (CacheTotals & { requests: number; models: string[]; model: string | null }) | null = null
 
@@ -84,6 +114,14 @@ export const register: Register = (on, options) => {
     await $.command.register({ name: 'aar-savings', description: 'Show the gateway savings and cache use now' })
     await $.command.register({ name: 'aar-pane', description: 'Open the AAR gateway pane' })
     void $.ui.open({ id: PANE, title: 'AAR gateway' })
+    viaProxy = String((await $.env.get('ANTHROPIC_BASE_URL')) || '').includes('127.0.0.1:8787')
+    sessionModel = String(await $.session.model())
+    ensureGateway($).then(state => {
+      if (state === 'no-uv') {
+        $.ui.toast('AAR gateway needs uv to run its router: install it from https://docs.astral.sh/uv/ then restart Claude Code.')
+      }
+      return refresh($)
+    }).catch(() => {})
     refresh($).catch(() => {})  // display only: a failed refresh shows the old numbers
     $.clock.every(EVERY_MS, () => refresh($).catch(() => {}))
     return next(e)
@@ -110,9 +148,10 @@ export const register: Register = (on, options) => {
   on('turn.start', async ($, e, next) => {
     if (e.agentId) return next(e)
     turn = { read: 0, written: 0, fresh: 0, requests: 0, models: [], model: null }
+    sessionModel = String(await $.session.model())
     if (routeInClaudeCode && e.text) {
       // ask the gateway's router; no answer keeps the model Claude Code asked for
-      const asked = String(await $.session.model())
+      const asked = sessionModel
       const picked = await getJson($, '/api/route', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -136,6 +175,19 @@ export const register: Register = (on, options) => {
       turn.requests += 1
       if (u.model && !turn.models.includes(u.model)) turn.models.push(u.model)
       await update($, cache, c => ({ read: c.read + add.read, written: c.written + add.written, fresh: c.fresh + add.fresh }))
+    }
+    if (u && !viaProxy) {
+      // straight to Anthropic: the gateway never saw this request, so report its usage for the savings and the pane
+      getJson($, '/api/mod-record', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          session_id: String(await $.session.id()), agent_id: e.agentId, new_turn: !e.agentId && e.index === 0,
+          requested_model: sessionModel || e.model, routed_model: u.model || (mine && turn ? turn.model : null) || e.model,
+          input_tokens: u.input_tokens, output_tokens: u.output_tokens,
+          cache_read_input_tokens: u.cache_read_input_tokens, cache_creation_input_tokens: u.cache_creation_input_tokens,
+        }),
+      }).catch(() => {})
     }
     return result
   })
