@@ -14,7 +14,7 @@ function world(on: On, gateway: 'up' | 'down', picked = 'claude-haiku-5-5') {
   on('session.id', async () => ({ value: 'session-under-test' }))
   on('session.model', async () => ({ value: 'claude-opus-5-5' }))
   on('turn.start', async ($, e) => ({ turnId: e.turnId }))
-  on('turn.complete', async () => ({ text: '' }))
+  on('turn.complete', async ($, e) => ({ text: (e as any).answer ?? '' }))  // as core: the answer itself
   on('ui.status', async () => ({ value: undefined }))
   mock.clock(on)
   on('session.start', async ($, e) => ({ cwd: (e as any).cwd }))
@@ -134,4 +134,11 @@ test("a subagent's requests are reported with its kind of work, for the pane", {
   expect(spawned.model).toBe('haiku')
   for await (const _ of $.turn.step({ turnId: 't9', index: 0, model: 'claude-haiku-5-5', messageCount: 1, agentId: 'agent-7' })) { /* drain */ }
   expect(w.reports.at(-1)).toMatchObject({ agent_id: 'agent-7', agent_role: 'lookup' })
+})
+
+test('the line under an answer is the summary alone, never the answer again', { options: { route: true } }, async ($, on) => {
+  world(on, 'up')
+  const done: any = await oneTurn($, 'rename this variable')
+  expect(done.text).toMatch(/^Aptic: haiku 5\.5 · cache 90% hit/)
+  expect(done.text).not.toContain('done')
 })

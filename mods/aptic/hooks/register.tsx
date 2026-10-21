@@ -236,7 +236,10 @@ export const register: Register = (on, options) => {
     turn = null
     const result: any = await next(e)  // let Claude Code and other mods finish the turn first
     refresh($).catch(() => {})  // display only: a failed refresh shows the old numbers
-    return { ...(result || {}), text: result && result.text ? result.text + '\n' + text : text }
+    // `text` from beneath is the answer itself unless another plugin put a note there;
+    // whatever differs from the answer is shown under it, as one line
+    const note = result && result.text && result.text !== e.answer ? result.text + ' · ' : ''
+    return { ...(result || {}), text: 'Aptic: ' + note + text }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
