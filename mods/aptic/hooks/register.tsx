@@ -121,7 +121,8 @@ export const register: Register = (on, options) => {
   // (it logs them itself) or straight to Anthropic (the mod reports them)
   let viaProxy = false
   let paneOpen = false
-  const roles: Record<string, string> = {}  // subagent id -> its kind of work, for the pane  // a plugin reload runs no session.start: the first turn opens the pane then
+  const roles: Record<string, string> = {}  // subagent id -> its kind of work, for the pane
+  const failed: string[] = []  // routed models that failed in this session: not routed to again  // a plugin reload runs no session.start: the first turn opens the pane then
   let sessionModel = ''
   // the current main-loop turn: what it ran on and its cache use; its routed model when routing here
   let turn: (CacheTotals & { requests: number; models: string[]; model: string | null }) | null = null
@@ -179,7 +180,7 @@ export const register: Register = (on, options) => {
       const picked = await getJson($, '/api/route', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text: e.text, model: asked, session_id: String(await $.session.id()) }),
+        body: JSON.stringify({ text: e.text, model: asked, session_id: String(await $.session.id()), blocked: failed }),
       })
       turn.model = picked && picked.model ? picked.model : null
     }
@@ -189,7 +190,17 @@ export const register: Register = (on, options) => {
   // Each request: on the turn's routed model when routing here; count its cache use
   on('turn.step', async function* ($, e, next) {
     const mine = !e.agentId && turn
-    const result = yield* next(mine && turn!.model ? { ...e, model: turn!.model } : e)
+    const routed = mine && turn!.model && turn!.model !== e.model ? turn!.model : null
+    let result
+    try {
+      result = yield* next(routed ? { ...e, model: routed } : e)
+    } catch (err) {
+      if (!routed) throw err
+      // the routed model failed outright: this request, and the session's next turns, on the model asked for
+      if (!failed.includes(routed)) failed.push(routed)
+      turn!.model = null
+      result = yield* next(e)
+    }
     const u: any = result && (result as any).usage
     if (mine && u && turn) {
       const add = { read: u.cache_read_input_tokens || 0, written: u.cache_creation_input_tokens || 0, fresh: u.input_tokens || 0 }
@@ -231,6 +242,11 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.complete', async ($, e, next) => {
+    if (!e.agentId && turn && turn.model && turn.model !== sessionModel && e.reason === 'error' && !failed.includes(turn.model)) {
+      // an API error ended a routed turn: don't route to that model again this session
+      failed.push(turn.model)
+      $.ui.toast(`Aptic: ${pretty(turn.model)} failed, so this session stays on ${pretty(sessionModel)}. Send your message again.`)
+    }
     if (e.agentId || !turn || !turn.requests) return next(e)
     const text = turnLine(turn)
     turn = null

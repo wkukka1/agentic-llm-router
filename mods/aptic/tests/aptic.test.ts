@@ -5,12 +5,13 @@ import { vsAsked, why } from '../hooks/register'
 import type { TurnRow } from '../types'
 
 // Beneath the mod: the session, a gateway answering (or not), and the model
-function world(on: On, gateway: 'up' | 'down', picked = 'claude-haiku-5-5') {
+function world(on: On, gateway: 'up' | 'down', picked = 'claude-haiku-5-5', failing?: string) {
   const asked: string[] = []
   const sent: string[] = []
   const toasts: string[] = []
   const ran: string[] = []
   const reports: any[] = []
+  const routeBodies: any[] = []
   on('session.id', async () => ({ value: 'session-under-test' }))
   on('session.model', async () => ({ value: 'claude-opus-5-5' }))
   on('turn.start', async ($, e) => ({ turnId: e.turnId }))
@@ -28,6 +29,7 @@ function world(on: On, gateway: 'up' | 'down', picked = 'claude-haiku-5-5') {
     if (gateway === 'down') throw new Error('connect ECONNREFUSED')
     const path = String(e.url)
     if (path.includes('/api/mod-record')) reports.push(JSON.parse(String(e.init?.body)))
+    if (path.includes('/api/route')) routeBodies.push(JSON.parse(String(e.init?.body)))
     const body = path.includes('/api/route') ? { model: picked, reason: 'cheapest' }
       : path.includes('/api/subagent-spawn') ? { alias: 'haiku', role: 'lookup' }
       : path.includes('/stats') ? { totals: { requests: 10, cost_usd: 7, cost_if_requested_usd: 10 } }
@@ -36,12 +38,13 @@ function world(on: On, gateway: 'up' | 'down', picked = 'claude-haiku-5-5') {
   })
   on('turn.step', async function* ($, e) {
     sent.push(e.model)
+    if (e.model === failing) throw new Error('404 model not found')
     return {
       turnId: e.turnId, index: e.index, answer: 'done', toolUses: [],
       usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 9000, cache_creation_input_tokens: 990, model: e.model },
     } as any
   })
-  return { asked, sent, toasts, ran, reports }
+  return { asked, sent, toasts, ran, reports, routeBodies }
 }
 
 async function oneTurn($: any, text: string, steps = 2) {
@@ -141,4 +144,25 @@ test('the line under an answer is the summary alone, never the answer again', { 
   const done: any = await oneTurn($, 'rename this variable')
   expect(done.text).toMatch(/^Aptic: haiku 5\.5 · cache 90% hit/)
   expect(done.text).not.toContain('done')
+})
+
+test('a routed model that fails is retried on the model asked for, and not routed to again', { options: { route: true } }, async ($, on) => {
+  const w = world(on, 'up', 'claude-haiku-5-5', 'claude-haiku-5-5')
+  on('env.get', async () => ({ value: undefined }))
+  await oneTurn($, 'rename this variable', 1)
+  expect(w.sent).toEqual(['claude-haiku-5-5', 'claude-opus-5-5'])
+  await $.turn.start({ text: 'and this one', turnId: 't2' })
+  expect(w.routeBodies.at(-1).blocked).toEqual(['claude-haiku-5-5'])
+})
+
+test('an API error that ends a routed turn says so and keeps the session on the model asked for', { options: { route: true } }, async ($, on) => {
+  const w = world(on, 'up')
+  on('env.get', async () => ({ value: undefined }))
+  await $.session.start({ source: 'startup', cwd: '/tmp/project' } as any)
+  await $.turn.start({ text: 'rename this variable', turnId: 't1' })
+  for await (const _ of $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', messageCount: 3 })) { /* drain */ }
+  await $.turn.complete({ turnId: 't1', answer: '', durationMs: 10, isAborted: false, reason: 'error' } as any)
+  expect(w.toasts.join(' ')).toMatch(/haiku 5\.5 failed, so this session stays on opus 5\.5/)
+  await $.turn.start({ text: 'again', turnId: 't2' })
+  expect(w.routeBodies.at(-1).blocked).toEqual(['claude-haiku-5-5'])
 })
