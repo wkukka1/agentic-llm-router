@@ -1,6 +1,9 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
+import { vsAsked, why } from '../hooks/register'
+import type { TurnRow } from '../types'
+
 // Beneath the mod: the session, a gateway answering (or not), and the model
 function world(on: On, gateway: 'up' | 'down', picked = 'claude-haiku-5-5') {
   const asked: string[] = []
@@ -25,7 +28,7 @@ function world(on: On, gateway: 'up' | 'down', picked = 'claude-haiku-5-5') {
     const path = String(e.url)
     const body = path.includes('/api/route') ? { model: picked, reason: 'cheapest' }
       : path.includes('/stats') ? { totals: { requests: 10, cost_usd: 7, cost_if_requested_usd: 10 } }
-      : { saved_pct: 30, recent: [] }
+      : { saved_pct: 30, turns: [] }
     return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify(body) } }
   })
   on('turn.step', async function* ($, e) {
@@ -103,4 +106,16 @@ test('with the gateway down and no uv, the plugin says how to get uv and Claude 
   const done: any = await oneTurn($, 'rename this variable')
   expect(w.sent).toEqual(['claude-opus-5-5', 'claude-opus-5-5'])
   expect(done.text).toMatch(/opus 5\.5/)
+})
+
+test('the pane says in words why each turn ran where it did', async () => {
+  const turn = (models: string[], reason: string): TurnRow => ({
+    time: '21:11', requested_model: 'claude-opus-5-5', models, reason, requests: 3, side_requests: 0, errors: 0,
+    cache_read: 0, cache_written: 0, fresh: 0, saved_pct: null, subagents: [],
+  })
+  const routed = 'routed in Claude Code: cheapest within 0.08 utility of the best'
+  expect(why(turn(['claude-opus-5-5'], routed))).toBe('router: needs opus 5.5')
+  expect(why(turn(['claude-sonnet-5-5'], routed))).toBe('router: sonnet 5.5 should do as well')
+  expect(why(turn(['claude-opus-5-5'], "client's choice"))).toBe('your model, as asked')
+  expect([vsAsked(48), vsAsked(0), vsAsked(-5), vsAsked(null)]).toEqual(['48% less', 'same usage', '5% more', ''])
 })

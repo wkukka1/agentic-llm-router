@@ -1,8 +1,10 @@
-# AAR Gateway
+# Aptic
+
+by Deuce Labs
 
 **Use less of your Claude plan in Claude Code, with the same login, tools and skills.**
 
-AAR Gateway runs on your computer, between Claude Code and Anthropic. For every
+Aptic runs on your computer, beside Claude Code. For every
 message you type it picks the cheapest Claude model that should answer it about
 as well as the one you chose — Haiku or Sonnet for the easy ones, your model
 for the hard ones — and sends the request on your own login. Subagents
@@ -28,7 +30,7 @@ progress. Your own numbers show up on the dashboard as you work.
 In Claude Code:
 
 ```
-/plugin install aar-gateway --marketplace wkukka1/agentic-llm-router
+/plugin install aptic --marketplace wkukka1/agentic-llm-router
 ```
 
 That's all. The next session the plugin starts the router in the background
@@ -36,8 +38,9 @@ That's all. The next session the plugin starts the router in the background
 each turn's model from inside Claude Code. Nothing else on your machine
 changes: no settings are edited and no proxy sits between Claude Code and
 Anthropic, so if the router ever stops, Claude Code simply keeps the model
-you chose. `/aar-pane` opens a pane with every request's model, cache use
-and savings; `/aar-savings` prints the totals. Turn routing off in `/config`
+you chose. `/aptic-pane` opens a pane with each turn's model, why it ran
+there, cache use and savings; `/aptic` prints the totals (and starts the
+router if it isn't running). Turn routing off in `/config`
 (the plugin's "Route in Claude Code" setting), or remove the plugin from
 `/plugin`.
 
@@ -127,7 +130,7 @@ don't.
 ## Savings inside Claude Code (optional)
 
 Setup can also add a small Claude Code plugin that shows your savings on the
-status line (every minute) and as `/aar-savings`. It only reads the local
+status line (every minute) and as `/aptic`. It only reads the local
 gateway's numbers and changes nothing. Setup asks; `aar-gateway setup --mod`
 adds it without asking, and `aar-gateway disable` removes it. It needs
 Claude Code 2.1.287 or later.
@@ -202,3 +205,7 @@ export <file>` look at it, `aar-gateway history off` stops keeping messages,
 * [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — the research code: data pipeline,
   router training, evaluation
 * [docs/RUNBOOK.md](docs/RUNBOOK.md) — every pipeline, step by step
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE).

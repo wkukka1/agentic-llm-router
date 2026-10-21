@@ -1,7 +1,7 @@
-# AAR Gateway for Claude Code
+# Aptic for Claude Code
 
 Use less of your Claude plan with the same login, tools and skills. For each
-message you type, AAR Gateway picks the cheapest Claude model that should answer
+message you type, Aptic picks the cheapest Claude model that should answer
 it about as well as the model you chose, and switches the turn to it from inside
 Claude Code. Subagents get a model by the kind of work they do.
 
@@ -10,17 +10,19 @@ Claude Code. Subagents get a model by the kind of work they do.
 In Claude Code:
 
 ```
-/plugin install aar-gateway --marketplace wkukka1/agentic-llm-router
+/plugin install aptic --marketplace wkukka1/agentic-llm-router
 ```
 
 ## What you get
 
 * **Routing per turn**, by a small trained router that runs on your computer.
   Turn it off in `/config` (the plugin's "Route in Claude Code" setting).
-* **A pane** (`/aar-pane`): every request's model, why, cache hit and cost
-  against the model you asked for; this session's and all sessions' savings.
+* **A pane** (`/aptic-pane`): one row per turn, newest first, with its time,
+  the model it ran on, why, its cache hit and its usage against the model you
+  asked for, and any subagents and their models; this session's and all
+  sessions' savings.
 * **A line under each answer** with the model that answered and its cache use,
-  and the totals on the status line. `/aar-savings` prints them.
+  and the totals on the status line. `/aptic` prints them.
 
 ## Requirements
 
@@ -41,3 +43,5 @@ In Claude Code:
 
 Source, tests and the measurements behind the numbers:
 https://github.com/wkukka1/agentic-llm-router
+
+License: Apache-2.0.

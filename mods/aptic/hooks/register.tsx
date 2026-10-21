@@ -1,21 +1,22 @@
-// AAR Gateway inside Claude Code: a pane with each request's model, cache use
-// and savings; a line under each answer; and, with the `route` option on, the
-// model switched per turn from inside Claude Code using the gateway's router.
-// The gateway being down never blocks anything: the mod then keeps the model
+// Aptic inside Claude Code: each turn's model switched from inside Claude Code
+// by the local router (the `route` option, on by default); a pane with each
+// turn's model, why, cache use and savings; and a line under each answer.
+// The router being down never blocks anything: the mod then keeps the model
 // Claude Code asked for and shows what it can count itself.
 
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import type { CacheTotals, GatewayView, RequestRow } from '../types'
+import type { CacheTotals, GatewayView, TurnRow } from '../types'
 
 const GATEWAY = 'http://127.0.0.1:8787'
-const PANE = 'aar-gateway'
+const PANE = 'aptic'
 const EVERY_MS = 60_000
 
-const empty: GatewayView = { isRunning: false, sessionSavedPct: null, allSavedPct: null, allRequests: 0, recent: [] }
-const gateway = atom({ plugin: 'aar-gateway', key: 'gateway' } as const, empty)
-const cache = atom({ plugin: 'aar-gateway', key: 'cache' } as const, { read: 0, written: 0, fresh: 0 })
+const empty: GatewayView = { isRunning: false, sessionSavedPct: null, allSavedPct: null, allRequests: 0, turns: [] }
+const gateway = atom({ plugin: 'aptic', key: 'gateway' } as const, empty)
+const cache = atom({ plugin: 'aptic', key: 'cache' } as const, { read: 0, written: 0, fresh: 0 })
+const DOWN = "Aptic's router isn't running: /aptic starts it."
 
 // Share of the prompt read from the cache, of everything the requests sent
 export const hitRate = (u: CacheTotals): number | null => {
@@ -28,11 +29,24 @@ export const pretty = (m: string | null | undefined): string =>
 
 const k = (n: number): string => (n >= 1000 ? Math.round(n / 1000) + 'k' : String(n))
 
-// One request's cost against the model asked for, as the pane prints it
-export const vsAsked = (r: RequestRow): string => {
-  if (r.cost_usd == null || !r.cost_if_requested_usd) return ''
-  const pct = Math.round((1 - r.cost_usd / r.cost_if_requested_usd) * 100)
-  return pct === 0 ? 'same' : pct > 0 ? `-${pct}%` : `+${-pct}%`
+// A turn's usage against the model asked for, as the pane prints it
+export const vsAsked = (pct: number | null): string =>
+  pct == null ? '' : pct === 0 ? 'same usage' : pct > 0 ? `${pct}% less` : `${-pct}% more`
+
+const kept = (t: TurnRow): boolean => t.models.every(m => m === t.requested_model)
+
+// Why a turn ran where it did, in words (the gateway logs the router's own terms)
+export const why = (t: TurnRow): string => {
+  const r = (t.reason || '').replace(/^routed in Claude Code: /, '')
+  if (/^cheapest within/.test(r) || r === 'router') {
+    return kept(t) ? `router: needs ${pretty(t.requested_model)}` : `router: ${pretty(t.models.at(-1))} should do as well`
+  }
+  if (r.startsWith('continues a server-side thread')) return 'continues a thread, so stays on its model'
+  if (r === "client's choice" || r === 'as asked' || r === 'same turn as the previous request') return 'your model, as asked'
+  if (r === 'no eligible candidates') return 'no cheaper model fits this prompt'
+  if (r.startsWith('side request')) return "Claude Code's own small requests"
+  if (r.startsWith('fell back')) return 'the routed model failed, so your model answered'
+  return r || 'your model, as asked'
 }
 
 // The model(s) that answered a turn and its cache use, for the line under the answer
@@ -55,7 +69,7 @@ async function refresh($: any): Promise<void> {
   const id = String(await $.session.id())
   const [stats, mine] = await Promise.all([
     getJson($, '/stats'),
-    getJson($, '/api/session-requests?limit=60&session_id=' + encodeURIComponent(id)),
+    getJson($, '/api/session-requests?limit=40&session_id=' + encodeURIComponent(id)),
   ])
   const t = stats && stats.totals
   const view: GatewayView = {
@@ -63,14 +77,14 @@ async function refresh($: any): Promise<void> {
     sessionSavedPct: mine ? mine.saved_pct : null,
     allSavedPct: t && t.cost_if_requested_usd ? Math.round((1 - t.cost_usd / t.cost_if_requested_usd) * 100) : null,
     allRequests: t ? t.requests : 0,
-    recent: mine ? mine.recent : [],
+    turns: mine && mine.turns ? mine.turns : [],
   }
   await update($, gateway, () => view)
   const hit = hitRate(await read($, cache))
   $.ui.status(
     (view.isRunning
-      ? `AAR gateway: ${view.allSavedPct ?? '–'}% less plan usage than no router · ${view.allRequests} requests`
-      : 'AAR gateway: not running (run `aar-gateway start`)') +
+      ? `Aptic: ${view.allSavedPct ?? '–'}% less plan usage · ${view.allRequests} requests`
+      : DOWN) +
       (hit === null ? '' : ` · this session's cache: ${hit}% hit`),
   )
 }
@@ -111,14 +125,14 @@ export const register: Register = (on, options) => {
   let turn: (CacheTotals & { requests: number; models: string[]; model: string | null }) | null = null
 
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'aar-savings', description: 'Show the gateway savings and cache use now' })
-    await $.command.register({ name: 'aar-pane', description: 'Open the AAR gateway pane' })
-    void $.ui.open({ id: PANE, title: 'AAR gateway' })
+    await $.command.register({ name: 'aptic', description: "Show Aptic's savings now (and start its router if it isn't running)" })
+    await $.command.register({ name: 'aptic-pane', description: 'Open the Aptic pane' })
+    void $.ui.open({ id: PANE, title: 'Aptic' })
     viaProxy = String((await $.env.get('ANTHROPIC_BASE_URL')) || '').includes('127.0.0.1:8787')
     sessionModel = String(await $.session.model())
     ensureGateway($).then(state => {
       if (state === 'no-uv') {
-        $.ui.toast('AAR gateway needs uv to run its router: install it from https://docs.astral.sh/uv/ then restart Claude Code.')
+        $.ui.toast('Aptic needs uv to run its router: install it from https://docs.astral.sh/uv/ then restart Claude Code.')
       }
       return refresh($)
     }).catch(() => {})
@@ -127,21 +141,24 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  on('command.run', { command: 'aar-pane' }, async $ => {
-    await $.ui.open({ id: PANE, title: 'AAR gateway', focus: true })
-    return { text: 'AAR gateway pane opened.' }
+  on('command.run', { command: 'aptic-pane' }, async $ => {
+    await $.ui.open({ id: PANE, title: 'Aptic', focus: true })
+    return { text: 'Aptic pane opened.' }
   })
 
-  on('command.run', { command: 'aar-savings' }, async $ => {
+  on('command.run', { command: 'aptic' }, async $ => {
+    const state = await ensureGateway($)
     await refresh($)
     const view = await read($, gateway)
     const hit = hitRate(await read($, cache))
+    if (!view.isRunning) {
+      return { text: state === 'no-uv' ? 'Aptic needs uv to run its router: https://docs.astral.sh/uv/' : "Aptic's router couldn't start." }
+    }
     return {
-      text: view.isRunning
-        ? `AAR gateway: ${view.allSavedPct ?? '–'}% less plan usage than no router · ${view.allRequests} requests` +
-          (view.sessionSavedPct == null ? '' : ` · this session: ${view.sessionSavedPct}%`) +
-          (hit === null ? '' : ` · cache ${hit}% hit`)
-        : 'AAR gateway: not running (run `aar-gateway start`)',
+      text: (state === 'started' ? "Started Aptic's router. " : '') +
+        `Aptic: ${view.allSavedPct ?? '–'}% less plan usage · ${view.allRequests} requests` +
+        (view.sessionSavedPct == null ? '' : ` · this session: ${view.sessionSavedPct}% less`) +
+        (hit === null ? '' : ` · cache ${hit}% hit`),
     }
   })
 
@@ -216,32 +233,44 @@ export const register: Register = (on, options) => {
     const { Box, Text } = $.ui.resolve(e)
     const view = await read($, gateway)
     const hit = hitRate(await read($, cache))
-    const room = Math.max(3, (e.props.scroll?.bodyRows ?? (e.viewport?.rows ?? 24) - 8) - 4)
-    const rows = view.recent.slice(-room).reverse()
+    // each turn takes two lines, plus one per subagent kind
+    const room = Math.max(2, Math.floor(((e.props.scroll?.bodyRows ?? (e.viewport?.rows ?? 24) - 8) - 5) / 2))
+    const turns = view.turns.slice(-room).reverse()
     return (
       <Box flexDirection="column">
-        {!view.isRunning && <Text dimColor>AAR gateway isn't running: run `aar-gateway start`.</Text>}
-        <Text>
-          This session: {view.sessionSavedPct == null ? '–' : view.sessionSavedPct + '% less plan usage'}
+        {!view.isRunning && <Text color="warning">{DOWN}</Text>}
+        <Text weight="semibold">
+          This session: {view.sessionSavedPct == null ? '–' : vsAsked(Math.round(view.sessionSavedPct)) + ' plan usage'}
           {hit === null ? '' : ` · cache ${hit}% hit`}
         </Text>
         <Text dimColor>
-          All sessions: {view.allSavedPct == null ? '–' : view.allSavedPct + '% less'} · {view.allRequests} requests ·
-          routing {routeInClaudeCode ? 'in Claude Code' : 'by the gateway'}
+          All sessions: {view.allSavedPct == null ? '–' : vsAsked(view.allSavedPct)} · {view.allRequests} requests
         </Text>
+        <Text dimColor>Routing {routeInClaudeCode ? 'in Claude Code' : 'by the proxy'} · newest turn first</Text>
         <Text> </Text>
-        {rows.length === 0 && <Text dimColor>No requests yet in this session.</Text>}
-        {rows.map((r: RequestRow) => {
-          const total = (r.cache_read_input_tokens || 0) + (r.cache_creation_input_tokens || 0) + (r.input_tokens || 0)
-          const rhit = total ? Math.round(((r.cache_read_input_tokens || 0) / total) * 100) + '%' : '–'
-          const moved = r.routed_model !== r.requested_model
+        {turns.length === 0 && <Text dimColor>No turns yet in this session.</Text>}
+        {turns.map((t: TurnRow, i: number) => {
+          const moved = !kept(t)
+          const total = t.cache_read + t.cache_written + t.fresh
           return (
-            <Text dimColor={!moved && !r.subagent}>
-              {(r.ts || '').slice(11, 16)} {r.subagent ? '↳ ' + (r.agent_role || 'subagent') + ' ' : ''}
-              {moved ? `${pretty(r.requested_model)} → ${pretty(r.routed_model)}` : pretty(r.routed_model)}
-              {' · cache '}{rhit}{vsAsked(r) ? ' · ' + vsAsked(r) : ''}{r.status !== 200 ? ` · ${r.status}` : ''}
-              {r.reason ? ' · ' + r.reason : ''}
-            </Text>
+            <Box key={`turn-${i}`} flexDirection="column" marginBottom={1}>
+              <Text>
+                <Text dimColor>{t.time} </Text>
+                <Text weight="semibold">
+                  {moved ? `${pretty(t.requested_model)} → ${t.models.map(pretty).join(', ')}` : pretty(t.requested_model)}
+                </Text>
+                {t.saved_pct != null && moved ? <Text color="success"> · {vsAsked(t.saved_pct)}</Text> : ''}
+                <Text dimColor>
+                  {' · '}{t.requests} request{t.requests === 1 ? '' : 's'}
+                  {total ? ` · cache ${Math.round((t.cache_read / total) * 100)}%` : ''}
+                </Text>
+                {t.errors ? <Text color="error"> · {t.errors} failed</Text> : ''}
+              </Text>
+              <Text dimColor>      {why(t)}</Text>
+              {t.subagents.map(a => (
+                <Text dimColor>      ↳ {a.role} on {pretty(a.model)} · {a.requests} request{a.requests === 1 ? '' : 's'}</Text>
+              ))}
+            </Box>
           )
         })}
       </Box>

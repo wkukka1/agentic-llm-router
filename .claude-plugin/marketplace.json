@@ -1,15 +1,15 @@
 {
-  "name": "aar-gateway",
+  "name": "deuce-labs",
   "owner": {
-    "name": "AAR"
+    "name": "Deuce Labs"
   },
-  "description": "AAR Gateway: see your plan-usage savings inside Claude Code",
+  "description": "Deuce Labs plugins for Claude Code",
   "plugins": [
     {
-      "name": "aar-gateway",
-      "source": "./mods/aar-gateway",
-      "description": "A pane in Claude Code with each request's model, cache use and savings, a line under each answer, and optional routing done by Claude Code itself (the `route` setting, off by default).",
-      "version": "0.3.0"
+      "name": "aptic",
+      "source": "./mods/aptic",
+      "description": "Aptic picks the cheapest Claude model that can handle each turn, and shows what it saved in a pane inside Claude Code.",
+      "version": "0.5.0"
     }
   ]
 }

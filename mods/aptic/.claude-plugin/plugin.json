@@ -1,10 +1,10 @@
 {
-  "name": "aar-gateway",
-  "displayName": "AAR Gateway",
-  "version": "0.4.0",
-  "description": "AAR Gateway inside Claude Code: a pane with each request's model, cache use and savings, and optional routing done by Claude Code itself.",
+  "name": "aptic",
+  "displayName": "Aptic",
+  "version": "0.5.0",
+  "description": "Aptic picks the cheapest Claude model that can handle each turn and subagent, and shows each turn's model, cache use and savings in a pane inside Claude Code.",
   "author": {
-    "name": "AAR",
+    "name": "Deuce Labs",
     "url": "https://github.com/wkukka1/agentic-llm-router"
   },
   "homepage": "https://github.com/wkukka1/agentic-llm-router",
@@ -24,5 +24,6 @@
       "description": "Switch each turn's model from inside Claude Code using the gateway's router (on by default; off leaves routing to the gateway's proxy, if you enabled it).",
       "default": true
     }
-  }
+  },
+  "license": "Apache-2.0"
 }
