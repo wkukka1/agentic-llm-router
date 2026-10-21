@@ -117,5 +117,6 @@ test('the pane says in words why each turn ran where it did', async () => {
   expect(why(turn(['claude-opus-5-5'], routed))).toBe('router: needs opus 5.5')
   expect(why(turn(['claude-sonnet-5-5'], routed))).toBe('router: sonnet 5.5 should do as well')
   expect(why(turn(['claude-opus-5-5'], "client's choice"))).toBe('your model, as asked')
+  expect(why(turn(['claude-opus-5-5'], 'no eligible candidates'))).toBe('no model fit this request: kept yours')
   expect([vsAsked(48), vsAsked(0), vsAsked(-5), vsAsked(null)]).toEqual(['48% less', 'same usage', '5% more', ''])
 })

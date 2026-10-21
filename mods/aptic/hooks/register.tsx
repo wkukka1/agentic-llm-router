@@ -43,9 +43,9 @@ export const why = (t: TurnRow): string => {
   }
   if (r.startsWith('continues a server-side thread')) return 'continues a thread, so stays on its model'
   if (r === "client's choice" || r === 'as asked' || r === 'same turn as the previous request') return 'your model, as asked'
-  if (r === 'no eligible candidates') return 'no cheaper model fits this prompt'
+  if (r === 'no eligible candidates') return 'no model fit this request: kept yours'
   if (r.startsWith('side request')) return "Claude Code's own small requests"
-  if (r.startsWith('fell back')) return 'the routed model failed, so your model answered'
+  if (r.startsWith('fell back')) return 'routed model failed: yours answered'
   return r || 'your model, as asked'
 }
 
@@ -120,6 +120,7 @@ export const register: Register = (on, options) => {
   // set at session start: whether this session's requests go through the gateway's proxy
   // (it logs them itself) or straight to Anthropic (the mod reports them)
   let viaProxy = false
+  let paneOpen = false  // a plugin reload runs no session.start: the first turn opens the pane then
   let sessionModel = ''
   // the current main-loop turn: what it ran on and its cache use; its routed model when routing here
   let turn: (CacheTotals & { requests: number; models: string[]; model: string | null }) | null = null
@@ -128,6 +129,7 @@ export const register: Register = (on, options) => {
     await $.command.register({ name: 'aptic', description: "Show Aptic's savings now (and start its router if it isn't running)" })
     await $.command.register({ name: 'aptic-pane', description: 'Open the Aptic pane' })
     void $.ui.open({ id: PANE, title: 'Aptic' })
+    paneOpen = true
     viaProxy = String((await $.env.get('ANTHROPIC_BASE_URL')) || '').includes('127.0.0.1:8787')
     sessionModel = String(await $.session.model())
     ensureGateway($).then(state => {
@@ -164,6 +166,10 @@ export const register: Register = (on, options) => {
 
   on('turn.start', async ($, e, next) => {
     if (e.agentId) return next(e)
+    if (!paneOpen) {
+      paneOpen = true
+      void $.ui.open({ id: PANE, title: 'Aptic' })
+    }
     turn = { read: 0, written: 0, fresh: 0, requests: 0, models: [], model: null }
     sessionModel = String(await $.session.model())
     if (routeInClaudeCode && e.text) {
@@ -233,42 +239,44 @@ export const register: Register = (on, options) => {
     const { Box, Text } = $.ui.resolve(e)
     const view = await read($, gateway)
     const hit = hitRate(await read($, cache))
-    // each turn takes two lines, plus one per subagent kind
-    const room = Math.max(2, Math.floor(((e.props.scroll?.bodyRows ?? (e.viewport?.rows ?? 24) - 8) - 5) / 2))
-    const turns = view.turns.slice(-room).reverse()
+    // a turn takes four lines with its gap (more with subagents); the header five
+    const rows = e.props.scroll?.bodyRows ?? (e.viewport?.rows ?? 24) - 8
+    const turns = view.turns.slice(-Math.max(2, Math.floor((rows - 5) / 4))).reverse()
     return (
       <Box flexDirection="column">
         {!view.isRunning && <Text color="warning">{DOWN}</Text>}
         <Text weight="semibold">
           This session: {view.sessionSavedPct == null ? '–' : vsAsked(Math.round(view.sessionSavedPct)) + ' plan usage'}
-          {hit === null ? '' : ` · cache ${hit}% hit`}
         </Text>
         <Text dimColor>
           All sessions: {view.allSavedPct == null ? '–' : vsAsked(view.allSavedPct)} · {view.allRequests} requests
         </Text>
-        <Text dimColor>Routing {routeInClaudeCode ? 'in Claude Code' : 'by the proxy'} · newest turn first</Text>
-        <Text> </Text>
-        {turns.length === 0 && <Text dimColor>No turns yet in this session.</Text>}
+        <Text dimColor>Cache: {hit === null ? '–' : hit + '% hit'} · newest turn first</Text>
+        {turns.length === 0 && <Text dimColor>{'\n'}No turns yet in this session.</Text>}
         {turns.map((t: TurnRow, i: number) => {
           const moved = !kept(t)
           const total = t.cache_read + t.cache_written + t.fresh
           return (
-            <Box key={`turn-${i}`} flexDirection="column" marginBottom={1}>
-              <Text>
-                <Text dimColor>{t.time} </Text>
-                <Text weight="semibold">
-                  {moved ? `${pretty(t.requested_model)} → ${t.models.map(pretty).join(', ')}` : pretty(t.requested_model)}
+            <Box key={`turn-${i}`} flexDirection="column" marginTop={1}>
+              <Box justifyContent="space-between">
+                <Text>
+                  <Text dimColor>{t.time}  </Text>
+                  <Text weight="semibold">
+                    {moved ? `${pretty(t.requested_model).split(' ')[0]} → ${t.models.map(pretty).join(', ')}` : pretty(t.requested_model)}
+                  </Text>
                 </Text>
-                {t.saved_pct != null && moved ? <Text color="success"> · {vsAsked(t.saved_pct)}</Text> : ''}
-                <Text dimColor>
-                  {' · '}{t.requests} request{t.requests === 1 ? '' : 's'}
-                  {total ? ` · cache ${Math.round((t.cache_read / total) * 100)}%` : ''}
-                </Text>
-                {t.errors ? <Text color="error"> · {t.errors} failed</Text> : ''}
+                {moved && t.saved_pct != null
+                  ? <Text color={t.saved_pct >= 0 ? 'success' : 'warning'}>{vsAsked(t.saved_pct)}</Text>
+                  : <Text dimColor>as asked</Text>}
+              </Box>
+              <Text dimColor>       {why(t)}</Text>
+              <Text dimColor>
+                {'       '}{t.requests} request{t.requests === 1 ? '' : 's'}
+                {total ? ` · cache ${Math.round((t.cache_read / total) * 100)}%` : ''}
               </Text>
-              <Text dimColor>      {why(t)}</Text>
+              {t.errors ? <Text color="error">       {t.errors} failed and retried on your model</Text> : null}
               {t.subagents.map(a => (
-                <Text dimColor>      ↳ {a.role} on {pretty(a.model)} · {a.requests} request{a.requests === 1 ? '' : 's'}</Text>
+                <Text dimColor>       ↳ {a.role} on {pretty(a.model)} · {a.requests}</Text>
               ))}
             </Box>
           )
