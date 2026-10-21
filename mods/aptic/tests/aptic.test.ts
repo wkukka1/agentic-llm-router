@@ -10,6 +10,7 @@ function world(on: On, gateway: 'up' | 'down', picked = 'claude-haiku-5-5') {
   const sent: string[] = []
   const toasts: string[] = []
   const ran: string[] = []
+  const reports: any[] = []
   on('session.id', async () => ({ value: 'session-under-test' }))
   on('session.model', async () => ({ value: 'claude-opus-5-5' }))
   on('turn.start', async ($, e) => ({ turnId: e.turnId }))
@@ -26,7 +27,9 @@ function world(on: On, gateway: 'up' | 'down', picked = 'claude-haiku-5-5') {
     asked.push(String(e.url).replace('http://127.0.0.1:8787', ''))
     if (gateway === 'down') throw new Error('connect ECONNREFUSED')
     const path = String(e.url)
+    if (path.includes('/api/mod-record')) reports.push(JSON.parse(String(e.init?.body)))
     const body = path.includes('/api/route') ? { model: picked, reason: 'cheapest' }
+      : path.includes('/api/subagent-spawn') ? { alias: 'haiku', role: 'lookup' }
       : path.includes('/stats') ? { totals: { requests: 10, cost_usd: 7, cost_if_requested_usd: 10 } }
       : { saved_pct: 30, turns: [] }
     return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify(body) } }
@@ -38,7 +41,7 @@ function world(on: On, gateway: 'up' | 'down', picked = 'claude-haiku-5-5') {
       usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 9000, cache_creation_input_tokens: 990, model: e.model },
     } as any
   })
-  return { asked, sent, toasts, ran }
+  return { asked, sent, toasts, ran, reports }
 }
 
 async function oneTurn($: any, text: string, steps = 2) {
@@ -119,4 +122,16 @@ test('the pane says in words why each turn ran where it did', async () => {
   expect(why(turn(['claude-opus-5-5'], "client's choice"))).toBe('your model, as asked')
   expect(why(turn(['claude-opus-5-5'], 'no eligible candidates'))).toBe('no model fit this request: kept yours')
   expect([vsAsked(48), vsAsked(0), vsAsked(-5), vsAsked(null)]).toEqual(['48% less', 'same usage', '5% more', ''])
+})
+
+test("a subagent's requests are reported with its kind of work, for the pane", { options: { route: true } }, async ($, on) => {
+  const w = world(on, 'up')
+  on('env.get', async () => ({ value: undefined }))
+  on('agent.spawn', async ($, e) => ({ model: (e as any).model, agentId: 'agent-7' }) as any)
+  await $.session.start({ source: 'startup', cwd: '/tmp/project' } as any)
+  await $.turn.start({ text: 'find widget_checksum', turnId: 't1' })
+  const spawned: any = await $.agent.spawn({ subagentType: 'Explore', prompt: 'find widget_checksum', description: 'find' } as any)
+  expect(spawned.model).toBe('haiku')
+  for await (const _ of $.turn.step({ turnId: 't9', index: 0, model: 'claude-haiku-5-5', messageCount: 1, agentId: 'agent-7' })) { /* drain */ }
+  expect(w.reports.at(-1)).toMatchObject({ agent_id: 'agent-7', agent_role: 'lookup' })
 })

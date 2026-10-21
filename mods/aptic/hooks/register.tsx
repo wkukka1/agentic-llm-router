@@ -120,7 +120,8 @@ export const register: Register = (on, options) => {
   // set at session start: whether this session's requests go through the gateway's proxy
   // (it logs them itself) or straight to Anthropic (the mod reports them)
   let viaProxy = false
-  let paneOpen = false  // a plugin reload runs no session.start: the first turn opens the pane then
+  let paneOpen = false
+  const roles: Record<string, string> = {}  // subagent id -> its kind of work, for the pane  // a plugin reload runs no session.start: the first turn opens the pane then
   let sessionModel = ''
   // the current main-loop turn: what it ran on and its cache use; its routed model when routing here
   let turn: (CacheTotals & { requests: number; models: string[]; model: string | null }) | null = null
@@ -206,6 +207,7 @@ export const register: Register = (on, options) => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           session_id: String(await $.session.id()), agent_id: e.agentId, new_turn: !e.agentId && e.index === 0,
+          agent_role: e.agentId ? roles[e.agentId] ?? null : null,
           requested_model: sessionModel || e.model, routed_model: u.model || (mine && turn ? turn.model : null) || e.model,
           input_tokens: u.input_tokens, output_tokens: u.output_tokens,
           cache_read_input_tokens: u.cache_read_input_tokens, cache_creation_input_tokens: u.cache_creation_input_tokens,
@@ -223,7 +225,9 @@ export const register: Register = (on, options) => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ session_id: String(await $.session.id()), subagent_type: e.subagentType, prompt: e.prompt, model: (e as any).model }),
     })
-    return next(picked && picked.alias ? { ...e, model: picked.alias } : e)
+    const result: any = await next(picked && picked.alias ? { ...e, model: picked.alias } : e)
+    if (result && result.agentId && picked && picked.role) roles[result.agentId] = String(picked.role)
+    return result
   })
 
   on('turn.complete', async ($, e, next) => {
@@ -265,8 +269,7 @@ export const register: Register = (on, options) => {
                     {moved ? `${pretty(t.requested_model).split(' ')[0]} → ${t.models.map(pretty).join(', ')}` : pretty(t.requested_model)}
                   </Text>
                 </Text>
-                {moved && t.saved_pct != null
-                  ? <Text color={t.saved_pct >= 0 ? 'success' : 'warning'}>{vsAsked(t.saved_pct)}</Text>
+                {t.saved_pct ? <Text color={t.saved_pct >= 0 ? 'success' : 'warning'}>{vsAsked(t.saved_pct)}</Text>
                   : <Text dimColor>as asked</Text>}
               </Box>
               <Text dimColor>       {why(t)}</Text>
