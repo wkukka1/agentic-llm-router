@@ -5,7 +5,7 @@ import { vsAsked, why } from '../hooks/register'
 import type { TurnRow } from '../types'
 
 // Beneath the mod: the session, a gateway answering (or not), and the model
-function world(on: On, gateway: 'up' | 'down', picked = 'claude-haiku-5-5', failing?: string) {
+function world(on: On, gateway: 'up' | 'down', picked: string | null = 'claude-haiku-5-5', failing?: string, requested?: string) {
   const asked: string[] = []
   const sent: string[] = []
   const toasts: string[] = []
@@ -30,7 +30,7 @@ function world(on: On, gateway: 'up' | 'down', picked = 'claude-haiku-5-5', fail
     const path = String(e.url)
     if (path.includes('/api/mod-record')) reports.push(JSON.parse(String(e.init?.body)))
     if (path.includes('/api/route')) routeBodies.push(JSON.parse(String(e.init?.body)))
-    const body = path.includes('/api/route') ? { model: picked, reason: 'cheapest' }
+    const body = path.includes('/api/route') ? { model: picked, reason: 'cheapest', requested }
       : path.includes('/api/subagent-spawn') ? { alias: 'haiku', role: 'lookup' }
       : path.includes('/stats') ? { totals: { requests: 10, cost_usd: 7, cost_if_requested_usd: 10 } }
       : { saved_pct: 30, turns: [] }
@@ -165,4 +165,11 @@ test('an API error that ends a routed turn says so and keeps the session on the 
   expect(w.toasts.join(' ')).toMatch(/haiku 5\.5 failed, so this session stays on opus 5\.5/)
   await $.turn.start({ text: 'again', turnId: 't2' })
   expect(w.routeBodies.at(-1).blocked).toEqual(['claude-haiku-5-5'])
+})
+
+test('a resumed session goes back to the model first asked for when the gateway says so', { options: { route: true } }, async ($, on) => {
+  // the session reports the model it resumed on; the gateway says the person first asked for another
+  const w = world(on, 'up', null, undefined, 'claude-sonnet-5')
+  await oneTurn($, 'next step', 1)
+  expect(w.sent).toEqual(['claude-sonnet-5'])
 })

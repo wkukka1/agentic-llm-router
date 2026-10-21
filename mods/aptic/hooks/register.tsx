@@ -182,7 +182,10 @@ export const register: Register = (on, options) => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ text: e.text, model: asked, session_id: String(await $.session.id()), blocked: failed }),
       })
-      turn.model = picked && picked.model ? picked.model : null
+      // the gateway may correct the model asked for: a resumed session restarts on the model
+      // this plugin last switched to, and the person asked for the one before
+      if (picked && picked.requested && picked.requested !== asked) sessionModel = String(picked.requested)
+      turn.model = picked && picked.model ? picked.model : sessionModel !== asked ? sessionModel : null
     }
     return next(e)
   })
