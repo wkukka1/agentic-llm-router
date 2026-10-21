@@ -1,8 +1,10 @@
-# AAR Gateway
+# Aptic
+
+by Deuce Labs
 
 **Use less of your Claude plan in Claude Code, with the same login, tools and skills.**
 
-AAR Gateway runs on your computer, between Claude Code and Anthropic. For every
+Aptic runs on your computer, beside Claude Code. For every
 message you type it picks the cheapest Claude model that should answer it about
 as well as the one you chose — Haiku or Sonnet for the easy ones, your model
 for the hard ones — and sends the request on your own login. Subagents
@@ -17,42 +19,46 @@ progress. Your own numbers show up on the dashboard as you work.
 
 ## What you need
 
-* [Claude Code](https://claude.com/claude-code), installed and logged in
+* [Claude Code](https://claude.com/claude-code) 2.1.287 or later, logged in
   (a Claude subscription or an API key both work)
+* [uv](https://docs.astral.sh/uv/), which the plugin uses to run the router
+  (`curl -LsSf https://astral.sh/uv/install.sh | sh`; nothing else to install)
 * macOS or Linux (Windows is supported in the code but not yet tested)
 
 ## Install
 
+In Claude Code:
+
+```
+/plugin install aptic --marketplace wkukka1/agentic-llm-router
+```
+
+That's all. The next session the plugin starts the router in the background
+(the first time, uv downloads it: a few seconds) and from then on switches
+each turn's model from inside Claude Code. Nothing else on your machine
+changes: no settings are edited and no proxy sits between Claude Code and
+Anthropic, so if the router ever stops, Claude Code simply keeps the model
+you chose. `/aptic-pane` opens a pane with each turn's model, why it ran
+there, cache use and savings; `/aptic` prints the totals (and starts the
+router if it isn't running). Turn routing off in `/config`
+(the plugin's "Route in Claude Code" setting), or remove the plugin from
+`/plugin`.
+
+### Without the plugin (proxy mode)
+
+The gateway can also sit between Claude Code and Anthropic as a local proxy,
+for Claude Code versions without plugins or to route every session on the
+machine:
+
 ```bash
-# 1. uv, a fast Python installer that brings its own Python (skip if you have it)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# 2. the gateway (release v0.1.0, a beta), in its own isolated environment
-uv tool install "agentic-llm-router[gateway] @ git+https://github.com/wkukka1/agentic-llm-router@v0.1.0"
-
-# 3. first-time setup: installs the router and writes ~/.aar-gateway/config.yaml
+uv tool install "aar-gateway @ git+https://github.com/wkukka1/agentic-llm-router@main#subdirectory=aar-gateway"
 aar-gateway setup
 ```
 
-Setup asks one question: **use the gateway in every Claude Code session?**
-Answer `y` and plain `claude` goes through the gateway from then on. The
-gateway starts by itself (at login on macOS and Linux, and whenever a
-session starts if it isn't running), so you never run a command for it.
-Press Enter (the default is no) and nothing about Claude Code changes: start
-it with `aar-gateway code` whenever you want routing. You can change your
-mind any time with `aar-gateway enable` or `aar-gateway disable`.
-
-The router comes with the package: a small trained network (0.4 MB). To use
-one you built yourself, `aar-gateway setup --router <file>`
-([docs/RUNBOOK.md](docs/RUNBOOK.md)). `aar-gateway setup` ends by running
-`aar-gateway doctor`, which checks everything and says how to fix anything
-missing.
-
-To update to a newer release, run step 2 again with its tag and `--force`
-(`uv tool install --force "agentic-llm-router[gateway] @ git+https://github.com/wkukka1/agentic-llm-router@v0.2.0"`),
-then `aar-gateway restart`. To remove it, run
-`aar-gateway disable` first (if you enabled it), then `uv tool uninstall
-agentic-llm-router`; your settings stay in `~/.aar-gateway`.
+Setup asks whether to use the gateway in every Claude Code session (default
+no: start Claude Code with `aar-gateway code` instead), and whether to add
+the plugin too. `aar-gateway doctor` checks everything and says how to fix
+anything missing; `aar-gateway disable` undoes it.
 
 ## Use it
 
@@ -120,6 +126,14 @@ don't.
 | `aar-gateway service install` | start the gateway automatically at login |
 | `aar-gateway local add <model>` | optional: add a local model through Ollama |
 | `aar-gateway share [on/off/show/delete]` | optional: anonymous usage sharing (off by default) |
+
+## Savings inside Claude Code (optional)
+
+Setup can also add a small Claude Code plugin that shows your savings on the
+status line (every minute) and as `/aptic`. It only reads the local
+gateway's numbers and changes nothing. Setup asks; `aar-gateway setup --mod`
+adds it without asking, and `aar-gateway disable` removes it. It needs
+Claude Code 2.1.287 or later.
 
 ## Sharing usage data (optional, off by default)
 
@@ -191,3 +205,7 @@ export <file>` look at it, `aar-gateway history off` stops keeping messages,
 * [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — the research code: data pipeline,
   router training, evaluation
 * [docs/RUNBOOK.md](docs/RUNBOOK.md) — every pipeline, step by step
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE).

@@ -33,7 +33,7 @@ pytestmark = [
     pytest.mark.skipif(shutil.which("claude") is None, reason="claude is not installed"),
 ]
 
-SRC = str(Path(__file__).resolve().parents[2] / "src")
+SRC = str(Path(__file__).resolve().parents[2] / "aar-gateway" / "src")
 #: AAR_E2E_PYTHON=<an installed copy's python> tests that copy (e.g. a fresh
 #: `uv tool install` from GitHub) instead of this checkout's source
 INSTALLED = os.environ.get("AAR_E2E_PYTHON")
