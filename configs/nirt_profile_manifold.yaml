@@ -1,0 +1,73 @@
+# Profile-manifold NIRT: e_m -> z_m (autoencoder-shaped model side), pretrained on
+# Arena-Elo pseudo-labels over the big query store, then fine-tuned on the real
+# 29-model correctness data at a lower learning rate.
+#
+#   python scripts/nirt/profile_manifold.py build            # pseudo-labels
+#   python scripts/nirt/profile_manifold.py pretrain --dim 64
+#   python scripts/nirt/profile_manifold.py finetune --dim 64
+#   python scripts/nirt/profile_manifold.py sweep            # dims x seeds + controls
+#
+# `model` / `data` / `train` are a normal NIRT config (configs/nirt.yaml keys,
+# defaults filled by training.nirt.train.fit); the base matches the reference
+# run nirt-2d-projected (val BCE 0.5576). `pretrain` / `finetune` / `control` are
+# merged over `train` for each stage.
+
+seed: 42
+data:
+  pathway: irt
+model:
+  orientation: query_latent
+  dim: 2
+  model_params: projected
+  query_hidden: 64
+  constrain_discrimination: auto
+  profile_latent_dim: 64          # D -- swept; null turns the manifold off
+  profile_encoder_hidden: 512     # encoder/decoder hidden width; null -> linear
+train:
+  loss: soft_bce
+  lr: 1.0e-3
+  weight_decay: 1.0e-5
+  batch_size: 4096
+  epochs: 50
+  patience: 6
+  val_metric: bce
+  device: auto                    # cuda when available
+runs_dir: data/processed/nirt_runs
+
+profile_manifold:
+  tag: null                   # run-name suffix, e.g. "mini" for the data.pathway=retrieval variant
+  manifold: configs/model_manifold.yaml   # pool id -> Arena key (models + extra_models)
+  out_dir: data/processed/nirt_pretrain
+  pseudo:
+    n_queries: 150000         # sampled from the train-eligible query store rows
+    models_per_query: 8       # of the Arena-rated pool models, per query
+    val_fraction: 0.05        # held-out queries for pretrain early stopping
+    sources: [routerbench, irt_router]   # whose train scores fit the Elo -> quality map
+    seed: 0
+  pretrain:                   # stage 1: Elo pseudo-labels
+    lr: 1.0e-3
+    recon_weight: 1.0
+    epochs: 20
+    patience: 3
+  finetune:                   # stage 2: real data, warm start, lower lr
+    lr: 1.0e-4
+    lr_mult: {profile_encoder: 0.1}
+    recon_weight: 0.1
+  control:                    # same architecture, no pretraining, normal lr
+    lr: 1.0e-3
+    recon_weight: 0.1
+  sweep:
+    dims: [16, 64, 256, 1024]
+    seeds: [42, 43, 44]
+    reference_run: nirt-2d-projected
+    out: investigations/profile_manifold/sweep.csv
+  lr_sweep:                   # stage 2 at lower lr, warm-started from the sweep's pm-pre-* runs
+    dims: [64, 1024]
+    seeds: [42, 43, 44]
+    eval_sources: [irt_router, routerbench]
+    out: investigations/profile_manifold/lr_sweep.csv
+    grid:                     # each entry merged over `finetune`; run pm-ft-d<D>-s<seed>-<tag>
+      - {tag: lr3e-5, lr: 3.0e-5, lr_mult: {profile_encoder: 0.1}, epochs: 150, patience: 12}
+      - {tag: lr1e-5, lr: 1.0e-5, lr_mult: {profile_encoder: 0.1}, epochs: 150, patience: 12}
+      - {tag: lr3e-6, lr: 3.0e-6, lr_mult: {profile_encoder: 0.1}, epochs: 150, patience: 12}
+      - {tag: lr1e-5-frozen, lr: 1.0e-5, lr_mult: {profile_encoder: 0.0}, epochs: 150, patience: 12}

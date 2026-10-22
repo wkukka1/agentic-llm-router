@@ -6,7 +6,10 @@
 .venv-lmeval/
 *.egg-info/
 .pytest_cache/
-
+expirments/
+scratchpad/
+.ruff_cache/
+.import_linter_cache/
 # Data + build artifacts are reproducible from the scripts; do not commit them.
 data/raw/
 data/processed/
@@ -50,3 +53,6 @@ evaluations/LLMRouterBench/results.nosync/
 # a link to data kept outside iCloud (e.g. ~/.cache/aar/processed), and build output
 data/processed
 build/
+
+# third-party benchmark clone (its own git repo; fetched locally, never committed)
+evaluations/LLMRouterBench/

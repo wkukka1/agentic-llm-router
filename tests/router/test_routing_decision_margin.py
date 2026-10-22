@@ -30,12 +30,9 @@ COSTS = np.array([1.0, 0.1, 0.01])
 
 class TestZeroMarginIsUntouched:
     def test_it_is_plain_argmax(self):
+        # row 2 is a tie: it goes to the lowest column (np.argmax), not the cheapest.
+        # If this flips, every existing routing decision on a tie silently changes.
         assert routing_decision(PRED, model_costs=COSTS).tolist() == [0, 0, 0]
-
-    def test_ties_still_go_to_the_lowest_column_not_the_cheapest(self):
-        """The documented `np.argmax` semantics. If this flips, every existing
-        routing decision on a tie silently changes."""
-        assert routing_decision(PRED, model_costs=COSTS)[2] == 0
 
     def test_it_needs_no_costs_at_all(self):
         assert routing_decision(PRED).tolist() == [0, 0, 0]

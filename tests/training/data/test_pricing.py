@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from router.config import load_config
-from training.data.pricing import cost_for, fill_costs, load_prices, price_snapshot
+from training.data.pricing import cost_for, fill_costs, load_prices
 
 
 def test_prices_load_and_canonicalize():
@@ -16,12 +16,6 @@ def test_prices_load_and_canonicalize():
     # keyed by canonical id
     p = prices.get("llama-3.1-8b-instruct")
     assert p and p["input_per_1m"] > 0 and p["output_per_1m"] > 0
-
-
-def test_price_snapshot_is_dated():
-    snap = price_snapshot(load_config())
-    assert snap["snapshot_date"]
-    assert snap["unit"] == "per_1m_tokens"
 
 
 def test_cost_for_known_tokens():

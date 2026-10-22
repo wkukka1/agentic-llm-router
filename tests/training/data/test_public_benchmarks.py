@@ -187,3 +187,34 @@ def test_lookup_arena_elo_returns_none_for_unknown_model(tmp_path):
     path.write_text(csv_text, encoding="utf-8")
 
     assert lookup_arena_elo("gpt-4-1106-preview", table_path=path, snapshot_date="2023-12-07") is None
+
+
+def test_restricted_unpickle_loads_pandas_and_blocks_other_globals(tmp_path):
+    import os
+    import pickle
+
+    import pytest
+
+    import pandas as pd
+
+    from training.data.public_benchmarks import _restricted_unpickle, arena_category_elo_rows
+
+    # object-dtype labels: the real Arena pickles predate pyarrow-backed strings
+    table = pd.DataFrame([[1200.0, 1190.0, 1210.0, 500]],
+                         index=pd.Index(["model-x"], dtype=object),
+                         columns=pd.Index(["rating", "rating_q025", "rating_q975", "num_battles"],
+                                          dtype=object))
+    ok = tmp_path / "ok.pkl"
+    ok.write_bytes(pickle.dumps({"text": {"full": {"leaderboard_table_df": table}}}))
+    rows = arena_category_elo_rows(_restricted_unpickle(ok))
+    assert rows == [{"category": "full", "arena_key": "model-x", "rating": 1200.0,
+                     "rating_q025": 1190.0, "rating_q975": 1210.0, "num_battles": 500}]
+
+    class Evil:
+        def __reduce__(self):
+            return (os.system, ("echo pwned",))
+
+    bad = tmp_path / "bad.pkl"
+    bad.write_bytes(pickle.dumps(Evil()))
+    with pytest.raises(pickle.UnpicklingError, match="blocked"):
+        _restricted_unpickle(bad)

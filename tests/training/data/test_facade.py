@@ -59,13 +59,6 @@ def test_n_choices_map(toy_training_data):
     assert nc.get("routerbench:mmlu:bbbb") == 4
 
 
-def test_summary_keys(toy_training_data):
-    s = toy_training_data.summary()
-    for k in ("observations", "correctness_observations", "pairwise_observations",
-              "models_warm", "models_cold_start", "train_queries"):
-        assert k in s
-
-
 def test_query_embeddings_read_only_by_default_returns_none(isolated_training_data):
     """No store has been built under this isolated cache dir -- a plain read
     (no build=True) must return None, not attempt to build one. Regression

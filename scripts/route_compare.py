@@ -44,17 +44,41 @@ from evaluation.nirt.routing import (
 DEFAULT_REFERENCE = "gpt-4-1106-preview"
 
 
-def _nirt_matrix(run_name, data, split):
+def _nirt_matrix(run_name, data, split, *, prior_only=False):
+    """A run's [query x model] P(correct). ``prior_only`` (``model.elo_prior``
+    runs): ``sigmoid(ability_m)`` alone -- the query-blind "route by overall
+    ability" policy the per-query terms are measured against."""
     from router.nirt.checkpoint import load_run
     from router.nirt.predict import predict_matrix
 
     model, cfg, midx = load_run(run_name)
+    if prior_only:
+        import torch
+
+        with torch.no_grad():
+            # theta_q = theta_bar for every query -> logit = ability_m
+            model.query_head.apply(lambda m: _zero_(m))
+            last = [m for m in model.query_head.modules() if isinstance(m, torch.nn.Linear)][-1]
+            last.bias.copy_(model.theta_mean)
+            if getattr(model, "query_difficulty_on", False):
+                model.d_head.apply(lambda m: _zero_(m))     # d_q = 0
     dcfg = cfg.get("data", {}) or {}
     pathway = dcfg.get("pathway", "irt")
     query_pathway = dcfg.get("query_pathway") or None
     query_features = dcfg.get("query_features") or None
     return predict_matrix(model, midx, data, split, pathway=pathway, query_pathway=query_pathway,
                           query_features=query_features)
+
+
+def _zero_(module):
+    for p in module.parameters(recurse=False):
+        p.zero_()
+
+
+def _has_elo_prior(run_name) -> bool:
+    from router.nirt.checkpoint import load_run
+
+    return bool(getattr(load_run(run_name)[0], "elo_prior", False))
 
 
 def _run_split(split: str, label: str, d, cfg, args, pool) -> dict:
@@ -73,6 +97,11 @@ def _run_split(split: str, label: str, d, cfg, args, pool) -> dict:
     if str(args.irt_run).lower() != "none":
         preds[f"IRT-Router (paper, {args.irt_run})"] = \
             align(_nirt_matrix(args.irt_run, d, split), true_df)
+    for run in args.extra_runs:
+        preds[f"NIRT ({run})"] = align(_nirt_matrix(run, d, split), true_df)
+        if _has_elo_prior(run):
+            preds[f"ability only ({run})"] = align(
+                _nirt_matrix(run, d, split, prior_only=True), true_df)
     preds.update({
         "baseline NIRT (Bernoulli)": align(_pred_matrix(args.baseline, cfg, split, "proba"), true_df),
         "ZOIB  E[Y]": align(_pred_matrix(args.zoib, cfg, split, "mean"), true_df),
@@ -122,6 +151,9 @@ def main() -> int:
     ap.add_argument("--irt-run", default="irt-25d-projected",
                     help="the IRT-Router (model_latent) run to include as the paper baseline; "
                          "'none' to omit that row")
+    ap.add_argument("--extra-runs", default="",
+                    help="comma list of further NIRT runs to table; runs trained with "
+                         "model.elo_prior also get an 'ability only' row")
     ap.add_argument("--zoib", default="artifacts/phase2/zoib")
     ap.add_argument("--baseline", default="artifacts/phase1/baseline")
     ap.add_argument("--reference", default=DEFAULT_REFERENCE,
@@ -136,6 +168,7 @@ def main() -> int:
 
     splits_arg = args.splits or args.split or "test"
     splits = [s.strip() for s in splits_arg.split(",") if s.strip()]
+    args.extra_runs = [r.strip() for r in args.extra_runs.split(",") if r.strip()]
 
     cfg = load_config(args.config)
     d = load_training_data(cfg)

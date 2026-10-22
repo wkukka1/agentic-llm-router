@@ -1,0 +1,108 @@
+[
+ {
+  "router": "manifold-nirt-claude-judged.npz",
+  "health_router": {
+   "enabled": true,
+   "error": null,
+   "kind": "mlp",
+   "name": "nirt-judged-manifold-nirt-claude-judged",
+   "source": "C:\\Users\\dogpl\\VisualCode\\Projects\\agentic-llm-router\\aar-gateway\\src\\aar_gateway\\routers\\manifold-nirt-claude-judged.npz",
+   "models": [
+    "claude-haiku-4-5",
+    "claude-haiku-5-5",
+    "claude-opus-5",
+    "claude-opus-5-5",
+    "claude-sonnet-5",
+    "claude-sonnet-5-5"
+   ],
+   "calibration": {
+    "graded_prompts": 0,
+    "offsets": {}
+   }
+  },
+  "startup_s": 2.9,
+  "cold_route_ms": 42.9,
+  "first_answer": {
+   "model": "claude-haiku-5-5",
+   "reason": "cheapest within 0.05 utility of the best",
+   "predicted_quality": 0.6986,
+   "requested": "claude-opus-5-5"
+  },
+  "warm_calls": 120,
+  "p50_ms": 46.3,
+  "p95_ms": 169.4,
+  "max_ms": 182.0,
+  "short_p50_ms": 27.9,
+  "long_p50_ms": 150.8,
+  "n_long": 48,
+  "contract_violations": [],
+  "picks": {
+   "None": {
+    "claude-haiku-5-5": 7,
+    "claude-opus-5-5": 6,
+    "claude-sonnet-5-5": 27
+   },
+   "0.02": {
+    "claude-haiku-5-5": 2,
+    "claude-opus-5-5": 19,
+    "claude-sonnet-5-5": 19
+   },
+   "0.3": {
+    "claude-haiku-5-5": 18,
+    "claude-sonnet-5-5": 22
+   }
+  }
+ },
+ {
+  "router": "router.npz",
+  "health_router": {
+   "enabled": true,
+   "error": null,
+   "kind": "mlp",
+   "name": "mlp-llmrouterbench-h256",
+   "source": "C:\\Users\\dogpl\\.aar-gateway\\router.npz",
+   "models": [
+    "claude-haiku-4-5",
+    "claude-haiku-5-5",
+    "claude-opus-5",
+    "claude-opus-5-5",
+    "claude-sonnet-5",
+    "claude-sonnet-5-5"
+   ],
+   "calibration": {
+    "graded_prompts": 0,
+    "offsets": {}
+   }
+  },
+  "startup_s": 2.3,
+  "cold_route_ms": 23.3,
+  "first_answer": {
+   "model": "claude-opus-5-5",
+   "reason": "cheapest within 0.05 utility of the best",
+   "predicted_quality": 0.5833,
+   "requested": "claude-opus-5-5"
+  },
+  "warm_calls": 120,
+  "p50_ms": 25.9,
+  "p95_ms": 47.2,
+  "max_ms": 50.8,
+  "short_p50_ms": 23.7,
+  "long_p50_ms": 31.9,
+  "n_long": 48,
+  "contract_violations": [],
+  "picks": {
+   "None": {
+    "claude-haiku-5-5": 3,
+    "claude-opus-5-5": 20,
+    "claude-sonnet-5-5": 17
+   },
+   "0.02": {
+    "claude-opus-5-5": 31,
+    "claude-sonnet-5-5": 9
+   },
+   "0.3": {
+    "claude-haiku-5-5": 40
+   }
+  }
+ }
+]

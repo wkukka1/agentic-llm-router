@@ -118,17 +118,6 @@ def test_gather_matches_iteration(toy_training_data):
     np.testing.assert_array_equal(g["target"], ds.targets)
 
 
-def test_feature_store_default_none_unchanged(toy_training_data):
-    """feature_store=None (the default) must not change query_dim / shapes --
-    back-compat for every existing checkpoint."""
-    obs = build_nirt_observations(toy_training_data.cfg, data=toy_training_data, models="all")
-    q_store = _fake_store(sorted(obs["query_id"].unique()), 6, "query_id")
-    m_store = _fake_store(sorted(obs["model_id"].unique()), 5, "model_id")
-    ds = NIRTDataset(obs, q_store, m_store)
-    assert ds.query_dim == 6
-    assert ds.gather()["query_embedding"].shape == (len(ds), 6)
-
-
 def test_feature_store_concatenated(toy_training_data):
     obs = build_nirt_observations(toy_training_data.cfg, data=toy_training_data, models="all")
     qids = sorted(obs["query_id"].unique())

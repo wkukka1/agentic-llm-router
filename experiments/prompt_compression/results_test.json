@@ -1,0 +1,415 @@
+{
+  "zoib_ckpt": "C:\\Users\\dogpl\\VisualCode\\Projects\\agentic-llm-router\\artifacts\\phase2\\zoib_cost_length_v2",
+  "split": "test",
+  "source": "routerbench",
+  "models": [
+    "claude-instant-v1",
+    "claude-v1",
+    "claude-v2",
+    "code-llama-34b-instruct",
+    "gpt-3.5-turbo-1106",
+    "gpt-4-1106-preview",
+    "llama-2-70b-chat",
+    "mistral-7b-instruct",
+    "wizardlm-13b-v1.2",
+    "yi-34b-chat"
+  ],
+  "n_train": 58344,
+  "n_val": 7268,
+  "n_test": 7354,
+  "predictive": {
+    "ZOIB": {
+      "bce": 0.6107933601723894,
+      "mae": 0.35261406122231925,
+      "quality@argmax": 0.7906581452270873,
+      "regret@argmax": 0.12046505303236334
+    },
+    "Bottleneck64": {
+      "bce": 0.606373324296419,
+      "mae": 0.35055135057699355,
+      "quality@argmax": 0.7924938808811531,
+      "regret@argmax": 0.11862931737829752
+    },
+    "Full768": {
+      "bce": 0.6110662275149389,
+      "mae": 0.3523141084433085,
+      "quality@argmax": 0.7839543105792766,
+      "regret@argmax": 0.12716888768017406
+    }
+  },
+  "lams": [
+    0.0,
+    10.0,
+    20.0,
+    50.0,
+    100.0,
+    200.0,
+    1000.0
+  ],
+  "policies": {
+    "reference": {
+      "quality": 0.7882784878977427,
+      "cost_per_1k": 5.752100897470764,
+      "q_vs_reference": 0.0,
+      "cost_vs_reference": 0.0,
+      "reference_share": 1.0
+    },
+    "oracle_best_quality": {
+      "quality": 0.9111231982594505,
+      "cost_per_1k": 0.43178352406853415,
+      "q_vs_reference": 0.12284471036170785,
+      "cost_vs_reference": -0.9249346400967354,
+      "reference_share": 0.019853141147674735
+    },
+    "oracle_match_reference": {
+      "quality": 0.827168887680174,
+      "cost_per_1k": 0.35656810715257004,
+      "q_vs_reference": 0.03889039978243136,
+      "cost_vs_reference": -0.9380108044854785,
+      "reference_share": 0.019853141147674735
+    },
+    "oracle@0": {
+      "quality": 0.9111231982594505,
+      "cost_per_1k": 0.43178352406853415,
+      "q_vs_reference": 0.12284471036170785,
+      "cost_vs_reference": -0.9249346400967354,
+      "reference_share": 0.019853141147674735
+    },
+    "ZOIB + C_hat@0": {
+      "quality": 0.7906581452270873,
+      "cost_per_1k": 5.484301332608105,
+      "q_vs_reference": 0.002379657329344642,
+      "cost_vs_reference": -0.04655682673793371,
+      "reference_share": 0.8680989937449007
+    },
+    "ZOIB + C(m)@0": {
+      "quality": 0.7906581452270873,
+      "cost_per_1k": 5.484301332608105,
+      "q_vs_reference": 0.002379657329344642,
+      "cost_vs_reference": -0.04655682673793371,
+      "reference_share": 0.8680989937449007
+    },
+    "Bottleneck64 + C_hat@0": {
+      "quality": 0.7924938808811531,
+      "cost_per_1k": 4.570915016589611,
+      "q_vs_reference": 0.004215392983410449,
+      "cost_vs_reference": -0.20534860252547515,
+      "reference_share": 0.6717432689692684
+    },
+    "Bottleneck64 + C(m)@0": {
+      "quality": 0.7924938808811531,
+      "cost_per_1k": 4.570915016589611,
+      "q_vs_reference": 0.004215392983410449,
+      "cost_vs_reference": -0.20534860252547515,
+      "reference_share": 0.6717432689692684
+    },
+    "Full768 + C_hat@0": {
+      "quality": 0.7839543105792766,
+      "cost_per_1k": 4.234920127277672,
+      "q_vs_reference": -0.004324177318466127,
+      "cost_vs_reference": -0.2637611539220751,
+      "reference_share": 0.5901550176774545
+    },
+    "Full768 + C(m)@0": {
+      "quality": 0.7839543105792766,
+      "cost_per_1k": 4.234920127277672,
+      "q_vs_reference": -0.004324177318466127,
+      "cost_vs_reference": -0.2637611539220751,
+      "reference_share": 0.5901550176774545
+    },
+    "oracle@10": {
+      "quality": 0.9110960021756866,
+      "cost_per_1k": 0.4284518406309491,
+      "q_vs_reference": 0.12281751427794396,
+      "cost_vs_reference": -0.925513851674726,
+      "reference_share": 0.019853141147674735
+    },
+    "ZOIB + C_hat@10": {
+      "quality": 0.7834783791134077,
+      "cost_per_1k": 3.4933114223551804,
+      "q_vs_reference": -0.004800108784335011,
+      "cost_vs_reference": -0.3926894738770642,
+      "reference_share": 0.6385640467772641
+    },
+    "ZOIB + C(m)@10": {
+      "quality": 0.7875713897198804,
+      "cost_per_1k": 4.938429079140604,
+      "q_vs_reference": -0.0007070981778622976,
+      "cost_vs_reference": -0.1414564578809696,
+      "reference_share": 0.7215121022572749
+    },
+    "Bottleneck64 + C_hat@10": {
+      "quality": 0.786864291542018,
+      "cost_per_1k": 3.1532500326353,
+      "q_vs_reference": -0.0014141963557247061,
+      "cost_vs_reference": -0.45180898443179174,
+      "reference_share": 0.525428338319282
+    },
+    "Bottleneck64 + C(m)@10": {
+      "quality": 0.7874082132172967,
+      "cost_per_1k": 3.686283841174871,
+      "q_vs_reference": -0.0008702746804459816,
+      "cost_vs_reference": -0.3591413108216245,
+      "reference_share": 0.5093826488985586
+    },
+    "Full768 + C_hat@10": {
+      "quality": 0.775917867827033,
+      "cost_per_1k": 2.665504837095458,
+      "q_vs_reference": -0.012360620070709705,
+      "cost_vs_reference": -0.5366032542531551,
+      "reference_share": 0.39067174326896925
+    },
+    "Full768 + C(m)@10": {
+      "quality": 0.7695403861843895,
+      "cost_per_1k": 3.149699751427794,
+      "q_vs_reference": -0.018738101713353217,
+      "cost_vs_reference": -0.4524261991279156,
+      "reference_share": 0.36687516997552355
+    },
+    "oracle@20": {
+      "quality": 0.910960021756867,
+      "cost_per_1k": 0.42048828338319283,
+      "q_vs_reference": 0.12268153385912428,
+      "cost_vs_reference": -0.9268983123074068,
+      "reference_share": 0.019581180310035355
+    },
+    "ZOIB + C_hat@20": {
+      "quality": 0.7599673646994833,
+      "cost_per_1k": 1.3817834985042152,
+      "q_vs_reference": -0.028311123198259347,
+      "cost_vs_reference": -0.7597775972407239,
+      "reference_share": 0.4423443024204515
+    },
+    "ZOIB + C(m)@20": {
+      "quality": 0.7492249116127278,
+      "cost_per_1k": 1.8247414805548,
+      "q_vs_reference": -0.039053576285014935,
+      "cost_vs_reference": -0.6827695631421989,
+      "reference_share": 0.27522436769105246
+    },
+    "Bottleneck64 + C_hat@20": {
+      "quality": 0.7651890127821593,
+      "cost_per_1k": 1.3910981000815883,
+      "q_vs_reference": -0.023089475115583347,
+      "cost_vs_reference": -0.7581582581951469,
+      "reference_share": 0.3821049768833288
+    },
+    "Bottleneck64 + C(m)@20": {
+      "quality": 0.7601849333695947,
+      "cost_per_1k": 2.0681226053848247,
+      "q_vs_reference": -0.02809355452814799,
+      "cost_vs_reference": -0.6404578705679187,
+      "reference_share": 0.2953494696763666
+    },
+    "Full768 + C_hat@20": {
+      "quality": 0.7547321185749253,
+      "cost_per_1k": 1.2201675605112863,
+      "q_vs_reference": -0.033546369322817404,
+      "cost_vs_reference": -0.7878744510466077,
+      "reference_share": 0.2803916236062007
+    },
+    "Full768 + C(m)@20": {
+      "quality": 0.7485858036442753,
+      "cost_per_1k": 1.8181761044329616,
+      "q_vs_reference": -0.03969268425346739,
+      "cost_vs_reference": -0.6839109506524086,
+      "reference_share": 0.1936361163992385
+    },
+    "oracle@50": {
+      "quality": 0.9083763937992929,
+      "cost_per_1k": 0.3514169545825401,
+      "q_vs_reference": 0.12009790590155023,
+      "cost_vs_reference": -0.9389063299051204,
+      "reference_share": 0.015773728583084037
+    },
+    "ZOIB + C_hat@50": {
+      "quality": 0.7401550176774545,
+      "cost_per_1k": 0.6725176023932554,
+      "q_vs_reference": -0.04812347022028818,
+      "cost_vs_reference": -0.8830831352960158,
+      "reference_share": 0.24898014685885234
+    },
+    "ZOIB + C(m)@50": {
+      "quality": 0.6946151754147403,
+      "cost_per_1k": 0.4190669904813707,
+      "q_vs_reference": -0.09366331248300241,
+      "cost_vs_reference": -0.9271454034011056,
+      "reference_share": 0.0
+    },
+    "Bottleneck64 + C_hat@50": {
+      "quality": 0.7458254011422355,
+      "cost_per_1k": 0.697408335055752,
+      "q_vs_reference": -0.042453086755507186,
+      "cost_vs_reference": -0.8787558932837206,
+      "reference_share": 0.24286102801196627
+    },
+    "Bottleneck64 + C(m)@50": {
+      "quality": 0.7119798748980146,
+      "cost_per_1k": 0.4627786766385641,
+      "q_vs_reference": -0.07629861299972807,
+      "cost_vs_reference": -0.9195461475924299,
+      "reference_share": 0.012238237693772096
+    },
+    "Full768 + C_hat@50": {
+      "quality": 0.7333152026108241,
+      "cost_per_1k": 0.628415452270873,
+      "q_vs_reference": -0.05496328528691863,
+      "cost_vs_reference": -0.8907502730789734,
+      "reference_share": 0.16711993472939896
+    },
+    "Full768 + C(m)@50": {
+      "quality": 0.7065270601033451,
+      "cost_per_1k": 0.45652351155833565,
+      "q_vs_reference": -0.08175142779439759,
+      "cost_vs_reference": -0.9206336050608792,
+      "reference_share": 0.004079412564590699
+    },
+    "oracle@100": {
+      "quality": 0.9042289910252923,
+      "cost_per_1k": 0.2904452036986674,
+      "q_vs_reference": 0.11595050312754962,
+      "cost_vs_reference": -0.9495062397416607,
+      "reference_share": 0.014005983138428066
+    },
+    "ZOIB + C_hat@100": {
+      "quality": 0.719717160728855,
+      "cost_per_1k": 0.5213616807179767,
+      "q_vs_reference": -0.06856132716888763,
+      "cost_vs_reference": -0.9093615202495452,
+      "reference_share": 0.128501495784607
+    },
+    "ZOIB + C(m)@100": {
+      "quality": 0.694710361707914,
+      "cost_per_1k": 0.41976382920859395,
+      "q_vs_reference": -0.09356812618982868,
+      "cost_vs_reference": -0.9270242583204396,
+      "reference_share": 0.0
+    },
+    "Bottleneck64 + C_hat@100": {
+      "quality": 0.7322409573021484,
+      "cost_per_1k": 0.5491436796301333,
+      "q_vs_reference": -0.05603753059559424,
+      "cost_vs_reference": -0.9045316329775099,
+      "reference_share": 0.14536306771824858
+    },
+    "Bottleneck64 + C(m)@100": {
+      "quality": 0.7083763937992928,
+      "cost_per_1k": 0.43613716127277674,
+      "q_vs_reference": -0.07990209409844984,
+      "cost_vs_reference": -0.9241777623433989,
+      "reference_share": 0.0
+    },
+    "Full768 + C_hat@100": {
+      "quality": 0.7208050040794126,
+      "cost_per_1k": 0.5041296807179766,
+      "q_vs_reference": -0.06747348381833007,
+      "cost_vs_reference": -0.9123572952380502,
+      "reference_share": 0.08607560511286375
+    },
+    "Full768 + C(m)@100": {
+      "quality": 0.7068942072341583,
+      "cost_per_1k": 0.43020966875169975,
+      "q_vs_reference": -0.08138428066358439,
+      "cost_vs_reference": -0.9252082540935842,
+      "reference_share": 0.0
+    },
+    "oracle@200": {
+      "quality": 0.8952270872994289,
+      "cost_per_1k": 0.2308030497688333,
+      "q_vs_reference": 0.10694859940168622,
+      "cost_vs_reference": -0.9598749997813287,
+      "reference_share": 0.010742453086755508
+    },
+    "ZOIB + C_hat@200": {
+      "quality": 0.6968724503671472,
+      "cost_per_1k": 0.41685603317922226,
+      "q_vs_reference": -0.09140603753059551,
+      "cost_vs_reference": -0.9275297772745057,
+      "reference_share": 0.024612455806363884
+    },
+    "ZOIB + C(m)@200": {
+      "quality": 0.6948463421267337,
+      "cost_per_1k": 0.4181428882240958,
+      "q_vs_reference": -0.093432145771009,
+      "cost_vs_reference": -0.9273060581381742,
+      "reference_share": 0.0
+    },
+    "Bottleneck64 + C_hat@200": {
+      "quality": 0.6986265977699211,
+      "cost_per_1k": 0.3721216339407125,
+      "q_vs_reference": -0.0896518901278216,
+      "cost_vs_reference": -0.9353068312650189,
+      "reference_share": 0.03589883056839815
+    },
+    "Bottleneck64 + C(m)@200": {
+      "quality": 0.707900462333424,
+      "cost_per_1k": 0.4202795490889312,
+      "q_vs_reference": -0.08037802556431872,
+      "cost_vs_reference": -0.9269346006649969,
+      "reference_share": 0.0
+    },
+    "Full768 + C_hat@200": {
+      "quality": 0.6986809899374491,
+      "cost_per_1k": 0.3887942899102529,
+      "q_vs_reference": -0.08959749796029359,
+      "cost_vs_reference": -0.9324082979696673,
+      "reference_share": 0.016317650258362796
+    },
+    "Full768 + C(m)@200": {
+      "quality": 0.7024884416644004,
+      "cost_per_1k": 0.42175073918955674,
+      "q_vs_reference": -0.0857900462333423,
+      "cost_vs_reference": -0.9266788349670634,
+      "reference_share": 0.0
+    },
+    "oracle@1000": {
+      "quality": 0.8665896110960021,
+      "cost_per_1k": 0.1828678770737014,
+      "q_vs_reference": 0.07831112319825939,
+      "cost_vs_reference": -0.9682085067120242,
+      "reference_share": 0.003807451726951319
+    },
+    "ZOIB + C_hat@1000": {
+      "quality": 0.5803916236062007,
+      "cost_per_1k": 0.160150924666848,
+      "q_vs_reference": -0.20788686429154202,
+      "cost_vs_reference": -0.9721578380627386,
+      "reference_share": 0.0
+    },
+    "ZOIB + C(m)@1000": {
+      "quality": 0.618874082132173,
+      "cost_per_1k": 0.25740787326624964,
+      "q_vs_reference": -0.1694044057655697,
+      "cost_vs_reference": -0.9552497638941915,
+      "reference_share": 0.0
+    },
+    "Bottleneck64 + C_hat@1000": {
+      "quality": 0.5884552624422084,
+      "cost_per_1k": 0.1563148213217297,
+      "q_vs_reference": -0.19982322545553433,
+      "cost_vs_reference": -0.9728247428012846,
+      "reference_share": 0.0
+    },
+    "Bottleneck64 + C(m)@1000": {
+      "quality": 0.5760130541202066,
+      "cost_per_1k": 0.19712677182485724,
+      "q_vs_reference": -0.21226543377753604,
+      "cost_vs_reference": -0.9657296046542689,
+      "reference_share": 0.0
+    },
+    "Full768 + C_hat@1000": {
+      "quality": 0.6028963829208593,
+      "cost_per_1k": 0.17820139787870548,
+      "q_vs_reference": -0.18538210497688334,
+      "cost_vs_reference": -0.9690197718963759,
+      "reference_share": 0.0
+    },
+    "Full768 + C(m)@1000": {
+      "quality": 0.5982186565134621,
+      "cost_per_1k": 0.22179686646722874,
+      "q_vs_reference": -0.19005983138428062,
+      "cost_vs_reference": -0.9614407204566328,
+      "reference_share": 0.0
+    }
+  }
+}

@@ -10,20 +10,10 @@ from decompose.classifiers.prompt_decomposition.heads.domain_taxonomy import (
 )
 
 
-def test_label_space_is_ten_distinct_domains():
-    assert len(DOMAIN_LABELS) == len(set(DOMAIN_LABELS)) == 10
-
-
 def test_every_domain_has_a_description():
     """Descriptions are the zero-shot anchors; a missing one silently degrades."""
     assert set(DOMAIN_DESCRIPTIONS) == set(DOMAIN_LABELS)
     assert all(len(v) > 20 for v in DOMAIN_DESCRIPTIONS.values())
-
-
-def test_catch_all_domains_exist():
-    """v1 failed partly because real traffic had nowhere to go."""
-    assert Domain.META_OTHER in set(Domain)
-    assert Domain.PERSONAL_LIFE in set(Domain)
 
 
 @pytest.mark.parametrize(

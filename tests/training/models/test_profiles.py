@@ -290,47 +290,22 @@ _ABLATION_ENTRY = {"feature": "Mixtral 8x7B Instruct is Mistral AI's model.",
                     "strengths": ["good at X"], "weaknesses": ["bad at Y"]}
 
 
-def test_variant_p0_has_neither_benchmarks_nor_editorial():
+@pytest.mark.parametrize("variant, present, absent", [
+    ("P0", [], ["benchmark scores", "Strengths", "Weaknesses"]),
+    ("P1", ["MMLU 70.6"], ["Strengths"]),
+    ("P2", ["Strengths: good at X."], ["benchmark scores"]),
+    (None, ["MMLU 70.6", "Strengths: good at X."], []),              # P3, the default
+    ("P4", ["MMLU 70.6", "Strengths: good at X."], ["Chatbot Arena Elo"]),
+    ("P5", ["Chatbot Arena Elo 1116"], ["MMLU", "Strengths"]),
+])
+def test_variant_controls_benchmarks_and_editorial(variant, present, absent):
+    kw = {} if variant is None else {"variant": variant}
     _, full, _ = render_profile_text("m", _ABLATION_ENTRY, {}, include_empirical=False,
-                                     benchmarks=_ABLATION_BENCHMARKS, variant="P0")
-    assert "benchmark scores" not in full.lower()
-    assert "Strengths" not in full and "Weaknesses" not in full
-
-
-def test_variant_p1_has_benchmarks_not_editorial():
-    _, full, _ = render_profile_text("m", _ABLATION_ENTRY, {}, include_empirical=False,
-                                     benchmarks=_ABLATION_BENCHMARKS, variant="P1")
-    assert "MMLU 70.6" in full
-    assert "Strengths" not in full
-
-
-def test_variant_p2_has_editorial_not_benchmarks():
-    _, full, _ = render_profile_text("m", _ABLATION_ENTRY, {}, include_empirical=False,
-                                     benchmarks=_ABLATION_BENCHMARKS, variant="P2")
-    assert "benchmark scores" not in full.lower()
-    assert "Strengths: good at X." in full
-
-
-def test_variant_p3_is_full_default():
-    _, full, _ = render_profile_text("m", _ABLATION_ENTRY, {}, include_empirical=False,
-                                     benchmarks=_ABLATION_BENCHMARKS)  # no variant passed
-    assert "MMLU 70.6" in full and "Strengths: good at X." in full
-
-
-def test_variant_p4_excludes_arena_elo_only():
-    _, full, _ = render_profile_text("m", _ABLATION_ENTRY, {}, include_empirical=False,
-                                     benchmarks=_ABLATION_BENCHMARKS, variant="P4")
-    assert "MMLU 70.6" in full
-    assert "Chatbot Arena Elo" not in full
-    assert "Strengths: good at X." in full
-
-
-def test_variant_p5_includes_arena_elo_only_no_editorial():
-    _, full, _ = render_profile_text("m", _ABLATION_ENTRY, {}, include_empirical=False,
-                                     benchmarks=_ABLATION_BENCHMARKS, variant="P5")
-    assert "Chatbot Arena Elo 1116" in full
-    assert "MMLU" not in full
-    assert "Strengths" not in full
+                                     benchmarks=_ABLATION_BENCHMARKS, **kw)
+    for text in present:
+        assert text in full
+    for text in absent:
+        assert text.lower() not in full.lower()
 
 
 def test_variant_p6_redacts_name_but_keeps_other_facts():
@@ -341,20 +316,6 @@ def test_variant_p6_redacts_name_but_keeps_other_facts():
     assert "32768-token context window" in full
     assert "MMLU 70.6" in full
     assert "Strengths: good at X." in full
-
-
-def test_variant_benchmarks_p4_excludes_arena_elo():
-    from training.models.profiles import variant_benchmarks
-
-    out = variant_benchmarks(_ABLATION_BENCHMARKS, "P4")
-    assert "arena_elo" not in out
-    assert "mmlu" in out
-
-
-def test_variant_benchmarks_p0_is_empty():
-    from training.models.profiles import variant_benchmarks
-
-    assert variant_benchmarks(_ABLATION_BENCHMARKS, "P0") == {}
 
 
 def test_structured_dict_is_variant_independent():

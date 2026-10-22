@@ -1,0 +1,102 @@
+{
+ "router": "aar-gateway/src/aar_gateway/routers/manifold-nirt-claude-judged.npz",
+ "days": 7.0,
+ "sessions": 424,
+ "turns": 538,
+ "requests": 2968,
+ "models_used": {
+  "claude-sonnet-5-5": 238,
+  "claude-opus-5-5": 166,
+  "claude-haiku-5-5": 123,
+  "<synthetic>": 10,
+  "claude-opus-4-8": 1
+ },
+ "rows": [
+  {
+   "lambda": null,
+   "turns": 538,
+   "routed_turns": 527,
+   "kept": 11,
+   "base_usd": 160.84402409000003,
+   "routed_usd": 112.70720980000021,
+   "switches": 18,
+   "mix": {
+    "claude-sonnet-5-5": 331,
+    "claude-haiku-5-5": 154,
+    "claude-opus-5-5": 42,
+    "<synthetic>": 10,
+    "claude-opus-4-8": 1
+   },
+   "pred_q_used": 315.8065000000002,
+   "pred_q_picked": 314.3414000000002,
+   "pred_n": 527,
+   "unpriced_requests": 17,
+   "saved_pct": 0.2992763614460736,
+   "pred_quality_delta": -0.0027800759013282862
+  },
+  {
+   "lambda": 0.02,
+   "turns": 538,
+   "routed_turns": 527,
+   "kept": 11,
+   "base_usd": 160.84402409000003,
+   "routed_usd": 151.9180121200001,
+   "switches": 13,
+   "mix": {
+    "claude-sonnet-5-5": 292,
+    "claude-haiku-5-5": 138,
+    "claude-opus-5-5": 97,
+    "<synthetic>": 10,
+    "claude-opus-4-8": 1
+   },
+   "pred_q_used": 315.8065000000002,
+   "pred_q_picked": 316.9460000000001,
+   "pred_n": 527,
+   "unpriced_requests": 17,
+   "saved_pct": 0.055494831222361096,
+   "pred_quality_delta": 0.0021622390891838416
+  },
+  {
+   "lambda": 0.2,
+   "turns": 538,
+   "routed_turns": 527,
+   "kept": 11,
+   "base_usd": 160.84402409000003,
+   "routed_usd": 67.04113161999996,
+   "switches": 19,
+   "mix": {
+    "claude-sonnet-5-5": 202,
+    "claude-haiku-5-5": 325,
+    "<synthetic>": 10,
+    "claude-opus-4-8": 1
+   },
+   "pred_q_used": 315.8065000000002,
+   "pred_q_picked": 293.9104000000003,
+   "pred_n": 527,
+   "unpriced_requests": 17,
+   "saved_pct": 0.583191654155039,
+   "pred_quality_delta": -0.041548576850094644
+  },
+  {
+   "lambda": 0.3,
+   "turns": 538,
+   "routed_turns": 527,
+   "kept": 11,
+   "base_usd": 160.84402409000003,
+   "routed_usd": 55.32653542000002,
+   "switches": 13,
+   "mix": {
+    "claude-sonnet-5-5": 137,
+    "claude-haiku-5-5": 390,
+    "<synthetic>": 10,
+    "claude-opus-4-8": 1
+   },
+   "pred_q_used": 315.8065000000002,
+   "pred_q_picked": 282.3537000000002,
+   "pred_n": 527,
+   "unpriced_requests": 17,
+   "saved_pct": 0.6560236805002955,
+   "pred_quality_delta": -0.06347779886148013
+  }
+ ]
+}

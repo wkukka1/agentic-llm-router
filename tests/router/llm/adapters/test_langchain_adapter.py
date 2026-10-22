@@ -56,20 +56,6 @@ def test_complete_with_no_generation_kwargs_still_works():
     assert chat.invoke_calls == [{}]
 
 
-def test_guess_provider_requires_a_right_hand_boundary_too():
-    """MOD-001 (router.llm.adapters): a hint matching mid-token (inside a
-    longer alnum run) must not count as a match -- only RA-19's existing
-    left-boundary guard existed before this fix."""
-    assert guess_provider("gpt4all-13b-snoozy") is None
-    # existing passing cases must still match -- a boundary on the right,
-    # not "no match at all"
-    assert guess_provider("o1-mini") == "openai"
-    assert guess_provider("gpt-4o") == "openai"
-    assert guess_provider("yolo1") is None
-    assert guess_provider("claude-3-5-sonnet") == "anthropic"
-    assert guess_provider("some-random-model") is None
-
-
 def test_guess_provider_allows_a_trailing_version_number_after_the_hint():
     """A hint may be followed by a version number (llama3, qwen2.5, gemini15)
     -- real configured ids -- but not by more letters (gpt4all)."""

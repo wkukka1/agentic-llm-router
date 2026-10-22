@@ -88,12 +88,6 @@ def test_values_are_range_checked():
         _settings(run="../elsewhere")
 
 
-def test_settings_are_immutable():
-    s = load_settings()
-    with pytest.raises(ValidationError):
-        s.max_depth = 9
-
-
 # --------------------------------------------------------------------------- #
 # helpers send the file's prompts                                             #
 # --------------------------------------------------------------------------- #

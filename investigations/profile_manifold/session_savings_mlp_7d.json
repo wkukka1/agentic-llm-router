@@ -1,0 +1,94 @@
+{
+ "router": "C:/Users/dogpl/.aar-gateway/router.npz",
+ "days": 7.0,
+ "sessions": 13,
+ "turns": 128,
+ "requests": 1721,
+ "models_used": {
+  "<synthetic>": 5,
+  "claude-opus-5-5": 65,
+  "claude-sonnet-5-5": 36,
+  "claude-haiku-5-5": 22
+ },
+ "rows": [
+  {
+   "lambda": null,
+   "turns": 128,
+   "routed_turns": 123,
+   "kept": 5,
+   "base_usd": 127.92525209000021,
+   "routed_usd": 101.65648791000008,
+   "switches": 9,
+   "mix": {
+    "<synthetic>": 5,
+    "claude-opus-5-5": 62,
+    "claude-haiku-5-5": 61
+   },
+   "pred_q_used": 65.57910000000003,
+   "pred_q_picked": 66.93300000000004,
+   "pred_n": 123,
+   "unpriced_requests": 7,
+   "saved_pct": 0.20534463486160703,
+   "pred_quality_delta": 0.011007317073170814
+  },
+  {
+   "lambda": 0.02,
+   "turns": 128,
+   "routed_turns": 123,
+   "kept": 5,
+   "base_usd": 127.92525209000021,
+   "routed_usd": 100.6848066100001,
+   "switches": 7,
+   "mix": {
+    "<synthetic>": 5,
+    "claude-opus-5-5": 64,
+    "claude-haiku-5-5": 59
+   },
+   "pred_q_used": 65.57910000000003,
+   "pred_q_picked": 67.04050000000004,
+   "pred_n": 123,
+   "unpriced_requests": 7,
+   "saved_pct": 0.21294033066149787,
+   "pred_quality_delta": 0.011881300813008226
+  },
+  {
+   "lambda": 0.2,
+   "turns": 128,
+   "routed_turns": 123,
+   "kept": 5,
+   "base_usd": 127.92525209000021,
+   "routed_usd": 44.935133560000025,
+   "switches": 6,
+   "mix": {
+    "<synthetic>": 5,
+    "claude-haiku-5-5": 118,
+    "claude-opus-5-5": 5
+   },
+   "pred_q_used": 65.57910000000003,
+   "pred_q_picked": 60.338000000000015,
+   "pred_n": 123,
+   "unpriced_requests": 7,
+   "saved_pct": 0.6487391439464472,
+   "pred_quality_delta": -0.04261056910569114
+  },
+  {
+   "lambda": 0.3,
+   "turns": 128,
+   "routed_turns": 123,
+   "kept": 5,
+   "base_usd": 127.92525209000021,
+   "routed_usd": 34.56810356000002,
+   "switches": 5,
+   "mix": {
+    "<synthetic>": 5,
+    "claude-haiku-5-5": 123
+   },
+   "pred_q_used": 65.57910000000003,
+   "pred_q_picked": 59.596000000000004,
+   "pred_n": 123,
+   "unpriced_requests": 7,
+   "saved_pct": 0.7297788904439284,
+   "pred_quality_delta": -0.04864308943089449
+  }
+ ]
+}

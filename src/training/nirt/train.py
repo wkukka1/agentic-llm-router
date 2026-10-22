@@ -306,6 +306,28 @@ def _theta_cov_penalty(theta) -> "torch.Tensor":
     return (off ** 2).sum() / (K * (K - 1))
 
 
+def _param_groups(model, lr: float, lr_mult: dict) -> list[dict]:
+    """Adam parameter groups: a parameter whose name starts with a key of
+    ``lr_mult`` (a submodule prefix, e.g. ``profile_encoder``) trains at
+    ``lr * mult``; the rest at ``lr``. A prefix matching nothing is an error --
+    a typo must not silently fine-tune at the full rate."""
+    mults = {str(k): float(v) for k, v in lr_mult.items()}
+    groups: dict[float, list] = {}
+    hit = set()
+    for pname, p in model.named_parameters():
+        rate = lr
+        for prefix, m in mults.items():
+            if pname == prefix or pname.startswith(prefix + "."):
+                rate = lr * m
+                hit.add(prefix)
+                break
+        groups.setdefault(rate, []).append(p)
+    missing = sorted(set(mults) - hit)
+    if missing:
+        raise ValueError(f"train.lr_mult: no parameters under {missing}")
+    return [{"params": ps, "lr": rate} for rate, ps in groups.items()]
+
+
 def _collapse_diagnostics(model, theta_q: np.ndarray) -> dict:
     """Cheap, per-epoch health check for the P7 monotone-collapse failure mode:
     ``theta_q``'s effective rank, and (query_latent / model_params=free /
@@ -494,6 +516,20 @@ def fit(
         query_dim=int(train_ds.query_dim),
         profile_dim=int(train_ds.model_dim),
     ).to(device)
+    init_from = tcfg.get("init_from") or None
+    if init_from:
+        # warm start (pretrain -> fine-tune): every weight of the earlier run,
+        # shape-checked; projected models carry no per-model rows, so the two
+        # runs' model pools may differ
+        ckpt_path = _resolve_runs_dir(nirt_cfg, phase0_cfg, init_from)
+        if not ckpt_path.exists():      # a bare run name under runs_dir
+            ckpt_path = _resolve_runs_dir(nirt_cfg, phase0_cfg, runs_dir) / str(init_from)
+        if ckpt_path.is_dir():
+            ckpt_path = ckpt_path / "model.pt"
+        state = torch.load(ckpt_path, map_location=device, weights_only=False)["state_dict"]
+        model.load_state_dict(state, strict=True)
+        if verbose:
+            print(f"[nirt] warm start from {ckpt_path}")
     projected = model.model_params == "projected"
     if pairwise_on and not projected:
         raise ValueError(
@@ -539,11 +575,28 @@ def fit(
     zero_variance_weight = float(tcfg.get("zero_variance_weight", 1.0)
                                  if tcfg.get("zero_variance_weight") is not None else 1.0)  # P7c
     theta_cov_weight = float(tcfg.get("theta_cov_weight", 0.0) or 0.0)          # P7b
+    # Elo as a prior on model ability: (ability_m - (alpha + beta * elo_m))^2
+    # over the Arena-rated models in the index; unrated models are unpenalised
+    ecfg = tcfg.get("elo_prior") or {}
+    elo_weight = float(ecfg.get("weight", 0.0) or 0.0)
+    if elo_weight > 0 and not getattr(model, "elo_prior", False):
+        raise ValueError("train.elo_prior.weight needs model.elo_prior: true")
     abort_on_collapse = bool(tcfg.get("abort_on_collapse", False))              # P7d
     collapse_rank_threshold = float(tcfg.get("collapse_rank_threshold", 1.3))
     collapse_agreement_threshold = float(tcfg.get("collapse_agreement_threshold", 0.95))
     collapse_patience = int(tcfg.get("collapse_patience", 3))
-    opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    opt = torch.optim.Adam(_param_groups(model, lr, tcfg.get("lr_mult") or {}),
+                           lr=lr, weight_decay=weight_decay)
+    # autoencoder term on the profile manifold, over EVERY profile in the store
+    # (not just this pool), so z_m keeps what e_m says about unseen models too
+    recon_weight = float(tcfg.get("recon_weight", 0.0) or 0.0)
+    recon_ref = None
+    if recon_weight > 0:
+        if not getattr(model, "profile_latent_dim", None):
+            raise ValueError("train.recon_weight needs model.profile_latent_dim")
+        store = getattr(train_ds, "profile_store", None)
+        prof = np.asarray(store.matrix) if store is not None else np.unique(tr["m"], axis=0)
+        recon_ref = torch.from_numpy(prof.astype(np.float32)).to(device)
     sched = None
     if lr_schedule == "cosine":
         sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(1, epochs))
@@ -580,6 +633,27 @@ def fit(
         pw_cursor["pos"] = s + pw_batch
         return pw_cursor["perm"][s : s + pw_batch]
 
+    elo_ref = elo_std = None
+    if elo_weight > 0:
+        ratings = {str(k): float(v) for k, v in (ecfg.get("ratings") or {}).items()
+                   if v is not None and str(k) in model_index}
+        if len(ratings) < 2:
+            raise ValueError("train.elo_prior needs ratings for at least 2 trained models")
+        rated = sorted(ratings, key=model_index.get)
+        elo = np.array([ratings[m] for m in rated])
+        if not elo.std() > 0:
+            raise ValueError("train.elo_prior: the rated models' Elo ratings are all equal -- nothing to standardise")
+        elo_std = torch.tensor((elo - elo.mean()) / elo.std(), dtype=torch.float32, device=device)
+        idx_rated = np.array([model_index[m] for m in rated])
+        if projected:
+            # one profile row per rated model (every train row of a model shares it)
+            first = {int(i): r for r, i in reversed(list(enumerate(tr["midx"])))}
+            elo_ref = torch.from_numpy(np.stack([tr["m"][first[i]] for i in idx_rated])).to(device)
+        else:
+            elo_ref = torch.from_numpy(idx_rated).to(device)
+        if verbose:
+            print(f"[nirt] Elo prior on ability: {len(rated)} rated model(s), weight={elo_weight}")
+
     qt = torch.from_numpy(tr["q"]).to(device)
     mt = torch.from_numpy(tr["m"]).to(device)
     yt = torch.from_numpy(tr["y"]).to(device)
@@ -589,7 +663,7 @@ def fit(
     gen = torch.Generator().manual_seed(seed)
     tr_zero_var = _query_variance_mask(tr["y"], tr["qgroup"]) if zero_variance_weight != 1.0 else None
     tr_group_rows = _group_rows(tr["qgroup"]) if sampler == "query" else None
-    theta_once = theta_cov_weight > 0 and hasattr(model, "latent_query")
+    theta_once = (theta_cov_weight > 0 or elo_weight > 0) and hasattr(model, "latent_query")
     # one query per validation group for the collapse diagnostics (per-query, not
     # weighted by how many models scored it)
     va_first_row = np.unique(va["qgroup"], return_index=True)[1]
@@ -628,8 +702,15 @@ def fit(
                 w = np.where(tr_zero_var[idx.numpy()], zero_variance_weight, 1.0).astype(np.float32)
                 weight_idx = torch.from_numpy(w).to(device)
             loss = loss_fn(logit, yt[idx], gt[idx], weight_idx)
-            if theta_once:
+            if theta_once and theta_cov_weight > 0:
                 loss = loss + theta_cov_weight * _theta_cov_penalty(theta)
+            if elo_ref is not None:
+                # this batch's theta_bar, detached: the prior shapes a_m / b_m only
+                gap = (model.ability(elo_ref, theta.mean(0).detach())
+                       - model.elo_prior_mean(elo_std))
+                loss = loss + elo_weight * gap.pow(2).mean()
+            if recon_ref is not None:
+                loss = loss + recon_weight * (model.reconstruct(recon_ref) - recon_ref).pow(2).mean()
             total = loss
             if pw is not None:
                 # a genuine loss weight: the battle term joins the SAME step
@@ -721,6 +802,13 @@ def fit(
     if best_state is not None:
         model.load_state_dict(best_state)
     model.eval()
+    if getattr(model, "elo_prior", False):
+        # theta_bar over every training row, so ability() is the model's mean logit
+        with torch.no_grad():
+            tot = torch.zeros(model.dim, device=device)
+            for s in range(0, n, max(batch_size, 8192)):
+                tot += model.latent_query(qt[s : s + max(batch_size, 8192)]).sum(0)
+            model.theta_mean.copy_(tot / max(n, 1))
 
     val_prob = _predict_packed(model, va, batch_size=max(batch_size, 8192))
     val_metrics = prediction_metrics(va["y"], val_prob)

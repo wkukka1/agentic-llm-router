@@ -1,0 +1,23 @@
+{
+  "LOG": false,
+  "HOST": "127.0.0.1",
+  "PORT": 8791,
+  "API_TIMEOUT_MS": 120000,
+  "NON_INTERACTIVE_MODE": true,
+  "Providers": [
+    {
+      "name": "bench",
+      "api_base_url": "{UPSTREAM}/v1/messages",
+      "api_key": "aar-bench-dummy",
+      "models": ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"],
+      "transformer": {"use": ["Anthropic"]}
+    }
+  ],
+  "Router": {
+    "default": "bench,claude-sonnet-5-5",
+    "background": "bench,claude-haiku-5-5",
+    "think": "bench,claude-opus-5-5",
+    "longContext": "bench,claude-opus-5-5",
+    "longContextThreshold": 60000
+  }
+}

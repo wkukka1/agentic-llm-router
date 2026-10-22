@@ -1,0 +1,75 @@
+# Elo/benchmark model manifold for the IRT-Router 20-model pool.
+#
+# Build:  python scripts/embeddings/build_manifold_embeddings.py \
+#             --config configs/irt_router.yaml --manifold configs/model_manifold.yaml --k 3
+# writes the model_profile__manifold_k<K> embedding store; NIRT trains on it with
+# configs/nirt_elo_prior.yaml (Elo as a prior on model ability; this file maps pool ids to Arena keys).
+#
+# Axis 0 of the manifold IS standardized Arena "full" Elo (imputed for the models
+# Arena never rated); the remaining K-1 axes are the leading directions of what
+# the category Elos + benchmarks say beyond overall Elo. NIRT's Elo prior reads
+# axis 0 (model.elo_prior), and its residual Delta(q, z_m) is everything else.
+#
+# Missing values are absent, never guessed: a model with no Arena entry and no
+# Open LLM Leaderboard row is placed by the manifold from whatever it has (or at
+# the pool mean if nothing).
+
+arena:
+  # lmarena-ai/chatbot-arena-leaderboard HF Space, pinned. Contemporaneous with the
+  # pool (deepseek_chat = DeepSeek-V3, released 2024-12-26).
+  snapshot_date: "2024-12-30"
+  filename: elo_results_20241230.pkl
+  revision: 6f2eeeba09bf42144dbc118fe1a8e12e4c533f9d
+  anchor_category: full
+  # Text categories used as manifold features. *_style_control and per-language
+  # variants other than chinese are near-duplicates of these and are left out.
+  categories: [full, coding, math, chinese, if, hard_6, creative_writing, multiturn, long_user]
+
+open_llm_leaderboard:
+  # Normalized columns of open-llm-leaderboard/contents (cached by
+  # training.data.public_benchmarks.fetch_hf_leaderboard_table).
+  columns: [IFEval, BBH, MATH Lvl 5, GPQA, MUSR, MMLU-PRO]
+  # Leakage tags: suite datasets each benchmark overlaps. With
+  # `drop_overlapping: true` the builder removes these columns (ablation).
+  overlaps:
+    MATH Lvl 5: [math]
+    MMLU-PRO: [mmlu]
+
+# pool id -> where its public numbers come from. `confidence` notes which Arena
+# version string was matched (the IRT-Router repo does not pin API versions).
+models:
+  glm_4_air: {}                      # not on Arena; closed weights -> no Open LLM row
+  glm_4_flash: {}                    # same
+  glm_4_plus: {arena_key: glm-4-plus, confidence: high}
+  gpt_4o: {arena_key: gpt-4o-2024-05-13, confidence: high}          # profile: "released May 13, 2024"
+  gpt_4o_mini: {arena_key: gpt-4o-mini-2024-07-18, confidence: high}
+  gpt_4o_mini_cot: {alias_of: gpt_4o_mini}   # same weights, CoT prompting -- residual must come from data
+  deepseek_coder: {arena_key: deepseek-coder-v2, confidence: medium}  # profile: "June 2024"
+  deepseek_chat: {arena_key: deepseek-v3, confidence: high}           # profile: DeepSeek V3, Dec 2024
+  qwen25_32b_int4: {hf_repo_id: Qwen/Qwen2.5-32B-Instruct, confidence: medium}  # GPTQ-Int4 of this
+  qwen25_7b_instruct: {hf_repo_id: Qwen/Qwen2.5-7B-Instruct, confidence: high}
+  qwen25_72b_instruct: {arena_key: qwen2.5-72b-instruct, hf_repo_id: Qwen/Qwen2.5-72B-Instruct, confidence: high}
+  qwq_32b_preview: {arena_key: qwq-32b-preview, hf_repo_id: Qwen/QwQ-32B-Preview, confidence: high}
+  qwen25_math_7b_instruct: {hf_repo_id: Qwen/Qwen2.5-Math-7B-Instruct, confidence: high}
+  llama31_8b_instruct: {arena_key: llama-3.1-8b-instruct, hf_repo_id: meta-llama/Llama-3.1-8B-Instruct, confidence: high}
+  llama31_70b_instruct: {arena_key: llama-3.1-70b-instruct, hf_repo_id: meta-llama/Llama-3.1-70B-Instruct, confidence: high}
+  llama31_405b_instruct: {arena_key: llama-3.1-405b-instruct-fp8, confidence: medium}  # fp8 has 4x bf16's battles; ratings within 1 pt
+  mixtral_8x7b_instruct: {arena_key: mixtral-8x7b-instruct-v0.1, hf_repo_id: mistralai/Mixtral-8x7B-Instruct-v0.1, confidence: high}
+  mistral_7b_instruct_v02: {arena_key: mistral-7b-instruct-v0.2, hf_repo_id: mistralai/Mistral-7B-Instruct-v0.2, confidence: high}
+  ministral_8b_instruct_2410: {arena_key: ministral-8b-2410, hf_repo_id: mistralai/Ministral-8B-Instruct-2410, confidence: high}
+  gemini15_flash: {arena_key: gemini-1.5-flash-002, confidence: medium}  # the API alias pointed at -002 from 2024-09-24
+
+# RouterBench pool ids (the 29-model pool's other half). Kept OUT of `models` so
+# the IRT-Router manifold fit above is unchanged; read only by the Elo pseudo-label
+# pretraining (training.nirt.elo_pseudo.pool_category_elo). Same 2024-12-30 snapshot.
+extra_models:
+  claude-instant-v1: {arena_key: claude-instant-1, confidence: high}
+  claude-v1: {arena_key: claude-1, confidence: high}
+  claude-v2: {arena_key: claude-2.0, confidence: medium}       # Bedrock claude-v2 served 2.0, later 2.1
+  code-llama-34b-instruct: {arena_key: codellama-34b-instruct, confidence: high}
+  gpt-3.5-turbo-1106: {arena_key: gpt-3.5-turbo-1106, confidence: high}
+  gpt-4-1106-preview: {arena_key: gpt-4-1106-preview, confidence: high}
+  llama-2-70b-chat: {arena_key: llama-2-70b-chat, confidence: high}
+  mistral-7b-instruct: {arena_key: mistral-7b-instruct, confidence: high}   # v0.1
+  wizardlm-13b-v1.2: {arena_key: wizardlm-13b, confidence: medium}          # Arena's entry is v1.2
+  yi-34b-chat: {arena_key: yi-34b-chat, confidence: high}

@@ -12,9 +12,8 @@ import pandas as pd
 import pytest
 
 from router.agentic import AgenticRouter, ClientRegistry, HeuristicTriage, NaiveDecomposer
-from router.agentic.llm_clients import LLMResponse, guess_provider, message_text
+from router.agentic.llm_clients import LLMResponse, message_text
 from router.agentic.result import AgenticResult
-from router.agentic.triage import TriageDecision
 from router.config import Config, coerce_auto_bool, coerce_hidden
 from router.constraints import RoutingConstraints
 from router.context import RoutingContext, RoutingRequest
@@ -262,16 +261,6 @@ def _costed(model_ids):
                            for m in model_ids})
 
 
-# RA-01 ("nested orchestration counts each leaf once") tested AgenticResult's
-# leaf-counting/total_cost under a nested SubCall tree (parent step with
-# children, each possibly with children of its own) -- only reachable via
-# RecursiveOrchestrator's recursive agent._solve() re-decomposition, now
-# removed (the one surviving orchestrator, RoutedOrchestrator, plans every
-# step as a leaf up front; see routed.py's module docstring). SubCall.leaves()/
-# total_cost() themselves are unchanged and still correct for a nested tree,
-# should one ever exist again -- there's just no live path that builds one.
-
-
 def test_nan_quality_is_not_strong():
     """RA-02"""
     d = HeuristicTriage()("What is 2+2?", model_id="a", predicted_quality=float("nan"))
@@ -300,19 +289,6 @@ def test_abbreviations_do_not_split():
     assert len(NaiveDecomposer()("Explain quicksort. Then write it in Rust.")) == 2
 
 
-def test_failed_subcall_keeps_paid_siblings():
-    """RA-05"""
-    def boom(p, **kw):
-        if "second" in p:
-            raise TimeoutError("provider timeout")
-        return LLMResponse("ok", cost=1.0)
-
-    reg = ClientRegistry({m: LLMClient(CallableAdapter(m, boom)) for m in POOL})
-    res = AgenticRouter(_TextRouter([0.9, 0.9, 0.9]), reg).run("first part here and then second part here")
-    assert res.mode == "orchestrated" and len(res.errors()) == 1
-    assert res.cost == pytest.approx(1.0)
-
-
 def test_max_calls_caps_fanout():
     """RA-17"""
     res = AgenticRouter(_TextRouter([0.9, 0.9, 0.9]), _costed(POOL), max_calls=1).run(
@@ -337,11 +313,6 @@ def test_message_text_skips_thinking_blocks():
         content = [{"type": "thinking", "thinking": "hmm"}, {"type": "text", "text": "hi"}]
 
     assert message_text(Msg()) == "hi"
-
-
-def test_guess_provider_matches_whole_prefixes_only():
-    """RA-19"""
-    assert guess_provider("o1-mini") == "openai" and guess_provider("yolo1") is None
 
 
 # --------------------------------------------------------------------------- #

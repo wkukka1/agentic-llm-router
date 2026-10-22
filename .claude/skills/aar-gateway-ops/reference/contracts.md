@@ -21,7 +21,7 @@ Legend: **read** = changes nothing. **confirm** = ask the user first, every time
 | `aar-gateway share status --json` | sharing on/off, counts, collection endpoint, last upload | |
 | `GET http://127.0.0.1:8787/health` | status, pid, router | use `curl -m 3` |
 | `GET http://127.0.0.1:8787/stats` | the same as `stats` | |
-| `GET http://127.0.0.1:8787/api/preferences` | mode, pin, margin, roles | |
+| `GET http://127.0.0.1:8787/api/preferences` | mode, pin, margin, cost weight λ, roles | |
 | `python query.py savings [--days N]` | vs no router, vs always Opus, by main agent and subagents | |
 | `python query.py errors [--days N]` | failed requests by status and error type | expired threads excluded, as on the dashboard |
 | `python query.py switches [--days N]` | switches by model pair, costlier count, cache written | |
@@ -41,7 +41,7 @@ Legend: **read** = changes nothing. **confirm** = ask the user first, every time
 | `aar-gateway share on` / `off` | whether usage records are kept | |
 | `aar-gateway share delete` | deletes records not yet sent | |
 | `aar-gateway share upload` | sends records to the configured collection endpoint | only when the user asks |
-| preference changes via `POST /api/preferences` | routing mode, pin, margin, allow-upgrade, subagent tiers | show the change first |
+| preference changes via `POST /api/preferences` | routing mode, pin, margin, cost weight λ (`cost_weight`, `cost_preset`; null = off), allow-upgrade, subagent tiers | show the change first |
 
 ## Never
 

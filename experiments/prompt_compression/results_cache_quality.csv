@@ -1,0 +1,813 @@
+strategy,i,article_id,question,hard,answer,pick,correct,tokens,ollama_prompt_tokens,prefill_ms,cached,uncached,written
+full,0,0,How much time has passed between Blake's night with Eldoria and his search for Sabrina York in his mind-world?,False,1,2,False,6630,6630,2663.748,0,6630,6573
+full,1,0,Why does Deirdre get so upset when Blake Past suggests she go to prom with the young man?,True,1,2,False,6711,6711,79.141,6573,138,2
+full,2,0,Why does shame flame in Blake's cheeks when Deirdre goes to prepare Eldoria's dias?,True,2,2,True,6686,6686,60.577,6575,111,0
+full,3,0,"Why did Blake create the three female super-images of Miss Stoddart, Officer Finch, and Vera Velvetskin?",True,3,3,True,6696,6696,67.822,6574,122,0
+full,4,0,Sabrina York is ,True,0,0,True,6623,6623,45.777,6573,50,0
+full,5,0,Why doesn't Blake haggle with Eldoria about the price for her services?,False,3,2,False,6689,6689,67.831,6573,116,1
+full,6,0,Why did Blake feel awkward in the hut?,True,2,2,True,6631,6631,42.872,6574,57,0
+full,7,0,What is the most likely reason that Blake says he is a god?,False,0,2,False,6633,6633,40.733,6573,60,0
+full,8,0,Blake's mind country was made of:,False,2,2,True,6631,6631,41.196,6573,58,0
+full,9,0,Why did Blake visit his mom in the kitchen?,True,1,3,False,6634,6634,41.654,6573,61,0
+full,10,1,Why did the Tr'en leave Korvin's door unlocked and a weapon nearby?,True,1,1,True,6101,6101,2320.913,0,6101,5945
+full,11,1,"Why does the text mean when it says that Korvin was ""unconscious"" at the time of his lessons in the local language?",True,0,0,True,6082,6082,76.05,5945,137,0
+full,12,1,How was Korvin able to avoid disclosing the true intent of his mission under the lie detector questioning? ,False,1,1,True,6087,6087,76.888,5944,143,0
+full,13,1,What is the most likely reason for Korvin's solitude in jail?,True,1,1,True,6062,6062,67.0,5944,118,0
+full,14,1,Why does the Tr'en's logic fail them?,True,1,1,True,6043,6043,62.656,5944,99,0
+full,15,1,Are there indications that the Tr'en would be interested in attacking Earth? Why or why not?,True,3,0,False,6052,6052,58.621,5944,108,0
+full,16,1,"The text says ""The expert frowned horribly."" What makes the expert's smile so horrible?",True,3,3,True,6044,6044,64.316999,5944,100,0
+full,17,1,How did the Ruler become the Ruler?,False,0,0,True,6009,6009,49.168,5944,65,0
+full,18,1,Why did the Tr'en think that Korvin was a traitor to Earth?,False,3,3,True,6032,6032,58.401,5944,88,0
+full,19,1,What is the best description of Korvin's job?,True,1,2,False,6011,6011,51.782,5944,67,0
+full,20,2,What is the most likely meaning of the slang O.Q.? (in twentieth-century American English),False,3,3,True,6867,6867,2689.369,0,6867,6820
+full,21,2,"Why does the Skipper stop abruptly after he says ""when you're running a blockade""?",False,3,0,False,6905,6905,58.49,6820,85,0
+full,22,2,Who or what is Leo?,False,1,1,True,6867,6867,36.643,6820,47,0
+full,23,2,Why does the Skipper allow the new chef to use the heat-cannon as an incinerator?,False,3,2,False,6935,6935,67.66,6820,115,0
+full,24,2," Lieutenant Dugan brings up the examples of ""High G"" Gordon and ""Runt"" Hake in order to illustrates that...",False,1,1,True,6920,6920,71.149,6820,100,0
+full,25,2,Why didn't the Skipper follow the new cook's advice about avoiding Vesta?,False,1,3,False,6922,6922,67.059,6820,102,1
+full,26,2,Why was the new cook so upset that the Skipper decided to surrender?,True,3,0,False,6928,6928,61.979,6821,107,0
+full,27,2,"What does the Skipper mean by ""lady-logic""?",False,0,0,True,6862,6862,39.225,6820,42,1
+full,28,2,What would've happened if the new cook had told the Skipper about the ekalastron deposits earlier?,True,3,0,False,6927,6927,62.588,6821,106,0
+full,29,2,Why was the cook called Captain Slops?,True,2,2,True,6876,6876,46.494,6820,56,0
+full,30,3,What does the gold band that Ro put on Na's wrist mean for them?,False,2,0,False,6595,6595,2709.263,0,6595,6547
+full,31,3,Who or what is an Oan?,False,3,3,True,6601,6601,49.003,6547,54,0
+full,32,3,What is the Oans' unusual advantage? ,True,0,0,True,6596,6596,50.905,6547,49,0
+full,33,3,Why is Grimm annoyed that Charlotte slept beside Carlson?,True,3,2,False,6643,6643,60.862,6547,96,0
+full,34,3,In what sense does Ro relate to the white young men?,True,3,3,True,6618,6618,54.842,6547,71,0
+full,35,3,What is NOT a difference between the red people and the humans?,True,2,2,True,6598,6598,50.917,6547,51,0
+full,36,3,Why did Ro change his mind about the people on Mars being backwards?,False,0,0,True,6672,6672,69.078,6547,125,0
+full,37,3,Who is the man with the silver hair?,True,3,3,True,6585,6585,37.626,6547,38,0
+full,38,3,What was most likely the strongest motivator for humans to develop telepathy?,False,2,1,False,6627,6627,53.561,6547,80,1
+full,39,3,What became of Ro's mother?,True,3,1,False,6610,6610,47.44,6548,62,0
+full,40,4,Who is Billy?,False,0,0,True,6268,6268,2542.256,0,6268,6207
+full,41,4,How do the women have Amazonian strength?,True,3,3,True,6323,6323,66.891999,6207,116,0
+full,42,4,Why is the main reason that Johnathan so humiliated by the women?,False,2,2,True,6279,6279,51.96,6207,72,0
+full,43,4,What was Ann intending to do with Johnathan under the trees before the other women showed up?,True,0,1,False,6271,6271,44.092,6207,64,0
+full,44,4,Why does Johnathan put his arm around Ann?,False,1,2,False,6304,6304,64.184,6207,97,1
+full,45,4,Why is the Interstellar Cosmography Society in a hurry to get off of the asteroid?,True,2,2,True,6295,6295,61.247,6208,87,0
+full,46,4,What is the most likely reason that Johnathan's ship crashed?,True,0,1,False,6356,6356,84.324,6207,149,1
+full,47,4,What was Johnathan's original mission?,False,2,2,True,6288,6288,48.413,6208,80,0
+full,48,4,Johnathan doesn't tell the Interstellar Cosmography Society about the twenty-seven women who are waiting to be rescued because...,True,1,2,False,6341,6341,83.118,6207,134,0
+full,49,4,What is the most likely reason that Johnathan decides to stay on the asteroid?,True,2,3,False,6330,6330,87.635,6207,123,0
+full,50,5,Why is course change dangerous?,True,0,0,True,6815,6815,2882.52,0,6815,6689
+full,51,5,Did Duane actually kill Stevens? How do you know?,False,0,1,False,6799,6799,65.935,6689,110,0
+full,52,5,The red headed woman is most likely Duane's...,True,2,0,False,6728,6728,34.486,6689,39,0
+full,53,5,Why didn't Duane and Stevens go to the pressure bunks when they announced the course change?,False,0,0,True,6784,6784,54.049,6689,95,1
+full,54,5,Why does Duane want to kill Stevens?,False,3,2,False,6789,6789,67.286,6690,99,1
+full,55,5,Why does Andrias want to arm his people?,True,2,2,True,6772,6772,58.938,6691,81,0
+full,56,5,"Why is Adrian's office so long and narrow, and why there a long carpet leading up to Adrian's desk?",False,0,0,True,6793,6793,67.27,6690,103,0
+full,57,5,Why does Adrian think the Callistans will be willing to fight against the league?,True,3,3,True,6760,6760,52.323,6690,70,1
+full,58,5,Why does the amnesia change Duane's mind about letting Andrias have the guns?,False,1,3,False,6772,6772,58.745,6691,81,0
+full,59,5,"Why were Duane and Stevens fighting?
+",True,2,1,False,6773,6773,60.159,6690,83,0
+full,60,6,Which of the following is a false statement about the 98th corpse to be acquired by the ship?,True,1,0,False,5582,5582,2285.07,0,5582,5517
+full,61,6,How long have the Venusians and Earth been in conflict?,True,0,1,False,5565,5565,36.282,5517,48,1
+full,62,6,How did Burnett die?,True,1,1,True,5559,5559,35.937,5518,41,0
+full,63,6,How many times did Burnett operate the claw in the passage?,True,3,1,False,5552,5552,35.34,5518,34,0
+full,64,6,What likely happened to Rice in the end?,True,0,1,False,5568,5568,43.46,5517,51,1
+full,65,6,What was Burnett’s greatest motivation to collect the 99th body?,True,0,0,True,5584,5584,53.713,5518,66,0
+full,66,6,Why did Lethla come aboard the morgue ship?,True,2,2,True,5581,5581,44.528,5517,64,1
+full,67,6,Why are Earth and Venus at war?,True,1,1,True,5567,5567,42.317,5518,49,0
+full,68,6,What do we learn of the relationship between Rice and Burnett?,True,2,2,True,5565,5565,35.812,5517,48,1
+full,69,6,What is the Constellation’s main mission?,False,1,1,True,5590,5590,49.772,5518,72,0
+full,70,7,What did the author intend the lesson of the passage to be?,True,3,3,True,4280,4280,1721.023,0,4280,4198
+full,71,7,What happened to Dameri while he was in custody of the government?,True,1,1,True,4260,4260,42.806,4198,62,0
+full,72,7,What was Dameri’s purpose in landing on earth?,False,3,2,False,4270,4270,53.981,4198,72,0
+full,73,7,What did the people of Earth generally believe Dameri Tass would do on their planet?,False,2,0,False,4278,4278,46.068,4198,80,0
+full,74,7,How did Dameri Tass communicate in English?,True,3,3,True,4254,4254,39.109,4197,57,0
+full,75,7,What would have happened if Dameri had delivered his speech sooner?,True,2,3,False,4259,4259,42.95,4197,62,2
+full,76,7,What would the citizens of Carthis learn about Earth after Dameri returned?,True,3,2,False,4271,4271,51.164,4199,72,0
+full,77,7,What was the relationship like between Dermott and Casey?,False,1,1,True,4263,4263,48.755,4198,65,0
+full,78,7,What is the tone of the story?,True,3,1,False,4234,4234,34.164,4198,36,0
+full,79,7,What would have happened if Dermott had worn the helmet instead of Casey?,False,1,1,True,4287,4287,52.826,4198,89,0
+full,80,8,What is the nature of the relationship between Georges and Retief?,True,2,1,False,7418,7418,3293.776,0,7418,7360
+full,81,8,What is true of the relationship between the Boyars and the Aga Kagan?,True,3,3,True,7425,7425,56.549,7360,65,0
+full,82,8,What is the closest estimate to how long have the Boyar been on Flamme?,False,1,0,False,7405,7405,41.852,7360,45,1
+full,83,8,What is the highest authority the reader learns of any woman holding on Flamme?,True,0,1,False,7405,7405,38.769,7361,44,0
+full,84,8,What is Stanley’s opinion of the Corps?,True,1,1,True,7407,7407,39.768,7360,47,0
+full,85,8,What is Georges’ manner with the Aga Kagan?,False,3,3,True,7399,7399,34.01,7360,39,0
+full,86,8,What is Stanley’s history within the Aga Kagan?,False,3,1,False,7414,7414,46.124,7360,54,0
+full,87,8,How do the Boyars view the Aga Kagans?,False,1,1,True,7429,7429,53.175,7358,71,0
+full,88,8,Which is the best adjective to describe the Corp's approach to governance of the planet?,False,2,0,False,7404,7404,37.182,7358,46,0
+full,89,8,What is the Boyar's ultimate goal for Flamme?,True,1,1,True,7440,7440,59.186,7358,82,0
+full,90,9,"What was the overall relationship like between Splinter and Kerry?
+",False,3,3,True,6628,6628,2804.547,0,6628,6533
+full,91,9,Which of the characters receives the most medical intervention during the course of the story?,False,3,2,False,6584,6584,43.727,6533,51,0
+full,92,9,What can be inferred about the size of the ship the characters travelled in?,True,1,1,True,6615,6615,57.589,6533,82,0
+full,93,9,How did the author illustrate the planet of Venus upon their arrival?,True,0,1,False,6598,6598,51.095,6533,65,0
+full,94,9,What are the islands of Venus?,True,0,0,True,6588,6588,44.386,6533,55,0
+full,95,9,How do the space travellers navigate around the planet of Venus?,False,0,0,True,6578,6578,35.747,6533,45,1
+full,96,9,How did Splinter feel about being with Kerry on the turtle-shaped island?,True,3,3,True,6597,6597,41.37,6534,63,0
+full,97,9,Why did Kerry come out of retirement for the mission?,False,0,0,True,6596,6596,43.8,6533,63,0
+full,98,9,What is the relationship between Kerry Blane and Splinter Wood?,False,1,1,True,6593,6593,42.145,6533,60,0
+full,99,9,Why doesn't Kerry Blane take the pills that Splinter offers him?,True,1,3,False,6611,6611,48.686,6533,78,0
+full,100,10,What is the relationship like between Yasak and Koroby?,True,1,2,False,6314,6314,2695.113,0,6314,6230
+full,101,10,What did Koroby think of the vehicle she took to her wedding?,True,1,1,True,6300,6300,51.546,6230,70,0
+full,102,10,What time period in human history does the author liken the Venusian planet to?,True,3,1,False,6291,6291,42.092,6230,61,0
+full,103,10,What likely happened to Koroby after the story ended?,True,0,1,False,6300,6300,51.267,6230,70,0
+full,104,10,How did Yasak feel towards Robert upon their meeting?,True,2,2,True,6280,6280,44.689,6229,51,1
+full,105,10,How does Robert communicate with the Venusians?,True,3,3,True,6288,6288,41.869,6230,58,0
+full,106,10,What statement best describes Robert?,True,2,1,False,6306,6306,47.661,6229,77,0
+full,107,10,Why does Koroby feel motivated to start the fire?,True,2,2,True,6304,6304,45.713,6229,75,0
+full,108,10,Under what circumstances does Yasak first reunite with Koroby during the story?,True,1,1,True,6309,6309,46.698,6229,80,0
+full,109,10,How did Robert feel about becoming stranded on Venus?,True,0,0,True,6295,6295,50.71,6229,66,0
+full,110,11,"Why did the supreme ruler deliver a scroll message to Jorgenson?
+",True,0,2,False,6938,6938,3046.363,0,6938,6872
+full,111,11,What is the purpose of the Witnesses?,True,0,0,True,6940,6940,62.267,6872,68,0
+full,112,11,Why was Jorgenson so angry to have his business taken by Glen-U?,True,3,3,True,6943,6943,53.36,6872,71,0
+full,113,11,What would the Thrid likely believe drives their system of governance?,True,3,1,False,6922,6922,44.878,6872,50,1
+full,114,11,What happened if a local governor made a mistake that was recognized?,False,2,1,False,6963,6963,53.856,6873,90,0
+full,115,11,What is the definition of truth to the Thrid?,True,1,1,True,6935,6935,42.306,6873,62,0
+full,116,11,Why were Jorgenson and Ganti not put to death?,True,0,1,False,6947,6947,47.289,6872,75,0
+full,117,11,In what way was Jorgenson’s reasoning similar to that of the Thrid?,True,1,0,False,6927,6927,45.455,6872,55,0
+full,118,11,What is Jorgenson's internal conflict at the beginning of the story?,False,3,3,True,6994,6994,69.54,6872,122,0
+full,119,11,Why is the Grand Panjandrum called the Never-Mistaken?,True,0,0,True,6977,6977,60.041,6872,105,0
+full,120,12,What do Dan's interactions with both Kelly and Blote signify about his overall motive throughout the article?,False,2,1,False,7232,7232,3169.069,0,7232,7085
+full,121,12,What choice best describes Dan's feelings toward operating the carrier throughout the article?,True,0,2,False,7201,7201,71.416,7085,116,0
+full,122,12,What feeling does Dan's accidental encounter with the young girl evoke for the readers?,True,0,0,True,7176,7176,54.551,7085,91,0
+full,123,12,What would have happened if Dan had never encountered Blote?,True,0,3,False,7180,7180,56.281,7085,95,0
+full,124,12,What does Blote's reaction to Dan's mentioning of a time machine demonstrate about where Manny and Fiorello came from?,False,0,2,False,7219,7219,81.486,7085,134,0
+full,125,12,"What would best describe how Dan's experiences, such as fighting the thieves and meeting Dzhackoon, changed his overall attitude that he had in the beginning of the article?",True,1,1,True,7191,7191,60.875,7085,106,0
+full,126,12,Why would Dan have wanted Fiorello to accompany him on the carrier?,True,3,3,True,7164,7164,46.664,7084,80,1
+full,127,12,Why was Dan determined to wait so long for the thieves?,True,3,2,False,7162,7162,48.258,7085,77,0
+full,128,12,What is the author's purpose in providing such detailed descriptions of Blote and Dzhackoon?,True,3,3,True,7176,7176,56.509,7084,92,0
+full,129,12,Why did Kelly hire Dan so quickly?,True,3,3,True,7147,7147,42.106,7084,63,0
+full,130,13,"Is the motive behind the propaganda that Martian Broadcasting uses to control the reddies on Mars similar to the motive behind the mysterious hypnotizing music that the terrestrials keep hearing, and why?",False,3,3,True,6239,6239,2642.531,0,6239,6100
+full,131,13,What was the author's purpose in including the tragic encounter between Jared Haller and Mr. Ranson?,True,2,1,False,6203,6203,66.721,6100,103,1
+full,132,13,What would best describe the terrestrials' attitudes towards the reddies on Mars?,True,3,3,True,6215,6215,72.929,6101,114,1
+full,133,13,What would be the main reason Mr. Ranson wants to find the creator of the hypnotic music?,True,3,3,True,6201,6201,70.12,6102,99,0
+full,134,13,"Would Captain Maxwell's attitude toward Mr. Ranson and the murder been different if he had known about the hypnotizing melody, and why?",False,1,0,False,6219,6219,69.053,6100,119,0
+full,135,13,What would best describe the setting of the city that Mr. Ranson travelled through to get to the house Elath Taen resided in? ,True,0,0,True,6180,6180,50.898,6100,80,1
+full,136,13,What was the author's purpose in describing the feeling the hypnotizing music evoked in such detail every time that it played?,True,1,1,True,6186,6186,68.437,6101,85,0
+full,137,13,What would have likely happened with the interaction between Elath Taen and Mr. Ranson at the end of the article if the hypnotizing music had evoked anger instead of sleepiness?,True,0,0,True,6238,6238,86.979,6101,137,0
+full,138,13,"Given the music described at the end of the article and its comparison to chloroform, what can you infer about the purpose of chloroform?",False,1,1,True,6178,6178,47.047,6100,78,0
+full,139,13,"Who are ""reddies""?",False,0,0,True,6134,6134,39.448,6100,34,0
+full,140,14,How is Bobby's attitude towards flying the spaceship different than Pop's in the beginning of the article?,False,2,2,True,7439,7439,3361.373,0,7439,7320
+full,141,14,Why was Pop upset about leaving life on Earth?,True,0,2,False,7403,7403,60.503,7320,83,1
+full,142,14,Why does Pop prefer Dick's help with the spaceship more than Bobby's?,True,1,1,True,7408,7408,62.911,7321,87,0
+full,143,14,What is the main reason the family was so worried about losing their supplies when abandoning the spaceship?,False,2,2,True,7418,7418,70.783,7320,98,0
+full,144,14,"Given the description of the natural setting of Eros, will it be likely that the family can survive with the available resources on the planetoid?",False,3,2,False,7438,7438,75.474,7320,118,0
+full,145,14,What example listed is most similar to the Moseley family's journey to Eros?,True,3,3,True,7390,7390,56.57,7320,70,0
+full,146,14,"Given the dangerous extent of the trip to Eros, what is the most likely feeling that every family member, except for the baby and Bobby, would have likely felt?",False,3,3,True,7393,7393,49.562,7320,73,0
+full,147,14,How would the family's attitude towards their first days on Eros been different if the spaceship hadn't landed in the water?,True,2,1,False,7438,7438,72.732,7320,118,0
+full,148,14,Why is Pop concerned about finding the most suitable area of land for his family to live on Eros?,True,1,1,True,7412,7412,56.065,7320,92,1
+full,149,14,Why was Pop's posture so poor?,False,2,1,False,7380,7380,42.298,7321,59,0
+full,150,15,What best describes why Madison's initial feelings towards the Actuarvac were suspicious and skeptical?,True,1,1,True,6340,6340,2829.352,0,6340,6235
+full,151,15,What does Madison's selection in car choice after the flight tell about his physical character?,False,1,0,False,6294,6294,45.689,6235,59,0
+full,152,15,"Given the information in the article, is Granite City likely making false insurance claims, and why?",True,3,2,False,6319,6319,61.556,6234,85,1
+full,153,15,"Given what was discovered in Granite City, is the Actuarvac correct in its suspicion of Granite City?",True,0,1,False,6320,6320,61.132,6235,85,0
+full,154,15,"According to Dr. Parnell, can the same fate affecting Granite City affect other places around the world?",True,0,0,True,6352,6352,70.654,6234,118,0
+full,155,15,"What would best describe Madison's attitude towards Professor Parnell upon learning Parnell's reasoning for calling the people of Granite City ""subhuman""?",True,2,2,True,6324,6324,54.64,6234,90,0
+full,156,15,How would Madison's perception of Granite City been different if he had not have met Professor Parnell?,False,0,0,True,6383,6383,91.208,6234,149,0
+full,157,15,Why did Madison investigate the manual record files prior to visiting Granite City?,True,0,0,True,6304,6304,52.771,6234,70,3
+full,158,15,Why did Madison drive a Rolls?,False,0,0,True,6315,6315,52.624,6237,78,0
+full,159,15,What is the most likely reason for the lack of car insurance claims in Granite City?,True,3,1,False,6322,6322,60.335,6234,88,0
+full,160,16,How would one describe Emerald Star Hotel?,False,3,3,True,6894,6894,3166.197,0,6894,6837
+full,161,16,"By the end of the article, would Harper's opinion of Mrs. Jacobsen at the front desk be different?",True,3,3,True,6931,6931,56.956,6837,94,0
+full,162,16,How did Harper's opinion on the place of robots in the workforce change by the end of the article?,True,2,1,False,6965,6965,76.157,6837,128,0
+full,163,16,"Though the robots were the main issue at the hotel, was human error still an issue in Harper's overall stay?",True,3,0,False,6929,6929,64.072999,6837,92,0
+full,164,16,How did Harper and Jake Ellis intend to have different experiences during their stay at the hotel?,True,0,0,True,6939,6939,77.145,6837,102,0
+full,165,16,Why was Harper able to buy the hotel's robots for such a cheap price?,False,3,3,True,6939,6939,72.597,6837,102,0
+full,166,16,What was Harper's most likely work with the equatorial wells before they sank?,False,3,3,True,6899,6899,49.143,6837,62,0
+full,167,16,Why did Harper change his tone regarding a vacation to Mars?,True,3,2,False,6908,6908,53.421,6837,71,1
+full,168,16,Why was Harper strongly in favor of automation?,True,1,1,True,6896,6896,46.369,6838,58,0
+full,169,16,Why did Harper think of Mrs. Jacobsen when the two robots came to his room?,True,3,1,False,6917,6917,54.825,6838,79,0
+full,170,17,What would best describe Asa and Dorr's relationship?,True,1,2,False,6500,6500,2887.408,0,6500,6389
+full,171,17,How would Asa's decision on where to become a changeling been affected if the pay range to work as a muck man on Jordan's Planet was not as high as it was originally listed in the article?,True,1,1,True,6537,6537,84.58,6389,148,0
+full,172,17,What was the advantage of muck men being shaped like frogs?,False,1,1,True,6477,6477,59.662,6389,88,1
+full,173,17,What can you infer about the living conditions on Jordan's Planet?,False,3,3,True,6469,6469,49.624,6390,79,0
+full,174,17,What were the consequences of Asa meeting Kershaw and Furston?,True,3,3,True,6499,6499,62.15,6390,109,0
+full,175,17,What would best describe Harriet's attitude towards Dorr?,True,0,3,False,6468,6468,47.334,6390,78,1
+full,176,17,What would have been the consequence if Harriet did not come back for Asa with the helicopter?,True,3,1,False,6490,6490,69.784,6391,99,0
+full,177,17,Why would a company think it is a logical idea to let prisoners work as muck men on Jordan's Planet?,False,1,1,True,6489,6489,70.406,6389,100,0
+full,178,17,What would best describe Asa's motive for working as a muck man?,True,3,3,True,6456,6456,52.646,6389,67,1
+full,179,17,What seems to be the primary benefit of becoming a changeling?,True,0,0,True,6439,6439,44.59,6390,49,0
+full,180,18,When did the earth earn its new title?,True,3,3,True,6580,6580,2938.259,0,6580,6508
+full,181,18,What do the colors in the physicians' titles mean?,False,1,0,False,6574,6574,54.403,6508,66,0
+full,182,18,How did the planet get the code to call for help?,False,0,0,True,6568,6568,44.898,6508,60,0
+full,183,18,What kind of IV drip did the doctor give the patient?,True,0,0,True,6548,6548,33.608,6508,40,1
+full,184,18,What did the doctor administer by feeding tube?,True,2,3,False,6543,6543,33.688,6509,34,0
+full,185,18,Why did the Earth doctor use the mortar and pestle?,True,0,0,True,6563,6563,47.918,6508,55,0
+full,186,18,How many times did the doctor give the patient aspirin?,True,1,1,True,6547,6547,42.945,6508,39,0
+full,187,18,What was the highest priority of the Doctors while treating His Eminence?,True,1,0,False,6588,6588,52.485,6508,80,1
+full,188,18,"What were the specialties of the Red and Green Doctors, respectively?",True,1,0,False,6552,6552,38.842,6509,43,0
+full,189,18,Which planets do the physicians visit during the events of the story?,True,0,3,False,6557,6557,48.248,6508,49,0
+full,190,19,Who is called an aphrodisiac?,False,1,1,True,7198,7198,3343.575,0,7198,7158
+full,191,19,What is the main reason the Cleopatra was chosen to report to Tethys?,True,3,3,True,7221,7221,46.843,7158,63,0
+full,192,19,Why did the workers weld appendages to the Cleopatra?,True,1,1,True,7218,7218,45.471,7158,60,0
+full,193,19,How did Gorman feel about Strike?,False,1,1,True,7226,7226,54.871,7158,68,1
+full,194,19,How long did it take the Cleopatra to travel from Tethys to Eridanus?,True,3,3,True,7215,7215,46.272,7159,56,0
+full,195,19,What best describes the battle?,False,1,1,True,7235,7235,51.432,7158,77,0
+full,196,19,Why did the Eridans not care if they died?,True,1,1,True,7213,7213,47.001,7158,55,3
+full,197,19,Why did the ship go to hyperspace?,True,2,1,False,7215,7215,47.648,7161,54,0
+full,198,19,How was the ship able to navigate through the alien cosmos?,True,0,0,True,7219,7219,43.296,7158,61,1
+full,199,19,How many people are in charge of plotting navigational waypoints along the journey?,False,0,0,True,7196,7196,34.204,7159,37,0
+prefix@0.5,0,0,How much time has passed between Blake's night with Eldoria and his search for Sabrina York in his mind-world?,False,1,2,False,3019,3019,1251.762,0,3019,2962
+prefix@0.5,1,0,Why does Deirdre get so upset when Blake Past suggests she go to prom with the young man?,True,1,2,False,3100,3100,77.97,2962,138,2
+prefix@0.5,2,0,Why does shame flame in Blake's cheeks when Deirdre goes to prepare Eldoria's dias?,True,2,2,True,3075,3075,60.441,2964,111,0
+prefix@0.5,3,0,"Why did Blake create the three female super-images of Miss Stoddart, Officer Finch, and Vera Velvetskin?",True,3,3,True,3085,3085,64.724,2963,122,0
+prefix@0.5,4,0,Sabrina York is ,True,0,0,True,3012,3012,37.806,2962,50,0
+prefix@0.5,5,0,Why doesn't Blake haggle with Eldoria about the price for her services?,False,3,1,False,3078,3078,59.941,2962,116,1
+prefix@0.5,6,0,Why did Blake feel awkward in the hut?,True,2,1,False,3020,3020,36.46,2963,57,0
+prefix@0.5,7,0,What is the most likely reason that Blake says he is a god?,False,0,0,True,3022,3022,36.608,2962,60,0
+prefix@0.5,8,0,Blake's mind country was made of:,False,2,2,True,3020,3020,37.217,2962,58,0
+prefix@0.5,9,0,Why did Blake visit his mom in the kitchen?,True,1,0,False,3023,3023,38.589,2962,61,0
+prefix@0.5,10,1,Why did the Tr'en leave Korvin's door unlocked and a weapon nearby?,True,1,1,True,2856,2856,1179.068,0,2856,2700
+prefix@0.5,11,1,"Why does the text mean when it says that Korvin was ""unconscious"" at the time of his lessons in the local language?",True,0,0,True,2837,2837,77.679,2700,137,0
+prefix@0.5,12,1,How was Korvin able to avoid disclosing the true intent of his mission under the lie detector questioning? ,False,1,1,True,2842,2842,75.445,2699,143,0
+prefix@0.5,13,1,What is the most likely reason for Korvin's solitude in jail?,True,1,1,True,2817,2817,63.206,2699,118,0
+prefix@0.5,14,1,Why does the Tr'en's logic fail them?,True,1,1,True,2798,2798,57.446,2699,99,0
+prefix@0.5,15,1,Are there indications that the Tr'en would be interested in attacking Earth? Why or why not?,True,3,0,False,2807,2807,68.692,2699,108,0
+prefix@0.5,16,1,"The text says ""The expert frowned horribly."" What makes the expert's smile so horrible?",True,3,1,False,2799,2799,57.759,2699,100,0
+prefix@0.5,17,1,How did the Ruler become the Ruler?,False,0,0,True,2764,2764,45.31,2699,65,0
+prefix@0.5,18,1,Why did the Tr'en think that Korvin was a traitor to Earth?,False,3,3,True,2787,2787,49.533,2699,88,0
+prefix@0.5,19,1,What is the best description of Korvin's job?,True,1,2,False,2766,2766,43.572,2699,67,0
+prefix@0.5,20,2,What is the most likely meaning of the slang O.Q.? (in twentieth-century American English),False,3,3,True,3146,3146,1327.088,0,3146,3099
+prefix@0.5,21,2,"Why does the Skipper stop abruptly after he says ""when you're running a blockade""?",False,3,3,True,3184,3184,52.372,3099,85,0
+prefix@0.5,22,2,Who or what is Leo?,False,1,1,True,3146,3146,35.406,3099,47,0
+prefix@0.5,23,2,Why does the Skipper allow the new chef to use the heat-cannon as an incinerator?,False,3,0,False,3214,3214,62.023,3099,115,0
+prefix@0.5,24,2," Lieutenant Dugan brings up the examples of ""High G"" Gordon and ""Runt"" Hake in order to illustrates that...",False,1,2,False,3199,3199,57.27,3099,100,0
+prefix@0.5,25,2,Why didn't the Skipper follow the new cook's advice about avoiding Vesta?,False,1,1,True,3201,3201,56.969,3099,102,1
+prefix@0.5,26,2,Why was the new cook so upset that the Skipper decided to surrender?,True,3,0,False,3207,3207,57.195,3100,107,0
+prefix@0.5,27,2,"What does the Skipper mean by ""lady-logic""?",False,0,2,False,3141,3141,33.56,3099,42,1
+prefix@0.5,28,2,What would've happened if the new cook had told the Skipper about the ekalastron deposits earlier?,True,3,0,False,3206,3206,55.578,3100,106,0
+prefix@0.5,29,2,Why was the cook called Captain Slops?,True,2,2,True,3155,3155,39.722,3099,56,0
+prefix@0.5,30,3,What does the gold band that Ro put on Na's wrist mean for them?,False,2,2,True,2920,2920,1220.131,0,2920,2872
+prefix@0.5,31,3,Who or what is an Oan?,False,3,3,True,2926,2926,39.882,2872,54,0
+prefix@0.5,32,3,What is the Oans' unusual advantage? ,True,0,3,False,2921,2921,38.5,2872,49,0
+prefix@0.5,33,3,Why is Grimm annoyed that Charlotte slept beside Carlson?,True,3,2,False,2968,2968,48.902,2872,96,0
+prefix@0.5,34,3,In what sense does Ro relate to the white young men?,True,3,3,True,2943,2943,43.974,2872,71,0
+prefix@0.5,35,3,What is NOT a difference between the red people and the humans?,True,2,3,False,2923,2923,37.313,2872,51,0
+prefix@0.5,36,3,Why did Ro change his mind about the people on Mars being backwards?,False,0,2,False,2997,2997,60.242,2872,125,0
+prefix@0.5,37,3,Who is the man with the silver hair?,True,3,3,True,2910,2910,30.786,2872,38,0
+prefix@0.5,38,3,What was most likely the strongest motivator for humans to develop telepathy?,False,2,1,False,2952,2952,42.871,2872,80,1
+prefix@0.5,39,3,What became of Ro's mother?,True,3,3,True,2935,2935,37.462,2873,62,0
+prefix@0.5,40,4,Who is Billy?,False,0,0,True,2862,2862,1160.585,0,2862,2801
+prefix@0.5,41,4,How do the women have Amazonian strength?,True,3,3,True,2917,2917,62.566,2801,116,0
+prefix@0.5,42,4,Why is the main reason that Johnathan so humiliated by the women?,False,2,2,True,2873,2873,44.178,2801,72,0
+prefix@0.5,43,4,What was Ann intending to do with Johnathan under the trees before the other women showed up?,True,0,1,False,2865,2865,38.696,2801,64,0
+prefix@0.5,44,4,Why does Johnathan put his arm around Ann?,False,1,2,False,2898,2898,55.527,2801,97,1
+prefix@0.5,45,4,Why is the Interstellar Cosmography Society in a hurry to get off of the asteroid?,True,2,1,False,2889,2889,50.093,2802,87,0
+prefix@0.5,46,4,What is the most likely reason that Johnathan's ship crashed?,True,0,1,False,2950,2950,80.507,2801,149,1
+prefix@0.5,47,4,What was Johnathan's original mission?,False,2,2,True,2882,2882,48.537,2802,80,0
+prefix@0.5,48,4,Johnathan doesn't tell the Interstellar Cosmography Society about the twenty-seven women who are waiting to be rescued because...,True,1,2,False,2935,2935,84.822,2801,134,0
+prefix@0.5,49,4,What is the most likely reason that Johnathan decides to stay on the asteroid?,True,2,3,False,2924,2924,63.701,2801,123,0
+prefix@0.5,50,5,Why is course change dangerous?,True,0,0,True,3150,3150,1330.619,0,3150,3024
+prefix@0.5,51,5,Did Duane actually kill Stevens? How do you know?,False,0,1,False,3134,3134,58.001,3024,110,0
+prefix@0.5,52,5,The red headed woman is most likely Duane's...,True,2,0,False,3063,3063,36.932,3024,39,0
+prefix@0.5,53,5,Why didn't Duane and Stevens go to the pressure bunks when they announced the course change?,False,0,0,True,3119,3119,64.607,3024,95,1
+prefix@0.5,54,5,Why does Duane want to kill Stevens?,False,3,2,False,3124,3124,67.392,3025,99,1
+prefix@0.5,55,5,Why does Andrias want to arm his people?,True,2,2,True,3107,3107,61.085,3026,81,0
+prefix@0.5,56,5,"Why is Adrian's office so long and narrow, and why there a long carpet leading up to Adrian's desk?",False,0,0,True,3128,3128,65.265,3025,103,0
+prefix@0.5,57,5,Why does Adrian think the Callistans will be willing to fight against the league?,True,3,3,True,3095,3095,49.438,3025,70,1
+prefix@0.5,58,5,Why does the amnesia change Duane's mind about letting Andrias have the guns?,False,1,3,False,3107,3107,55.013,3026,81,0
+prefix@0.5,59,5,"Why were Duane and Stevens fighting?
+",True,2,1,False,3108,3108,53.213,3025,83,0
+prefix@0.5,60,6,Which of the following is a false statement about the 98th corpse to be acquired by the ship?,True,1,0,False,2519,2519,1044.605,0,2519,2454
+prefix@0.5,61,6,How long have the Venusians and Earth been in conflict?,True,0,1,False,2502,2502,39.495,2454,48,1
+prefix@0.5,62,6,How did Burnett die?,True,1,1,True,2496,2496,45.544,2455,41,0
+prefix@0.5,63,6,How many times did Burnett operate the claw in the passage?,True,3,1,False,2489,2489,35.861,2455,34,0
+prefix@0.5,64,6,What likely happened to Rice in the end?,True,0,1,False,2505,2505,42.265,2454,51,1
+prefix@0.5,65,6,What was Burnett’s greatest motivation to collect the 99th body?,True,0,0,True,2521,2521,48.157,2455,66,0
+prefix@0.5,66,6,Why did Lethla come aboard the morgue ship?,True,2,0,False,2518,2518,38.838,2454,64,1
+prefix@0.5,67,6,Why are Earth and Venus at war?,True,1,1,True,2504,2504,38.713,2455,49,0
+prefix@0.5,68,6,What do we learn of the relationship between Rice and Burnett?,True,2,2,True,2502,2502,40.002,2454,48,1
+prefix@0.5,69,6,What is the Constellation’s main mission?,False,1,1,True,2527,2527,56.592,2455,72,0
+prefix@0.5,70,7,What did the author intend the lesson of the passage to be?,True,3,3,True,1887,1887,819.456,0,1887,1805
+prefix@0.5,71,7,What happened to Dameri while he was in custody of the government?,True,1,1,True,1867,1867,37.776,1805,62,0
+prefix@0.5,72,7,What was Dameri’s purpose in landing on earth?,False,3,2,False,1877,1877,42.899,1805,72,0
+prefix@0.5,73,7,What did the people of Earth generally believe Dameri Tass would do on their planet?,False,2,1,False,1885,1885,43.551,1805,80,0
+prefix@0.5,74,7,How did Dameri Tass communicate in English?,True,3,2,False,1861,1861,37.341,1804,57,0
+prefix@0.5,75,7,What would have happened if Dameri had delivered his speech sooner?,True,2,3,False,1866,1866,37.471,1804,62,2
+prefix@0.5,76,7,What would the citizens of Carthis learn about Earth after Dameri returned?,True,3,2,False,1878,1878,42.807,1806,72,0
+prefix@0.5,77,7,What was the relationship like between Dermott and Casey?,False,1,1,True,1870,1870,42.824,1805,65,0
+prefix@0.5,78,7,What is the tone of the story?,True,3,1,False,1841,1841,30.115,1805,36,0
+prefix@0.5,79,7,What would have happened if Dermott had worn the helmet instead of Casey?,False,1,1,True,1894,1894,49.585,1805,89,0
+prefix@0.5,80,8,What is the nature of the relationship between Georges and Retief?,True,2,1,False,3413,3413,1432.609,0,3413,3355
+prefix@0.5,81,8,What is true of the relationship between the Boyars and the Aga Kagan?,True,3,3,True,3420,3420,45.202,3355,65,0
+prefix@0.5,82,8,What is the closest estimate to how long have the Boyar been on Flamme?,False,1,1,True,3400,3400,35.829,3355,45,1
+prefix@0.5,83,8,What is the highest authority the reader learns of any woman holding on Flamme?,True,0,0,True,3400,3400,34.628,3356,44,0
+prefix@0.5,84,8,What is Stanley’s opinion of the Corps?,True,1,1,True,3402,3402,33.581,3355,47,0
+prefix@0.5,85,8,What is Georges’ manner with the Aga Kagan?,False,3,3,True,3394,3394,30.944,3355,39,0
+prefix@0.5,86,8,What is Stanley’s history within the Aga Kagan?,False,3,1,False,3409,3409,38.831,3355,54,0
+prefix@0.5,87,8,How do the Boyars view the Aga Kagans?,False,1,1,True,3424,3424,45.421,3353,71,0
+prefix@0.5,88,8,Which is the best adjective to describe the Corp's approach to governance of the planet?,False,2,1,False,3399,3399,34.433,3353,46,0
+prefix@0.5,89,8,What is the Boyar's ultimate goal for Flamme?,True,1,1,True,3435,3435,51.76,3353,82,0
+prefix@0.5,90,9,"What was the overall relationship like between Splinter and Kerry?
+",False,3,3,True,2998,2998,1275.843,0,2998,2903
+prefix@0.5,91,9,Which of the characters receives the most medical intervention during the course of the story?,False,3,2,False,2954,2954,39.335,2903,51,0
+prefix@0.5,92,9,What can be inferred about the size of the ship the characters travelled in?,True,1,2,False,2985,2985,48.948,2903,82,0
+prefix@0.5,93,9,How did the author illustrate the planet of Venus upon their arrival?,True,0,1,False,2968,2968,43.219,2903,65,0
+prefix@0.5,94,9,What are the islands of Venus?,True,0,0,True,2958,2958,38.861,2903,55,0
+prefix@0.5,95,9,How do the space travellers navigate around the planet of Venus?,False,0,0,True,2948,2948,35.909,2903,45,1
+prefix@0.5,96,9,How did Splinter feel about being with Kerry on the turtle-shaped island?,True,3,3,True,2967,2967,40.962,2904,63,0
+prefix@0.5,97,9,Why did Kerry come out of retirement for the mission?,False,0,1,False,2966,2966,38.324,2903,63,0
+prefix@0.5,98,9,What is the relationship between Kerry Blane and Splinter Wood?,False,1,1,True,2963,2963,38.357,2903,60,0
+prefix@0.5,99,9,Why doesn't Kerry Blane take the pills that Splinter offers him?,True,1,3,False,2981,2981,43.27,2903,78,0
+prefix@0.5,100,10,What is the relationship like between Yasak and Koroby?,True,1,2,False,2807,2807,1150.157,0,2807,2723
+prefix@0.5,101,10,What did Koroby think of the vehicle she took to her wedding?,True,1,1,True,2793,2793,44.253,2723,70,0
+prefix@0.5,102,10,What time period in human history does the author liken the Venusian planet to?,True,3,1,False,2784,2784,38.322,2723,61,0
+prefix@0.5,103,10,What likely happened to Koroby after the story ended?,True,0,1,False,2793,2793,46.037,2723,70,0
+prefix@0.5,104,10,How did Yasak feel towards Robert upon their meeting?,True,2,2,True,2773,2773,40.534,2722,51,1
+prefix@0.5,105,10,How does Robert communicate with the Venusians?,True,3,3,True,2781,2781,37.886,2723,58,0
+prefix@0.5,106,10,What statement best describes Robert?,True,2,1,False,2799,2799,42.015,2722,77,0
+prefix@0.5,107,10,Why does Koroby feel motivated to start the fire?,True,2,2,True,2797,2797,45.487,2722,75,0
+prefix@0.5,108,10,Under what circumstances does Yasak first reunite with Koroby during the story?,True,1,1,True,2802,2802,45.329,2722,80,0
+prefix@0.5,109,10,How did Robert feel about becoming stranded on Venus?,True,0,2,False,2788,2788,43.836,2722,66,0
+prefix@0.5,110,11,"Why did the supreme ruler deliver a scroll message to Jorgenson?
+",True,0,2,False,3134,3134,1376.234,0,3134,3068
+prefix@0.5,111,11,What is the purpose of the Witnesses?,True,0,0,True,3136,3136,46.352,3068,68,0
+prefix@0.5,112,11,Why was Jorgenson so angry to have his business taken by Glen-U?,True,3,3,True,3139,3139,46.888,3068,71,0
+prefix@0.5,113,11,What would the Thrid likely believe drives their system of governance?,True,3,1,False,3118,3118,43.507,3068,50,1
+prefix@0.5,114,11,What happened if a local governor made a mistake that was recognized?,False,2,2,True,3159,3159,55.582,3069,90,0
+prefix@0.5,115,11,What is the definition of truth to the Thrid?,True,1,1,True,3131,3131,42.566,3069,62,0
+prefix@0.5,116,11,Why were Jorgenson and Ganti not put to death?,True,0,1,False,3143,3143,45.316,3068,75,0
+prefix@0.5,117,11,In what way was Jorgenson’s reasoning similar to that of the Thrid?,True,1,1,True,3123,3123,43.084,3068,55,0
+prefix@0.5,118,11,What is Jorgenson's internal conflict at the beginning of the story?,False,3,3,True,3190,3190,61.531,3068,122,0
+prefix@0.5,119,11,Why is the Grand Panjandrum called the Never-Mistaken?,True,0,0,True,3173,3173,57.616,3068,105,0
+prefix@0.5,120,12,What do Dan's interactions with both Kelly and Blote signify about his overall motive throughout the article?,False,2,1,False,3352,3352,1477.134,0,3352,3205
+prefix@0.5,121,12,What choice best describes Dan's feelings toward operating the carrier throughout the article?,True,0,2,False,3321,3321,68.76,3205,116,0
+prefix@0.5,122,12,What feeling does Dan's accidental encounter with the young girl evoke for the readers?,True,0,0,True,3296,3296,56.527,3205,91,0
+prefix@0.5,123,12,What would have happened if Dan had never encountered Blote?,True,0,2,False,3300,3300,54.3,3205,95,0
+prefix@0.5,124,12,What does Blote's reaction to Dan's mentioning of a time machine demonstrate about where Manny and Fiorello came from?,False,0,2,False,3339,3339,82.883,3205,134,0
+prefix@0.5,125,12,"What would best describe how Dan's experiences, such as fighting the thieves and meeting Dzhackoon, changed his overall attitude that he had in the beginning of the article?",True,1,3,False,3311,3311,59.036,3205,106,0
+prefix@0.5,126,12,Why would Dan have wanted Fiorello to accompany him on the carrier?,True,3,3,True,3284,3284,46.152,3204,80,1
+prefix@0.5,127,12,Why was Dan determined to wait so long for the thieves?,True,3,2,False,3282,3282,45.311,3205,77,0
+prefix@0.5,128,12,What is the author's purpose in providing such detailed descriptions of Blote and Dzhackoon?,True,3,3,True,3296,3296,54.072,3204,92,0
+prefix@0.5,129,12,Why did Kelly hire Dan so quickly?,True,3,2,False,3267,3267,40.006,3204,63,0
+prefix@0.5,130,13,"Is the motive behind the propaganda that Martian Broadcasting uses to control the reddies on Mars similar to the motive behind the mysterious hypnotizing music that the terrestrials keep hearing, and why?",False,3,3,True,2911,2911,1225.519,0,2911,2772
+prefix@0.5,131,13,What was the author's purpose in including the tragic encounter between Jared Haller and Mr. Ranson?,True,2,2,True,2875,2875,56.607,2772,103,1
+prefix@0.5,132,13,What would best describe the terrestrials' attitudes towards the reddies on Mars?,True,3,3,True,2887,2887,61.704,2773,114,1
+prefix@0.5,133,13,What would be the main reason Mr. Ranson wants to find the creator of the hypnotic music?,True,3,3,True,2873,2873,58.071,2774,99,0
+prefix@0.5,134,13,"Would Captain Maxwell's attitude toward Mr. Ranson and the murder been different if he had known about the hypnotizing melody, and why?",False,1,0,False,2891,2891,63.011,2772,119,0
+prefix@0.5,135,13,What would best describe the setting of the city that Mr. Ranson travelled through to get to the house Elath Taen resided in? ,True,0,0,True,2852,2852,42.147,2772,80,1
+prefix@0.5,136,13,What was the author's purpose in describing the feeling the hypnotizing music evoked in such detail every time that it played?,True,1,1,True,2858,2858,52.785,2773,85,0
+prefix@0.5,137,13,What would have likely happened with the interaction between Elath Taen and Mr. Ranson at the end of the article if the hypnotizing music had evoked anger instead of sleepiness?,True,0,0,True,2910,2910,87.485,2773,137,0
+prefix@0.5,138,13,"Given the music described at the end of the article and its comparison to chloroform, what can you infer about the purpose of chloroform?",False,1,1,True,2850,2850,46.837,2772,78,0
+prefix@0.5,139,13,"Who are ""reddies""?",False,0,0,True,2806,2806,30.969,2772,34,0
+prefix@0.5,140,14,How is Bobby's attitude towards flying the spaceship different than Pop's in the beginning of the article?,False,2,2,True,3418,3418,1477.812,0,3418,3299
+prefix@0.5,141,14,Why was Pop upset about leaving life on Earth?,True,0,2,False,3382,3382,52.337,3299,83,1
+prefix@0.5,142,14,Why does Pop prefer Dick's help with the spaceship more than Bobby's?,True,1,1,True,3387,3387,53.374,3300,87,0
+prefix@0.5,143,14,What is the main reason the family was so worried about losing their supplies when abandoning the spaceship?,False,2,2,True,3397,3397,57.135,3299,98,0
+prefix@0.5,144,14,"Given the description of the natural setting of Eros, will it be likely that the family can survive with the available resources on the planetoid?",False,3,2,False,3417,3417,62.423,3299,118,0
+prefix@0.5,145,14,What example listed is most similar to the Moseley family's journey to Eros?,True,3,3,True,3369,3369,48.17,3299,70,0
+prefix@0.5,146,14,"Given the dangerous extent of the trip to Eros, what is the most likely feeling that every family member, except for the baby and Bobby, would have likely felt?",False,3,1,False,3372,3372,45.408,3299,73,0
+prefix@0.5,147,14,How would the family's attitude towards their first days on Eros been different if the spaceship hadn't landed in the water?,True,2,1,False,3417,3417,66.599999,3299,118,0
+prefix@0.5,148,14,Why is Pop concerned about finding the most suitable area of land for his family to live on Eros?,True,1,1,True,3391,3391,52.163,3299,92,1
+prefix@0.5,149,14,Why was Pop's posture so poor?,False,2,1,False,3359,3359,38.076,3300,59,0
+prefix@0.5,150,15,What best describes why Madison's initial feelings towards the Actuarvac were suspicious and skeptical?,True,1,1,True,2923,2923,1260.501,0,2923,2818
+prefix@0.5,151,15,What does Madison's selection in car choice after the flight tell about his physical character?,False,1,0,False,2877,2877,41.271,2818,59,0
+prefix@0.5,152,15,"Given the information in the article, is Granite City likely making false insurance claims, and why?",True,3,2,False,2902,2902,53.116,2817,85,1
+prefix@0.5,153,15,"Given what was discovered in Granite City, is the Actuarvac correct in its suspicion of Granite City?",True,0,1,False,2903,2903,49.19,2818,85,0
+prefix@0.5,154,15,"According to Dr. Parnell, can the same fate affecting Granite City affect other places around the world?",True,0,1,False,2935,2935,59.813,2817,118,0
+prefix@0.5,155,15,"What would best describe Madison's attitude towards Professor Parnell upon learning Parnell's reasoning for calling the people of Granite City ""subhuman""?",True,2,2,True,2907,2907,50.039,2817,90,0
+prefix@0.5,156,15,How would Madison's perception of Granite City been different if he had not have met Professor Parnell?,False,0,0,True,2966,2966,77.073,2817,149,0
+prefix@0.5,157,15,Why did Madison investigate the manual record files prior to visiting Granite City?,True,0,0,True,2887,2887,45.521,2817,70,3
+prefix@0.5,158,15,Why did Madison drive a Rolls?,False,0,0,True,2898,2898,42.394,2820,78,0
+prefix@0.5,159,15,What is the most likely reason for the lack of car insurance claims in Granite City?,True,3,2,False,2905,2905,59.36,2817,88,0
+prefix@0.5,160,16,How would one describe Emerald Star Hotel?,False,3,3,True,3143,3143,1379.129,0,3143,3086
+prefix@0.5,161,16,"By the end of the article, would Harper's opinion of Mrs. Jacobsen at the front desk be different?",True,3,3,True,3180,3180,50.164,3086,94,0
+prefix@0.5,162,16,How did Harper's opinion on the place of robots in the workforce change by the end of the article?,True,2,1,False,3214,3214,61.888,3086,128,0
+prefix@0.5,163,16,"Though the robots were the main issue at the hotel, was human error still an issue in Harper's overall stay?",True,3,0,False,3178,3178,48.806,3086,92,0
+prefix@0.5,164,16,How did Harper and Jake Ellis intend to have different experiences during their stay at the hotel?,True,0,0,True,3188,3188,54.083,3086,102,0
+prefix@0.5,165,16,Why was Harper able to buy the hotel's robots for such a cheap price?,False,3,3,True,3188,3188,55.52,3086,102,0
+prefix@0.5,166,16,What was Harper's most likely work with the equatorial wells before they sank?,False,3,2,False,3148,3148,38.536,3086,62,0
+prefix@0.5,167,16,Why did Harper change his tone regarding a vacation to Mars?,True,3,3,True,3157,3157,47.311,3086,71,1
+prefix@0.5,168,16,Why was Harper strongly in favor of automation?,True,1,3,False,3145,3145,39.54,3087,58,0
+prefix@0.5,169,16,Why did Harper think of Mrs. Jacobsen when the two robots came to his room?,True,3,1,False,3166,3166,51.237,3087,79,0
+prefix@0.5,170,17,What would best describe Asa and Dorr's relationship?,True,1,0,False,2995,2995,1330.913,0,2995,2884
+prefix@0.5,171,17,How would Asa's decision on where to become a changeling been affected if the pay range to work as a muck man on Jordan's Planet was not as high as it was originally listed in the article?,True,1,1,True,3032,3032,77.393,2884,148,0
+prefix@0.5,172,17,What was the advantage of muck men being shaped like frogs?,False,1,1,True,2972,2972,53.255,2884,88,1
+prefix@0.5,173,17,What can you infer about the living conditions on Jordan's Planet?,False,3,3,True,2964,2964,48.103,2885,79,0
+prefix@0.5,174,17,What were the consequences of Asa meeting Kershaw and Furston?,True,3,3,True,2994,2994,57.043,2885,109,0
+prefix@0.5,175,17,What would best describe Harriet's attitude towards Dorr?,True,0,0,True,2963,2963,46.474,2885,78,1
+prefix@0.5,176,17,What would have been the consequence if Harriet did not come back for Asa with the helicopter?,True,3,0,False,2985,2985,54.948,2886,99,0
+prefix@0.5,177,17,Why would a company think it is a logical idea to let prisoners work as muck men on Jordan's Planet?,False,1,1,True,2984,2984,58.111,2884,100,0
+prefix@0.5,178,17,What would best describe Asa's motive for working as a muck man?,True,3,3,True,2951,2951,45.046,2884,67,1
+prefix@0.5,179,17,What seems to be the primary benefit of becoming a changeling?,True,0,0,True,2934,2934,38.034,2885,49,0
+prefix@0.5,180,18,When did the earth earn its new title?,True,3,3,True,2988,2988,1259.973,0,2988,2916
+prefix@0.5,181,18,What do the colors in the physicians' titles mean?,False,1,0,False,2982,2982,43.855,2916,66,0
+prefix@0.5,182,18,How did the planet get the code to call for help?,False,0,3,False,2976,2976,38.41,2916,60,0
+prefix@0.5,183,18,What kind of IV drip did the doctor give the patient?,True,0,0,True,2956,2956,33.091,2916,40,1
+prefix@0.5,184,18,What did the doctor administer by feeding tube?,True,2,3,False,2951,2951,32.082,2917,34,0
+prefix@0.5,185,18,Why did the Earth doctor use the mortar and pestle?,True,0,2,False,2971,2971,38.752,2916,55,0
+prefix@0.5,186,18,How many times did the doctor give the patient aspirin?,True,1,0,False,2955,2955,31.593,2916,39,0
+prefix@0.5,187,18,What was the highest priority of the Doctors while treating His Eminence?,True,1,0,False,2996,2996,44.514,2916,80,1
+prefix@0.5,188,18,"What were the specialties of the Red and Green Doctors, respectively?",True,1,1,True,2960,2960,33.417,2917,43,0
+prefix@0.5,189,18,Which planets do the physicians visit during the events of the story?,True,0,3,False,2965,2965,38.637,2916,49,0
+prefix@0.5,190,19,Who is called an aphrodisiac?,False,1,0,False,3317,3317,1442.086,0,3317,3277
+prefix@0.5,191,19,What is the main reason the Cleopatra was chosen to report to Tethys?,True,3,3,True,3340,3340,38.512,3277,63,0
+prefix@0.5,192,19,Why did the workers weld appendages to the Cleopatra?,True,1,0,False,3337,3337,38.616,3277,60,0
+prefix@0.5,193,19,How did Gorman feel about Strike?,False,1,1,True,3345,3345,46.101,3277,68,1
+prefix@0.5,194,19,How long did it take the Cleopatra to travel from Tethys to Eridanus?,True,3,0,False,3334,3334,43.143,3278,56,0
+prefix@0.5,195,19,What best describes the battle?,False,1,0,False,3354,3354,47.14,3277,77,0
+prefix@0.5,196,19,Why did the Eridans not care if they died?,True,1,1,True,3332,3332,40.509,3277,55,3
+prefix@0.5,197,19,Why did the ship go to hyperspace?,True,2,1,False,3334,3334,40.794,3280,54,0
+prefix@0.5,198,19,How was the ship able to navigate through the alien cosmos?,True,0,0,True,3338,3338,39.006,3277,61,1
+prefix@0.5,199,19,How many people are in charge of plotting navigational waypoints along the journey?,False,0,0,True,3315,3315,31.684,3278,37,0
+prefix@0.33,0,0,How much time has passed between Blake's night with Eldoria and his search for Sabrina York in his mind-world?,False,1,0,False,1961,1961,740.73,0,1961,1904
+prefix@0.33,1,0,Why does Deirdre get so upset when Blake Past suggests she go to prom with the young man?,True,1,0,False,2042,2042,83.241,1904,138,2
+prefix@0.33,2,0,Why does shame flame in Blake's cheeks when Deirdre goes to prepare Eldoria's dias?,True,2,2,True,2017,2017,55.741,1906,111,0
+prefix@0.33,3,0,"Why did Blake create the three female super-images of Miss Stoddart, Officer Finch, and Vera Velvetskin?",True,3,3,True,2027,2027,61.436,1905,122,0
+prefix@0.33,4,0,Sabrina York is ,True,0,0,True,1954,1954,40.054,1904,50,0
+prefix@0.33,5,0,Why doesn't Blake haggle with Eldoria about the price for her services?,False,3,1,False,2020,2020,63.961,1904,116,1
+prefix@0.33,6,0,Why did Blake feel awkward in the hut?,True,2,1,False,1962,1962,38.686,1905,57,0
+prefix@0.33,7,0,What is the most likely reason that Blake says he is a god?,False,0,2,False,1964,1964,37.133,1904,60,0
+prefix@0.33,8,0,Blake's mind country was made of:,False,2,2,True,1962,1962,40.004,1904,58,0
+prefix@0.33,9,0,Why did Blake visit his mom in the kitchen?,True,1,3,False,1965,1965,37.739,1904,61,0
+prefix@0.33,10,1,Why did the Tr'en leave Korvin's door unlocked and a weapon nearby?,True,1,1,True,1878,1878,759.536,0,1878,1722
+prefix@0.33,11,1,"Why does the text mean when it says that Korvin was ""unconscious"" at the time of his lessons in the local language?",True,0,0,True,1859,1859,73.167,1722,137,0
+prefix@0.33,12,1,How was Korvin able to avoid disclosing the true intent of his mission under the lie detector questioning? ,False,1,1,True,1864,1864,74.4,1721,143,0
+prefix@0.33,13,1,What is the most likely reason for Korvin's solitude in jail?,True,1,1,True,1839,1839,62.42,1721,118,0
+prefix@0.33,14,1,Why does the Tr'en's logic fail them?,True,1,1,True,1820,1820,56.861,1721,99,0
+prefix@0.33,15,1,Are there indications that the Tr'en would be interested in attacking Earth? Why or why not?,True,3,0,False,1829,1829,54.642,1721,108,0
+prefix@0.33,16,1,"The text says ""The expert frowned horribly."" What makes the expert's smile so horrible?",True,3,3,True,1821,1821,51.957,1721,100,0
+prefix@0.33,17,1,How did the Ruler become the Ruler?,False,0,1,False,1786,1786,41.222,1721,65,0
+prefix@0.33,18,1,Why did the Tr'en think that Korvin was a traitor to Earth?,False,3,3,True,1809,1809,48.144,1721,88,0
+prefix@0.33,19,1,What is the best description of Korvin's job?,True,1,2,False,1788,1788,43.269,1721,67,0
+prefix@0.33,20,2,What is the most likely meaning of the slang O.Q.? (in twentieth-century American English),False,3,3,True,2058,2058,858.373,0,2058,2011
+prefix@0.33,21,2,"Why does the Skipper stop abruptly after he says ""when you're running a blockade""?",False,3,3,True,2096,2096,48.55,2011,85,0
+prefix@0.33,22,2,Who or what is Leo?,False,1,3,False,2058,2058,35.468,2011,47,0
+prefix@0.33,23,2,Why does the Skipper allow the new chef to use the heat-cannon as an incinerator?,False,3,2,False,2126,2126,66.049,2011,115,0
+prefix@0.33,24,2," Lieutenant Dugan brings up the examples of ""High G"" Gordon and ""Runt"" Hake in order to illustrates that...",False,1,2,False,2111,2111,53.119,2011,100,0
+prefix@0.33,25,2,Why didn't the Skipper follow the new cook's advice about avoiding Vesta?,False,1,1,True,2113,2113,52.963,2011,102,1
+prefix@0.33,26,2,Why was the new cook so upset that the Skipper decided to surrender?,True,3,0,False,2119,2119,56.196,2012,107,0
+prefix@0.33,27,2,"What does the Skipper mean by ""lady-logic""?",False,0,1,False,2053,2053,33.604,2011,42,1
+prefix@0.33,28,2,What would've happened if the new cook had told the Skipper about the ekalastron deposits earlier?,True,3,0,False,2118,2118,55.773,2012,106,0
+prefix@0.33,29,2,Why was the cook called Captain Slops?,True,2,2,True,2067,2067,38.443,2011,56,0
+prefix@0.33,30,3,What does the gold band that Ro put on Na's wrist mean for them?,False,2,2,True,1878,1878,768.843,0,1878,1830
+prefix@0.33,31,3,Who or what is an Oan?,False,3,3,True,1884,1884,36.76,1830,54,0
+prefix@0.33,32,3,What is the Oans' unusual advantage? ,True,0,3,False,1879,1879,36.122,1830,49,0
+prefix@0.33,33,3,Why is Grimm annoyed that Charlotte slept beside Carlson?,True,3,0,False,1926,1926,47.495,1830,96,0
+prefix@0.33,34,3,In what sense does Ro relate to the white young men?,True,3,3,True,1901,1901,42.04,1830,71,0
+prefix@0.33,35,3,What is NOT a difference between the red people and the humans?,True,2,2,True,1881,1881,37.464,1830,51,0
+prefix@0.33,36,3,Why did Ro change his mind about the people on Mars being backwards?,False,0,0,True,1955,1955,57.025,1830,125,0
+prefix@0.33,37,3,Who is the man with the silver hair?,True,3,0,False,1868,1868,30.097,1830,38,0
+prefix@0.33,38,3,What was most likely the strongest motivator for humans to develop telepathy?,False,2,1,False,1910,1910,41.712,1830,80,1
+prefix@0.33,39,3,What became of Ro's mother?,True,3,3,True,1893,1893,36.758,1831,62,0
+prefix@0.33,40,4,Who is Billy?,False,0,0,True,1853,1853,790.021,0,1853,1792
+prefix@0.33,41,4,How do the women have Amazonian strength?,True,3,3,True,1908,1908,59.978,1792,116,0
+prefix@0.33,42,4,Why is the main reason that Johnathan so humiliated by the women?,False,2,2,True,1864,1864,42.639,1792,72,0
+prefix@0.33,43,4,What was Ann intending to do with Johnathan under the trees before the other women showed up?,True,0,1,False,1856,1856,38.848,1792,64,0
+prefix@0.33,44,4,Why does Johnathan put his arm around Ann?,False,1,2,False,1889,1889,52.391,1792,97,1
+prefix@0.33,45,4,Why is the Interstellar Cosmography Society in a hurry to get off of the asteroid?,True,2,2,True,1880,1880,49.416,1793,87,0
+prefix@0.33,46,4,What is the most likely reason that Johnathan's ship crashed?,True,0,1,False,1941,1941,75.518,1792,149,1
+prefix@0.33,47,4,What was Johnathan's original mission?,False,2,3,False,1873,1873,42.014,1793,80,0
+prefix@0.33,48,4,Johnathan doesn't tell the Interstellar Cosmography Society about the twenty-seven women who are waiting to be rescued because...,True,1,2,False,1926,1926,72.49,1792,134,0
+prefix@0.33,49,4,What is the most likely reason that Johnathan decides to stay on the asteroid?,True,2,3,False,1915,1915,61.015,1792,123,0
+prefix@0.33,50,5,Why is course change dangerous?,True,0,0,True,2057,2057,881.721,0,2057,1931
+prefix@0.33,51,5,Did Duane actually kill Stevens? How do you know?,False,0,1,False,2041,2041,56.817,1931,110,0
+prefix@0.33,52,5,The red headed woman is most likely Duane's...,True,2,0,False,1970,1970,36.181,1931,39,0
+prefix@0.33,53,5,Why didn't Duane and Stevens go to the pressure bunks when they announced the course change?,False,0,1,False,2026,2026,52.777,1931,95,1
+prefix@0.33,54,5,Why does Duane want to kill Stevens?,False,3,2,False,2031,2031,60.052,1932,99,1
+prefix@0.33,55,5,Why does Andrias want to arm his people?,True,2,2,True,2014,2014,49.202,1933,81,0
+prefix@0.33,56,5,"Why is Adrian's office so long and narrow, and why there a long carpet leading up to Adrian's desk?",False,0,0,True,2035,2035,56.879,1932,103,0
+prefix@0.33,57,5,Why does Adrian think the Callistans will be willing to fight against the league?,True,3,2,False,2002,2002,45.771,1932,70,1
+prefix@0.33,58,5,Why does the amnesia change Duane's mind about letting Andrias have the guns?,False,1,3,False,2014,2014,50.561,1933,81,0
+prefix@0.33,59,5,"Why were Duane and Stevens fighting?
+",True,2,1,False,2015,2015,46.177,1932,83,0
+prefix@0.33,60,6,Which of the following is a false statement about the 98th corpse to be acquired by the ship?,True,1,0,False,1647,1647,726.0,0,1647,1582
+prefix@0.33,61,6,How long have the Venusians and Earth been in conflict?,True,0,1,False,1630,1630,34.093,1582,48,1
+prefix@0.33,62,6,How did Burnett die?,True,1,1,True,1624,1624,34.297,1583,41,0
+prefix@0.33,63,6,How many times did Burnett operate the claw in the passage?,True,3,1,False,1617,1617,34.506,1583,34,0
+prefix@0.33,64,6,What likely happened to Rice in the end?,True,0,1,False,1633,1633,41.043,1582,51,1
+prefix@0.33,65,6,What was Burnett’s greatest motivation to collect the 99th body?,True,0,0,True,1649,1649,45.932,1583,66,0
+prefix@0.33,66,6,Why did Lethla come aboard the morgue ship?,True,2,0,False,1646,1646,38.811,1582,64,1
+prefix@0.33,67,6,Why are Earth and Venus at war?,True,1,1,True,1632,1632,37.588,1583,49,0
+prefix@0.33,68,6,What do we learn of the relationship between Rice and Burnett?,True,2,2,True,1630,1630,38.064,1582,48,1
+prefix@0.33,69,6,What is the Constellation’s main mission?,False,1,1,True,1655,1655,45.784,1583,72,0
+prefix@0.33,70,7,What did the author intend the lesson of the passage to be?,True,3,3,True,1248,1248,494.012,0,1248,1166
+prefix@0.33,71,7,What happened to Dameri while he was in custody of the government?,True,1,1,True,1228,1228,37.007,1166,62,0
+prefix@0.33,72,7,What was Dameri’s purpose in landing on earth?,False,3,0,False,1238,1238,42.046,1166,72,0
+prefix@0.33,73,7,What did the people of Earth generally believe Dameri Tass would do on their planet?,False,2,0,False,1246,1246,42.435,1166,80,0
+prefix@0.33,74,7,How did Dameri Tass communicate in English?,True,3,3,True,1222,1222,37.778,1165,57,0
+prefix@0.33,75,7,What would have happened if Dameri had delivered his speech sooner?,True,2,3,False,1227,1227,38.094,1165,62,2
+prefix@0.33,76,7,What would the citizens of Carthis learn about Earth after Dameri returned?,True,3,2,False,1239,1239,41.441,1167,72,0
+prefix@0.33,77,7,What was the relationship like between Dermott and Casey?,False,1,1,True,1231,1231,42.056,1166,65,0
+prefix@0.33,78,7,What is the tone of the story?,True,3,1,False,1202,1202,31.012,1166,36,0
+prefix@0.33,79,7,What would have happened if Dermott had worn the helmet instead of Casey?,False,1,1,True,1255,1255,48.265,1166,89,0
+prefix@0.33,80,8,What is the nature of the relationship between Georges and Retief?,True,2,1,False,2193,2193,888.444,0,2193,2135
+prefix@0.33,81,8,What is true of the relationship between the Boyars and the Aga Kagan?,True,3,3,True,2200,2200,42.085,2135,65,0
+prefix@0.33,82,8,What is the closest estimate to how long have the Boyar been on Flamme?,False,1,1,True,2180,2180,33.189999,2135,45,1
+prefix@0.33,83,8,What is the highest authority the reader learns of any woman holding on Flamme?,True,0,0,True,2180,2180,32.651,2136,44,0
+prefix@0.33,84,8,What is Stanley’s opinion of the Corps?,True,1,1,True,2182,2182,33.502,2135,47,0
+prefix@0.33,85,8,What is Georges’ manner with the Aga Kagan?,False,3,3,True,2174,2174,31.109,2135,39,0
+prefix@0.33,86,8,What is Stanley’s history within the Aga Kagan?,False,3,1,False,2189,2189,38.707,2135,54,0
+prefix@0.33,87,8,How do the Boyars view the Aga Kagans?,False,1,1,True,2204,2204,44.154,2133,71,0
+prefix@0.33,88,8,Which is the best adjective to describe the Corp's approach to governance of the planet?,False,2,1,False,2179,2179,33.802,2133,46,0
+prefix@0.33,89,8,What is the Boyar's ultimate goal for Flamme?,True,1,1,True,2215,2215,47.634,2133,82,0
+prefix@0.33,90,9,"What was the overall relationship like between Splinter and Kerry?
+",False,3,3,True,1951,1951,814.176,0,1951,1856
+prefix@0.33,91,9,Which of the characters receives the most medical intervention during the course of the story?,False,3,2,False,1907,1907,38.317,1856,51,0
+prefix@0.33,92,9,What can be inferred about the size of the ship the characters travelled in?,True,1,2,False,1938,1938,48.45,1856,82,0
+prefix@0.33,93,9,How did the author illustrate the planet of Venus upon their arrival?,True,0,1,False,1921,1921,42.401,1856,65,0
+prefix@0.33,94,9,What are the islands of Venus?,True,0,0,True,1911,1911,39.994,1856,55,0
+prefix@0.33,95,9,How do the space travellers navigate around the planet of Venus?,False,0,0,True,1901,1901,33.512,1856,45,1
+prefix@0.33,96,9,How did Splinter feel about being with Kerry on the turtle-shaped island?,True,3,3,True,1920,1920,38.318,1857,63,0
+prefix@0.33,97,9,Why did Kerry come out of retirement for the mission?,False,0,1,False,1919,1919,37.562,1856,63,0
+prefix@0.33,98,9,What is the relationship between Kerry Blane and Splinter Wood?,False,1,1,True,1916,1916,38.445,1856,60,0
+prefix@0.33,99,9,Why doesn't Kerry Blane take the pills that Splinter offers him?,True,1,3,False,1934,1934,46.692,1856,78,0
+prefix@0.33,100,10,What is the relationship like between Yasak and Koroby?,True,1,2,False,1817,1817,732.607,0,1817,1733
+prefix@0.33,101,10,What did Koroby think of the vehicle she took to her wedding?,True,1,1,True,1803,1803,42.196,1733,70,0
+prefix@0.33,102,10,What time period in human history does the author liken the Venusian planet to?,True,3,1,False,1794,1794,38.177,1733,61,0
+prefix@0.33,103,10,What likely happened to Koroby after the story ended?,True,0,1,False,1803,1803,42.553,1733,70,0
+prefix@0.33,104,10,How did Yasak feel towards Robert upon their meeting?,True,2,2,True,1783,1783,36.067,1732,51,1
+prefix@0.33,105,10,How does Robert communicate with the Venusians?,True,3,3,True,1791,1791,36.772,1733,58,0
+prefix@0.33,106,10,What statement best describes Robert?,True,2,1,False,1809,1809,40.268,1732,77,0
+prefix@0.33,107,10,Why does Koroby feel motivated to start the fire?,True,2,2,True,1807,1807,51.17,1732,75,0
+prefix@0.33,108,10,Under what circumstances does Yasak first reunite with Koroby during the story?,True,1,1,True,1812,1812,54.363,1732,80,0
+prefix@0.33,109,10,How did Robert feel about becoming stranded on Venus?,True,0,2,False,1798,1798,53.544,1732,66,0
+prefix@0.33,110,11,"Why did the supreme ruler deliver a scroll message to Jorgenson?
+",True,0,2,False,2033,2033,887.067,0,2033,1967
+prefix@0.33,111,11,What is the purpose of the Witnesses?,True,0,0,True,2035,2035,41.13,1967,68,0
+prefix@0.33,112,11,Why was Jorgenson so angry to have his business taken by Glen-U?,True,3,1,False,2038,2038,41.745,1967,71,0
+prefix@0.33,113,11,What would the Thrid likely believe drives their system of governance?,True,3,1,False,2017,2017,36.618,1967,50,1
+prefix@0.33,114,11,What happened if a local governor made a mistake that was recognized?,False,2,1,False,2058,2058,47.545,1968,90,0
+prefix@0.33,115,11,What is the definition of truth to the Thrid?,True,1,1,True,2030,2030,37.186,1968,62,0
+prefix@0.33,116,11,Why were Jorgenson and Ganti not put to death?,True,0,1,False,2042,2042,41.786,1967,75,0
+prefix@0.33,117,11,In what way was Jorgenson’s reasoning similar to that of the Thrid?,True,1,1,True,2022,2022,38.335,1967,55,0
+prefix@0.33,118,11,What is Jorgenson's internal conflict at the beginning of the story?,False,3,3,True,2089,2089,59.757,1967,122,0
+prefix@0.33,119,11,Why is the Grand Panjandrum called the Never-Mistaken?,True,0,0,True,2072,2072,53.673,1967,105,0
+prefix@0.33,120,12,What do Dan's interactions with both Kelly and Blote signify about his overall motive throughout the article?,False,2,3,False,2193,2193,893.054,0,2193,2046
+prefix@0.33,121,12,What choice best describes Dan's feelings toward operating the carrier throughout the article?,True,0,2,False,2162,2162,61.714,2046,116,0
+prefix@0.33,122,12,What feeling does Dan's accidental encounter with the young girl evoke for the readers?,True,0,2,False,2137,2137,52.421,2046,91,0
+prefix@0.33,123,12,What would have happened if Dan had never encountered Blote?,True,0,2,False,2141,2141,51.212,2046,95,0
+prefix@0.33,124,12,What does Blote's reaction to Dan's mentioning of a time machine demonstrate about where Manny and Fiorello came from?,False,0,2,False,2180,2180,77.057,2046,134,0
+prefix@0.33,125,12,"What would best describe how Dan's experiences, such as fighting the thieves and meeting Dzhackoon, changed his overall attitude that he had in the beginning of the article?",True,1,3,False,2152,2152,56.193,2046,106,0
+prefix@0.33,126,12,Why would Dan have wanted Fiorello to accompany him on the carrier?,True,3,3,True,2125,2125,43.942,2045,80,1
+prefix@0.33,127,12,Why was Dan determined to wait so long for the thieves?,True,3,2,False,2123,2123,43.424,2046,77,0
+prefix@0.33,128,12,What is the author's purpose in providing such detailed descriptions of Blote and Dzhackoon?,True,3,3,True,2137,2137,51.424,2045,92,0
+prefix@0.33,129,12,Why did Kelly hire Dan so quickly?,True,3,2,False,2108,2108,39.628,2045,63,0
+prefix@0.33,130,13,"Is the motive behind the propaganda that Martian Broadcasting uses to control the reddies on Mars similar to the motive behind the mysterious hypnotizing music that the terrestrials keep hearing, and why?",False,3,3,True,1924,1924,787.643,0,1924,1785
+prefix@0.33,131,13,What was the author's purpose in including the tragic encounter between Jared Haller and Mr. Ranson?,True,2,2,True,1888,1888,53.053,1785,103,1
+prefix@0.33,132,13,What would best describe the terrestrials' attitudes towards the reddies on Mars?,True,3,1,False,1900,1900,59.268,1786,114,1
+prefix@0.33,133,13,What would be the main reason Mr. Ranson wants to find the creator of the hypnotic music?,True,3,3,True,1886,1886,53.443,1787,99,0
+prefix@0.33,134,13,"Would Captain Maxwell's attitude toward Mr. Ranson and the murder been different if he had known about the hypnotizing melody, and why?",False,1,0,False,1904,1904,57.618,1785,119,0
+prefix@0.33,135,13,What would best describe the setting of the city that Mr. Ranson travelled through to get to the house Elath Taen resided in? ,True,0,0,True,1865,1865,43.958,1785,80,1
+prefix@0.33,136,13,What was the author's purpose in describing the feeling the hypnotizing music evoked in such detail every time that it played?,True,1,1,True,1871,1871,47.12,1786,85,0
+prefix@0.33,137,13,What would have likely happened with the interaction between Elath Taen and Mr. Ranson at the end of the article if the hypnotizing music had evoked anger instead of sleepiness?,True,0,0,True,1923,1923,74.2,1786,137,0
+prefix@0.33,138,13,"Given the music described at the end of the article and its comparison to chloroform, what can you infer about the purpose of chloroform?",False,1,1,True,1863,1863,43.108,1785,78,0
+prefix@0.33,139,13,"Who are ""reddies""?",False,0,0,True,1819,1819,30.635,1785,34,0
+prefix@0.33,140,14,How is Bobby's attitude towards flying the spaceship different than Pop's in the beginning of the article?,False,2,2,True,2252,2252,928.08,0,2252,2133
+prefix@0.33,141,14,Why was Pop upset about leaving life on Earth?,True,0,2,False,2216,2216,47.975,2133,83,1
+prefix@0.33,142,14,Why does Pop prefer Dick's help with the spaceship more than Bobby's?,True,1,1,True,2221,2221,48.128,2134,87,0
+prefix@0.33,143,14,What is the main reason the family was so worried about losing their supplies when abandoning the spaceship?,False,2,1,False,2231,2231,53.617,2133,98,0
+prefix@0.33,144,14,"Given the description of the natural setting of Eros, will it be likely that the family can survive with the available resources on the planetoid?",False,3,2,False,2251,2251,63.77,2133,118,0
+prefix@0.33,145,14,What example listed is most similar to the Moseley family's journey to Eros?,True,3,3,True,2203,2203,46.353,2133,70,0
+prefix@0.33,146,14,"Given the dangerous extent of the trip to Eros, what is the most likely feeling that every family member, except for the baby and Bobby, would have likely felt?",False,3,3,True,2206,2206,42.903,2133,73,0
+prefix@0.33,147,14,How would the family's attitude towards their first days on Eros been different if the spaceship hadn't landed in the water?,True,2,2,True,2251,2251,62.482,2133,118,0
+prefix@0.33,148,14,Why is Pop concerned about finding the most suitable area of land for his family to live on Eros?,True,1,1,True,2225,2225,48.865,2133,92,1
+prefix@0.33,149,14,Why was Pop's posture so poor?,False,2,1,False,2193,2193,37.354,2134,59,0
+prefix@0.33,150,15,What best describes why Madison's initial feelings towards the Actuarvac were suspicious and skeptical?,True,1,1,True,1888,1888,761.217,0,1888,1783
+prefix@0.33,151,15,What does Madison's selection in car choice after the flight tell about his physical character?,False,1,2,False,1842,1842,38.387,1783,59,0
+prefix@0.33,152,15,"Given the information in the article, is Granite City likely making false insurance claims, and why?",True,3,2,False,1867,1867,47.02,1782,85,1
+prefix@0.33,153,15,"Given what was discovered in Granite City, is the Actuarvac correct in its suspicion of Granite City?",True,0,1,False,1868,1868,47.242,1783,85,0
+prefix@0.33,154,15,"According to Dr. Parnell, can the same fate affecting Granite City affect other places around the world?",True,0,1,False,1900,1900,63.613,1782,118,0
+prefix@0.33,155,15,"What would best describe Madison's attitude towards Professor Parnell upon learning Parnell's reasoning for calling the people of Granite City ""subhuman""?",True,2,2,True,1872,1872,50.254,1782,90,0
+prefix@0.33,156,15,How would Madison's perception of Granite City been different if he had not have met Professor Parnell?,False,0,0,True,1931,1931,89.644,1782,149,0
+prefix@0.33,157,15,Why did Madison investigate the manual record files prior to visiting Granite City?,True,0,0,True,1852,1852,46.619,1782,70,3
+prefix@0.33,158,15,Why did Madison drive a Rolls?,False,0,0,True,1863,1863,44.895,1785,78,0
+prefix@0.33,159,15,What is the most likely reason for the lack of car insurance claims in Granite City?,True,3,2,False,1870,1870,49.402,1782,88,0
+prefix@0.33,160,16,How would one describe Emerald Star Hotel?,False,3,3,True,2028,2028,858.909,0,2028,1971
+prefix@0.33,161,16,"By the end of the article, would Harper's opinion of Mrs. Jacobsen at the front desk be different?",True,3,3,True,2065,2065,52.672,1971,94,0
+prefix@0.33,162,16,How did Harper's opinion on the place of robots in the workforce change by the end of the article?,True,2,1,False,2099,2099,66.272999,1971,128,0
+prefix@0.33,163,16,"Though the robots were the main issue at the hotel, was human error still an issue in Harper's overall stay?",True,3,3,True,2063,2063,53.318,1971,92,0
+prefix@0.33,164,16,How did Harper and Jake Ellis intend to have different experiences during their stay at the hotel?,True,0,0,True,2073,2073,58.714,1971,102,0
+prefix@0.33,165,16,Why was Harper able to buy the hotel's robots for such a cheap price?,False,3,3,True,2073,2073,55.908,1971,102,0
+prefix@0.33,166,16,What was Harper's most likely work with the equatorial wells before they sank?,False,3,2,False,2033,2033,39.02,1971,62,0
+prefix@0.33,167,16,Why did Harper change his tone regarding a vacation to Mars?,True,3,2,False,2042,2042,43.899,1971,71,1
+prefix@0.33,168,16,Why was Harper strongly in favor of automation?,True,1,2,False,2030,2030,39.934,1972,58,0
+prefix@0.33,169,16,Why did Harper think of Mrs. Jacobsen when the two robots came to his room?,True,3,1,False,2051,2051,46.098,1972,79,0
+prefix@0.33,170,17,What would best describe Asa and Dorr's relationship?,True,1,0,False,1976,1976,841.742,0,1976,1865
+prefix@0.33,171,17,How would Asa's decision on where to become a changeling been affected if the pay range to work as a muck man on Jordan's Planet was not as high as it was originally listed in the article?,True,1,1,True,2013,2013,76.25,1865,148,0
+prefix@0.33,172,17,What was the advantage of muck men being shaped like frogs?,False,1,1,True,1953,1953,48.708,1865,88,1
+prefix@0.33,173,17,What can you infer about the living conditions on Jordan's Planet?,False,3,3,True,1945,1945,43.404,1866,79,0
+prefix@0.33,174,17,What were the consequences of Asa meeting Kershaw and Furston?,True,3,2,False,1975,1975,54.3,1866,109,0
+prefix@0.33,175,17,What would best describe Harriet's attitude towards Dorr?,True,0,0,True,1944,1944,41.799,1866,78,1
+prefix@0.33,176,17,What would have been the consequence if Harriet did not come back for Asa with the helicopter?,True,3,3,True,1966,1966,63.944,1867,99,0
+prefix@0.33,177,17,Why would a company think it is a logical idea to let prisoners work as muck men on Jordan's Planet?,False,1,1,True,1965,1965,67.612,1865,100,0
+prefix@0.33,178,17,What would best describe Asa's motive for working as a muck man?,True,3,0,False,1932,1932,55.062,1865,67,1
+prefix@0.33,179,17,What seems to be the primary benefit of becoming a changeling?,True,0,1,False,1915,1915,44.949,1866,49,0
+prefix@0.33,180,18,When did the earth earn its new title?,True,3,1,False,1927,1927,722.694,0,1927,1855
+prefix@0.33,181,18,What do the colors in the physicians' titles mean?,False,1,0,False,1921,1921,43.486,1855,66,0
+prefix@0.33,182,18,How did the planet get the code to call for help?,False,0,3,False,1915,1915,41.383,1855,60,0
+prefix@0.33,183,18,What kind of IV drip did the doctor give the patient?,True,0,0,True,1895,1895,32.734,1855,40,1
+prefix@0.33,184,18,What did the doctor administer by feeding tube?,True,2,3,False,1890,1890,36.523,1856,34,0
+prefix@0.33,185,18,Why did the Earth doctor use the mortar and pestle?,True,0,2,False,1910,1910,41.04,1855,55,0
+prefix@0.33,186,18,How many times did the doctor give the patient aspirin?,True,1,1,True,1894,1894,32.333,1855,39,0
+prefix@0.33,187,18,What was the highest priority of the Doctors while treating His Eminence?,True,1,0,False,1935,1935,43.236,1855,80,1
+prefix@0.33,188,18,"What were the specialties of the Red and Green Doctors, respectively?",True,1,1,True,1899,1899,33.430999,1856,43,0
+prefix@0.33,189,18,Which planets do the physicians visit during the events of the story?,True,0,3,False,1904,1904,38.927,1855,49,0
+prefix@0.33,190,19,Who is called an aphrodisiac?,False,1,0,False,2195,2195,925.469,0,2195,2155
+prefix@0.33,191,19,What is the main reason the Cleopatra was chosen to report to Tethys?,True,3,0,False,2218,2218,40.328,2155,63,0
+prefix@0.33,192,19,Why did the workers weld appendages to the Cleopatra?,True,1,1,True,2215,2215,39.556,2155,60,0
+prefix@0.33,193,19,How did Gorman feel about Strike?,False,1,1,True,2223,2223,42.803,2155,68,1
+prefix@0.33,194,19,How long did it take the Cleopatra to travel from Tethys to Eridanus?,True,3,0,False,2212,2212,40.827,2156,56,0
+prefix@0.33,195,19,What best describes the battle?,False,1,1,True,2232,2232,46.46,2155,77,0
+prefix@0.33,196,19,Why did the Eridans not care if they died?,True,1,1,True,2210,2210,37.676,2155,55,3
+prefix@0.33,197,19,Why did the ship go to hyperspace?,True,2,1,False,2212,2212,37.253,2158,54,0
+prefix@0.33,198,19,How was the ship able to navigate through the alien cosmos?,True,0,0,True,2216,2216,36.784,2155,61,1
+prefix@0.33,199,19,How many people are in charge of plotting navigational waypoints along the journey?,False,0,0,True,2193,2193,33.031,2156,37,0
+query@0.5,0,0,How much time has passed between Blake's night with Eldoria and his search for Sabrina York in his mind-world?,False,1,2,False,3289,3289,1473.502,0,3289,0
+query@0.5,1,0,Why does Deirdre get so upset when Blake Past suggests she go to prom with the young man?,True,1,2,False,3461,3461,1461.937,0,3461,0
+query@0.5,2,0,Why does shame flame in Blake's cheeks when Deirdre goes to prepare Eldoria's dias?,True,2,2,True,3441,3441,1462.112,0,3441,0
+query@0.5,3,0,"Why did Blake create the three female super-images of Miss Stoddart, Officer Finch, and Vera Velvetskin?",True,3,0,False,3448,3448,1405.091,0,3448,0
+query@0.5,4,0,Sabrina York is ,True,0,0,True,3436,3436,1484.038,0,3436,0
+query@0.5,5,0,Why doesn't Blake haggle with Eldoria about the price for her services?,False,3,2,False,3478,3478,1506.772,0,3478,0
+query@0.5,6,0,Why did Blake feel awkward in the hut?,True,2,2,True,3311,3311,1409.538,0,3311,0
+query@0.5,7,0,What is the most likely reason that Blake says he is a god?,False,0,3,False,3337,3337,1446.981,0,3337,0
+query@0.5,8,0,Blake's mind country was made of:,False,2,2,True,3364,3364,1451.711,0,3364,0
+query@0.5,9,0,Why did Blake visit his mom in the kitchen?,True,1,3,False,3348,3348,1464.255,0,3348,0
+query@0.5,10,1,Why did the Tr'en leave Korvin's door unlocked and a weapon nearby?,True,1,1,True,3153,3153,1354.215,0,3153,0
+query@0.5,11,1,"Why does the text mean when it says that Korvin was ""unconscious"" at the time of his lessons in the local language?",True,0,0,True,3186,3186,1361.788,0,3186,0
+query@0.5,12,1,How was Korvin able to avoid disclosing the true intent of his mission under the lie detector questioning? ,False,1,1,True,3155,3155,1346.459,0,3155,0
+query@0.5,13,1,What is the most likely reason for Korvin's solitude in jail?,True,1,1,True,3119,3119,1373.553,0,3119,0
+query@0.5,14,1,Why does the Tr'en's logic fail them?,True,1,1,True,3040,3040,1293.466,0,3040,0
+query@0.5,15,1,Are there indications that the Tr'en would be interested in attacking Earth? Why or why not?,True,3,0,False,3062,3062,1301.524,0,3062,0
+query@0.5,16,1,"The text says ""The expert frowned horribly."" What makes the expert's smile so horrible?",True,3,3,True,3121,3121,1306.737,0,3121,0
+query@0.5,17,1,How did the Ruler become the Ruler?,False,0,0,True,3058,3058,1297.29,0,3058,0
+query@0.5,18,1,Why did the Tr'en think that Korvin was a traitor to Earth?,False,3,3,True,3113,3113,1317.707,0,3113,0
+query@0.5,19,1,What is the best description of Korvin's job?,True,1,3,False,3102,3102,1301.232,0,3102,0
+query@0.5,20,2,What is the most likely meaning of the slang O.Q.? (in twentieth-century American English),False,3,3,True,3587,3587,1524.383,0,3587,0
+query@0.5,21,2,"Why does the Skipper stop abruptly after he says ""when you're running a blockade""?",False,3,3,True,3515,3515,1511.361,0,3515,0
+query@0.5,22,2,Who or what is Leo?,False,1,1,True,3497,3497,1490.428,0,3497,0
+query@0.5,23,2,Why does the Skipper allow the new chef to use the heat-cannon as an incinerator?,False,3,2,False,3566,3566,1511.584,0,3566,0
+query@0.5,24,2," Lieutenant Dugan brings up the examples of ""High G"" Gordon and ""Runt"" Hake in order to illustrates that...",False,1,2,False,3586,3586,1505.678,0,3586,0
+query@0.5,25,2,Why didn't the Skipper follow the new cook's advice about avoiding Vesta?,False,1,1,True,3508,3508,1472.952,0,3508,0
+query@0.5,26,2,Why was the new cook so upset that the Skipper decided to surrender?,True,3,1,False,3522,3522,1473.278,0,3522,0
+query@0.5,27,2,"What does the Skipper mean by ""lady-logic""?",False,0,2,False,3554,3554,1494.964,0,3554,0
+query@0.5,28,2,What would've happened if the new cook had told the Skipper about the ekalastron deposits earlier?,True,3,0,False,3518,3518,1478.983,0,3518,0
+query@0.5,29,2,Why was the cook called Captain Slops?,True,2,2,True,3571,3571,1506.828,0,3571,0
+query@0.5,30,3,What does the gold band that Ro put on Na's wrist mean for them?,False,2,0,False,3336,3336,1390.516,0,3336,0
+query@0.5,31,3,Who or what is an Oan?,False,3,3,True,3362,3362,1369.894,0,3362,0
+query@0.5,32,3,What is the Oans' unusual advantage? ,True,0,0,True,3309,3309,1403.173,0,3309,0
+query@0.5,33,3,Why is Grimm annoyed that Charlotte slept beside Carlson?,True,3,2,False,3384,3384,1446.861,0,3384,0
+query@0.5,34,3,In what sense does Ro relate to the white young men?,True,3,3,True,3351,3351,1412.305,0,3351,0
+query@0.5,35,3,What is NOT a difference between the red people and the humans?,True,2,2,True,3320,3320,1382.156,0,3320,0
+query@0.5,36,3,Why did Ro change his mind about the people on Mars being backwards?,False,0,1,False,3363,3363,1382.05,0,3363,0
+query@0.5,37,3,Who is the man with the silver hair?,True,3,2,False,3324,3324,1393.694,0,3324,0
+query@0.5,38,3,What was most likely the strongest motivator for humans to develop telepathy?,False,2,1,False,3387,3387,1378.962,0,3387,0
+query@0.5,39,3,What became of Ro's mother?,True,3,3,True,3336,3336,1419.698,0,3336,0
+query@0.5,40,4,Who is Billy?,False,0,0,True,3239,3239,1368.796,0,3239,0
+query@0.5,41,4,How do the women have Amazonian strength?,True,3,3,True,3249,3249,1338.678,0,3249,0
+query@0.5,42,4,Why is the main reason that Johnathan so humiliated by the women?,False,2,2,True,3235,3235,1344.675,0,3235,0
+query@0.5,43,4,What was Ann intending to do with Johnathan under the trees before the other women showed up?,True,0,1,False,3210,3210,1384.062,0,3210,0
+query@0.5,44,4,Why does Johnathan put his arm around Ann?,False,1,1,True,3213,3213,1320.568,0,3213,0
+query@0.5,45,4,Why is the Interstellar Cosmography Society in a hurry to get off of the asteroid?,True,2,2,True,3205,3205,1324.238,0,3205,0
+query@0.5,46,4,What is the most likely reason that Johnathan's ship crashed?,True,0,1,False,3214,3214,1314.825,0,3214,0
+query@0.5,47,4,What was Johnathan's original mission?,False,2,2,True,3163,3163,1309.928,0,3163,0
+query@0.5,48,4,Johnathan doesn't tell the Interstellar Cosmography Society about the twenty-seven women who are waiting to be rescued because...,True,1,2,False,3351,3351,1362.722,0,3351,0
+query@0.5,49,4,What is the most likely reason that Johnathan decides to stay on the asteroid?,True,2,3,False,3224,3224,1338.49,0,3224,0
+query@0.5,50,5,Why is course change dangerous?,True,0,0,True,3427,3427,1430.515,0,3427,0
+query@0.5,51,5,Did Duane actually kill Stevens? How do you know?,False,0,1,False,3505,3505,1431.325,0,3505,0
+query@0.5,52,5,The red headed woman is most likely Duane's...,True,2,0,False,3444,3444,1425.623,0,3444,0
+query@0.5,53,5,Why didn't Duane and Stevens go to the pressure bunks when they announced the course change?,False,0,0,True,3453,3453,1428.312,0,3453,0
+query@0.5,54,5,Why does Duane want to kill Stevens?,False,3,2,False,3488,3488,1424.348,0,3488,0
+query@0.5,55,5,Why does Andrias want to arm his people?,True,2,2,True,3455,3455,1456.448,0,3455,0
+query@0.5,56,5,"Why is Adrian's office so long and narrow, and why there a long carpet leading up to Adrian's desk?",False,0,0,True,3426,3426,1436.984,0,3426,0
+query@0.5,57,5,Why does Adrian think the Callistans will be willing to fight against the league?,True,3,3,True,3479,3479,1469.48,0,3479,0
+query@0.5,58,5,Why does the amnesia change Duane's mind about letting Andrias have the guns?,False,1,3,False,3520,3520,1496.216,0,3520,0
+query@0.5,59,5,"Why were Duane and Stevens fighting?
+",True,2,1,False,3458,3458,1420.957,0,3458,0
+query@0.5,60,6,Which of the following is a false statement about the 98th corpse to be acquired by the ship?,True,1,0,False,2820,2820,1212.723,0,2820,0
+query@0.5,61,6,How long have the Venusians and Earth been in conflict?,True,0,3,False,2773,2773,1145.5,0,2773,0
+query@0.5,62,6,How did Burnett die?,True,1,1,True,2768,2768,1189.536,0,2768,0
+query@0.5,63,6,How many times did Burnett operate the claw in the passage?,True,3,1,False,2763,2763,1184.187,0,2763,0
+query@0.5,64,6,What likely happened to Rice in the end?,True,0,1,False,2799,2799,1234.054,0,2799,0
+query@0.5,65,6,What was Burnett’s greatest motivation to collect the 99th body?,True,0,3,False,2794,2794,1418.819,0,2794,0
+query@0.5,66,6,Why did Lethla come aboard the morgue ship?,True,2,2,True,2826,2826,1246.419,0,2826,0
+query@0.5,67,6,Why are Earth and Venus at war?,True,1,1,True,2790,2790,1271.095,0,2790,0
+query@0.5,68,6,What do we learn of the relationship between Rice and Burnett?,True,2,2,True,2870,2870,1255.88,0,2870,0
+query@0.5,69,6,What is the Constellation’s main mission?,False,1,1,True,2877,2877,1249.35,0,2877,0
+query@0.5,70,7,What did the author intend the lesson of the passage to be?,True,3,2,False,2192,2192,898.353,0,2192,0
+query@0.5,71,7,What happened to Dameri while he was in custody of the government?,True,1,1,True,2202,2202,910.534,0,2202,0
+query@0.5,72,7,What was Dameri’s purpose in landing on earth?,False,3,0,False,2191,2191,928.845,0,2191,0
+query@0.5,73,7,What did the people of Earth generally believe Dameri Tass would do on their planet?,False,2,2,True,2214,2214,931.21,0,2214,0
+query@0.5,74,7,How did Dameri Tass communicate in English?,True,3,3,True,2286,2286,1034.38,0,2286,0
+query@0.5,75,7,What would have happened if Dameri had delivered his speech sooner?,True,2,1,False,2199,2199,918.604,0,2199,0
+query@0.5,76,7,What would the citizens of Carthis learn about Earth after Dameri returned?,True,3,2,False,2217,2217,941.327,0,2217,0
+query@0.5,77,7,What was the relationship like between Dermott and Casey?,False,1,1,True,2246,2246,926.503,0,2246,0
+query@0.5,78,7,What is the tone of the story?,True,3,1,False,2169,2169,866.442,0,2169,0
+query@0.5,79,7,What would have happened if Dermott had worn the helmet instead of Casey?,False,1,1,True,2210,2210,933.413,0,2210,0
+query@0.5,80,8,What is the nature of the relationship between Georges and Retief?,True,2,2,True,3765,3765,1666.019,0,3765,0
+query@0.5,81,8,What is true of the relationship between the Boyars and the Aga Kagan?,True,3,3,True,3784,3784,1744.218,0,3784,0
+query@0.5,82,8,What is the closest estimate to how long have the Boyar been on Flamme?,False,1,2,False,3756,3756,1676.106,0,3756,0
+query@0.5,83,8,What is the highest authority the reader learns of any woman holding on Flamme?,True,0,0,True,3791,3791,1671.511,0,3791,0
+query@0.5,84,8,What is Stanley’s opinion of the Corps?,True,1,1,True,3818,3818,1746.687,0,3818,0
+query@0.5,85,8,What is Georges’ manner with the Aga Kagan?,False,3,3,True,3768,3768,1708.15,0,3768,0
+query@0.5,86,8,What is Stanley’s history within the Aga Kagan?,False,3,1,False,3801,3801,1663.025,0,3801,0
+query@0.5,87,8,How do the Boyars view the Aga Kagans?,False,1,1,True,3765,3765,1667.292,0,3765,0
+query@0.5,88,8,Which is the best adjective to describe the Corp's approach to governance of the planet?,False,2,2,True,3784,3784,1698.191,0,3784,0
+query@0.5,89,8,What is the Boyar's ultimate goal for Flamme?,True,1,1,True,3776,3776,1609.465,0,3776,0
+query@0.5,90,9,"What was the overall relationship like between Splinter and Kerry?
+",False,3,3,True,3404,3404,1563.191,0,3404,0
+query@0.5,91,9,Which of the characters receives the most medical intervention during the course of the story?,False,3,2,False,3295,3295,1442.052,0,3295,0
+query@0.5,92,9,What can be inferred about the size of the ship the characters travelled in?,True,1,1,True,3230,3230,1394.915,0,3230,0
+query@0.5,93,9,How did the author illustrate the planet of Venus upon their arrival?,True,0,1,False,3262,3262,1472.949,0,3262,0
+query@0.5,94,9,What are the islands of Venus?,True,0,0,True,3303,3303,1497.504,0,3303,0
+query@0.5,95,9,How do the space travellers navigate around the planet of Venus?,False,0,0,True,3246,3246,1438.475,0,3246,0
+query@0.5,96,9,How did Splinter feel about being with Kerry on the turtle-shaped island?,True,3,3,True,3384,3384,1571.499,0,3384,0
+query@0.5,97,9,Why did Kerry come out of retirement for the mission?,False,0,0,True,3334,3334,1504.544,0,3334,0
+query@0.5,98,9,What is the relationship between Kerry Blane and Splinter Wood?,False,1,1,True,3363,3363,1525.962,0,3363,0
+query@0.5,99,9,Why doesn't Kerry Blane take the pills that Splinter offers him?,True,1,3,False,3382,3382,1462.39,0,3382,0
+query@0.5,100,10,What is the relationship like between Yasak and Koroby?,True,1,2,False,3261,3261,1487.762,0,3261,0
+query@0.5,101,10,What did Koroby think of the vehicle she took to her wedding?,True,1,1,True,3219,3219,1430.442,0,3219,0
+query@0.5,102,10,What time period in human history does the author liken the Venusian planet to?,True,3,1,False,3142,3142,1404.992,0,3142,0
+query@0.5,103,10,What likely happened to Koroby after the story ended?,True,0,1,False,3199,3199,1470.318,0,3199,0
+query@0.5,104,10,How did Yasak feel towards Robert upon their meeting?,True,2,2,True,3197,3197,1410.958,0,3197,0
+query@0.5,105,10,How does Robert communicate with the Venusians?,True,3,3,True,3218,3218,1401.896,0,3218,0
+query@0.5,106,10,What statement best describes Robert?,True,2,1,False,3286,3286,1433.999,0,3286,0
+query@0.5,107,10,Why does Koroby feel motivated to start the fire?,True,2,2,True,3224,3224,1423.072,0,3224,0
+query@0.5,108,10,Under what circumstances does Yasak first reunite with Koroby during the story?,True,1,1,True,3244,3244,1461.928,0,3244,0
+query@0.5,109,10,How did Robert feel about becoming stranded on Venus?,True,0,0,True,3178,3178,1364.12,0,3178,0
+query@0.5,110,11,"Why did the supreme ruler deliver a scroll message to Jorgenson?
+",True,0,0,True,3637,3637,1618.679,0,3637,0
+query@0.5,111,11,What is the purpose of the Witnesses?,True,0,0,True,3442,3442,1489.901,0,3442,0
+query@0.5,112,11,Why was Jorgenson so angry to have his business taken by Glen-U?,True,3,1,False,3597,3597,1556.322,0,3597,0
+query@0.5,113,11,What would the Thrid likely believe drives their system of governance?,True,3,1,False,3481,3481,1507.901,0,3481,0
+query@0.5,114,11,What happened if a local governor made a mistake that was recognized?,False,2,1,False,3499,3499,1605.975,0,3499,0
+query@0.5,115,11,What is the definition of truth to the Thrid?,True,1,1,True,3559,3559,1577.511,0,3559,0
+query@0.5,116,11,Why were Jorgenson and Ganti not put to death?,True,0,1,False,3618,3618,1672.763,0,3618,0
+query@0.5,117,11,In what way was Jorgenson’s reasoning similar to that of the Thrid?,True,1,1,True,3579,3579,1628.862,0,3579,0
+query@0.5,118,11,What is Jorgenson's internal conflict at the beginning of the story?,False,3,3,True,3636,3636,1682.825,0,3636,0
+query@0.5,119,11,Why is the Grand Panjandrum called the Never-Mistaken?,True,0,0,True,3584,3584,1703.404,0,3584,0
+query@0.5,120,12,What do Dan's interactions with both Kelly and Blote signify about his overall motive throughout the article?,False,2,1,False,3739,3739,1801.94,0,3739,0
+query@0.5,121,12,What choice best describes Dan's feelings toward operating the carrier throughout the article?,True,0,2,False,3704,3704,1692.358,0,3704,0
+query@0.5,122,12,What feeling does Dan's accidental encounter with the young girl evoke for the readers?,True,0,0,True,3677,3677,1698.183,0,3677,0
+query@0.5,123,12,What would have happened if Dan had never encountered Blote?,True,0,2,False,3619,3619,1668.167,0,3619,0
+query@0.5,124,12,What does Blote's reaction to Dan's mentioning of a time machine demonstrate about where Manny and Fiorello came from?,False,0,3,False,3725,3725,1702.583,0,3725,0
+query@0.5,125,12,"What would best describe how Dan's experiences, such as fighting the thieves and meeting Dzhackoon, changed his overall attitude that he had in the beginning of the article?",True,1,3,False,3650,3650,1692.098,0,3650,0
+query@0.5,126,12,Why would Dan have wanted Fiorello to accompany him on the carrier?,True,3,3,True,3663,3663,1747.268,0,3663,0
+query@0.5,127,12,Why was Dan determined to wait so long for the thieves?,True,3,2,False,3600,3600,1610.911,0,3600,0
+query@0.5,128,12,What is the author's purpose in providing such detailed descriptions of Blote and Dzhackoon?,True,3,3,True,3687,3687,1704.718,0,3687,0
+query@0.5,129,12,Why did Kelly hire Dan so quickly?,True,3,3,True,3620,3620,1637.743,0,3620,0
+query@0.5,130,13,"Is the motive behind the propaganda that Martian Broadcasting uses to control the reddies on Mars similar to the motive behind the mysterious hypnotizing music that the terrestrials keep hearing, and why?",False,3,3,True,3169,3169,1433.425,0,3169,0
+query@0.5,131,13,What was the author's purpose in including the tragic encounter between Jared Haller and Mr. Ranson?,True,2,2,True,3176,3176,1419.687,0,3176,0
+query@0.5,132,13,What would best describe the terrestrials' attitudes towards the reddies on Mars?,True,3,3,True,3222,3222,1502.105,0,3222,0
+query@0.5,133,13,What would be the main reason Mr. Ranson wants to find the creator of the hypnotic music?,True,3,3,True,3156,3156,1483.243,0,3156,0
+query@0.5,134,13,"Would Captain Maxwell's attitude toward Mr. Ranson and the murder been different if he had known about the hypnotizing melody, and why?",False,1,0,False,3170,3170,1436.136,0,3170,0
+query@0.5,135,13,What would best describe the setting of the city that Mr. Ranson travelled through to get to the house Elath Taen resided in? ,True,0,0,True,3152,3152,3627.652,0,3152,0
+query@0.5,136,13,What was the author's purpose in describing the feeling the hypnotizing music evoked in such detail every time that it played?,True,1,1,True,3146,3146,4792.652,0,3146,0
+query@0.5,137,13,What would have likely happened with the interaction between Elath Taen and Mr. Ranson at the end of the article if the hypnotizing music had evoked anger instead of sleepiness?,True,0,0,True,3213,3213,4879.143,0,3213,0
+query@0.5,138,13,"Given the music described at the end of the article and its comparison to chloroform, what can you infer about the purpose of chloroform?",False,1,1,True,3109,3109,4265.354,0,3109,0
+query@0.5,139,13,"Who are ""reddies""?",False,0,0,True,3180,3180,4655.907,0,3180,0
+query@0.5,140,14,How is Bobby's attitude towards flying the spaceship different than Pop's in the beginning of the article?,False,2,2,True,3819,3819,5333.983,0,3819,0
+query@0.5,141,14,Why was Pop upset about leaving life on Earth?,True,0,2,False,3671,3671,5513.983,0,3671,0
+query@0.5,142,14,Why does Pop prefer Dick's help with the spaceship more than Bobby's?,True,1,1,True,3807,3807,5338.875,0,3807,0
+query@0.5,143,14,What is the main reason the family was so worried about losing their supplies when abandoning the spaceship?,False,2,2,True,3728,3728,5484.255,0,3728,0
+query@0.5,144,14,"Given the description of the natural setting of Eros, will it be likely that the family can survive with the available resources on the planetoid?",False,3,2,False,3694,3694,5328.926,0,3694,0
+query@0.5,145,14,What example listed is most similar to the Moseley family's journey to Eros?,True,3,3,True,3708,3708,5147.028,0,3708,0
+query@0.5,146,14,"Given the dangerous extent of the trip to Eros, what is the most likely feeling that every family member, except for the baby and Bobby, would have likely felt?",False,3,3,True,3684,3684,5245.567,0,3684,0
+query@0.5,147,14,How would the family's attitude towards their first days on Eros been different if the spaceship hadn't landed in the water?,True,2,1,False,3637,3637,5114.713,0,3637,0
+query@0.5,148,14,Why is Pop concerned about finding the most suitable area of land for his family to live on Eros?,True,1,1,True,3673,3673,5508.902,0,3673,0
+query@0.5,149,14,Why was Pop's posture so poor?,False,2,1,False,3693,3693,5188.334,0,3693,0
+query@0.5,150,15,What best describes why Madison's initial feelings towards the Actuarvac were suspicious and skeptical?,True,1,1,True,3308,3308,4641.086,0,3308,0
+query@0.5,151,15,What does Madison's selection in car choice after the flight tell about his physical character?,False,1,0,False,3253,3253,4943.336,0,3253,0
+query@0.5,152,15,"Given the information in the article, is Granite City likely making false insurance claims, and why?",True,3,2,False,3164,3164,4509.523,0,3164,0
+query@0.5,153,15,"Given what was discovered in Granite City, is the Actuarvac correct in its suspicion of Granite City?",True,0,1,False,3154,3154,4667.162,0,3154,0
+query@0.5,154,15,"According to Dr. Parnell, can the same fate affecting Granite City affect other places around the world?",True,0,0,True,3222,3222,4907.114,0,3222,0
+query@0.5,155,15,"What would best describe Madison's attitude towards Professor Parnell upon learning Parnell's reasoning for calling the people of Granite City ""subhuman""?",True,2,2,True,3292,3292,5373.489,0,3292,0
+query@0.5,156,15,How would Madison's perception of Granite City been different if he had not have met Professor Parnell?,False,0,0,True,3283,3283,4577.716,0,3283,0
+query@0.5,157,15,Why did Madison investigate the manual record files prior to visiting Granite City?,True,0,0,True,3152,3152,4459.91,0,3152,0
+query@0.5,158,15,Why did Madison drive a Rolls?,False,0,0,True,3204,3204,4817.27,0,3204,0
+query@0.5,159,15,What is the most likely reason for the lack of car insurance claims in Granite City?,True,3,1,False,3141,3141,4492.698,0,3141,0
+query@0.5,160,16,How would one describe Emerald Star Hotel?,False,3,3,True,3505,3505,4873.76,0,3505,0
+query@0.5,161,16,"By the end of the article, would Harper's opinion of Mrs. Jacobsen at the front desk be different?",True,3,1,False,3534,3534,4897.692,0,3534,0
+query@0.5,162,16,How did Harper's opinion on the place of robots in the workforce change by the end of the article?,True,2,1,False,3504,3504,5105.471,0,3504,0
+query@0.5,163,16,"Though the robots were the main issue at the hotel, was human error still an issue in Harper's overall stay?",True,3,0,False,3414,3414,4683.782,0,3414,0
+query@0.5,164,16,How did Harper and Jake Ellis intend to have different experiences during their stay at the hotel?,True,0,0,True,3538,3538,5212.192,0,3538,0
+query@0.5,165,16,Why was Harper able to buy the hotel's robots for such a cheap price?,False,3,2,False,3416,3416,4598.244,0,3416,0
+query@0.5,166,16,What was Harper's most likely work with the equatorial wells before they sank?,False,3,3,True,3498,3498,4979.358,0,3498,0
+query@0.5,167,16,Why did Harper change his tone regarding a vacation to Mars?,True,3,2,False,3498,3498,5111.423,0,3498,0
+query@0.5,168,16,Why was Harper strongly in favor of automation?,True,1,1,True,3438,3438,4765.883,0,3438,0
+query@0.5,169,16,Why did Harper think of Mrs. Jacobsen when the two robots came to his room?,True,3,3,True,3469,3469,4914.117,0,3469,0
+query@0.5,170,17,What would best describe Asa and Dorr's relationship?,True,1,2,False,3369,3369,4806.458,0,3369,0
+query@0.5,171,17,How would Asa's decision on where to become a changeling been affected if the pay range to work as a muck man on Jordan's Planet was not as high as it was originally listed in the article?,True,1,1,True,3377,3377,4851.084,0,3377,0
+query@0.5,172,17,What was the advantage of muck men being shaped like frogs?,False,1,1,True,3188,3188,4383.161,0,3188,0
+query@0.5,173,17,What can you infer about the living conditions on Jordan's Planet?,False,3,3,True,3237,3237,4483.246,0,3237,0
+query@0.5,174,17,What were the consequences of Asa meeting Kershaw and Furston?,True,3,3,True,3405,3405,4724.981,0,3405,0
+query@0.5,175,17,What would best describe Harriet's attitude towards Dorr?,True,0,3,False,3372,3372,4633.1,0,3372,0
+query@0.5,176,17,What would have been the consequence if Harriet did not come back for Asa with the helicopter?,True,3,2,False,3282,3282,4506.736,0,3282,0
+query@0.5,177,17,Why would a company think it is a logical idea to let prisoners work as muck men on Jordan's Planet?,False,1,1,True,3270,3270,4435.14,0,3270,0
+query@0.5,178,17,What would best describe Asa's motive for working as a muck man?,True,3,2,False,3270,3270,4488.671,0,3270,0
+query@0.5,179,17,What seems to be the primary benefit of becoming a changeling?,True,0,0,True,3295,3295,4502.425,0,3295,0
+query@0.5,180,18,When did the earth earn its new title?,True,3,3,True,3322,3322,4594.92,0,3322,0
+query@0.5,181,18,What do the colors in the physicians' titles mean?,False,1,0,False,3300,3300,4445.74,0,3300,0
+query@0.5,182,18,How did the planet get the code to call for help?,False,0,0,True,3228,3228,4364.366,0,3228,0
+query@0.5,183,18,What kind of IV drip did the doctor give the patient?,True,0,0,True,3249,3249,4471.925,0,3249,0
+query@0.5,184,18,What did the doctor administer by feeding tube?,True,2,3,False,3229,3229,4503.006,0,3229,0
+query@0.5,185,18,Why did the Earth doctor use the mortar and pestle?,True,0,0,True,3234,3234,4934.156,0,3234,0
+query@0.5,186,18,How many times did the doctor give the patient aspirin?,True,1,1,True,3232,3232,4392.343,0,3232,0
+query@0.5,187,18,What was the highest priority of the Doctors while treating His Eminence?,True,1,1,True,3264,3264,4298.837,0,3264,0
+query@0.5,188,18,"What were the specialties of the Red and Green Doctors, respectively?",True,1,1,True,3232,3232,4294.636999,0,3232,0
+query@0.5,189,18,Which planets do the physicians visit during the events of the story?,True,0,3,False,3266,3266,4939.218,0,3266,0
+query@0.5,190,19,Who is called an aphrodisiac?,False,1,1,True,3643,3643,5296.809,0,3643,0
+query@0.5,191,19,What is the main reason the Cleopatra was chosen to report to Tethys?,True,3,3,True,3646,3646,5074.288,0,3646,0
+query@0.5,192,19,Why did the workers weld appendages to the Cleopatra?,True,1,1,True,3591,3591,4902.545,0,3591,0
+query@0.5,193,19,How did Gorman feel about Strike?,False,1,1,True,3548,3548,4933.243,0,3548,0
+query@0.5,194,19,How long did it take the Cleopatra to travel from Tethys to Eridanus?,True,3,1,False,3661,3661,4976.07,0,3661,0
+query@0.5,195,19,What best describes the battle?,False,1,1,True,3608,3608,4940.197,0,3608,0
+query@0.5,196,19,Why did the Eridans not care if they died?,True,1,1,True,3520,3520,4886.307,0,3520,0
+query@0.5,197,19,Why did the ship go to hyperspace?,True,2,1,False,3590,3590,1543.484,0,3590,0
+query@0.5,198,19,How was the ship able to navigate through the alien cosmos?,True,0,0,True,3624,3624,1311.429,0,3624,0
+query@0.5,199,19,How many people are in charge of plotting navigational waypoints along the journey?,False,0,0,True,3686,3686,1331.951,0,3686,0

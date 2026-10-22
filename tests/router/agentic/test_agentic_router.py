@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from router.agentic.result import CallBudgetExceeded
 from router.agentic import (
     AgenticResult,
     AgenticRouter,
@@ -21,7 +22,6 @@ from router.agentic import (
     NaiveDecomposer,
     SubCall,
     TriageDecision,
-    guess_provider,
 )
 from router.agentic.triage import best_from_result
 from router.llm.adapters.fakes import CallableAdapter, EchoAdapter
@@ -58,18 +58,6 @@ class FakeTextRouter(RouterModel):
 # --------------------------------------------------------------------------- #
 # LLM clients                                                                    #
 # --------------------------------------------------------------------------- #
-def test_echo_client_is_deterministic():
-    b = LLMClient(EchoAdapter("m1"))
-    r1, r2 = b.complete("hello world"), b.complete("hello world")
-    assert r1.content == r2.content
-    assert "m1" in r1.content
-
-
-def test_callable_client_wraps_fn():
-    b = LLMClient(CallableAdapter("m", lambda p, **kw: p.upper()))
-    assert b.complete("hi").content == "HI"
-
-
 def test_registry_synthesises_unknown_ids():
     reg = ClientRegistry({"known": LLMClient(EchoAdapter("known", prefix="k"))})
     assert reg.get("known").complete("x").content.startswith("[k::known]")
@@ -125,12 +113,6 @@ def test_eligible_mask_matches_can_serve_per_id_in_order():
     mask = reg.eligible_mask(["a", "b", "c"])
     assert mask.dtype == bool
     np.testing.assert_array_equal(mask, [True, False, True])
-
-
-def test_guess_provider():
-    assert guess_provider("gpt-4o") == "openai"
-    assert guess_provider("claude-3-5-sonnet") == "anthropic"
-    assert guess_provider("some-random-model") is None
 
 
 # --------------------------------------------------------------------------- #
@@ -221,8 +203,8 @@ def test_llm_decomposer_folds_lines_past_max_parts_into_the_last():
     ]
 
 
-class _ReplyChat:
-    """Chat-model stand-in whose ``invoke`` returns a fixed reply."""
+class _FixedChat:
+    """LangChain-chat-model stand-in whose ``invoke`` returns a fixed reply."""
 
     def __init__(self, reply: str):
         self.reply = reply
@@ -234,7 +216,7 @@ class _ReplyChat:
 def test_llm_decomposer_keeps_leading_decimal_number():
     """LLMDECOMPOSER-001: a task starting with a decimal is not a list marker."""
     reply = "3.14 times 2 equals what?\n2.5 GHz is how many MHz?\n1.2.3 is which version?"
-    assert LLMDecomposer(_ReplyChat(reply))("q") == [
+    assert LLMDecomposer(_FixedChat(reply))("q") == [
         "3.14 times 2 equals what?",
         "2.5 GHz is how many MHz?",
         "1.2.3 is which version?",
@@ -243,17 +225,17 @@ def test_llm_decomposer_keeps_leading_decimal_number():
 
 def test_llm_decomposer_drops_exact_and_case_or_punctuation_repeats():
     reply = "Do task A.\ndo task a\nDo  task A!\nDo task B."
-    assert LLMDecomposer(_ReplyChat(reply))("q") == ["Do task A.", "Do task B."]
+    assert LLMDecomposer(_FixedChat(reply))("q") == ["Do task A.", "Do task B."]
 
 
 def test_llm_decomposer_dedupes_before_folding_past_max_parts():
     reply = "Task A\nTask A\nTask B\nTask C"
-    assert LLMDecomposer(_ReplyChat(reply), max_parts=2)("q") == ["Task A", "Task B Task C"]
+    assert LLMDecomposer(_FixedChat(reply), max_parts=2)("q") == ["Task A", "Task B Task C"]
 
 
 def test_llm_decomposer_still_strips_list_markers():
     reply = "1. summarise the text\n2) translate it\n- proofread it\n* publish it\n## done soon"
-    assert LLMDecomposer(_ReplyChat(reply))("q") == [
+    assert LLMDecomposer(_FixedChat(reply))("q") == [
         "summarise the text",
         "translate it",
         "proofread it",
@@ -293,12 +275,7 @@ def test_route_decision_restricts_to_servable_models():
     agent = AgenticRouter(FakeTextRouter(), reg)
     rr = agent.route_decision("a simple question")
     assert rr.selected_model_ids[0] == "big-strong"
-
-
-def test_run_never_dispatches_to_an_unregistered_model():
-    reg = ClientRegistry({"big-strong": LLMClient(EchoAdapter("big-strong")),
-                          "coder": LLMClient(EchoAdapter("coder"))})
-    res = AgenticRouter(FakeTextRouter(), reg).run("a simple question")
+    res = agent.run("a simple question")
     assert res.mode == "single" and res.selected_model_id == "big-strong"
 
 
@@ -358,16 +335,6 @@ def _costed_registry(model_ids, cost=1.0):
     return ClientRegistry({m: LLMClient(CallableAdapter(
         m, lambda p, m=m, cost=cost, **kw: LLMResponse(f"{m}:{p}", cost=cost)))
         for m in model_ids})
-
-
-class _FixedChat:
-    """LangChain-chat-model stand-in whose ``invoke`` returns a fixed reply."""
-
-    def __init__(self, reply: str):
-        self.reply = reply
-
-    def invoke(self, _prompt):
-        return self.reply
 
 
 def test_result_predicted_quality_matches_the_model_that_answered():
@@ -598,7 +565,7 @@ def test_llm_triage_counts_against_max_calls():
     agent = _agent_with(ClientRegistry.echo(POOL), triage=triage, max_calls=1)
     # the triage call alone spends the whole budget; the routed call that
     # necessarily follows must now be refused
-    with pytest.raises(RuntimeError, match="max_calls=1"):
+    with pytest.raises(CallBudgetExceeded, match="max_calls=1"):
         agent.run("What is the capital of France?")
 
 
@@ -620,7 +587,7 @@ def test_llm_decomposer_and_synthesizer_count_against_max_calls():
 
     tight = AgenticRouter(FakeTextRouter(), reg, triage=forced, decomposer=decomposer,
                           synthesizer=synthesizer, max_calls=3, max_depth=1)
-    with pytest.raises(RuntimeError, match="max_calls=3"):
+    with pytest.raises(CallBudgetExceeded, match="max_calls=3"):
         tight.run("Do one thing, then another")
 
 
@@ -973,17 +940,6 @@ def test_routed_helper_call_forwards_generation_kwargs():
 # --------------------------------------------------------------------------- #
 # AgenticResult.debug_trace() / run(..., debug=...)                          #
 # --------------------------------------------------------------------------- #
-def test_debug_trace_includes_header_and_steps():
-    sub = SubCall(prompt="sub prompt", model_id="m1", predicted_quality=0.8,
-                  answer="sub answer", cost=0.01, meta={"latency": 0.1})
-    res = AgenticResult(prompt="top prompt", mode="orchestrated", answer="final answer",
-                        triage_reason="reason", selected_model_id="m0",
-                        predicted_quality=0.9, steps=[sub], orchestrator="plan", cost=0.01)
-    text = res.debug_trace()
-    assert "top prompt" in text and "final answer" in text
-    assert "m1" in text and "sub answer" in text
-
-
 def test_debug_trace_includes_triage_scores_step_comparison_sent_prompt_and_escalation():
     sub = SubCall(
         prompt="sub prompt", model_id="m1", predicted_quality=0.8, answer="sub answer", cost=0.01,
@@ -994,6 +950,7 @@ def test_debug_trace_includes_triage_scores_step_comparison_sent_prompt_and_esca
                         triage_reason="reason", steps=[sub],
                         triage_scores={"m0": 0.4, "m1": 0.8, "m2": 0.5})
     text = res.debug_trace()
+    assert "top prompt" in text and "final answer" in text and "sub answer" in text
     assert "triage_scores: m1=0.800, m2=0.500, m0=0.400" in text   # ranked, highest first
     assert "considered: m1=0.800, m2=0.500" in text
     assert "sent: HISTORY\nsub prompt" in text

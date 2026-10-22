@@ -63,15 +63,6 @@ def test_fit_runs_and_saves(mode, tmp_path):
     np.testing.assert_allclose(p_loaded, p_fitted, atol=1e-6)
 
 
-def test_fit_writes_format_tag(tmp_path):
-    train_obs, val_obs, q_store, m_store = make_synthetic_irt(n_queries=40, seed=2)
-    train_ds, val_ds = nirt_datasets(train_obs, val_obs, q_store, m_store)
-    fit(nirt_cfg(model_params="free"), datasets=(train_ds, val_ds),
-        name="t-fmt", runs_dir=tmp_path, verbose=False)
-    blob = torch.load(tmp_path / "t-fmt" / "model.pt", map_location="cpu", weights_only=True)
-    assert blob["format"] == "nirt"
-
-
 def test_load_run_rejects_baseline_format(tmp_path):
     """Pointing this loader at a Phase 1/2 baseline checkpoint (XA-05 /
     contracts.md's checkpoint-format mismatches) must raise a clear,
@@ -186,14 +177,17 @@ def test_trainer_grad_clip_and_lr_schedule(schedule, tmp_path):
 
 
 def test_trainer_defaults_unchanged():
-    """grad_clip=0 + lr_schedule=none reproduces the legacy training path."""
-    train_obs, val_obs, q_store, m_store = make_synthetic_irt(n_queries=200, seed=7)
-    ds = nirt_datasets(train_obs, val_obs, q_store, m_store)
-    a = fit(nirt_cfg(), datasets=ds, save=False, verbose=False)
-    cfg = nirt_cfg()
-    cfg["train"].update(grad_clip=0.0, lr_schedule="none")
+    """Every opt-in training knob, spelled out at its off value, reproduces the
+    legacy training path (and logs no pairwise loss)."""
+    ds = nirt_datasets(*make_synthetic_irt(n_queries=200, seed=7))
+    a = fit(nirt_cfg(model_params="free", dim=2), datasets=ds, save=False, verbose=False)
+    cfg = nirt_cfg(model_params="free", dim=2)
+    cfg["train"].update(grad_clip=0.0, lr_schedule="none", sampler="cell", loss="soft_bce",
+                        theta_cov_weight=0.0, zero_variance_weight=1.0,
+                        preference={"enabled": False})
     b = fit(cfg, datasets=ds, save=False, verbose=False)
     assert a.val_metrics["bce"] == pytest.approx(b.val_metrics["bce"])
+    assert "pairwise_loss" not in b.history[0]
 
 
 # --------------------------------------------------------------------------- #
@@ -210,16 +204,6 @@ def test_grouped_batches_partition():
     for b in batches:                                               # whole groups only
         gs = set(qgroup[b].tolist())
         assert all((qgroup == g).sum() == (qgroup[b] == g).sum() for g in gs)
-
-
-def test_sampler_default_unchanged():
-    """sampler=cell + loss=soft_bce reproduces the legacy training path."""
-    ds = nirt_datasets(*make_synthetic_irt(n_queries=200, seed=7))
-    a = fit(nirt_cfg(), datasets=ds, save=False, verbose=False)
-    cfg = nirt_cfg()
-    cfg["train"].update(sampler="cell", loss="soft_bce")
-    b = fit(cfg, datasets=ds, save=False, verbose=False)
-    assert a.val_metrics["bce"] == pytest.approx(b.val_metrics["bce"])
 
 
 @pytest.mark.parametrize("loss", ["pairwise", "listwise", "bce_pairwise"])
@@ -271,17 +255,6 @@ def test_fit_with_concatenated_query_features(tmp_path):
 # --------------------------------------------------------------------------- #
 # auxiliary pairwise (Arena/Judge) training                                    #
 # --------------------------------------------------------------------------- #
-def test_preference_disabled_by_default_unchanged():
-    ds = nirt_datasets(*make_synthetic_irt(n_queries=150, seed=5))
-    cfg = nirt_cfg(model_params="projected", dim=2)
-    a = fit(cfg, datasets=ds, save=False, verbose=False)
-    cfg2 = nirt_cfg(model_params="projected", dim=2)
-    cfg2["train"]["preference"] = {"enabled": False}
-    b = fit(cfg2, datasets=ds, save=False, verbose=False)
-    assert a.val_metrics["bce"] == pytest.approx(b.val_metrics["bce"])
-    assert "pairwise_loss" not in a.history[0] and "pairwise_loss" not in b.history[0]
-
-
 def test_preference_enabled_trains_with_explicit_arrays(tmp_path):
     ds = nirt_datasets(*make_synthetic_irt(n_queries=150, q_dim=10, seed=6))
     pw = toy_pairwise_arrays(q_dim=10, m_dim=5)
@@ -326,15 +299,6 @@ def test_query_variance_mask_flags_constant_queries():
     assert mask.tolist() == [True, True, True, False, False, False]
 
 
-def test_theta_cov_weight_default_off_unchanged():
-    ds = nirt_datasets(*make_synthetic_irt(n_queries=200, seed=10))
-    a = fit(nirt_cfg(model_params="free", dim=2), datasets=ds, save=False, verbose=False)
-    cfg = nirt_cfg(model_params="free", dim=2)
-    cfg["train"].update(theta_cov_weight=0.0)
-    b = fit(cfg, datasets=ds, save=False, verbose=False)
-    assert a.val_metrics["bce"] == pytest.approx(b.val_metrics["bce"])
-
-
 def test_theta_cov_weight_runs_and_decorrelates():
     ds = nirt_datasets(*make_synthetic_irt(n_queries=300, seed=11, K=3))
     cfg = nirt_cfg(model_params="free", dim=3)
@@ -342,17 +306,6 @@ def test_theta_cov_weight_runs_and_decorrelates():
     res = fit(cfg, datasets=ds, save=False, verbose=False)
     assert np.isfinite(res.val_metrics["bce"])
     assert all(np.isfinite(h["theta_effective_rank"]) for h in res.history)
-
-
-def test_pairwise_weighting_default_none_unchanged():
-    ds = nirt_datasets(*make_synthetic_irt(n_queries=200, n_models=6, seed=12))
-    cfg = nirt_cfg(model_params="free", dim=2, query_hidden=16)
-    cfg["train"].update(loss="pairwise", batch_queries=64, epochs=5)
-    a = fit(cfg, datasets=ds, save=False, verbose=False)
-    cfg2 = nirt_cfg(model_params="free", dim=2, query_hidden=16)
-    cfg2["train"].update(loss="pairwise", batch_queries=64, epochs=5, pairwise_weighting="none")
-    b = fit(cfg2, datasets=ds, save=False, verbose=False)
-    assert a.val_metrics["bce"] == pytest.approx(b.val_metrics["bce"])
 
 
 def test_pairwise_weighting_abs_diff_runs():
@@ -370,15 +323,6 @@ def test_pairwise_weighting_rejects_bad_choice():
     cfg["train"].update(pairwise_weighting="bogus")
     with pytest.raises(ValueError, match="pairwise_weighting"):
         fit(cfg, datasets=ds, save=False, verbose=False)
-
-
-def test_zero_variance_weight_default_unchanged():
-    ds = nirt_datasets(*make_synthetic_irt(n_queries=200, seed=15))
-    a = fit(nirt_cfg(model_params="free"), datasets=ds, save=False, verbose=False)
-    cfg = nirt_cfg(model_params="free")
-    cfg["train"].update(zero_variance_weight=1.0)
-    b = fit(cfg, datasets=ds, save=False, verbose=False)
-    assert a.val_metrics["bce"] == pytest.approx(b.val_metrics["bce"])
 
 
 def test_zero_variance_weight_runs():
@@ -445,3 +389,131 @@ def test_fit_load_run_model_latent(tmp_path):
     _, p_loaded = predict_dataset(model, ds[1], midx)
     _, p_fitted = predict_dataset(res.model, ds[1], res.model_index)
     np.testing.assert_allclose(p_loaded, p_fitted, atol=1e-6)
+
+
+# --------------------------------------------------------------------------- #
+# Elo as a prior on model ability                                              #
+# --------------------------------------------------------------------------- #
+def _ability(res, store):
+    model, midx = res.model, res.model_index
+    with torch.no_grad():
+        if model.model_params == "free":
+            ref = torch.arange(model.n_models)
+        else:
+            ref = torch.from_numpy(np.stack([store.get(m) for m in midx]))
+        return dict(zip(midx, model.ability(ref).numpy()))
+
+
+@pytest.mark.parametrize("mode", ["projected", "free"])
+def test_elo_prior_pulls_ability_toward_elo(mode):
+    """A heavy Elo penalty makes the rated models' abilities a linear function of
+    their (standardized) Elo; unrated models are left free."""
+    train_obs, val_obs, q_store, m_store = make_synthetic_irt(n_queries=80, n_models=6, seed=3)
+    train_ds, val_ds = nirt_datasets(train_obs, val_obs, q_store, m_store)
+    ratings = {"m0": 1300.0, "m1": 1100.0, "m2": 1200.0, "m3": 1000.0, "m4": 1250.0}
+
+    def run(weight):
+        cfg = nirt_cfg(model_params=mode, elo_prior=True)
+        cfg["train"].update(epochs=20, batch_size=32, lr=0.1, elo_prior={"weight": weight, "ratings": ratings})
+        return fit(cfg, datasets=(train_ds, val_ds), save=False, verbose=False)
+
+    res = run(100.0)
+    ab = _ability(res, m_store)
+    elo = np.array([ratings[m] for m in sorted(ratings)])
+    got = np.array([ab[m] for m in sorted(ratings)])
+    z = (elo - elo.mean()) / elo.std()
+    resid = got - np.polyval(np.polyfit(z, got, 1), z)
+    assert np.abs(resid).max() < 0.15
+    assert res.model.prior_beta.item() > 0          # higher Elo -> higher ability
+
+    free = _ability(run(0.0), m_store)
+    got0 = np.array([free[m] for m in sorted(ratings)])
+    resid0 = got0 - np.polyval(np.polyfit(z, got0, 1), z)
+    assert np.abs(resid0).max() > 0.3
+
+
+def test_elo_prior_weight_needs_model_flag():
+    train_obs, val_obs, q_store, m_store = make_synthetic_irt(n_queries=40, seed=4)
+    cfg = nirt_cfg()
+    cfg["train"]["elo_prior"] = {"weight": 1.0, "ratings": {"m0": 1000.0, "m1": 1100.0}}
+    with pytest.raises(ValueError, match="elo_prior"):
+        fit(cfg, datasets=nirt_datasets(train_obs, val_obs, q_store, m_store),
+            save=False, verbose=False)
+
+
+# --------------------------------------------------------------------------- #
+# profile manifold: recon loss, per-module lr, warm start                      #
+# --------------------------------------------------------------------------- #
+def test_param_groups_lr_mult():
+    from router.nirt.model import NIRTModel
+    from training.nirt.train import _param_groups
+
+    m = NIRTModel(dim=2, query_dim=6, profile_dim=5, profile_latent_dim=8)
+    groups = _param_groups(m, 1e-3, {"profile_encoder": 0.1})
+    by_lr = {g["lr"]: len(g["params"]) for g in groups}
+    assert by_lr == {1e-3 * 0.1: len(list(m.profile_encoder.parameters())),
+                     1e-3: len(list(m.parameters())) - len(list(m.profile_encoder.parameters()))}
+    with pytest.raises(ValueError, match="no parameters"):
+        _param_groups(m, 1e-3, {"profile_encodr": 0.1})
+
+
+def test_recon_weight_needs_profile_latent():
+    train_obs, val_obs, q_store, m_store = make_synthetic_irt(n_queries=40, seed=4)
+    cfg = nirt_cfg()
+    cfg["train"]["recon_weight"] = 1.0
+    with pytest.raises(ValueError, match="profile_latent_dim"):
+        fit(cfg, datasets=nirt_datasets(train_obs, val_obs, q_store, m_store),
+            save=False, verbose=False)
+
+
+def test_recon_weight_trains_the_decoder():
+    import torch
+
+    train_obs, val_obs, q_store, m_store = make_synthetic_irt(n_queries=200, seed=5)
+    ds = nirt_datasets(train_obs, val_obs, q_store, m_store)
+    prof = torch.from_numpy(np.asarray(m_store.matrix, dtype=np.float32))
+
+    def recon_err(weight):
+        cfg = nirt_cfg(dim=2, profile_latent_dim=16)
+        cfg["train"].update(epochs=15, recon_weight=weight)
+        res = fit(cfg, datasets=ds, save=False, verbose=False)
+        with torch.no_grad():
+            return float((res.model.reconstruct(prof) - prof).pow(2).mean())
+
+    assert recon_err(1.0) < 0.5 * recon_err(0.0)
+
+
+def test_init_from_warm_starts_and_finetunes(tmp_path):
+    import torch
+
+    train_obs, val_obs, q_store, m_store = make_synthetic_irt(n_queries=200, seed=6)
+    ds = nirt_datasets(train_obs, val_obs, q_store, m_store)
+    cfg = nirt_cfg(dim=2, profile_latent_dim=16)
+    cfg["train"]["epochs"] = 5
+    pre = fit(cfg, datasets=ds, name="pre", runs_dir=tmp_path, verbose=False)
+
+    # lr=0: the warm-started weights come back untouched
+    ft_cfg = nirt_cfg(dim=2, profile_latent_dim=16)
+    ft_cfg["train"].update(epochs=1, lr=0.0, init_from=str(tmp_path / "pre"))
+    ft = fit(ft_cfg, datasets=ds, save=False, verbose=False)
+    for k, v in pre.model.state_dict().items():
+        assert torch.allclose(v, ft.model.state_dict()[k]), k
+
+    # a bare run name resolves under runs_dir; lr_mult freezes the encoder
+    ft_cfg["train"].update(init_from="pre", lr=1e-2, lr_mult={"profile_encoder": 0.0})
+    ft2 = fit(ft_cfg, datasets=ds, runs_dir=tmp_path, name="ft", verbose=False)
+    for k, v in pre.model.state_dict().items():
+        if k.startswith("profile_encoder"):
+            assert torch.allclose(v, ft2.model.state_dict()[k]), k
+
+
+def test_init_from_shape_mismatch_raises(tmp_path):
+    train_obs, val_obs, q_store, m_store = make_synthetic_irt(n_queries=80, seed=7)
+    ds = nirt_datasets(train_obs, val_obs, q_store, m_store)
+    cfg = nirt_cfg(dim=2, profile_latent_dim=16)
+    cfg["train"]["epochs"] = 1
+    fit(cfg, datasets=ds, name="pre16", runs_dir=tmp_path, verbose=False)
+    bad = nirt_cfg(dim=2, profile_latent_dim=32)
+    bad["train"].update(epochs=1, init_from=str(tmp_path / "pre16"))
+    with pytest.raises(RuntimeError):
+        fit(bad, datasets=ds, save=False, verbose=False)

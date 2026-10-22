@@ -18,6 +18,7 @@ from pathlib import Path
 import yaml
 
 from router.config import load_config
+from training.models.manifold import arena_ratings
 from training.nirt.train import fit
 
 
@@ -40,6 +41,10 @@ def main() -> int:
                     help="structured feature variant to concat to e_q (see "
                          "scripts/embeddings/build_query_features.py); "
                          "'none' to force off")
+    ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                    help="override any config key by dotted path, value parsed as YAML "
+                         "(e.g. --set train.elo_prior.weight=0.1 --set model.query_difficulty=true); "
+                         "applied after the named flags")
     ap.add_argument("--ood", action="store_true",
                     help="hold out evaluation.ood_holdout_families from training")
     args = ap.parse_args()
@@ -74,7 +79,23 @@ def main() -> int:
             None if args.query_features.lower() == "none" else args.query_features
         )
 
+    for item in args.set:
+        key, sep, raw = item.partition("=")
+        if not sep:
+            ap.error(f"--set expects KEY=VALUE, got {item!r}")
+        node = cfg
+        *parents, leaf = key.split(".")
+        for part in parents:
+            node = node.setdefault(part, {})
+        node[leaf] = yaml.safe_load(raw)
+
     p0 = load_config(args.phase0_config) if args.phase0_config else load_config()
+
+    ecfg = cfg["train"].get("elo_prior") or {}
+    if float(ecfg.get("weight", 0) or 0) > 0 and not ecfg.get("ratings"):
+        # stored in the run config, so the run records the exact ratings it used
+        ecfg["ratings"] = arena_ratings(p0, ecfg.get("manifold", "configs/model_manifold.yaml"))
+        print(f"[elo] Arena overall Elo for {len(ecfg['ratings'])} pool model(s)")
 
     datasets = None
     if args.ood:
