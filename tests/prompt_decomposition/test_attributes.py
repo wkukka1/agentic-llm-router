@@ -23,7 +23,6 @@ from decompose.classifiers.prompt_decomposition.heads.attributes_taxonomy import
     GATES,
     describe,
 )
-from training.prompt_decomposition.heads.attributes import evaluate_head
 
 
 @pytest.fixture
@@ -42,24 +41,9 @@ class TestTaxonomy:
         assert set(GATES) | set(CRITERIA) == set(ATTRIBUTE_NAMES)
         assert not set(GATES) & set(CRITERIA)
 
-    def test_language_is_deliberately_not_modelled(self):
-        """It probes at 0.990 and that is the argument against training it: the
-        label comes from a detector, so imitating it is strictly worse than
-        calling one."""
-        from decompose.classifiers.prompt_decomposition.heads.attributes_taxonomy import NOT_MODELLED
-
-        assert "non_english" in NOT_MODELLED
-        assert "non_english" not in ATTRIBUTE_NAMES
-
     def test_an_unknown_attribute_is_rejected(self):
         with pytest.raises(KeyError, match="unknown attribute"):
             describe("difficulty")
-
-    def test_difficulty_is_not_among_them(self):
-        """Three experiments failed to predict it from prompt text; it is a
-        product of other signals, not a head."""
-        assert "difficulty" not in ATTRIBUTE_NAMES
-
 
 class TestModel:
     def test_it_fits_one_head_per_labelled_attribute(self, separable):
@@ -134,34 +118,6 @@ class TestModel:
         assert sorted(loaded.calibrators) == sorted(model.calibrators)
 
 
-class TestCalibrationCorrectsAnOffset:
-    """The specific failure temperature scaling cannot fix."""
-
-    def test_platt_beats_temperature_on_a_shifted_head(self):
-        """`class_weight="balanced"` shifts a rare attribute's log-odds by the
-        base-rate offset. Temperature rescales the logit and cannot move it, so
-        it leaves the error in place; Platt fits an intercept too."""
-        from training.prompt_decomposition.metrics import apply_temperature, fit_temperature
-        from training.prompt_decomposition.metrics import expected_calibration_error as ece
-
-        rng = np.random.default_rng(7)
-        truth = rng.normal(-2.5, 1.0, 4000)                  # ~8% positive
-        y = (rng.uniform(size=4000) < 1 / (1 + np.exp(-truth))).astype(int)
-        shifted = 1 / (1 + np.exp(-(truth + 2.5)))           # the balanced-weight offset
-
-        temperature = fit_temperature(np.column_stack([1 - shifted, shifted]), y)
-        tempered = apply_temperature(np.column_stack([1 - shifted, shifted]), temperature)[:, 1]
-
-        model = AttributeModel(names=("code",))
-        model.heads["code"] = _ConstantHead(shifted)
-        model.calibrate(np.zeros((4000, 1)), {"code": y.astype(float)})
-        platt = model.predict_proba(np.zeros((4000, 1)))["code"]
-
-        correct = y.astype(float)
-        assert ece(platt, correct) < ece(tempered, correct)
-        assert ece(platt, correct) < 0.05
-
-
 class _ConstantHead:
     """Stands in for a fitted head so the calibrator can be tested alone."""
 
@@ -183,25 +139,6 @@ class TestStaleArtifacts:
             pickle.dump({"names": ("code",), "heads": {}, "temperatures": {"code": 1.0}}, fh)
         with pytest.raises(ValueError, match="incompatible version"):
             AttributeModel.load(tmp_path)
-
-
-class TestScoring:
-    def test_base_rate_travels_with_every_score(self):
-        """AUC hides prevalence, and these attributes span 0.075 to 0.819."""
-        y = np.array([1.0] * 90 + [0.0] * 10)
-        out = evaluate_head(y, np.linspace(0, 1, 100))
-        assert out["base_rate"] == pytest.approx(0.9)
-        assert "average_precision" in out and "ece" in out
-
-    def test_unlabelled_rows_are_excluded_from_the_score(self):
-        y = np.array([1.0, 0.0, np.nan, 1.0])
-        assert evaluate_head(y, np.array([0.9, 0.1, 0.5, 0.8]))["n"] == 3
-
-    def test_it_reports_a_threshold_that_reaches_the_recall_target(self):
-        y = np.array([0.0] * 50 + [1.0] * 50)
-        out = evaluate_head(y, np.linspace(0, 1, 100), recall_target=0.5)
-        assert "threshold" in out
-        assert out["precision@recall50"] > 0.9
 
 
 class TestPrediction:

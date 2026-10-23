@@ -292,3 +292,27 @@ models:
     version: null
     aliases:
       - { native: "intern-s1", confidence: high }
+
+  # ---- Claude 5.5 tiers -- cold-start, added 2026-10-15 ----
+  # Profile-only (configs/model_profiles.yaml); no response/battle data. Native
+  # strings are the Claude API ids (https://platform.claude.com/docs/en/models/overview).
+  - canonical_id: claude-opus-5-5
+    provider: anthropic
+    family: claude-5.5
+    version: "opus"
+    aliases:
+      - { native: "claude-opus-5-5", confidence: high }
+
+  - canonical_id: claude-sonnet-5-5
+    provider: anthropic
+    family: claude-5.5
+    version: "sonnet"
+    aliases:
+      - { native: "claude-sonnet-5-5", confidence: high }
+
+  - canonical_id: claude-haiku-5-5
+    provider: anthropic
+    family: claude-5.5
+    version: "haiku"
+    aliases:
+      - { native: "claude-haiku-5-5", confidence: high }

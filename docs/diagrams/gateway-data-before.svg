@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 -28 2470 1156" width="2470" height="1156">
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#1e1e1e" />
+    </marker>
+  </defs>
+  <rect x="20" y="-28" width="2470" height="1156" fill="#ffffff" />
+  <rect x="600" y="12" width="1850" height="923" rx="8" ry="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="0.6" stroke-dasharray="8 4" />
+  <rect x="60" y="621" width="160" height="84" rx="8" ry="8" fill="#dee2e6" stroke="#495057" stroke-width="2" opacity="1" />
+  <rect x="700" y="609" width="170" height="108" rx="8" ry="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2" opacity="1" />
+  <rect x="1390" y="980" width="210" height="108" rx="8" ry="8" fill="#dee2e6" stroke="#495057" stroke-width="2" opacity="1" />
+  <rect x="1405" y="258" width="180" height="108" rx="8" ry="8" fill="#ffd8a8" stroke="#e8590c" stroke-width="2" opacity="1" />
+  <rect x="2125" y="125" width="220" height="132" rx="8" ry="8" fill="#ffc9c9" stroke="#e03131" stroke-width="2" opacity="1" />
+  <rect x="1350" y="476" width="290" height="132" rx="8" ry="8" fill="#ffd8a8" stroke="#e8590c" stroke-width="2" opacity="1" />
+  <rect x="1375" y="718" width="240" height="132" rx="8" ry="8" fill="#ffd8a8" stroke="#e8590c" stroke-width="2" opacity="1" />
+  <rect x="2140" y="980" width="190" height="108" rx="8" ry="8" fill="#dee2e6" stroke="#495057" stroke-width="2" opacity="1" />
+  <rect x="2120" y="472" width="230" height="132" rx="8" ry="8" fill="#a5d8ff" stroke="#1971c2" stroke-width="2" opacity="1" />
+  <polyline points="220,663 700,663" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="870,663 1390,1034" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="870,663 1405,312" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1585,312 2125,191" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="870,663 1350,542" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="870,663 1375,784" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1615,784 2140,1034" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <polyline points="1585,312 2120,538" fill="none" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrowhead)" />
+  <text x="608" y="34" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#495057" text-anchor="start">
+    <tspan x="608" dy="0">This computer</tspan>
+  </text>
+  <text x="140" y="669" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#495057" text-anchor="middle">
+    <tspan x="140" dy="0">Claude Code</tspan>
+  </text>
+  <text x="785" y="659" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#2f9e44" text-anchor="middle">
+    <tspan x="785" dy="0">Gateway</tspan>
+    <tspan x="785" dy="20">(interceptor)</tspan>
+  </text>
+  <text x="1495" y="1030" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#495057" text-anchor="middle">
+    <tspan x="1495" dy="0">Anthropic API /</tspan>
+    <tspan x="1495" dy="20">openai-lane model</tspan>
+  </text>
+  <text x="1495" y="308" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e8590c" text-anchor="middle">
+    <tspan x="1495" dy="0">requests.jsonl</tspan>
+    <tspan x="1495" dy="20">(50 MB limit)</tspan>
+  </text>
+  <text x="2235" y="177" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e03131" text-anchor="middle">
+    <tspan x="2235" dy="0">requests.jsonl.1</tspan>
+    <tspan x="2235" dy="20">(overwritten at</tspan>
+    <tspan x="2235" dy="20">the next rotation)</tspan>
+  </text>
+  <text x="1495" y="528" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e8590c" text-anchor="middle">
+    <tspan x="1495" dy="0">turns.jsonl</tspan>
+    <tspan x="1495" dy="20">(only if capture_prompts,</tspan>
+    <tspan x="1495" dy="20">off by default)</tspan>
+  </text>
+  <text x="1495" y="770" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#e8590c" text-anchor="middle">
+    <tspan x="1495" dy="0">share queue</tspan>
+    <tspan x="1495" dy="20">(newest 20,000 only;</tspan>
+    <tspan x="1495" dy="20">busy worker drops)</tspan>
+  </text>
+  <text x="2235" y="1030" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#495057" text-anchor="middle">
+    <tspan x="2235" dy="0">Hugging Face</tspan>
+    <tspan x="2235" dy="20">private dataset</tspan>
+  </text>
+  <text x="2235" y="524" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="16" fill="#1971c2" text-anchor="middle">
+    <tspan x="2235" dy="0">/stats dashboard</tspan>
+    <tspan x="2235" dy="20">(loads every record</tspan>
+    <tspan x="2235" dy="20">into memory)</tspan>
+  </text>
+  <text x="460" y="668.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="460" dy="0">requests</tspan>
+  </text>
+  <text x="1130" y="853.75" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1130" dy="0">routed call</tspan>
+  </text>
+  <text x="1137.5" y="484" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1137.5" dy="0">one record per call</tspan>
+    <tspan x="1137.5" dy="17.5">(no prompt text)</tspan>
+  </text>
+  <text x="1855" y="256.75" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1855" dy="0">rotate</tspan>
+  </text>
+  <text x="1110" y="607.75" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1110" dy="0">opt-in config</tspan>
+  </text>
+  <text x="1122.5" y="720" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1122.5" dy="0">opt-in: anonymous</tspan>
+    <tspan x="1122.5" dy="17.5">features</tspan>
+  </text>
+  <text x="1877.5" y="905.5" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1877.5" dy="0">each user pastes a</tspan>
+    <tspan x="1877.5" dy="17.5">write token</tspan>
+  </text>
+  <text x="1852.5" y="430.25" font-family="Virgil, Segoe UI Emoji, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" text-anchor="middle">
+    <tspan x="1852.5" dy="0">reads all</tspan>
+  </text>
+</svg>

@@ -57,6 +57,8 @@ _NIRT_ONLY_KNOBS = {
     "interaction_hidden": lambda v: True,        # only meaningful with interaction
     "center_discrimination": lambda v: not v,
     "query_head_batchnorm": lambda v: not v,
+    "profile_latent_dim": lambda v: coerce_hidden(v) is None,
+    "profile_encoder_hidden": lambda v: True,    # only meaningful with profile_latent_dim
 }
 
 
@@ -167,6 +169,10 @@ class NIRTModel(nn.Module):
         interaction_hidden: int = 32,
         center_discrimination: bool = False,
         query_head_batchnorm: bool = False,
+        query_difficulty: bool = False,
+        elo_prior: bool = False,
+        profile_latent_dim: Optional[int] = None,
+        profile_encoder_hidden: Optional[int] = None,
     ):
         super().__init__()
         require_choice(model_params, MODEL_PARAM_MODES, field="model_params")
@@ -185,6 +191,14 @@ class NIRTModel(nn.Module):
         self.interaction_hidden = int(interaction_hidden)
         self.center_discrimination = bool(center_discrimination)
         self.query_head_batchnorm = bool(query_head_batchnorm)
+        self.query_difficulty_on = bool(query_difficulty)
+        self.elo_prior = bool(elo_prior)
+        if self.elo_prior and difficulty != "scalar":
+            raise ValueError("elo_prior needs difficulty='scalar' (one ability -b_m per model)")
+        self.profile_latent_dim = int(profile_latent_dim) if profile_latent_dim else None
+        self.profile_encoder_hidden = profile_encoder_hidden
+        if self.profile_latent_dim and model_params != "projected":
+            raise ValueError("profile_latent_dim needs model_params='projected' (it encodes e_m)")
         # projected-mode centring reference set at inference
         # (set_discrimination_reference); a plain attribute, not a buffer, so
         # state_dicts are unchanged
@@ -211,8 +225,23 @@ class NIRTModel(nn.Module):
         if model_params == "projected":
             from .components import mlp
 
-            self.a_head = mlp(self.profile_dim, self.dim, model_hidden)
-            self.b_head = mlp(self.profile_dim, b_dim, model_hidden)
+            # -- optional profile manifold: e_m -> z_m in R^D -> heads --------
+            # An autoencoder-shaped model side: the encoder places each LLM on a
+            # learned D-dim manifold (D may exceed profile_dim), the decoder maps
+            # back so a reconstruction loss keeps z_m from dropping what e_m knows.
+            # The decoder only feeds that loss. Only created when enabled, so a
+            # disabled state_dict is unchanged.
+            head_in = self.profile_dim
+            if self.profile_latent_dim:
+                self.profile_encoder = nn.Sequential(
+                    mlp(self.profile_dim, self.profile_latent_dim, profile_encoder_hidden),
+                    nn.LayerNorm(self.profile_latent_dim),
+                )
+                self.profile_decoder = mlp(self.profile_latent_dim, self.profile_dim,
+                                           profile_encoder_hidden)
+                head_in = self.profile_latent_dim
+            self.a_head = mlp(head_in, self.dim, model_hidden)
+            self.b_head = mlp(head_in, b_dim, model_hidden)
         else:  # free
             self.a = nn.Embedding(self.n_models, self.dim)
             self.b = nn.Embedding(self.n_models, b_dim)
@@ -229,6 +258,30 @@ class NIRTModel(nn.Module):
 
             self.interaction_net = mlp(3 * self.dim, 1, self.interaction_hidden)
             self.interaction_gamma = nn.Parameter(torch.zeros(()))
+
+        # -- optional per-query difficulty d_q --------------------------------
+        # ``logit = a_m . theta_q - b_m - d_q``: one scalar per query, shared by
+        # every candidate, so it calibrates P(correct) without touching any
+        # ranking (and cancels in pairwise scoring). Only created when enabled,
+        # so a disabled state_dict is unchanged.
+        if self.query_difficulty_on:
+            from .components import mlp
+
+            self.d_head = mlp(self.query_dim, 1, query_hidden)
+
+        # -- optional Elo prior on model ability -----------------------------
+        # Model ability is its mean logit over the training queries before the
+        # per-query difficulty, ``a_m . theta_bar - b_m`` (``-b_m`` alone is not
+        # identified: theta_q is not centred). Elo never enters the logit: the trainer
+        # penalises ``(ability_m - (alpha + beta * elo_m))^2`` for Arena-rated
+        # models (train.elo_prior), so Elo only shrinks each model's overall
+        # level toward a linear function of its rating. Only created when
+        # enabled, so a disabled state_dict is unchanged.
+        if self.elo_prior:
+            self.prior_alpha = nn.Parameter(torch.zeros(()))
+            self.prior_beta = nn.Parameter(torch.ones(()))
+            # mean theta_q over the training queries, set by the trainer
+            self.register_buffer("theta_mean", torch.zeros(self.dim))
 
     # ------------------------------------------------------------------ #
     # construction                                                       #
@@ -260,6 +313,10 @@ class NIRTModel(nn.Module):
             interaction_hidden=int(model_cfg.get("interaction_hidden", 32) or 32),
             center_discrimination=bool(model_cfg.get("center_discrimination", False)),
             query_head_batchnorm=bool(model_cfg.get("query_head_batchnorm", False)),
+            query_difficulty=bool(model_cfg.get("query_difficulty", False)),
+            elo_prior=bool(model_cfg.get("elo_prior", False)),
+            profile_latent_dim=coerce_hidden(model_cfg.get("profile_latent_dim")),
+            profile_encoder_hidden=coerce_hidden(model_cfg.get("profile_encoder_hidden")),
         )
 
     # ------------------------------------------------------------------ #
@@ -297,7 +354,7 @@ class NIRTModel(nn.Module):
             return
         w = next(self.a_head.parameters())
         ref = torch.as_tensor(np.asarray(profile_embeddings), dtype=w.dtype, device=w.device)
-        a = self.a_head(ref)
+        a = self.a_head(self.encode_profile(ref))
         if self.constrain_discrimination:
             a = F.softplus(a)
         self._a_ref = a.mean(0, keepdim=True)
@@ -340,8 +397,9 @@ class NIRTModel(nn.Module):
         of model indices when ``model_params="free"``.
         """
         if self.model_params == "projected":
-            a = self.a_head(model_ref)
-            b = self.b_head(model_ref)
+            z = self.encode_profile(model_ref)
+            a = self.a_head(z)
+            b = self.b_head(z)
         else:
             if not torch.is_tensor(model_ref):
                 model_ref = torch.as_tensor(model_ref, dtype=torch.long)
@@ -354,6 +412,43 @@ class NIRTModel(nn.Module):
         if self.center_discrimination:
             a = self._center_discrimination(a)
         return a, b
+
+    def encode_profile(self, e_m: torch.Tensor) -> torch.Tensor:
+        """``z_m`` on the profile manifold -> ``(B, D)``; ``e_m`` unchanged when
+        ``profile_latent_dim`` is off."""
+        if not self.profile_latent_dim:
+            return e_m
+        return self.profile_encoder(e_m)
+
+    def reconstruct(self, e_m: torch.Tensor) -> torch.Tensor:
+        """``decoder(encoder(e_m))`` -> ``(B, profile_dim)``, for the trainer's
+        reconstruction loss (``train.recon_weight``)."""
+        if not self.profile_latent_dim:
+            raise ValueError("reconstruct needs model.profile_latent_dim")
+        return self.profile_decoder(self.profile_encoder(e_m))
+
+    def ability(self, model_ref: Union[torch.Tensor, np.ndarray],
+                theta_mean: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """Overall model ability ``a_m . theta_bar - b_m`` -> ``(B,)`` (scalar
+        difficulty only): the model's mean logit over queries, before ``d_q``.
+        ``theta_mean`` defaults to the stored training mean (``elo_prior``
+        models), else zeros."""
+        a, b = self.model_parameters(model_ref)
+        if theta_mean is None:
+            theta_mean = getattr(self, "theta_mean", None)
+        if theta_mean is None:
+            return -b
+        return (a * theta_mean).sum(-1) - b
+
+    def elo_prior_mean(self, elo_std: torch.Tensor) -> torch.Tensor:
+        """Prior mean of ability, ``alpha + beta * elo`` (standardized Elo)."""
+        return self.prior_alpha + self.prior_beta * elo_std
+
+    def query_difficulty(self, e_q: torch.Tensor) -> torch.Tensor:
+        """``d_q`` -> ``(B,)``; zeros when ``query_difficulty`` is off."""
+        if not self.query_difficulty_on:
+            return torch.zeros(e_q.shape[0], device=e_q.device, dtype=e_q.dtype)
+        return self.d_head(e_q).squeeze(-1)
 
     def score(self, theta: torch.Tensor, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         """Logit from an already-computed ``(theta_q, a_m, b_m)`` triple -> ``(B,)``.
@@ -387,7 +482,10 @@ class NIRTModel(nn.Module):
         if theta is None:
             theta = self.latent_query(e_q)          # (B, K)
         a, b = self.model_parameters(model_ref)     # (B, K), (B,) or (B, K)
-        return self.score(theta, a, b)
+        logit = self.score(theta, a, b)
+        if self.query_difficulty_on:
+            logit = logit - self.query_difficulty(e_q)
+        return logit
 
     @torch.no_grad()
     def predict_proba(

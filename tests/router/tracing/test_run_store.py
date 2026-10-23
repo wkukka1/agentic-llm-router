@@ -160,7 +160,7 @@ def test_replanned_and_refused_plans_are_recorded(db):
     assert [r["n_errors"] for r in _rows(db, "SELECT n_errors FROM runs ORDER BY rowid")] == [0, 1]
 
 
-def test_recursive_orchestration_stores_the_call_tree(db):
+def test_orchestrated_run_stores_one_row_per_leaf_call(db):
     agent = AgenticRouter(TextRouter(), _priced_clients(), result_sink=sqlite_sink(db))
     agent.run(COMPOUND)
     _flush()

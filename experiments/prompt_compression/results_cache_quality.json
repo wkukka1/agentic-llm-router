@@ -1,0 +1,62 @@
+{
+  "model": "qwen2.5:3b",
+  "n_questions": 200,
+  "articles": 20,
+  "questions_per_article": 10,
+  "min_cache": 1024,
+  "num_ctx": 8192,
+  "summary": {
+    "full": {
+      "accuracy": 0.6,
+      "se": 0.03472794481039396,
+      "mean_tokens": 6535.535,
+      "cached_share": 0.8890840612130453,
+      "cost_no_cache": 1307107.0,
+      "cost_with_cache": 293483.05,
+      "mean_prefill_ms": 328.69494498499995,
+      "compression_s": 0.0,
+      "token_count_check": 1.0,
+      "paired_diff_vs_full": 0.0,
+      "paired_diff_se": 0.0
+    },
+    "prefix@0.5": {
+      "accuracy": 0.535,
+      "se": 0.035357115664894155,
+      "mean_tokens": 2980.535,
+      "cached_share": 0.8760641965284756,
+      "cost_no_cache": 596107.0,
+      "cost_with_cache": 140618.05,
+      "mean_prefill_ms": 170.792434995,
+      "compression_s": 11.391700983047485,
+      "token_count_check": 1.0,
+      "paired_diff_vs_full": -0.065,
+      "paired_diff_se": 0.030962369768939565
+    },
+    "prefix@0.33": {
+      "accuracy": 0.505,
+      "se": 0.035442288003096976,
+      "mean_tokens": 1940.485,
+      "cached_share": 0.8632352221223045,
+      "cost_no_cache": 388097.0,
+      "cost_with_cache": 95895.90000000001,
+      "mean_prefill_ms": 122.500284985,
+      "compression_s": 9.21648120880127,
+      "token_count_check": 1.0,
+      "paired_diff_vs_full": -0.095,
+      "paired_diff_se": 0.032943914575194126
+    },
+    "query@0.5": {
+      "accuracy": 0.605,
+      "se": 0.034653706828922715,
+      "mean_tokens": 3320.545,
+      "cached_share": 0.0,
+      "cost_no_cache": 664109.0,
+      "cost_with_cache": 664109.0,
+      "mean_prefill_ms": 2473.946664995,
+      "compression_s": 40.279024600982666,
+      "token_count_check": 1.0,
+      "paired_diff_vs_full": 0.005,
+      "paired_diff_se": 0.026043546833300017
+    }
+  }
+}

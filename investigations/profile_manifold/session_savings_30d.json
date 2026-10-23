@@ -1,0 +1,103 @@
+{
+ "router": "aar-gateway/src/aar_gateway/routers/manifold-nirt-claude-judged.npz",
+ "days": 30.0,
+ "sessions": 794,
+ "turns": 1113,
+ "requests": 8967,
+ "models_used": {
+  "claude-haiku-5-5": 144,
+  "claude-opus-5-5": 249,
+  "claude-sonnet-5-5": 73,
+  "<synthetic>": 533,
+  "claude-sonnet-5": 113,
+  "claude-haiku-4-5-20251001": 1
+ },
+ "rows": [
+  {
+   "lambda": null,
+   "turns": 1113,
+   "routed_turns": 579,
+   "kept": 534,
+   "base_usd": 682.8364345600014,
+   "routed_usd": 411.6399648700004,
+   "switches": 50,
+   "mix": {
+    "claude-haiku-5-5": 272,
+    "claude-sonnet-5-5": 195,
+    "<synthetic>": 533,
+    "claude-opus-5-5": 112,
+    "claude-haiku-4-5-20251001": 1
+   },
+   "pred_q_used": 283.01759999999996,
+   "pred_q_picked": 279.64390000000014,
+   "pred_n": 466,
+   "unpriced_requests": 558,
+   "saved_pct": 0.3971616861141154,
+   "pred_quality_delta": -0.007239699570815053
+  },
+  {
+   "lambda": 0.02,
+   "turns": 1113,
+   "routed_turns": 579,
+   "kept": 534,
+   "base_usd": 682.8364345600014,
+   "routed_usd": 526.3509493100005,
+   "switches": 34,
+   "mix": {
+    "claude-haiku-5-5": 213,
+    "claude-sonnet-5-5": 173,
+    "<synthetic>": 533,
+    "claude-opus-5-5": 193,
+    "claude-haiku-4-5-20251001": 1
+   },
+   "pred_q_used": 283.01759999999996,
+   "pred_q_picked": 284.1836,
+   "pred_n": 466,
+   "unpriced_requests": 558,
+   "saved_pct": 0.22916979430196238,
+   "pred_quality_delta": 0.002502145922746896
+  },
+  {
+   "lambda": 0.2,
+   "turns": 1113,
+   "routed_turns": 579,
+   "kept": 534,
+   "base_usd": 682.8364345600014,
+   "routed_usd": 243.88133719500016,
+   "switches": 50,
+   "mix": {
+    "claude-haiku-5-5": 408,
+    "claude-sonnet-5-5": 171,
+    "<synthetic>": 533,
+    "claude-haiku-4-5-20251001": 1
+   },
+   "pred_q_used": 283.01759999999996,
+   "pred_q_picked": 268.45190000000014,
+   "pred_n": 466,
+   "unpriced_requests": 558,
+   "saved_pct": 0.6428407670540461,
+   "pred_quality_delta": -0.03125686695278932
+  },
+  {
+   "lambda": 0.3,
+   "turns": 1113,
+   "routed_turns": 579,
+   "kept": 534,
+   "base_usd": 682.8364345600014,
+   "routed_usd": 190.66115800499992,
+   "switches": 29,
+   "mix": {
+    "claude-haiku-5-5": 488,
+    "claude-sonnet-5-5": 91,
+    "<synthetic>": 533,
+    "claude-haiku-4-5-20251001": 1
+   },
+   "pred_q_used": 283.01759999999996,
+   "pred_q_picked": 260.65689999999995,
+   "pred_n": 466,
+   "unpriced_requests": 558,
+   "saved_pct": 0.7207806315609739,
+   "pred_quality_delta": -0.04798433476394852
+  }
+ ]
+}

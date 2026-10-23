@@ -1,5 +1,5 @@
-"""``TrainingHarness`` (training/pipeline.py) -- runs all three wrapped
-trainers (NIRT, baseline, MLP router) through one interface."""
+"""``TrainingHarness`` (training/pipeline.py) -- runs the wrapped
+trainers (NIRT, MLP router) through one interface."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import numpy as np
 import pytest
 from helpers import (
     FakeTrainingData,
-    baseline_cfg,
     make_split_obs,
     make_synthetic_irt,
     nirt_cfg,
@@ -19,7 +18,6 @@ torch = pytest.importorskip("torch")
 from router.llm.cost import CostModel
 from router.models.registry import RouterModelFactory
 from router.routing.routers import NIRTRouter
-from training.nirt.baseline.trainer import BaselineNIRTTrainer
 from training.nirt.trainer import NIRTTrainer
 from training.pipeline import TrainingHarness, TrainingJob
 from training.trainers.base import TrainingConfig
@@ -61,26 +59,6 @@ def test_harness_run_accepts_a_training_job(tmp_path):
     assert run.run_id == "harness-job"
     assert run.trainer_name == "nirt"
     assert run.artifact is not None
-
-
-def test_harness_train_runs_baseline():
-    from training.nirt.baseline.synthetic import make_synthetic, to_arrays
-
-    syn = make_synthetic(n_queries=300, n_models=6, K=2, seed=22)
-    tr, va = to_arrays(syn, seed=22)
-
-    harness = TrainingHarness()
-    trainer = BaselineNIRTTrainer()
-    config = TrainingConfig(run_name="harness-baseline", hyperparameters=baseline_cfg(k=2, epochs=10))
-    run = harness.train(trainer, (tr, va), config)
-
-    assert run.trainer_name == "baseline"
-    assert run.artifact.router_model_name == "baseline"
-    assert run.training_metrics.training_time > 0
-    # BaselineNIRTTrainer never sets created_at on its artifact -- the harness
-    # stamps it generically so provenance isn't silently blank (RM-03/TN-05).
-    assert run.created_at != ""
-    assert run.artifact.created_at != ""
 
 
 def test_harness_train_runs_mlp_router(tmp_path):

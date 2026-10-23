@@ -53,6 +53,9 @@ def load_prompts(graded_file: Path, tiers=TIERS) -> list[dict]:
         if all(t in rows and rows[t].get("usage_usd") is not None for t in tiers):
             first = rows[tiers[0]]
             out.append({"prompt_hash": h, "prompt": first["prompt"], "source": first.get("source") or "own",
+                        # a multi-turn prompt (evaluation.gateway.multiturn) is routed on its last message
+                        # alone, as the gateway does; [2] is the whole prompt when it has no context block
+                        "route_text": first["prompt"].rpartition("</earlier conversation>\n\n")[2],
                         "score": np.array([rows[t]["score"] for t in tiers], dtype=float),
                         "cost": np.array([rows[t]["usage_usd"] for t in tiers], dtype=float),
                         "matches": np.array([bool(rows[t].get("matches_best")) for t in tiers])})
@@ -63,6 +66,17 @@ def margin_pick(pred: np.ndarray, margin: float) -> np.ndarray:
     """Per row, the cheapest tier (lowest index) predicted within ``margin`` of the best."""
     ok = pred >= pred.max(axis=1, keepdims=True) - margin
     return ok.argmax(axis=1)
+
+
+
+def lambda_pick(pred: np.ndarray, cost: np.ndarray, lam: float) -> np.ndarray:
+    """The gateway's lambda rule: argmax of quality - lam * cost / the prompt's dearest
+    tier cost (ties to the cheaper tier). ``cost`` here is each prompt's graded usage
+    per tier; the gateway uses its own per-request estimate."""
+    rel = cost / np.clip(cost.max(axis=1, keepdims=True), 1e-12, None)
+    u = pred - lam * rel
+    best = u.max(axis=1, keepdims=True)
+    return (u >= best - np.finfo(np.float64).eps).argmax(axis=1)   # TIERS are cheapest first
 
 
 def loo_knn(vectors: np.ndarray, scores: np.ndarray, k: int) -> np.ndarray:
@@ -109,11 +123,11 @@ def policies(prompts: list[dict], *, margin: float, k: int, router=None, proxies
     M = np.stack([p["matches"] for p in prompts])
     picks = {f"always {t.split('-')[1]}": np.full(n, j) for j, t in enumerate(TIERS)}
     if router is not None and proxies:
-        frame = router.predict_scores_text([p["prompt"] for p in prompts])
+        frame = router.predict_scores_text([p["route_text"] for p in prompts])
         pred = np.stack([frame[proxies[t]].to_numpy(float) for t in TIERS], axis=1)
         picks["benchmark router"] = margin_pick(pred, margin)
     if encode is not None and n > k:
-        vec = np.asarray(encode([p["prompt"] for p in prompts]), dtype=float)
+        vec = np.asarray(encode([p["route_text"] for p in prompts]), dtype=float)
         vec /= np.clip(np.linalg.norm(vec, axis=1, keepdims=True), 1e-12, None)
         picks["pool kNN (leave-one-out)"] = margin_pick(loo_knn(vec, S, k), margin)
     oracle = np.where(M.any(axis=1), M.argmax(axis=1), S.argmax(axis=1))  # cheapest that matched the best

@@ -64,6 +64,9 @@ def main() -> int:
     ap.add_argument("--zoib-ckpt", required=True, help="BaselineNIRT checkpoint dir with a cost head")
     ap.add_argument("--irt-run", default=None,
                     help="NIRT/IRT-Router run name under runs_dir (e.g. irt-25d-projected-29m)")
+    ap.add_argument("--nirt-runs", default="",
+                    help="comma list of further NIRT runs, each routed as P(correct) - lam * C(m) "
+                         "(the IRT-Router policy)")
     ap.add_argument("--split", default="test")
     ap.add_argument("--lams", default=",".join(f"{x:g}" for x in DEFAULT_LAMS),
                     help="comma list of lambda values (USD-per-query cost weight)")
@@ -76,14 +79,16 @@ def main() -> int:
     d = load_training_data(cfg)
     ckpt = resolve(args.zoib_ckpt, cfg.root)
     long, _ = baseline_cell_predictions(ckpt, cfg, d, args.split)
-    irt_pred = None
-    if args.irt_run:
+    def _run_pred(run):
         from router.nirt.checkpoint import load_run
         from router.nirt.predict import predict_matrix
 
-        irt_model, irt_cfg, irt_midx = load_run(args.irt_run)
-        irt_pred = predict_matrix(irt_model, irt_midx, d, args.split,
-                                  pathway=irt_cfg.get("data", {}).get("pathway", "irt"))
+        model, run_cfg, midx = load_run(run)
+        return predict_matrix(model, midx, d, args.split,
+                              pathway=run_cfg.get("data", {}).get("pathway", "irt"))
+
+    irt_pred = _run_pred(args.irt_run) if args.irt_run else None
+    nirt_preds = {r: _run_pred(r) for r in (x.strip() for x in args.nirt_runs.split(",")) if r}
     c_model = per_model_mean_cost(d.nirt_observations())
 
     by_source, sizes = {}, {}
@@ -98,13 +103,16 @@ def main() -> int:
         if irt_pred is not None:
             iq = align(irt_pred, true_df)
             mats.append(iq)
+        nq = {r: align(p, true_df) for r, p in nirt_preds.items()}
+        mats += list(nq.values())
         keep = np.logical_and.reduce([np.isfinite(m).all(1) for m in mats])
         zq, zc, Y, C = zq[keep], zc[keep], Y[keep], C[keep]
         routers = {"ZOIB": (zq, zc)}
+        Cm = c_model.reindex(models).to_numpy(np.float64)
         if irt_pred is not None:
             iq = iq[keep]
-            Cm = c_model.reindex(models).to_numpy(np.float64)
             routers |= {"IRT-Router": (iq, Cm), "IRT-Router + C_hat": (iq, zc), "ZOIB + C(m)": (zq, Cm)}
+        routers |= {r: (p[keep], Cm) for r, p in nq.items()}
         by_source[src] = source_picks(Y, C, models, ref, routers, lams)
         sizes[src] = {"n_queries": int(keep.sum()), "n_dropped": int((~keep).sum()),
                       "n_models": len(models), "reference": ref}
@@ -119,6 +127,7 @@ def main() -> int:
 
     out = args.out or ckpt / f"routing_benchmark_{args.split}.json"
     write_json(resolve(out, cfg.root), {"zoib_ckpt": str(ckpt), "irt_run": args.irt_run,
+                                        "nirt_runs": list(nirt_preds),
                                         "split": args.split, "lams": lams, "results": results})
     return 0
 

@@ -387,3 +387,114 @@ profiles:
     hf_repo_id: "internlm/Intern-S1"
     strengths: []
     weaknesses: []
+
+  # ---- Claude 5.5 tiers -- cold-start, added 2026-10-15 ----
+  # ZERO grading/battle data in this repo: these entries exist so a
+  # `model_params="projected"` NIRT router can place the three tiers purely
+  # from their rendered profile text. Every number carries its source.
+  # Sources (all fetched 2026-10-15):
+  #   [models]  https://platform.claude.com/docs/en/models/overview
+  #             (context window, API ids)
+  #   [pricing] https://platform.claude.com/docs/en/about-claude/pricing
+  #   [opus]    https://www.anthropic.com/claude-opus-5-5    (launch post, 2026-09-22)
+  #   [sonnet]  https://www.anthropic.com/claude-sonnet-5-5  (launch post, 2026-09-28)
+  #   [haiku]   https://www.anthropic.com/claude-haiku-5-5   (launch post, 2026-10-07)
+  #   benchlm_slug -> the cached data/raw/public_benchmarks/benchlm_models.json
+  #             (generatedAt 2026-10-07), which already indexes all three slugs.
+  # model_card_scores = the launch-post benchmark rows the three tiers have IN
+  # COMMON (Anthropic-reported; adaptive thinking at max effort unless noted),
+  # so the tiers are directly comparable. Deliberately NOT included:
+  #   * SWE-bench Verified / GPQA Diamond / MMLU(-Pro) / AIME -- not reported in
+  #     any of the three launch posts; no source found for the 5.5 tiers.
+  #   * SWE-bench Pro -- Opus 89.9 / Sonnet 81.3 appear only in BenchLM and
+  #     third-party blogs; Haiku's 64.8 only in a third-party blog (apidog.com),
+  #     not confirmed from an Anthropic page.
+  #   * OSWorld 2.1 -- the Opus/Sonnet posts report "partial credit" (81.8/80.1)
+  #     but the Haiku post reports an "offline subset" (72.4; Sonnet 83.9 on that
+  #     subset) -- not comparable across the three.
+  #   * arena_name -- arena_elo is pinned to the 2023-12-15 snapshot; none of
+  #     these models can be in it.
+  #   * params_b -- never disclosed for Claude models.
+  claude-opus-5-5:
+    feature: >-
+      Claude Opus 5.5 is Anthropic's proprietary flagship-tier model in the
+      Claude 5.5 generation, built for long-running agentic coding and
+      knowledge work. Anthropic positions it as performing at the level of its
+      larger Claude Fable 5.1 on most work at lower cost, and as the strongest
+      of the three Claude 5.5 tiers on complex, open-ended tasks that need
+      sustained judgment.
+    context_window: 1000000            # [models] "1M tokens"
+    release: "2026-09"                 # [opus] "September 22, 2026"
+    input_price_per_1k: 0.004          # [pricing] $4 / MTok base input
+    output_price_per_1k: 0.02          # [pricing] $20 / MTok output
+    benchlm_slug: "claude-opus-5-5"    # benchlm.ai/models/claude-opus-5-5 -- cached overall 86.37 (rank 1), evidenceStatus "supported"
+    model_card_scores:
+      terminal_bench_4: {value: 66.4, source: model_card}       # [opus] Terminal-Bench 4.0, xhigh effort
+      frontiercode_1_1: {value: 54.4, source: model_card}       # [opus] FrontierCode v1.1 Main, max effort
+      cursorbench_4: {value: 57.8, source: model_card}          # [opus] CursorBench 4.0, max effort
+      hle_with_tools: {value: 67.7, source: model_card}         # [opus] Humanity's Last Exam, with tools
+      chartography_no_tools: {value: 64.4, source: model_card}  # [sonnet] Chartography, no tools (Opus 5.5 column)
+      gdpval_aa_elo: {value: 1846, unit: elo, source: model_card}     # [opus] GDPval-AA v2.1, max effort
+      aa_briefcase_elo: {value: 1822, unit: elo, source: model_card}  # [sonnet] AA-Briefcase v1.1, Opus 5.5 column (BenchLM cache says 1807)
+    strengths:
+      - "Leads in agentic coding, computer use and knowledge work on Anthropic's own benchmarks (FrontierCode 1.1 54.4%, GDPval-AA 1846 Elo)"
+      - "Clearly stronger than Sonnet 5.5 at complex, open-ended work requiring sustained judgment (Anthropic)"
+      - "Strong multidisciplinary reasoning (Humanity's Last Exam 67.7% with tools) and a 1M-token context window"
+    weaknesses:
+      - "Most expensive Claude 5.5 tier ($4/$20 per 1M input/output tokens) and slower than Sonnet 5.5 and Haiku 5.5"
+      - "Trails Sonnet 5.5 on Terminal-Bench 4.0 (66.4% vs. 70.6%)"
+
+  claude-sonnet-5-5:
+    feature: >-
+      Claude Sonnet 5.5 is Anthropic's proprietary mid-tier model in the
+      Claude 5.5 generation, a faster, lower-cost complement to Claude Opus
+      5.5 with the best combination of speed and intelligence in the family.
+      It is strongest at well-scoped everyday tasks, fixing bugs and creating
+      polished documents.
+    context_window: 1000000            # [models] "1M tokens"
+    release: "2026-09"                 # [sonnet] "September 28, 2026"
+    input_price_per_1k: 0.002          # [pricing] $2 / MTok base input
+    output_price_per_1k: 0.01          # [pricing] $10 / MTok output
+    benchlm_slug: "claude-sonnet-5-5"  # benchlm.ai/models/claude-sonnet-5-5 -- cached overall 83.89 (rank 3), evidenceStatus "supported"
+    model_card_scores:
+      terminal_bench_4: {value: 70.6, source: model_card}       # [sonnet] Terminal-Bench 4.0
+      frontiercode_1_1: {value: 46.2, source: model_card}       # [sonnet] FrontierCode 1.1 Main, max effort (52.1% at xhigh)
+      cursorbench_4: {value: 55.5, source: model_card}          # [sonnet] CursorBench 4.0
+      hle_with_tools: {value: 64.5, source: model_card}         # [sonnet] Humanity's Last Exam, with tools
+      chartography_no_tools: {value: 61.6, source: model_card}  # [sonnet] Chartography, no tools
+      gdpval_aa_elo: {value: 1844, unit: elo, source: model_card}     # [sonnet] GDPval-AA v2.1 ([haiku] table lists 1840)
+      aa_briefcase_elo: {value: 1811, unit: elo, source: model_card}  # [sonnet] AA-Briefcase v1.1 ([haiku] table lists 1824)
+    strengths:
+      - "Near-Opus agentic coding and knowledge work at half Opus 5.5's price (Terminal-Bench 4.0 70.6%, GDPval-AA 1844 Elo)"
+      - "Generates outputs 30%+ faster than Sonnet 5, the fastest Sonnet model to date (Anthropic)"
+      - "Strong on well-scoped everyday tasks, bug fixing and polished documents, slides and spreadsheets"
+    weaknesses:
+      - "Weaker than Opus 5.5 on complex, open-ended work requiring sustained judgment (Anthropic)"
+      - "Max-effort FrontierCode 1.1 score (46.2%) is below its own xhigh score (52.1%) because of timeouts from code-review subagents"
+
+  claude-haiku-5-5:
+    feature: >-
+      Claude Haiku 5.5 is Anthropic's proprietary small model in the Claude
+      5.5 generation, the fastest and cheapest tier, designed for high-volume,
+      latency-sensitive and cost-sensitive tasks such as classification,
+      extraction, summarisation and routing, and as a subagent alongside Opus
+      5.5 and Sonnet 5.5 on coding work.
+    context_window: 1000000            # [models] "1M tokens"
+    release: "2026-10"                 # [haiku] "October 7, 2026"
+    input_price_per_1k: 0.0001         # [pricing] $0.10 / MTok for prompts <= 100K tokens ($0.50 above)
+    output_price_per_1k: 0.0005        # [pricing] $0.50 / MTok for prompts <= 100K tokens ($2.50 above)
+    benchlm_slug: "claude-haiku-5-5"   # benchlm.ai/models/claude-haiku-5-5 -- cached overall 66.32 (rank 28), evidenceStatus "estimated", only 11 benchmarks
+    model_card_scores:
+      terminal_bench_4: {value: 39.2, source: model_card}       # [haiku] Terminal-Bench 4.0
+      frontiercode_1_1: {value: 46.4, source: model_card}       # [haiku] FrontierCode 1.1 Main (effort not stated)
+      hle_with_tools: {value: 57.4, source: model_card}         # [haiku] Humanity's Last Exam, with tools
+      chartography_no_tools: {value: 46.4, source: model_card}  # [haiku] Chartography, no tools
+      gdpval_aa_elo: {value: 1620, unit: elo, source: model_card}     # [haiku] GDPval-AA v2.1
+      aa_briefcase_elo: {value: 1578, unit: elo, source: model_card}  # [haiku] AA-Briefcase v1.1
+      # cursorbench_4: no published Haiku 5.5 figure found -- left out.
+    strengths:
+      - "Cheapest and fastest Claude 5.5 tier ($0.10/$0.50 per 1M tokens for prompts up to 100K), around 75% cheaper to run than Haiku 4.5 (Anthropic)"
+      - "Large jump over Haiku 4.5 on knowledge work (GDPval-AA 1620 vs. 735 Elo) and reasoning (Humanity's Last Exam 57.4% vs. 18.7% with tools)"
+    weaknesses:
+      - "Much weaker than Sonnet 5.5 and Opus 5.5 on complex agentic coding (Terminal-Bench 4.0 39.2% vs. 70.6% and 66.4%)"
+      - "Best suited to narrowly scoped tasks; prices rise 5x for prompts over 100K tokens"

@@ -1,0 +1,102 @@
+{
+ "router": "C:/Users/dogpl/.aar-gateway/router.npz",
+ "days": 30.0,
+ "sessions": 794,
+ "turns": 1114,
+ "requests": 8973,
+ "models_used": {
+  "claude-haiku-5-5": 144,
+  "claude-opus-5-5": 250,
+  "claude-sonnet-5-5": 73,
+  "<synthetic>": 533,
+  "claude-sonnet-5": 113,
+  "claude-haiku-4-5-20251001": 1
+ },
+ "rows": [
+  {
+   "lambda": null,
+   "turns": 1114,
+   "routed_turns": 580,
+   "kept": 534,
+   "base_usd": 683.7047543600014,
+   "routed_usd": 466.2218908599996,
+   "switches": 17,
+   "mix": {
+    "claude-haiku-5-5": 344,
+    "claude-opus-5-5": 230,
+    "<synthetic>": 533,
+    "claude-sonnet-5-5": 6,
+    "claude-haiku-4-5-20251001": 1
+   },
+   "pred_q_used": 263.6409000000001,
+   "pred_q_picked": 268.19129999999996,
+   "pred_n": 580,
+   "unpriced_requests": 558,
+   "saved_pct": 0.3180947069814982,
+   "pred_quality_delta": 0.007845517241379059
+  },
+  {
+   "lambda": 0.02,
+   "turns": 1114,
+   "routed_turns": 580,
+   "kept": 534,
+   "base_usd": 683.7047543600014,
+   "routed_usd": 476.6787344699995,
+   "switches": 18,
+   "mix": {
+    "claude-haiku-5-5": 315,
+    "claude-opus-5-5": 247,
+    "claude-sonnet-5-5": 18,
+    "<synthetic>": 533,
+    "claude-haiku-4-5-20251001": 1
+   },
+   "pred_q_used": 263.6409000000001,
+   "pred_q_picked": 269.50109999999995,
+   "pred_n": 580,
+   "unpriced_requests": 558,
+   "saved_pct": 0.30280032217092556,
+   "pred_quality_delta": 0.010103793103448017
+  },
+  {
+   "lambda": 0.2,
+   "turns": 1114,
+   "routed_turns": 580,
+   "kept": 534,
+   "base_usd": 683.7047543600014,
+   "routed_usd": 163.13092180500004,
+   "switches": 16,
+   "mix": {
+    "claude-haiku-5-5": 570,
+    "<synthetic>": 533,
+    "claude-opus-5-5": 10,
+    "claude-haiku-4-5-20251001": 1
+   },
+   "pred_q_used": 263.6409000000001,
+   "pred_q_picked": 242.49699999999999,
+   "pred_n": 580,
+   "unpriced_requests": 558,
+   "saved_pct": 0.7614015102795317,
+   "pred_quality_delta": -0.0364550000000002
+  },
+  {
+   "lambda": 0.3,
+   "turns": 1114,
+   "routed_turns": 580,
+   "kept": 534,
+   "base_usd": 683.7047543600014,
+   "routed_usd": 147.30924171499993,
+   "switches": 12,
+   "mix": {
+    "claude-haiku-5-5": 580,
+    "<synthetic>": 533,
+    "claude-haiku-4-5-20251001": 1
+   },
+   "pred_q_used": 263.6409000000001,
+   "pred_q_picked": 240.71349999999995,
+   "pred_n": 580,
+   "unpriced_requests": 558,
+   "saved_pct": 0.7845426102778935,
+   "pred_quality_delta": -0.03953000000000025
+  }
+ ]
+}

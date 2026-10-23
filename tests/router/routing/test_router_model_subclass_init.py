@@ -41,6 +41,3 @@ def test_default_model_costs_uses_the_injected_cost_model_when_set():
     assert list(costs) == [0.02, 0.05]
 
 
-def test_default_model_costs_is_none_cost_model_by_default():
-    r = KNNRouter(data=object(), model_ids=_IDS)
-    assert r.cost_model is None

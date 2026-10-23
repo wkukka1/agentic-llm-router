@@ -1,0 +1,2318 @@
+{
+  "zoib_ckpt": "C:\\Users\\dogpl\\VisualCode\\Projects\\agentic-llm-router\\artifacts\\phase2\\zoib_cost_length_v2",
+  "irt_run": "irt-25d-projected-29m",
+  "nirt_runs": [
+    "nirt-2d-projected",
+    "pm-ft-d1024-s42",
+    "pm-ctl-d1024-s42",
+    "pm-ft-d64-s42-lr1e-5",
+    "pm-ft-d1024-s43",
+    "pm-ctl-d1024-s43",
+    "pm-ft-d64-s43-lr1e-5",
+    "pm-ft-d1024-s44",
+    "pm-ctl-d1024-s44",
+    "pm-ft-d64-s44-lr1e-5"
+  ],
+  "split": "test",
+  "lams": [
+    0.0,
+    10.0,
+    20.0,
+    50.0,
+    100.0,
+    200.0,
+    1000.0
+  ],
+  "results": {
+    "routerbench": {
+      "n_queries": 7354,
+      "n_dropped": 0,
+      "n_models": 10,
+      "reference": "gpt-4-1106-preview",
+      "policies": {
+        "reference": {
+          "quality": 0.7882784878977427,
+          "cost_per_1k": 5.752100897470764,
+          "q_vs_reference": 0.0,
+          "cost_vs_reference": 0.0,
+          "reference_share": 1.0
+        },
+        "oracle_best_quality": {
+          "quality": 0.9111231982594505,
+          "cost_per_1k": 0.43178352406853415,
+          "q_vs_reference": 0.12284471036170785,
+          "cost_vs_reference": -0.9249346400967354,
+          "reference_share": 0.019853141147674735
+        },
+        "oracle_match_reference": {
+          "quality": 0.827168887680174,
+          "cost_per_1k": 0.35656810715257004,
+          "q_vs_reference": 0.03889039978243136,
+          "cost_vs_reference": -0.9380108044854785,
+          "reference_share": 0.019853141147674735
+        },
+        "oracle@0": {
+          "quality": 0.9111231982594505,
+          "cost_per_1k": 0.43178352406853415,
+          "q_vs_reference": 0.12284471036170785,
+          "cost_vs_reference": -0.9249346400967354,
+          "reference_share": 0.019853141147674735
+        },
+        "ZOIB@0": {
+          "quality": 0.7906581452270873,
+          "cost_per_1k": 5.484301332608105,
+          "q_vs_reference": 0.002379657329344642,
+          "cost_vs_reference": -0.04655682673793371,
+          "reference_share": 0.8680989937449007
+        },
+        "IRT-Router@0": {
+          "quality": 0.790386184389448,
+          "cost_per_1k": 5.607919608376393,
+          "q_vs_reference": 0.00210769649170528,
+          "cost_vs_reference": -0.025065848402931912,
+          "reference_share": 0.9668207778079957
+        },
+        "IRT-Router + C_hat@0": {
+          "quality": 0.790386184389448,
+          "cost_per_1k": 5.607919608376393,
+          "q_vs_reference": 0.00210769649170528,
+          "cost_vs_reference": -0.025065848402931912,
+          "reference_share": 0.9668207778079957
+        },
+        "ZOIB + C(m)@0": {
+          "quality": 0.7906581452270873,
+          "cost_per_1k": 5.484301332608105,
+          "q_vs_reference": 0.002379657329344642,
+          "cost_vs_reference": -0.04655682673793371,
+          "reference_share": 0.8680989937449007
+        },
+        "nirt-2d-projected@0": {
+          "quality": 0.7871226543377754,
+          "cost_per_1k": 5.709142453086756,
+          "q_vs_reference": -0.0011558335599672898,
+          "cost_vs_reference": -0.007468305085346683,
+          "reference_share": 0.986401958118031
+        },
+        "pm-ft-d1024-s42@0": {
+          "quality": 0.7880745172695132,
+          "cost_per_1k": 5.50404443840087,
+          "q_vs_reference": -0.00020397062822952172,
+          "cost_vs_reference": -0.0431244972039635,
+          "reference_share": 0.8961109600217568
+        },
+        "pm-ctl-d1024-s42@0": {
+          "quality": 0.787734566222464,
+          "cost_per_1k": 5.688650911068805,
+          "q_vs_reference": -0.0005439216752787246,
+          "cost_vs_reference": -0.01103074990041597,
+          "reference_share": 0.9817786238781615
+        },
+        "pm-ft-d64-s42-lr1e-5@0": {
+          "quality": 0.7876665760130541,
+          "cost_per_1k": 5.6745121022572755,
+          "q_vs_reference": -0.0006119118846885652,
+          "cost_vs_reference": -0.013488775074791404,
+          "reference_share": 0.968452542833832
+        },
+        "pm-ft-d1024-s43@0": {
+          "quality": 0.7883464781071525,
+          "cost_per_1k": 5.304162578188739,
+          "q_vs_reference": 6.799020940984057e-05,
+          "cost_vs_reference": -0.07787386335295088,
+          "reference_share": 0.8112591786782704
+        },
+        "pm-ctl-d1024-s43@0": {
+          "quality": 0.787299428882241,
+          "cost_per_1k": 4.956187054664128,
+          "q_vs_reference": -0.0009790590155016599,
+          "cost_vs_reference": -0.1383692422983408,
+          "reference_share": 0.8490617351101442
+        },
+        "pm-ft-d64-s43-lr1e-5@0": {
+          "quality": 0.7872586347565951,
+          "cost_per_1k": 5.624937367419092,
+          "q_vs_reference": -0.0010198531411476086,
+          "cost_vs_reference": -0.022107319102762424,
+          "reference_share": 0.9559423443024204
+        },
+        "pm-ft-d1024-s44@0": {
+          "quality": 0.7876665760130541,
+          "cost_per_1k": 5.450874027740006,
+          "q_vs_reference": -0.0006119118846885652,
+          "cost_vs_reference": -0.052368147760274875,
+          "reference_share": 0.8751699755235246
+        },
+        "pm-ctl-d1024-s44@0": {
+          "quality": 0.7884144683165624,
+          "cost_per_1k": 5.678817215121023,
+          "q_vs_reference": 0.00013598041881968115,
+          "cost_vs_reference": -0.01274033325492685,
+          "reference_share": 0.9774272504759315
+        },
+        "pm-ft-d64-s44-lr1e-5@0": {
+          "quality": 0.7861028011966277,
+          "cost_per_1k": 5.424209681805819,
+          "q_vs_reference": -0.0021756867011150094,
+          "cost_vs_reference": -0.05700373159468053,
+          "reference_share": 0.9097090019037258
+        },
+        "oracle@10": {
+          "quality": 0.9110960021756866,
+          "cost_per_1k": 0.4284518406309491,
+          "q_vs_reference": 0.12281751427794396,
+          "cost_vs_reference": -0.925513851674726,
+          "reference_share": 0.019853141147674735
+        },
+        "ZOIB@10": {
+          "quality": 0.7834783791134077,
+          "cost_per_1k": 3.4933114223551804,
+          "q_vs_reference": -0.004800108784335011,
+          "cost_vs_reference": -0.3926894738770642,
+          "reference_share": 0.6385640467772641
+        },
+        "IRT-Router@10": {
+          "quality": 0.7883600761490346,
+          "cost_per_1k": 4.177380443840088,
+          "q_vs_reference": 8.15882512918975e-05,
+          "cost_vs_reference": -0.2737644004685472,
+          "reference_share": 0.7041066086483546
+        },
+        "IRT-Router + C_hat@10": {
+          "quality": 0.7816698395431058,
+          "cost_per_1k": 2.6475085373946157,
+          "q_vs_reference": -0.006608648354636926,
+          "cost_vs_reference": -0.5397319023804429,
+          "reference_share": 0.599537666576013
+        },
+        "ZOIB + C(m)@10": {
+          "quality": 0.7875713897198804,
+          "cost_per_1k": 4.938429079140604,
+          "q_vs_reference": -0.0007070981778622976,
+          "cost_vs_reference": -0.1414564578809696,
+          "reference_share": 0.7215121022572749
+        },
+        "nirt-2d-projected@10": {
+          "quality": 0.7818330160456894,
+          "cost_per_1k": 4.267486537938537,
+          "q_vs_reference": -0.006445471852053242,
+          "cost_vs_reference": -0.258099498947423,
+          "reference_share": 0.7563230894751156
+        },
+        "pm-ft-d1024-s42@10": {
+          "quality": 0.7789366331248301,
+          "cost_per_1k": 3.665578623878162,
+          "q_vs_reference": -0.009341854772912606,
+          "cost_vs_reference": -0.3627409029820843,
+          "reference_share": 0.6779983682349742
+        },
+        "pm-ctl-d1024-s42@10": {
+          "quality": 0.779820505847158,
+          "cost_per_1k": 4.593266331248299,
+          "q_vs_reference": -0.008457982050584678,
+          "cost_vs_reference": -0.20146283712304347,
+          "reference_share": 0.8036442752243677
+        },
+        "pm-ft-d64-s42-lr1e-5@10": {
+          "quality": 0.7750611911884688,
+          "cost_per_1k": 3.7966107152570028,
+          "q_vs_reference": -0.013217296709273851,
+          "cost_vs_reference": -0.33996103633606345,
+          "reference_share": 0.6951319010062551
+        },
+        "pm-ft-d1024-s43@10": {
+          "quality": 0.7851237421811259,
+          "cost_per_1k": 4.799769485994016,
+          "q_vs_reference": -0.0031547457166167803,
+          "cost_vs_reference": -0.16556236207461061,
+          "reference_share": 0.6891487625781887
+        },
+        "pm-ctl-d1024-s43@10": {
+          "quality": 0.7794941528419908,
+          "cost_per_1k": 3.558751699755235,
+          "q_vs_reference": -0.008784335055751935,
+          "cost_vs_reference": -0.3813127128350545,
+          "reference_share": 0.6820777807995648
+        },
+        "pm-ft-d64-s43-lr1e-5@10": {
+          "quality": 0.7836007614903454,
+          "cost_per_1k": 4.617776121838457,
+          "q_vs_reference": -0.004677726407397276,
+          "cost_vs_reference": -0.19720182170849565,
+          "reference_share": 0.7391895567038347
+        },
+        "pm-ft-d1024-s44@10": {
+          "quality": 0.7800244764753875,
+          "cost_per_1k": 4.0561051672559145,
+          "q_vs_reference": -0.008254011422355156,
+          "cost_vs_reference": -0.2948480495118905,
+          "reference_share": 0.669295621430514
+        },
+        "pm-ctl-d1024-s44@10": {
+          "quality": 0.7797525156377482,
+          "cost_per_1k": 3.56040693500136,
+          "q_vs_reference": -0.008525972259994519,
+          "cost_vs_reference": -0.3810249509762783,
+          "reference_share": 0.6581452270872994
+        },
+        "pm-ft-d64-s44-lr1e-5@10": {
+          "quality": 0.7839271144955127,
+          "cost_per_1k": 4.65840766929562,
+          "q_vs_reference": -0.004351373402230019,
+          "cost_vs_reference": -0.19013804654505406,
+          "reference_share": 0.7095458254011422
+        },
+        "oracle@20": {
+          "quality": 0.910960021756867,
+          "cost_per_1k": 0.42048828338319283,
+          "q_vs_reference": 0.12268153385912428,
+          "cost_vs_reference": -0.9268983123074068,
+          "reference_share": 0.019581180310035355
+        },
+        "ZOIB@20": {
+          "quality": 0.7599673646994833,
+          "cost_per_1k": 1.3817834985042152,
+          "q_vs_reference": -0.028311123198259347,
+          "cost_vs_reference": -0.7597775972407239,
+          "reference_share": 0.4423443024204515
+        },
+        "IRT-Router@20": {
+          "quality": 0.7632308947511559,
+          "cost_per_1k": 1.8440308109872174,
+          "q_vs_reference": -0.025047593146586777,
+          "cost_vs_reference": -0.6794161222383894,
+          "reference_share": 0.31357084579820504
+        },
+        "IRT-Router + C_hat@20": {
+          "quality": 0.7743676910524884,
+          "cost_per_1k": 1.357594612999728,
+          "q_vs_reference": -0.013910796845254314,
+          "cost_vs_reference": -0.7639828234590476,
+          "reference_share": 0.40046233342398696
+        },
+        "ZOIB + C(m)@20": {
+          "quality": 0.7492249116127278,
+          "cost_per_1k": 1.8247414805548,
+          "q_vs_reference": -0.039053576285014935,
+          "cost_vs_reference": -0.6827695631421989,
+          "reference_share": 0.27522436769105246
+        },
+        "nirt-2d-projected@20": {
+          "quality": 0.7616535218928474,
+          "cost_per_1k": 2.0077309219472395,
+          "q_vs_reference": -0.02662496600489528,
+          "cost_vs_reference": -0.6509569359553391,
+          "reference_share": 0.3494696763666032
+        },
+        "pm-ft-d1024-s42@20": {
+          "quality": 0.7588115311395159,
+          "cost_per_1k": 2.1050419635572477,
+          "q_vs_reference": -0.029466956758226748,
+          "cost_vs_reference": -0.6340394577426749,
+          "reference_share": 0.34756595050312755
+        },
+        "pm-ctl-d1024-s42@20": {
+          "quality": 0.7527740005439216,
+          "cost_per_1k": 2.104538917595866,
+          "q_vs_reference": -0.03550448735382106,
+          "cost_vs_reference": -0.6341269120433466,
+          "reference_share": 0.36633124830024477
+        },
+        "pm-ft-d64-s42-lr1e-5@20": {
+          "quality": 0.7538890399782432,
+          "cost_per_1k": 2.016229235790046,
+          "q_vs_reference": -0.034389447919499494,
+          "cost_vs_reference": -0.6494795081434341,
+          "reference_share": 0.3377753603481099
+        },
+        "pm-ft-d1024-s43@20": {
+          "quality": 0.7585667663856405,
+          "cost_per_1k": 1.9945256731030734,
+          "q_vs_reference": -0.029711721512102218,
+          "cost_vs_reference": -0.6532526621742537,
+          "reference_share": 0.3290726135436497
+        },
+        "pm-ctl-d1024-s43@20": {
+          "quality": 0.7683437584987761,
+          "cost_per_1k": 2.3926348381833016,
+          "q_vs_reference": -0.019934729398966566,
+          "cost_vs_reference": -0.5840415735344004,
+          "reference_share": 0.4313298884960566
+        },
+        "pm-ft-d64-s43-lr1e-5@20": {
+          "quality": 0.7525972259994561,
+          "cost_per_1k": 2.0028834375849875,
+          "q_vs_reference": -0.035681261898286576,
+          "cost_vs_reference": -0.6517996688017645,
+          "reference_share": 0.32608104432961654
+        },
+        "pm-ft-d1024-s44@20": {
+          "quality": 0.7529779711721512,
+          "cost_per_1k": 1.9224669567582267,
+          "q_vs_reference": -0.035300516725591535,
+          "cost_vs_reference": -0.6657800356729577,
+          "reference_share": 0.31819418003807454
+        },
+        "pm-ctl-d1024-s44@20": {
+          "quality": 0.7551128637476204,
+          "cost_per_1k": 1.9784779439760671,
+          "q_vs_reference": -0.03316562415012225,
+          "cost_vs_reference": -0.6560425522358245,
+          "reference_share": 0.3225455534403046
+        },
+        "pm-ft-d64-s44-lr1e-5@20": {
+          "quality": 0.7579276584171879,
+          "cost_per_1k": 2.0045243404949686,
+          "q_vs_reference": -0.030350829480554786,
+          "cost_vs_reference": -0.6515143986127971,
+          "reference_share": 0.3336959477835192
+        },
+        "oracle@50": {
+          "quality": 0.9083763937992929,
+          "cost_per_1k": 0.3514169545825401,
+          "q_vs_reference": 0.12009790590155023,
+          "cost_vs_reference": -0.9389063299051204,
+          "reference_share": 0.015773728583084037
+        },
+        "ZOIB@50": {
+          "quality": 0.7401550176774545,
+          "cost_per_1k": 0.6725176023932554,
+          "q_vs_reference": -0.04812347022028818,
+          "cost_vs_reference": -0.8830831352960158,
+          "reference_share": 0.24898014685885234
+        },
+        "IRT-Router@50": {
+          "quality": 0.7121158553168343,
+          "cost_per_1k": 0.46982681316290453,
+          "q_vs_reference": -0.07616263258090838,
+          "cost_vs_reference": -0.9183208324162933,
+          "reference_share": 0.008158825129181398
+        },
+        "IRT-Router + C_hat@50": {
+          "quality": 0.7492385096546097,
+          "cost_per_1k": 0.7015719450639109,
+          "q_vs_reference": -0.03903997824313299,
+          "cost_vs_reference": -0.8780320516678704,
+          "reference_share": 0.2476203426706554
+        },
+        "ZOIB + C(m)@50": {
+          "quality": 0.6946151754147403,
+          "cost_per_1k": 0.4190669904813707,
+          "q_vs_reference": -0.09366331248300241,
+          "cost_vs_reference": -0.9271454034011056,
+          "reference_share": 0.0
+        },
+        "nirt-2d-projected@50": {
+          "quality": 0.6990753331520261,
+          "cost_per_1k": 0.45352072341582816,
+          "q_vs_reference": -0.0892031547457166,
+          "cost_vs_reference": -0.9211556383485477,
+          "reference_share": 0.013054120206690237
+        },
+        "pm-ft-d1024-s42@50": {
+          "quality": 0.6986265977699211,
+          "cost_per_1k": 0.42912333423986954,
+          "q_vs_reference": -0.0896518901278216,
+          "cost_vs_reference": -0.9253971128307993,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s42@50": {
+          "quality": 0.6952678814250748,
+          "cost_per_1k": 0.41991476747348383,
+          "q_vs_reference": -0.0930106064726679,
+          "cost_vs_reference": -0.9269980177750146,
+          "reference_share": 0.0013598041881968997
+        },
+        "pm-ft-d64-s42-lr1e-5@50": {
+          "quality": 0.6926162632580908,
+          "cost_per_1k": 0.4114516725591515,
+          "q_vs_reference": -0.0956622246396519,
+          "cost_vs_reference": -0.9284693227929869,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s43@50": {
+          "quality": 0.6976883328800653,
+          "cost_per_1k": 0.42467672015229807,
+          "q_vs_reference": -0.09059015501767742,
+          "cost_vs_reference": -0.9261701545709966,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s43@50": {
+          "quality": 0.6992793037802556,
+          "cost_per_1k": 0.4472759042697851,
+          "q_vs_reference": -0.08899918411748708,
+          "cost_vs_reference": -0.922241297181269,
+          "reference_share": 0.005711177590426979
+        },
+        "pm-ft-d64-s43-lr1e-5@50": {
+          "quality": 0.6927930378025564,
+          "cost_per_1k": 0.42218322001631764,
+          "q_vs_reference": -0.09548545009518628,
+          "cost_vs_reference": -0.9266036483814193,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s44@50": {
+          "quality": 0.6893255371226543,
+          "cost_per_1k": 0.4144873810171335,
+          "q_vs_reference": -0.09895295077508837,
+          "cost_vs_reference": -0.9279415663241606,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s44@50": {
+          "quality": 0.6958933913516454,
+          "cost_per_1k": 0.42370157737285835,
+          "q_vs_reference": -0.09238509654609728,
+          "cost_vs_reference": -0.9263396826785214,
+          "reference_share": 0.0002719608376393799
+        },
+        "pm-ft-d64-s44-lr1e-5@50": {
+          "quality": 0.6954990481370682,
+          "cost_per_1k": 0.4271673375033995,
+          "q_vs_reference": -0.09277943976067449,
+          "cost_vs_reference": -0.9257371619313515,
+          "reference_share": 0.0
+        },
+        "oracle@100": {
+          "quality": 0.9042289910252923,
+          "cost_per_1k": 0.2904452036986674,
+          "q_vs_reference": 0.11595050312754962,
+          "cost_vs_reference": -0.9495062397416607,
+          "reference_share": 0.014005983138428066
+        },
+        "ZOIB@100": {
+          "quality": 0.719717160728855,
+          "cost_per_1k": 0.5213616807179767,
+          "q_vs_reference": -0.06856132716888763,
+          "cost_vs_reference": -0.9093615202495452,
+          "reference_share": 0.128501495784607
+        },
+        "IRT-Router@100": {
+          "quality": 0.7081044329616535,
+          "cost_per_1k": 0.4305576807179766,
+          "q_vs_reference": -0.0801740549360892,
+          "cost_vs_reference": -0.9251477523790836,
+          "reference_share": 0.0
+        },
+        "IRT-Router + C_hat@100": {
+          "quality": 0.7349877617623063,
+          "cost_per_1k": 0.5593214147402774,
+          "q_vs_reference": -0.053290726135436395,
+          "cost_vs_reference": -0.9027622385785662,
+          "reference_share": 0.15216208865923306
+        },
+        "ZOIB + C(m)@100": {
+          "quality": 0.694710361707914,
+          "cost_per_1k": 0.41976382920859395,
+          "q_vs_reference": -0.09356812618982868,
+          "cost_vs_reference": -0.9270242583204396,
+          "reference_share": 0.0
+        },
+        "nirt-2d-projected@100": {
+          "quality": 0.6954446559695404,
+          "cost_per_1k": 0.4286427522436769,
+          "q_vs_reference": -0.09283383192820227,
+          "cost_vs_reference": -0.9254806617818276,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s42@100": {
+          "quality": 0.6994560783247212,
+          "cost_per_1k": 0.4278484090290998,
+          "q_vs_reference": -0.08882240957302145,
+          "cost_vs_reference": -0.9256187579711567,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s42@100": {
+          "quality": 0.6954310579276584,
+          "cost_per_1k": 0.41991683437584987,
+          "q_vs_reference": -0.09284742997008433,
+          "cost_vs_reference": -0.9269976584450231,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s42-lr1e-5@100": {
+          "quality": 0.6927522436769106,
+          "cost_per_1k": 0.4105053848245853,
+          "q_vs_reference": -0.09552624422083211,
+          "cost_vs_reference": -0.9286338344647106,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s43@100": {
+          "quality": 0.6992657057383737,
+          "cost_per_1k": 0.42533883600761496,
+          "q_vs_reference": -0.08901278215936903,
+          "cost_vs_reference": -0.9260550460450652,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s43@100": {
+          "quality": 0.6959613815610552,
+          "cost_per_1k": 0.4365890127821594,
+          "q_vs_reference": -0.09231710633668744,
+          "cost_vs_reference": -0.9240992081738117,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s43-lr1e-5@100": {
+          "quality": 0.6934049496872451,
+          "cost_per_1k": 0.4238230078868643,
+          "q_vs_reference": -0.0948735382104976,
+          "cost_vs_reference": -0.9263185720415262,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s44@100": {
+          "quality": 0.6898694587979332,
+          "cost_per_1k": 0.41332814794669565,
+          "q_vs_reference": -0.09840902909980953,
+          "cost_vs_reference": -0.9281430984410516,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s44@100": {
+          "quality": 0.6955534403045962,
+          "cost_per_1k": 0.4219396790862116,
+          "q_vs_reference": -0.09272504759314648,
+          "cost_vs_reference": -0.9266459878560647,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s44-lr1e-5@100": {
+          "quality": 0.6949959205874354,
+          "cost_per_1k": 0.4254732662496601,
+          "q_vs_reference": -0.09328256731030726,
+          "cost_vs_reference": -0.9260316754115452,
+          "reference_share": 0.0
+        },
+        "oracle@200": {
+          "quality": 0.8952270872994289,
+          "cost_per_1k": 0.2308030497688333,
+          "q_vs_reference": 0.10694859940168622,
+          "cost_vs_reference": -0.9598749997813287,
+          "reference_share": 0.010742453086755508
+        },
+        "ZOIB@200": {
+          "quality": 0.6968724503671472,
+          "cost_per_1k": 0.41685603317922226,
+          "q_vs_reference": -0.09140603753059551,
+          "cost_vs_reference": -0.9275297772745057,
+          "reference_share": 0.024612455806363884
+        },
+        "IRT-Router@200": {
+          "quality": 0.7072885504487353,
+          "cost_per_1k": 0.4259071503943432,
+          "q_vs_reference": -0.0809899374490074,
+          "cost_vs_reference": -0.925956244859749,
+          "reference_share": 0.0
+        },
+        "IRT-Router + C_hat@200": {
+          "quality": 0.7083220016317651,
+          "cost_per_1k": 0.4136,
+          "q_vs_reference": -0.07995648626597762,
+          "cost_vs_reference": -0.9280958370911292,
+          "reference_share": 0.0420179494152842
+        },
+        "ZOIB + C(m)@200": {
+          "quality": 0.6948463421267337,
+          "cost_per_1k": 0.4181428882240958,
+          "q_vs_reference": -0.093432145771009,
+          "cost_vs_reference": -0.9273060581381742,
+          "reference_share": 0.0
+        },
+        "nirt-2d-projected@200": {
+          "quality": 0.6962605384824585,
+          "cost_per_1k": 0.4255623878161545,
+          "q_vs_reference": -0.09201794941528418,
+          "cost_vs_reference": -0.9260161816696788,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s42@200": {
+          "quality": 0.6950367147130814,
+          "cost_per_1k": 0.4252707642099538,
+          "q_vs_reference": -0.09324177318466131,
+          "cost_vs_reference": -0.9260668802946506,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s42@200": {
+          "quality": 0.6961789502311667,
+          "cost_per_1k": 0.42325934185477293,
+          "q_vs_reference": -0.09209953766657597,
+          "cost_vs_reference": -0.9264165651126038,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s42-lr1e-5@200": {
+          "quality": 0.6946151754147403,
+          "cost_per_1k": 0.4125013598041882,
+          "q_vs_reference": -0.09366331248300241,
+          "cost_vs_reference": -0.9282868351656405,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s43@200": {
+          "quality": 0.69737557791678,
+          "cost_per_1k": 0.4256165080228447,
+          "q_vs_reference": -0.09090290998096273,
+          "cost_vs_reference": -0.9260067728975354,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s43@200": {
+          "quality": 0.6970492249116128,
+          "cost_per_1k": 0.4325249932009791,
+          "q_vs_reference": -0.09122926298612988,
+          "cost_vs_reference": -0.9248057360413892,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s43-lr1e-5@200": {
+          "quality": 0.6940304596138156,
+          "cost_per_1k": 0.42381917323905355,
+          "q_vs_reference": -0.09424802828392709,
+          "cost_vs_reference": -0.9263192386932209,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s44@200": {
+          "quality": 0.6896654881697036,
+          "cost_per_1k": 0.4112638564046777,
+          "q_vs_reference": -0.09861299972803905,
+          "cost_vs_reference": -0.9285019745419429,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s44@200": {
+          "quality": 0.6962197443568127,
+          "cost_per_1k": 0.4195778623878162,
+          "q_vs_reference": -0.09205874354093002,
+          "cost_vs_reference": -0.9270565885636138,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s44-lr1e-5@200": {
+          "quality": 0.6945199891215665,
+          "cost_per_1k": 0.4236367963013326,
+          "q_vs_reference": -0.09375849877617615,
+          "cost_vs_reference": -0.9263509448369363,
+          "reference_share": 0.0
+        },
+        "oracle@1000": {
+          "quality": 0.8665896110960021,
+          "cost_per_1k": 0.1828678770737014,
+          "q_vs_reference": 0.07831112319825939,
+          "cost_vs_reference": -0.9682085067120242,
+          "reference_share": 0.003807451726951319
+        },
+        "ZOIB@1000": {
+          "quality": 0.5803916236062007,
+          "cost_per_1k": 0.160150924666848,
+          "q_vs_reference": -0.20788686429154202,
+          "cost_vs_reference": -0.9721578380627386,
+          "reference_share": 0.0
+        },
+        "IRT-Router@1000": {
+          "quality": 0.6160864835463693,
+          "cost_per_1k": 0.24049597497960293,
+          "q_vs_reference": -0.17219200435137338,
+          "cost_vs_reference": -0.9581898893523668,
+          "reference_share": 0.0
+        },
+        "IRT-Router + C_hat@1000": {
+          "quality": 0.5997824313298885,
+          "cost_per_1k": 0.17688932553712267,
+          "q_vs_reference": -0.18849605656785418,
+          "cost_vs_reference": -0.9692478750477235,
+          "reference_share": 0.0
+        },
+        "ZOIB + C(m)@1000": {
+          "quality": 0.618874082132173,
+          "cost_per_1k": 0.25740787326624964,
+          "q_vs_reference": -0.1694044057655697,
+          "cost_vs_reference": -0.9552497638941915,
+          "reference_share": 0.0
+        },
+        "nirt-2d-projected@1000": {
+          "quality": 0.6287054664128365,
+          "cost_per_1k": 0.2661762850149578,
+          "q_vs_reference": -0.15957302148490615,
+          "cost_vs_reference": -0.9537253796900542,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s42@1000": {
+          "quality": 0.6242453086755507,
+          "cost_per_1k": 0.25619816426434594,
+          "q_vs_reference": -0.16403317922219196,
+          "cost_vs_reference": -0.9554600712277147,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s42@1000": {
+          "quality": 0.6406037530595594,
+          "cost_per_1k": 0.2763633940712537,
+          "q_vs_reference": -0.14767473483818327,
+          "cost_vs_reference": -0.9519543556350389,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s42-lr1e-5@1000": {
+          "quality": 0.6261218384552625,
+          "cost_per_1k": 0.2625699619254827,
+          "q_vs_reference": -0.1621566494424802,
+          "cost_vs_reference": -0.9543523372406529,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s43@1000": {
+          "quality": 0.6270057111775904,
+          "cost_per_1k": 0.2612095866195268,
+          "q_vs_reference": -0.16127277672015228,
+          "cost_vs_reference": -0.9545888378393393,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s43@1000": {
+          "quality": 0.6085803644275224,
+          "cost_per_1k": 0.2429038346478107,
+          "q_vs_reference": -0.1796981234702203,
+          "cost_vs_reference": -0.9577712840964565,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s43-lr1e-5@1000": {
+          "quality": 0.6265297797117215,
+          "cost_per_1k": 0.2610084579820506,
+          "q_vs_reference": -0.16174870818602116,
+          "cost_vs_reference": -0.9546238039571215,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s44@1000": {
+          "quality": 0.6235654065814522,
+          "cost_per_1k": 0.25534840902909983,
+          "q_vs_reference": -0.16471308131629048,
+          "cost_vs_reference": -0.9556078007704318,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s44@1000": {
+          "quality": 0.626325809083492,
+          "cost_per_1k": 0.25946989393527337,
+          "q_vs_reference": -0.16195267881425068,
+          "cost_vs_reference": -0.9548912825834881,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s44-lr1e-5@1000": {
+          "quality": 0.621049768833288,
+          "cost_per_1k": 0.2551880609192277,
+          "q_vs_reference": -0.1672287190644547,
+          "cost_vs_reference": -0.9556356772129231,
+          "reference_share": 0.0
+        }
+      }
+    },
+    "irt_router": {
+      "n_queries": 3790,
+      "n_dropped": 0,
+      "n_models": 17,
+      "reference": "gpt_4o",
+      "policies": {
+        "reference": {
+          "quality": 0.7733342268128285,
+          "cost_per_1k": 1.2830725593667547,
+          "q_vs_reference": 0.0,
+          "cost_vs_reference": 0.0,
+          "reference_share": 1.0
+        },
+        "oracle_best_quality": {
+          "quality": 0.9427201237895013,
+          "cost_per_1k": 0.020511258706925956,
+          "q_vs_reference": 0.16938589697667283,
+          "cost_vs_reference": -0.9840139526348775,
+          "reference_share": 0.0021108179419525065
+        },
+        "oracle_match_reference": {
+          "quality": 0.8332787689157246,
+          "cost_per_1k": 0.006179974934036939,
+          "q_vs_reference": 0.059944542102896126,
+          "cost_vs_reference": -0.9951834563922971,
+          "reference_share": 0.0021108179419525065
+        },
+        "oracle@0": {
+          "quality": 0.9427201237895013,
+          "cost_per_1k": 0.020511258706925956,
+          "q_vs_reference": 0.16938589697667283,
+          "cost_vs_reference": -0.9840139526348775,
+          "reference_share": 0.0021108179419525065
+        },
+        "ZOIB@0": {
+          "quality": 0.818264316253661,
+          "cost_per_1k": 0.49714662451632957,
+          "q_vs_reference": 0.044930089440832544,
+          "cost_vs_reference": -0.6125342866332592,
+          "reference_share": 0.20686015831134566
+        },
+        "IRT-Router@0": {
+          "quality": 0.8032704752734642,
+          "cost_per_1k": 0.3152037134300661,
+          "q_vs_reference": 0.029936248460635695,
+          "cost_vs_reference": -0.7543367979238593,
+          "reference_share": 0.007387862796833773
+        },
+        "IRT-Router + C_hat@0": {
+          "quality": 0.8032704752734642,
+          "cost_per_1k": 0.3152037134300661,
+          "q_vs_reference": 0.029936248460635695,
+          "cost_vs_reference": -0.7543367979238593,
+          "reference_share": 0.007387862796833773
+        },
+        "ZOIB + C(m)@0": {
+          "quality": 0.818264316253661,
+          "cost_per_1k": 0.49714662451632957,
+          "q_vs_reference": 0.044930089440832544,
+          "cost_vs_reference": -0.6125342866332592,
+          "reference_share": 0.20686015831134566
+        },
+        "nirt-2d-projected@0": {
+          "quality": 0.7958233405463828,
+          "cost_per_1k": 0.49493010185667463,
+          "q_vs_reference": 0.022489113733554333,
+          "cost_vs_reference": -0.6142617981784744,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s42@0": {
+          "quality": 0.8041144210609803,
+          "cost_per_1k": 0.17431635786905617,
+          "q_vs_reference": 0.030780194248151815,
+          "cost_vs_reference": -0.8641414652690508,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s42@0": {
+          "quality": 0.8065029933856088,
+          "cost_per_1k": 0.3502118237290651,
+          "q_vs_reference": 0.03316876657278034,
+          "cost_vs_reference": -0.7270522066952254,
+          "reference_share": 0.0007915567282321899
+        },
+        "pm-ft-d64-s42-lr1e-5@0": {
+          "quality": 0.8053222173518123,
+          "cost_per_1k": 0.5165238800398226,
+          "q_vs_reference": 0.031987990538983824,
+          "cost_vs_reference": -0.5974320577047124,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s43@0": {
+          "quality": 0.8086467556103876,
+          "cost_per_1k": 0.18288619722263996,
+          "q_vs_reference": 0.035312528797559084,
+          "cost_vs_reference": -0.8574623111627442,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s43@0": {
+          "quality": 0.8069547194820371,
+          "cost_per_1k": 0.5887839999999889,
+          "q_vs_reference": 0.033620492669208635,
+          "cost_vs_reference": -0.5411140268711099,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s43-lr1e-5@0": {
+          "quality": 0.8042990900742548,
+          "cost_per_1k": 0.5829916637688554,
+          "q_vs_reference": 0.030964863261426334,
+          "cost_vs_reference": -0.5456284529562505,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s44@0": {
+          "quality": 0.8054727765169407,
+          "cost_per_1k": 0.6071966007035947,
+          "q_vs_reference": 0.03213854970411223,
+          "cost_vs_reference": -0.5267636297955983,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s44@0": {
+          "quality": 0.8046725857635275,
+          "cost_per_1k": 0.14747106682047223,
+          "q_vs_reference": 0.03133835895069903,
+          "cost_vs_reference": -0.8850641253731941,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s44-lr1e-5@0": {
+          "quality": 0.8059259529440912,
+          "cost_per_1k": 0.5906794927816367,
+          "q_vs_reference": 0.03259172613126271,
+          "cost_vs_reference": -0.5396367193191633,
+          "reference_share": 0.0
+        },
+        "oracle@10": {
+          "quality": 0.9427201237895013,
+          "cost_per_1k": 0.020511258706925956,
+          "q_vs_reference": 0.16938589697667283,
+          "cost_vs_reference": -0.9840139526348775,
+          "reference_share": 0.0021108179419525065
+        },
+        "ZOIB@10": {
+          "quality": 0.8164096358848855,
+          "cost_per_1k": 0.4290899957920872,
+          "q_vs_reference": 0.04307540907205698,
+          "cost_vs_reference": -0.665576204042693,
+          "reference_share": 0.19736147757255937
+        },
+        "IRT-Router@10": {
+          "quality": 0.7996176110311144,
+          "cost_per_1k": 0.13174439501475588,
+          "q_vs_reference": 0.02628338421828591,
+          "cost_vs_reference": -0.8973211654687894,
+          "reference_share": 0.0
+        },
+        "IRT-Router + C_hat@10": {
+          "quality": 0.8001239745263805,
+          "cost_per_1k": 0.12879097273252368,
+          "q_vs_reference": 0.026789747713552026,
+          "cost_vs_reference": -0.8996230012150779,
+          "reference_share": 0.0002638522427440633
+        },
+        "ZOIB + C(m)@10": {
+          "quality": 0.8142828093253411,
+          "cost_per_1k": 0.40885234803483106,
+          "q_vs_reference": 0.040948582512512655,
+          "cost_vs_reference": -0.6813490047385822,
+          "reference_share": 0.13720316622691292
+        },
+        "nirt-2d-projected@10": {
+          "quality": 0.8021557943722403,
+          "cost_per_1k": 0.1708240103765417,
+          "q_vs_reference": 0.028821567559411787,
+          "cost_vs_reference": -0.8668633280873453,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s42@10": {
+          "quality": 0.8038270546429294,
+          "cost_per_1k": 0.12930171075159372,
+          "q_vs_reference": 0.030492827830100877,
+          "cost_vs_reference": -0.899224942652184,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s42@10": {
+          "quality": 0.8051837321718885,
+          "cost_per_1k": 0.18801475776260113,
+          "q_vs_reference": 0.03184950535906006,
+          "cost_vs_reference": -0.853465218011214,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s42-lr1e-5@10": {
+          "quality": 0.8050583651090683,
+          "cost_per_1k": 0.16115486709589283,
+          "q_vs_reference": 0.03172413829623977,
+          "cost_vs_reference": -0.8743992567533134,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s43@10": {
+          "quality": 0.8046889719692266,
+          "cost_per_1k": 0.12625308180479863,
+          "q_vs_reference": 0.031354745156398134,
+          "cost_vs_reference": -0.9016009804877213,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s43@10": {
+          "quality": 0.8079651536389092,
+          "cost_per_1k": 0.2668743991819567,
+          "q_vs_reference": 0.03463092682608071,
+          "cost_vs_reference": -0.7920036577559811,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s43-lr1e-5@10": {
+          "quality": 0.8042990900742548,
+          "cost_per_1k": 0.3277141730924551,
+          "q_vs_reference": 0.030964863261426334,
+          "cost_vs_reference": -0.7445864065129766,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s44@10": {
+          "quality": 0.8052089242741967,
+          "cost_per_1k": 0.22668262630597594,
+          "q_vs_reference": 0.03187469746136817,
+          "cost_vs_reference": -0.8233282875148913,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s44@10": {
+          "quality": 0.8032031317347068,
+          "cost_per_1k": 0.13651939037000463,
+          "q_vs_reference": 0.029868904921878325,
+          "cost_vs_reference": -0.893599633650195,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s44-lr1e-5@10": {
+          "quality": 0.8059259529440912,
+          "cost_per_1k": 0.33984210617936084,
+          "q_vs_reference": 0.03259172613126271,
+          "cost_vs_reference": -0.7351341483391354,
+          "reference_share": 0.0
+        },
+        "oracle@20": {
+          "quality": 0.9427201237895013,
+          "cost_per_1k": 0.020511258706925956,
+          "q_vs_reference": 0.16938589697667283,
+          "cost_vs_reference": -0.9840139526348775,
+          "reference_share": 0.0021108179419525065
+        },
+        "ZOIB@20": {
+          "quality": 0.8143271049679605,
+          "cost_per_1k": 0.35752825084475137,
+          "q_vs_reference": 0.04099287815513197,
+          "cost_vs_reference": -0.7213499359527997,
+          "reference_share": 0.1662269129287599
+        },
+        "IRT-Router@20": {
+          "quality": 0.7981102155412523,
+          "cost_per_1k": 0.10634572636244488,
+          "q_vs_reference": 0.024775988728423792,
+          "cost_vs_reference": -0.9171163582401524,
+          "reference_share": 0.0
+        },
+        "IRT-Router + C_hat@20": {
+          "quality": 0.7975473307567317,
+          "cost_per_1k": 0.10544566877748272,
+          "q_vs_reference": 0.02421310394390319,
+          "cost_vs_reference": -0.9178178443551749,
+          "reference_share": 0.0
+        },
+        "ZOIB + C(m)@20": {
+          "quality": 0.8117990383323354,
+          "cost_per_1k": 0.30931879281753644,
+          "q_vs_reference": 0.03846481151950687,
+          "cost_vs_reference": -0.7589233823454247,
+          "reference_share": 0.06437994722955145
+        },
+        "nirt-2d-projected@20": {
+          "quality": 0.8024196466149844,
+          "cost_per_1k": 0.1411180633489845,
+          "q_vs_reference": 0.029085419802155954,
+          "cost_vs_reference": -0.8900155238152457,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s42@20": {
+          "quality": 0.8042668083808361,
+          "cost_per_1k": 0.12614471844855651,
+          "q_vs_reference": 0.0309325815680076,
+          "cost_vs_reference": -0.9016854366281407,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s42@20": {
+          "quality": 0.8046560276864003,
+          "cost_per_1k": 0.1601518535403639,
+          "q_vs_reference": 0.03132180087357184,
+          "cost_vs_reference": -0.8751809846051068,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s42-lr1e-5@20": {
+          "quality": 0.8029475471671158,
+          "cost_per_1k": 0.12346213142882013,
+          "q_vs_reference": 0.02961332035428732,
+          "cost_vs_reference": -0.9037761890179045,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s43@20": {
+          "quality": 0.8057443809402028,
+          "cost_per_1k": 0.12328110463798471,
+          "q_vs_reference": 0.03241015412737436,
+          "cost_vs_reference": -0.9039172775241732,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s43@20": {
+          "quality": 0.8043591729880738,
+          "cost_per_1k": 0.06577243172088804,
+          "q_vs_reference": 0.031024946175245316,
+          "cost_vs_reference": -0.9487383381082133,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s43-lr1e-5@20": {
+          "quality": 0.8027159766177905,
+          "cost_per_1k": 0.16823733212635342,
+          "q_vs_reference": 0.029381749804962,
+          "cost_vs_reference": -0.8688793311818741,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s44@20": {
+          "quality": 0.8046812197887085,
+          "cost_per_1k": 0.11457197941734784,
+          "q_vs_reference": 0.03134699297588006,
+          "cost_vs_reference": -0.9107049881310738,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s44@20": {
+          "quality": 0.8024115750064746,
+          "cost_per_1k": 0.1348557138543465,
+          "q_vs_reference": 0.029077348193646158,
+          "cost_vs_reference": -0.8948962684379261,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s44-lr1e-5@20": {
+          "quality": 0.8072452141578115,
+          "cost_per_1k": 0.17715005713842907,
+          "q_vs_reference": 0.03391098734498299,
+          "cost_vs_reference": -0.861932939142694,
+          "reference_share": 0.0
+        },
+        "oracle@50": {
+          "quality": 0.9426984535328186,
+          "cost_per_1k": 0.01990027453806052,
+          "q_vs_reference": 0.16936422671999007,
+          "cost_vs_reference": -0.9844901409567343,
+          "reference_share": 0.0021108179419525065
+        },
+        "ZOIB@50": {
+          "quality": 0.8091151573520037,
+          "cost_per_1k": 0.1893871209113161,
+          "q_vs_reference": 0.03578093053917519,
+          "cost_vs_reference": -0.852395626787634,
+          "reference_share": 0.05725593667546174
+        },
+        "IRT-Router@50": {
+          "quality": 0.7958553226364123,
+          "cost_per_1k": 0.07229503869832818,
+          "q_vs_reference": 0.02252109582358386,
+          "cost_vs_reference": -0.9436547542299489,
+          "reference_share": 0.0
+        },
+        "IRT-Router + C_hat@50": {
+          "quality": 0.7961191748791564,
+          "cost_per_1k": 0.06067542656112501,
+          "q_vs_reference": 0.022784948066327915,
+          "cost_vs_reference": -0.9527108376543642,
+          "reference_share": 0.0
+        },
+        "ZOIB + C(m)@50": {
+          "quality": 0.8069959953647676,
+          "cost_per_1k": 0.15645723851085874,
+          "q_vs_reference": 0.03366176855193914,
+          "cost_vs_reference": -0.8780604905243423,
+          "reference_share": 0.005013192612137203
+        },
+        "nirt-2d-projected@50": {
+          "quality": 0.7950317838181507,
+          "cost_per_1k": 0.08384647397263918,
+          "q_vs_reference": 0.021697557005322166,
+          "cost_vs_reference": -0.9346518064309468,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s42@50": {
+          "quality": 0.8045648062079352,
+          "cost_per_1k": 0.12171541259825382,
+          "q_vs_reference": 0.03123057939510676,
+          "cost_vs_reference": -0.9051375452543969,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s42@50": {
+          "quality": 0.8020654783940042,
+          "cost_per_1k": 0.11484310301600573,
+          "q_vs_reference": 0.028731251581175732,
+          "cost_vs_reference": -0.9104936800513564,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s42-lr1e-5@50": {
+          "quality": 0.8029475471671158,
+          "cost_per_1k": 0.11568736328274244,
+          "q_vs_reference": 0.02961332035428732,
+          "cost_vs_reference": -0.9098356812027539,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s43@50": {
+          "quality": 0.8054805286974588,
+          "cost_per_1k": 0.11534288959242961,
+          "q_vs_reference": 0.0321463018846303,
+          "cost_vs_reference": -0.9101041568145174,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s43@50": {
+          "quality": 0.8027760595316094,
+          "cost_per_1k": 0.034806947229551397,
+          "q_vs_reference": 0.02944183271878087,
+          "cost_vs_reference": -0.9728721910733327,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s43-lr1e-5@50": {
+          "quality": 0.8040352378315108,
+          "cost_per_1k": 0.11174237529132769,
+          "q_vs_reference": 0.030701011018682278,
+          "cost_vs_reference": -0.9129103225880875,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s44@50": {
+          "quality": 0.8036258108177323,
+          "cost_per_1k": 0.07570798314946714,
+          "q_vs_reference": 0.030291584004903838,
+          "cost_vs_reference": -0.9409947764865052,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s44@50": {
+          "quality": 0.8018838705209865,
+          "cost_per_1k": 0.1100010671316371,
+          "q_vs_reference": 0.028549643708158046,
+          "cost_vs_reference": -0.9142674618605149,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s44-lr1e-5@50": {
+          "quality": 0.805134396215859,
+          "cost_per_1k": 0.11256694842582642,
+          "q_vs_reference": 0.03180016940303054,
+          "cost_vs_reference": -0.9122676674798638,
+          "reference_share": 0.0
+        },
+        "oracle@100": {
+          "quality": 0.9426898309105067,
+          "cost_per_1k": 0.01973154102882569,
+          "q_vs_reference": 0.16935560409767825,
+          "cost_vs_reference": -0.9846216483356452,
+          "reference_share": 0.0018469656992084432
+        },
+        "ZOIB@100": {
+          "quality": 0.8013857969892527,
+          "cost_per_1k": 0.05887206707429585,
+          "q_vs_reference": 0.028051570176424234,
+          "cost_vs_reference": -0.954116338437359,
+          "reference_share": 0.004221635883905013
+        },
+        "IRT-Router@100": {
+          "quality": 0.7971745838501326,
+          "cost_per_1k": 0.05646138170624408,
+          "q_vs_reference": 0.02384035703730414,
+          "cost_vs_reference": -0.9559951763490991,
+          "reference_share": 0.0
+        },
+        "IRT-Router + C_hat@100": {
+          "quality": 0.7977022883356208,
+          "cost_per_1k": 0.04708774318381674,
+          "q_vs_reference": 0.02436806152279236,
+          "cost_vs_reference": -0.9633007947679465,
+          "reference_share": 0.0
+        },
+        "ZOIB + C(m)@100": {
+          "quality": 0.8050328213222928,
+          "cost_per_1k": 0.047316365711788766,
+          "q_vs_reference": 0.03169859450946433,
+          "cost_vs_reference": -0.9631226111365508,
+          "reference_share": 0.0
+        },
+        "nirt-2d-projected@100": {
+          "quality": 0.796878749517359,
+          "cost_per_1k": 0.05245905696041456,
+          "q_vs_reference": 0.023544522704530557,
+          "cost_vs_reference": -0.9591145048053206,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s42@100": {
+          "quality": 0.8043009539651912,
+          "cost_per_1k": 0.06705298864835525,
+          "q_vs_reference": 0.030966727152362705,
+          "cost_vs_reference": -0.9477402987392635,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s42@100": {
+          "quality": 0.7978438425100992,
+          "cost_per_1k": 0.05607549300773096,
+          "q_vs_reference": 0.024509615697270726,
+          "cost_vs_reference": -0.9562959299547281,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s42-lr1e-5@100": {
+          "quality": 0.804002956138092,
+          "cost_per_1k": 0.07659669022134251,
+          "q_vs_reference": 0.030668729325263544,
+          "cost_vs_reference": -0.9403021367247181,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s43@100": {
+          "quality": 0.8052166764547147,
+          "cost_per_1k": 0.0690437233899051,
+          "q_vs_reference": 0.031882449641886246,
+          "cost_vs_reference": -0.9461887615896167,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s43@100": {
+          "quality": 0.8014242011876666,
+          "cost_per_1k": 0.03350418733509229,
+          "q_vs_reference": 0.028089974374838067,
+          "cost_vs_reference": -0.9738875349718118,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s43-lr1e-5@100": {
+          "quality": 0.8056183512879752,
+          "cost_per_1k": 0.0536208808646618,
+          "q_vs_reference": 0.032284124475146725,
+          "cost_vs_reference": -0.9582090034790194,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s44@100": {
+          "quality": 0.8007234361475476,
+          "cost_per_1k": 0.04650431925243835,
+          "q_vs_reference": 0.02738920933471911,
+          "cost_vs_reference": -0.9637555032153521,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s44@100": {
+          "quality": 0.8036198983454049,
+          "cost_per_1k": 0.05556194238899403,
+          "q_vs_reference": 0.03028567153257644,
+          "cost_vs_reference": -0.9566961805991581,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s44-lr1e-5@100": {
+          "quality": 0.8032874305166505,
+          "cost_per_1k": 0.06444853665784508,
+          "q_vs_reference": 0.02995320370382204,
+          "cost_vs_reference": -0.9497701543164068,
+          "reference_share": 0.0
+        },
+        "oracle@200": {
+          "quality": 0.9426898309105067,
+          "cost_per_1k": 0.01973154102882569,
+          "q_vs_reference": 0.16935560409767825,
+          "cost_vs_reference": -0.9846216483356452,
+          "reference_share": 0.0018469656992084432
+        },
+        "ZOIB@200": {
+          "quality": 0.8019721509839568,
+          "cost_per_1k": 0.03459864591029019,
+          "q_vs_reference": 0.028637924171128315,
+          "cost_vs_reference": -0.9730345367783675,
+          "reference_share": 0.0
+        },
+        "IRT-Router@200": {
+          "quality": 0.8010444167437122,
+          "cost_per_1k": 0.04196389621811775,
+          "q_vs_reference": 0.0277101899308837,
+          "cost_vs_reference": -0.9672942142579773,
+          "reference_share": 0.0
+        },
+        "IRT-Router + C_hat@200": {
+          "quality": 0.7978781898307835,
+          "cost_per_1k": 0.03922197933157422,
+          "q_vs_reference": 0.02454396301795503,
+          "cost_vs_reference": -0.9694312071088702,
+          "reference_share": 0.0
+        },
+        "ZOIB + C(m)@200": {
+          "quality": 0.8011805942557246,
+          "cost_per_1k": 0.035059175813544334,
+          "q_vs_reference": 0.027846367442896147,
+          "cost_vs_reference": -0.9726756093740736,
+          "reference_share": 0.0
+        },
+        "nirt-2d-projected@200": {
+          "quality": 0.7991096057323841,
+          "cost_per_1k": 0.04081635349781908,
+          "q_vs_reference": 0.025775378919555614,
+          "cost_vs_reference": -0.9681885851272796,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s42@200": {
+          "quality": 0.8008708748095184,
+          "cost_per_1k": 0.03516554969217233,
+          "q_vs_reference": 0.027536647996689867,
+          "cost_vs_reference": -0.972592703791025,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s42@200": {
+          "quality": 0.7967884335391229,
+          "cost_per_1k": 0.036947590149516214,
+          "q_vs_reference": 0.02345420672629439,
+          "cost_vs_reference": -0.9712038186150974,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s42-lr1e-5@200": {
+          "quality": 0.8018921381961395,
+          "cost_per_1k": 0.037457645206684216,
+          "q_vs_reference": 0.028557911383310985,
+          "cost_vs_reference": -0.9708062923384699,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s43@200": {
+          "quality": 0.8035885881841462,
+          "cost_per_1k": 0.03694317792436231,
+          "q_vs_reference": 0.03025436137131776,
+          "cost_vs_reference": -0.971207257411385,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s43@200": {
+          "quality": 0.8019475081357755,
+          "cost_per_1k": 0.03139899938434471,
+          "q_vs_reference": 0.02861328132294705,
+          "cost_vs_reference": -0.9755282745662948,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s43-lr1e-5@200": {
+          "quality": 0.8019244198895583,
+          "cost_per_1k": 0.037241554969217196,
+          "q_vs_reference": 0.02859019307672983,
+          "cost_vs_reference": -0.9709747085639511,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s44@200": {
+          "quality": 0.8008455324794841,
+          "cost_per_1k": 0.040041861037818774,
+          "q_vs_reference": 0.027511305666655606,
+          "cost_vs_reference": -0.9687922084020089,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s44@200": {
+          "quality": 0.8004700622536163,
+          "cost_per_1k": 0.030183904221635832,
+          "q_vs_reference": 0.027135835440787792,
+          "cost_vs_reference": -0.9764752944007058,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s44-lr1e-5@200": {
+          "quality": 0.8040789872448827,
+          "cost_per_1k": 0.03761306420404568,
+          "q_vs_reference": 0.030744760432054208,
+          "cost_vs_reference": -0.9706851620124982,
+          "reference_share": 0.0
+        },
+        "oracle@1000": {
+          "quality": 0.937328857454367,
+          "cost_per_1k": 0.010476274010356166,
+          "q_vs_reference": 0.16399463064153852,
+          "cost_vs_reference": -0.991835010472419,
+          "reference_share": 0.0007915567282321899
+        },
+        "ZOIB@1000": {
+          "quality": 0.8001387429585575,
+          "cost_per_1k": 0.021719964379947203,
+          "q_vs_reference": 0.026804516145728985,
+          "cost_vs_reference": -0.9830719126355045,
+          "reference_share": 0.0
+        },
+        "IRT-Router@1000": {
+          "quality": 0.7973985353603638,
+          "cost_per_1k": 0.024216006596306072,
+          "q_vs_reference": 0.024064308547535274,
+          "cost_vs_reference": -0.9811265493759311,
+          "reference_share": 0.0
+        },
+        "IRT-Router + C_hat@1000": {
+          "quality": 0.7979622603983244,
+          "cost_per_1k": 0.022289568601583116,
+          "q_vs_reference": 0.024628033585495923,
+          "cost_vs_reference": -0.9826279749817237,
+          "reference_share": 0.0
+        },
+        "ZOIB + C(m)@1000": {
+          "quality": 0.7998711213980598,
+          "cost_per_1k": 0.026047416446789772,
+          "q_vs_reference": 0.02653689458523134,
+          "cost_vs_reference": -0.9796991867243695,
+          "reference_share": 0.0
+        },
+        "nirt-2d-projected@1000": {
+          "quality": 0.80107280453634,
+          "cost_per_1k": 0.026784491292875995,
+          "q_vs_reference": 0.027738577723511515,
+          "cost_vs_reference": -0.9791247259577469,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s42@1000": {
+          "quality": 0.797484948217787,
+          "cost_per_1k": 0.026156140721196104,
+          "q_vs_reference": 0.024150721404958553,
+          "cost_vs_reference": -0.9796144492918584,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s42@1000": {
+          "quality": 0.7968832787309053,
+          "cost_per_1k": 0.025795795866314867,
+          "q_vs_reference": 0.02354905191807677,
+          "cost_vs_reference": -0.9798952945583638,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s42-lr1e-5@1000": {
+          "quality": 0.7983499367895517,
+          "cost_per_1k": 0.026401961301671037,
+          "q_vs_reference": 0.0250157099767232,
+          "cost_vs_reference": -0.9794228618569308,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s43@1000": {
+          "quality": 0.8000386273219485,
+          "cost_per_1k": 0.025833102990325395,
+          "q_vs_reference": 0.02670440050912004,
+          "cost_vs_reference": -0.9798662181637842,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s43@1000": {
+          "quality": 0.7979272171225389,
+          "cost_per_1k": 0.022105943887423044,
+          "q_vs_reference": 0.024592990309710405,
+          "cost_vs_reference": -0.9827710882552635,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s43-lr1e-5@1000": {
+          "quality": 0.7973741495535515,
+          "cost_per_1k": 0.02728710642040455,
+          "q_vs_reference": 0.024039922740722974,
+          "cost_vs_reference": -0.9787329982071538,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s44@1000": {
+          "quality": 0.7993694666505932,
+          "cost_per_1k": 0.02660697977132803,
+          "q_vs_reference": 0.02603523983776468,
+          "cost_vs_reference": -0.9792630747364284,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s44@1000": {
+          "quality": 0.7968121581696684,
+          "cost_per_1k": 0.024392001759014927,
+          "q_vs_reference": 0.023477931356839954,
+          "cost_vs_reference": -0.9809893824157121,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s44-lr1e-5@1000": {
+          "quality": 0.7991630513949877,
+          "cost_per_1k": 0.028172765171503935,
+          "q_vs_reference": 0.025828824582159182,
+          "cost_vs_reference": -0.9780427342430204,
+          "reference_share": 0.0
+        }
+      }
+    },
+    "combined": {
+      "n_queries": 11144,
+      "reference": "gpt-4-1106-preview | gpt_4o",
+      "policies": {
+        "reference": {
+          "quality": 0.7831960444742122,
+          "cost_per_1k": 4.2322141959799,
+          "q_vs_reference": 0.0,
+          "cost_vs_reference": 0.0,
+          "reference_share": 1.0
+        },
+        "oracle_best_quality": {
+          "quality": 0.9218691016836154,
+          "cost_per_1k": 0.2919125723707151,
+          "q_vs_reference": 0.13867305720940315,
+          "cost_vs_reference": -0.9310260400695226,
+          "reference_share": 0.013819095477386936
+        },
+        "oracle_match_reference": {
+          "quality": 0.8292468174973615,
+          "cost_per_1k": 0.23740344265972718,
+          "q_vs_reference": 0.046050773023149305,
+          "cost_vs_reference": -0.9439056173278677,
+          "reference_share": 0.013819095477386936
+        },
+        "oracle@0": {
+          "quality": 0.9218691016836154,
+          "cost_per_1k": 0.2919125723707151,
+          "q_vs_reference": 0.13867305720940315,
+          "cost_vs_reference": -0.9310260400695226,
+          "reference_share": 0.013819095477386936
+        },
+        "ZOIB@0": {
+          "quality": 0.8000468196878477,
+          "cost_per_1k": 3.7882033118195335,
+          "q_vs_reference": 0.016850775213635538,
+          "cost_vs_reference": -0.10491219574428046,
+          "reference_share": 0.6432160804020101
+        },
+        "IRT-Router@0": {
+          "quality": 0.7947680457005051,
+          "cost_per_1k": 3.8079022679378993,
+          "q_vs_reference": 0.011572001226292872,
+          "cost_vs_reference": -0.1002576685379124,
+          "reference_share": 0.6405240488155061
+        },
+        "IRT-Router + C_hat@0": {
+          "quality": 0.7947680457005051,
+          "cost_per_1k": 3.8079022679378993,
+          "q_vs_reference": 0.011572001226292872,
+          "cost_vs_reference": -0.1002576685379124,
+          "reference_share": 0.6405240488155061
+        },
+        "ZOIB + C(m)@0": {
+          "quality": 0.8000468196878477,
+          "cost_per_1k": 3.7882033118195335,
+          "q_vs_reference": 0.016850775213635538,
+          "cost_vs_reference": -0.10491219574428046,
+          "reference_share": 0.6432160804020101
+        },
+        "nirt-2d-projected@0": {
+          "quality": 0.7900816996294678,
+          "cost_per_1k": 3.935823643757789,
+          "q_vs_reference": 0.006885655155255632,
+          "cost_vs_reference": -0.07003203016133885,
+          "reference_share": 0.6509332376166547
+        },
+        "pm-ft-d1024-s42@0": {
+          "quality": 0.7935295814627705,
+          "cost_per_1k": 3.6914395007469243,
+          "q_vs_reference": 0.010333536988558323,
+          "cost_vs_reference": -0.12777583321436026,
+          "reference_share": 0.5913496051687006
+        },
+        "pm-ctl-d1024-s42@0": {
+          "quality": 0.7941175829981567,
+          "cost_per_1k": 3.873083418156242,
+          "q_vs_reference": 0.010921538523944507,
+          "cost_vs_reference": -0.08485647493096848,
+          "reference_share": 0.6481514716439339
+        },
+        "pm-ft-d64-s42-lr1e-5@0": {
+          "quality": 0.7936711417590964,
+          "cost_per_1k": 3.920314743839818,
+          "q_vs_reference": 0.01047509728488416,
+          "cost_vs_reference": -0.07369651858271942,
+          "reference_share": 0.6390882986360373
+        },
+        "pm-ft-d1024-s43@0": {
+          "quality": 0.7952504669565119,
+          "cost_per_1k": 3.5624506718838664,
+          "q_vs_reference": 0.01205442248229971,
+          "cost_vs_reference": -0.15825369253102295,
+          "reference_share": 0.5353553481694185
+        },
+        "pm-ctl-d1024-s43@0": {
+          "quality": 0.793984061991827,
+          "cost_per_1k": 3.47086243359655,
+          "q_vs_reference": 0.010788017517614823,
+          "cost_vs_reference": -0.1798944304630289,
+          "reference_share": 0.5603015075376885
+        },
+        "pm-ft-d64-s43-lr1e-5@0": {
+          "quality": 0.7930539798439902,
+          "cost_per_1k": 3.9102052948388337,
+          "q_vs_reference": 0.00985793536977797,
+          "cost_vs_reference": -0.07608520888355219,
+          "reference_share": 0.6308327351040919
+        },
+        "pm-ft-d1024-s44@0": {
+          "quality": 0.7937223459259876,
+          "cost_per_1k": 3.80357167234984,
+          "q_vs_reference": 0.010526301451775355,
+          "cost_vs_reference": -0.10128091438217346,
+          "reference_share": 0.5775305096913137
+        },
+        "pm-ctl-d1024-s44@0": {
+          "quality": 0.7939437455172083,
+          "cost_per_1k": 3.7976433186692025,
+          "q_vs_reference": 0.01074770104299605,
+          "cost_vs_reference": -0.10268168320107429,
+          "reference_share": 0.6450107681263461
+        },
+        "pm-ft-d64-s44-lr1e-5@0": {
+          "quality": 0.7928445227618545,
+          "cost_per_1k": 3.7803583343182336,
+          "q_vs_reference": 0.00964847828764226,
+          "cost_vs_reference": -0.10676583006854312,
+          "reference_share": 0.6003230437903805
+        },
+        "oracle@10": {
+          "quality": 0.9218511548063721,
+          "cost_per_1k": 0.2897139722271401,
+          "q_vs_reference": 0.13865511033215994,
+          "cost_vs_reference": -0.9315455317686109,
+          "reference_share": 0.013819095477386936
+        },
+        "ZOIB@10": {
+          "quality": 0.7946780796844684,
+          "cost_per_1k": 2.451190172653626,
+          "q_vs_reference": 0.011482035210256147,
+          "cost_vs_reference": -0.42082558699841677,
+          "reference_share": 0.4885139985642498
+        },
+        "IRT-Router@10": {
+          "quality": 0.7921886886044439,
+          "cost_per_1k": 2.8014866332650685,
+          "q_vs_reference": 0.008992644130231708,
+          "cost_vs_reference": -0.3380565104842407,
+          "reference_share": 0.46464465183058146
+        },
+        "IRT-Router + C_hat@10": {
+          "quality": 0.7879459676467141,
+          "cost_per_1k": 1.7909095092117966,
+          "q_vs_reference": 0.004749923172501891,
+          "cost_vs_reference": -0.5768386413634385,
+          "reference_share": 0.3957286432160804
+        },
+        "ZOIB + C(m)@10": {
+          "quality": 0.796655765195894,
+          "cost_per_1k": 3.3979502734253417,
+          "q_vs_reference": 0.013459720721681778,
+          "cost_vs_reference": -0.19712232980717503,
+          "reference_share": 0.5227925340990668
+        },
+        "nirt-2d-projected@10": {
+          "quality": 0.7887446572748376,
+          "cost_per_1k": 2.874238962610113,
+          "q_vs_reference": 0.005548612800625352,
+          "cost_vs_reference": -0.3208663764371146,
+          "reference_share": 0.499102656137832
+        },
+        "pm-ft-d1024-s42@10": {
+          "quality": 0.7874016993087491,
+          "cost_per_1k": 2.4629144547513047,
+          "q_vs_reference": 0.004205654834536943,
+          "cost_vs_reference": -0.4180553391908234,
+          "reference_share": 0.4474156496769562
+        },
+        "pm-ctl-d1024-s42@10": {
+          "quality": 0.788446369789255,
+          "cost_per_1k": 3.0950696816152425,
+          "q_vs_reference": 0.00525032531504277,
+          "cost_vs_reference": -0.2686878455832432,
+          "reference_share": 0.5303302225412778
+        },
+        "pm-ft-d64-s42-lr1e-5@10": {
+          "quality": 0.7852630297705823,
+          "cost_per_1k": 2.5602164524671065,
+          "q_vs_reference": 0.002066985296370061,
+          "cost_vs_reference": -0.3950645374000664,
+          "reference_share": 0.4587221823402728
+        },
+        "pm-ft-d1024-s43@10": {
+          "quality": 0.7917777462099219,
+          "cost_per_1k": 3.2103377584386386,
+          "q_vs_reference": 0.008581701735709713,
+          "cost_vs_reference": -0.24145196585558504,
+          "reference_share": 0.4547738693467337
+        },
+        "pm-ctl-d1024-s43@10": {
+          "quality": 0.7891769501338358,
+          "cost_per_1k": 2.43920620718769,
+          "q_vs_reference": 0.005980905659623614,
+          "cost_vs_reference": -0.42365719355493725,
+          "reference_share": 0.4501076812634602
+        },
+        "pm-ft-d64-s43-lr1e-5@10": {
+          "quality": 0.7906401248547582,
+          "cost_per_1k": 3.15875469454598,
+          "q_vs_reference": 0.007444080380546003,
+          "cost_vs_reference": -0.25364016368868536,
+          "reference_share": 0.48779612347451545
+        },
+        "pm-ft-d1024-s44@10": {
+          "quality": 0.7885895390343868,
+          "cost_per_1k": 2.7537441272164083,
+          "q_vs_reference": 0.005393494560174572,
+          "cost_vs_reference": -0.3493372500304598,
+          "reference_share": 0.4416726489590811
+        },
+        "pm-ctl-d1024-s44@10": {
+          "quality": 0.7877279136104216,
+          "cost_per_1k": 2.3959656397615143,
+          "q_vs_reference": 0.004531869136209399,
+          "cost_vs_reference": -0.4338742018214964,
+          "reference_share": 0.43431442928930364
+        },
+        "pm-ft-d64-s44-lr1e-5@10": {
+          "quality": 0.7914087725823856,
+          "cost_per_1k": 3.189692353052744,
+          "q_vs_reference": 0.008212728108173417,
+          "cost_vs_reference": -0.24633012287455291,
+          "reference_share": 0.4682340272792534
+        },
+        "oracle@20": {
+          "quality": 0.9217614204201553,
+          "cost_per_1k": 0.28445876763273953,
+          "q_vs_reference": 0.1385653759459431,
+          "cost_vs_reference": -0.9327872469444147,
+          "reference_share": 0.013639626704953339
+        },
+        "ZOIB@20": {
+          "quality": 0.7784547494462105,
+          "cost_per_1k": 1.0334411269473802,
+          "q_vs_reference": -0.004741295028001691,
+          "cost_vs_reference": -0.755815495366698,
+          "reference_share": 0.3484386216798277
+        },
+        "IRT-Router@20": {
+          "quality": 0.7750931188892092,
+          "cost_per_1k": 1.253055714906108,
+          "q_vs_reference": -0.008102925585003029,
+          "cost_vs_reference": -0.7039243155281787,
+          "reference_share": 0.20692749461593682
+        },
+        "IRT-Router + C_hat@20": {
+          "quality": 0.7822509317631025,
+          "cost_per_1k": 0.9317471167145243,
+          "q_vs_reference": -0.0009451127111097524,
+          "cost_vs_reference": -0.779844054774077,
+          "reference_share": 0.2642677674084709
+        },
+        "ZOIB + C(m)@20": {
+          "quality": 0.7705059543502827,
+          "cost_per_1k": 1.3093563417783978,
+          "q_vs_reference": -0.01269009012392952,
+          "cost_vs_reference": -0.6906214380590352,
+          "reference_share": 0.20351758793969849
+        },
+        "nirt-2d-projected@20": {
+          "quality": 0.7755178087464816,
+          "cost_per_1k": 1.3729083506902953,
+          "q_vs_reference": -0.007678235727730631,
+          "cost_vs_reference": -0.6756051827446742,
+          "reference_share": 0.23061737257717158
+        },
+        "pm-ft-d1024-s42@20": {
+          "quality": 0.7742705674590245,
+          "cost_per_1k": 1.4320322220854298,
+          "q_vs_reference": -0.008925477015187755,
+          "cost_vs_reference": -0.6616352207679634,
+          "reference_share": 0.2293610911701364
+        },
+        "pm-ctl-d1024-s42@20": {
+          "quality": 0.7704187315983002,
+          "cost_per_1k": 1.4432658583020443,
+          "q_vs_reference": -0.012777312875911995,
+          "cost_vs_reference": -0.6589809042101472,
+          "reference_share": 0.24174443646805455
+        },
+        "pm-ft-d64-s42-lr1e-5@20": {
+          "quality": 0.7705735107468923,
+          "cost_per_1k": 1.3725117801610938,
+          "q_vs_reference": -0.012622533727319918,
+          "cost_vs_reference": -0.6756988855940191,
+          "reference_share": 0.2229002153625269
+        },
+        "pm-ft-d1024-s43@20": {
+          "quality": 0.7746115581266483,
+          "cost_per_1k": 1.3581278882428178,
+          "q_vs_reference": -0.008584486347563924,
+          "cost_vs_reference": -0.6790975538211469,
+          "reference_share": 0.21715721464465182
+        },
+        "pm-ctl-d1024-s43@20": {
+          "quality": 0.7805923605190955,
+          "cost_per_1k": 1.6012844684334318,
+          "q_vs_reference": -0.0026036839551166757,
+          "cost_vs_reference": -0.621643802916577,
+          "reference_share": 0.2846374730796841
+        },
+        "pm-ft-d64-s43-lr1e-5@20": {
+          "quality": 0.7696422784800273,
+          "cost_per_1k": 1.3789325456531656,
+          "q_vs_reference": -0.013553765994184896,
+          "cost_vs_reference": -0.6741817682661271,
+          "reference_share": 0.21518305814788227
+        },
+        "pm-ft-d1024-s44@20": {
+          "quality": 0.7705619008434319,
+          "cost_per_1k": 1.3076139449023465,
+          "q_vs_reference": -0.012634143630780303,
+          "cost_vs_reference": -0.6910331367102298,
+          "reference_share": 0.20997846374730797
+        },
+        "pm-ctl-d1024-s44@20": {
+          "quality": 0.7711988396692875,
+          "cost_per_1k": 1.3514743319730773,
+          "q_vs_reference": -0.011997204804924722,
+          "cost_vs_reference": -0.6806696756376798,
+          "reference_share": 0.21284996410624551
+        },
+        "pm-ft-d64-s44-lr1e-5@20": {
+          "quality": 0.7747002298688178,
+          "cost_per_1k": 1.3830465467116517,
+          "q_vs_reference": -0.008495814605394392,
+          "cost_vs_reference": -0.6732097000134394,
+          "reference_share": 0.22020818377602297
+        },
+        "oracle@50": {
+          "quality": 0.920049097172414,
+          "cost_per_1k": 0.23867034498378042,
+          "q_vs_reference": 0.1368530526982018,
+          "cost_vs_reference": -0.9436062699259199,
+          "reference_share": 0.011127063890882987
+        },
+        "ZOIB@50": {
+          "quality": 0.7636079007864405,
+          "cost_per_1k": 0.5082081511354889,
+          "q_vs_reference": -0.01958814368777173,
+          "cost_vs_reference": -0.8799190854710931,
+          "reference_share": 0.18377602297200288
+        },
+        "IRT-Router@50": {
+          "quality": 0.7405950890875811,
+          "cost_per_1k": 0.334628910684374,
+          "q_vs_reference": -0.04260095538663111,
+          "cost_vs_reference": -0.9209328981973002,
+          "reference_share": 0.005384063173007897
+        },
+        "IRT-Router + C_hat@50": {
+          "quality": 0.7651823109109838,
+          "cost_per_1k": 0.4836073178990187,
+          "q_vs_reference": -0.01801373356322844,
+          "cost_vs_reference": -0.8857318425994629,
+          "reference_share": 0.16340631730078967
+        },
+        "ZOIB + C(m)@50": {
+          "quality": 0.7328351419986063,
+          "cost_per_1k": 0.3297551670814927,
+          "q_vs_reference": -0.05036090247560587,
+          "cost_vs_reference": -0.9220844806496985,
+          "reference_share": 0.0017049533381191674
+        },
+        "nirt-2d-projected@50": {
+          "quality": 0.7317094813954407,
+          "cost_per_1k": 0.327796979213595,
+          "q_vs_reference": -0.05148656307877153,
+          "cost_vs_reference": -0.9225471670302124,
+          "reference_share": 0.008614501076812634
+        },
+        "pm-ft-d1024-s42@50": {
+          "quality": 0.7346554751909614,
+          "cost_per_1k": 0.3245759524181068,
+          "q_vs_reference": -0.04854056928325079,
+          "cost_vs_reference": -0.923308240701424,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s42@50": {
+          "quality": 0.7315890311479968,
+          "cost_per_1k": 0.3161619311226366,
+          "q_vs_reference": -0.05160701332621542,
+          "cost_vs_reference": -0.9252963303646227,
+          "reference_share": 0.0008973438621679827
+        },
+        "pm-ft-d64-s42-lr1e-5@50": {
+          "quality": 0.730139196317603,
+          "cost_per_1k": 0.3108642055672644,
+          "q_vs_reference": -0.05305684815660916,
+          "cost_vs_reference": -0.9265480925179665,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s43@50": {
+          "quality": 0.734347739031171,
+          "cost_per_1k": 0.3194743495652646,
+          "q_vs_reference": -0.048848305443041196,
+          "cost_vs_reference": -0.9245136624066128,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s43@50": {
+          "quality": 0.7344778594422828,
+          "cost_per_1k": 0.3069979657214644,
+          "q_vs_reference": -0.04871818503192937,
+          "cost_vs_reference": -0.92746161902366,
+          "reference_share": 0.0037688442211055275
+        },
+        "pm-ft-d64-s43-lr1e-5@50": {
+          "quality": 0.7306257673529636,
+          "cost_per_1k": 0.31660436130241676,
+          "q_vs_reference": -0.05257027712124862,
+          "cost_vs_reference": -0.9251917916623518,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s44@50": {
+          "quality": 0.7281982971104815,
+          "cost_per_1k": 0.2992707695743432,
+          "q_vs_reference": -0.05499774736373075,
+          "cost_vs_reference": -0.9292874236236401,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s44@50": {
+          "quality": 0.7319400456994382,
+          "cost_per_1k": 0.317014128179191,
+          "q_vs_reference": -0.05125599877477405,
+          "cost_vs_reference": -0.9250949707412454,
+          "reference_share": 0.00017946877243359656
+        },
+        "pm-ft-d64-s44-lr1e-5@50": {
+          "quality": 0.7327852980669513,
+          "cost_per_1k": 0.3201738455252945,
+          "q_vs_reference": -0.05041074640726095,
+          "cost_vs_reference": -0.9243483834467968,
+          "reference_share": 0.0
+        },
+        "oracle@100": {
+          "quality": 0.9173092658965202,
+          "cost_per_1k": 0.19837729437358664,
+          "q_vs_reference": 0.13411322142230797,
+          "cost_vs_reference": -0.9531268302625086,
+          "reference_share": 0.00987078248384781
+        },
+        "ZOIB@100": {
+          "quality": 0.7474921186817362,
+          "cost_per_1k": 0.36407205080864874,
+          "q_vs_reference": -0.035703925792476054,
+          "cost_vs_reference": -0.9139759865758983,
+          "reference_share": 0.08623474515434315
+        },
+        "IRT-Router@100": {
+          "quality": 0.7383965966252695,
+          "cost_per_1k": 0.30333002698013867,
+          "q_vs_reference": -0.04479944784894274,
+          "cost_vs_reference": -0.9283282903619892,
+          "reference_share": 0.0
+        },
+        "IRT-Router + C_hat@100": {
+          "quality": 0.7563165535527641,
+          "cost_per_1k": 0.38511416283799943,
+          "q_vs_reference": -0.026879490921448146,
+          "cost_vs_reference": -0.9090040945461096,
+          "reference_share": 0.10041277817659727
+        },
+        "ZOIB + C(m)@100": {
+          "quality": 0.7322302936837302,
+          "cost_per_1k": 0.2930969334213639,
+          "q_vs_reference": -0.050965750790482045,
+          "cost_vs_reference": -0.9307461957620738,
+          "reference_share": 0.0
+        },
+        "nirt-2d-projected@100": {
+          "quality": 0.7299417139869697,
+          "cost_per_1k": 0.3007051889698466,
+          "q_vs_reference": -0.053254330487242485,
+          "cost_vs_reference": -0.9289484947960619,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s42@100": {
+          "quality": 0.735113120560667,
+          "cost_per_1k": 0.30514429531382503,
+          "q_vs_reference": -0.048082923913545184,
+          "cost_vs_reference": -0.9278996097117023,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s42@100": {
+          "quality": 0.7302609622319881,
+          "cost_per_1k": 0.2961768232680636,
+          "q_vs_reference": -0.052935082242224096,
+          "cost_vs_reference": -0.9300184703436333,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s42-lr1e-5@100": {
+          "quality": 0.730587868248687,
+          "cost_per_1k": 0.29694526704404955,
+          "q_vs_reference": -0.05260817622552516,
+          "cost_vs_reference": -0.9298369001913673,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s43@100": {
+          "quality": 0.7352989235250691,
+          "cost_per_1k": 0.3041652469174211,
+          "q_vs_reference": -0.04789712094914311,
+          "cost_vs_reference": -0.9281309421422144,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s43@100": {
+          "quality": 0.7318285824211463,
+          "cost_per_1k": 0.29950255473797555,
+          "q_vs_reference": -0.05136746205306586,
+          "cost_vs_reference": -0.9292326567444371,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s43-lr1e-5@100": {
+          "quality": 0.73156797840824,
+          "cost_per_1k": 0.2979197360442452,
+          "q_vs_reference": -0.051628066065972256,
+          "cost_vs_reference": -0.9296066497940407,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s44@100": {
+          "quality": 0.7275701564069639,
+          "cost_per_1k": 0.28857381281108596,
+          "q_vs_reference": -0.05562588806724833,
+          "cost_vs_reference": -0.9318149319840199,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s44@100": {
+          "quality": 0.7323061212068454,
+          "cost_per_1k": 0.29733705686057854,
+          "q_vs_reference": -0.050889923267366854,
+          "cost_vs_reference": -0.9297443269428534,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s44-lr1e-5@100": {
+          "quality": 0.7318251401344317,
+          "cost_per_1k": 0.3026911660026232,
+          "q_vs_reference": -0.05137090433978053,
+          "cost_vs_reference": -0.9284792423100552,
+          "reference_share": 0.0
+        },
+        "oracle@200": {
+          "quality": 0.9113688495289681,
+          "cost_per_1k": 0.15901903881005466,
+          "q_vs_reference": 0.12817280505475592,
+          "cost_vs_reference": -0.9624265144800318,
+          "reference_share": 0.0077171572146446515
+        },
+        "ZOIB@200": {
+          "quality": 0.7326161568762739,
+          "cost_per_1k": 0.2868528478104809,
+          "q_vs_reference": -0.0505798875979383,
+          "cost_vs_reference": -0.9322215666487398,
+          "reference_share": 0.01624192390524049
+        },
+        "IRT-Router@200": {
+          "quality": 0.7391742946391484,
+          "cost_per_1k": 0.29533061294568075,
+          "q_vs_reference": -0.044021749835063795,
+          "cost_vs_reference": -0.9302184154038777,
+          "reference_share": 0.0
+        },
+        "IRT-Router + C_hat@200": {
+          "quality": 0.7387794633397945,
+          "cost_per_1k": 0.2862765346075616,
+          "q_vs_reference": -0.04441658113441771,
+          "cost_vs_reference": -0.9323577396249249,
+          "reference_share": 0.027727925340990667
+        },
+        "ZOIB + C(m)@200": {
+          "quality": 0.7310099113629932,
+          "cost_per_1k": 0.2878586751914333,
+          "q_vs_reference": -0.052186133111219,
+          "cost_vs_reference": -0.9319839068011102,
+          "reference_share": 0.0
+        },
+        "nirt-2d-projected@200": {
+          "quality": 0.7312388196092727,
+          "cost_per_1k": 0.294712830200712,
+          "q_vs_reference": -0.05195722486493948,
+          "cost_vs_reference": -0.930364386925252,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s42@200": {
+          "quality": 0.7310302059878029,
+          "cost_per_1k": 0.292598585187844,
+          "q_vs_reference": -0.05216583848640932,
+          "cost_vs_reference": -0.9308639469463106,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s42@200": {
+          "quality": 0.7303955638113133,
+          "cost_per_1k": 0.29187729420914094,
+          "q_vs_reference": -0.052800480662898885,
+          "cost_vs_reference": -0.9310343756971493,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s42-lr1e-5@200": {
+          "quality": 0.7310993542501228,
+          "cost_per_1k": 0.2849514963508017,
+          "q_vs_reference": -0.05209669022408936,
+          "cost_vs_reference": -0.9326708235557946,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s43@200": {
+          "quality": 0.7334979136053404,
+          "cost_per_1k": 0.29343130333213685,
+          "q_vs_reference": -0.04969813086887176,
+          "cost_vs_reference": -0.9306671898575309,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s43@200": {
+          "quality": 0.7327244307102108,
+          "cost_per_1k": 0.29610472071667865,
+          "q_vs_reference": -0.050471613764001444,
+          "cost_vs_reference": -0.9300355069462356,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s43-lr1e-5@200": {
+          "quality": 0.730724475177802,
+          "cost_per_1k": 0.2923467061497966,
+          "q_vs_reference": -0.05247156929641017,
+          "cost_vs_reference": -0.9309234616651749,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s44@200": {
+          "quality": 0.7274770789749861,
+          "cost_per_1k": 0.2850137341469251,
+          "q_vs_reference": -0.05571896549922606,
+          "cost_vs_reference": -0.9326561178265377,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s44@200": {
+          "quality": 0.7316745814735468,
+          "cost_per_1k": 0.287147576902369,
+          "q_vs_reference": -0.0515214630006654,
+          "cost_vs_reference": -0.9321519271933058,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s44-lr1e-5@200": {
+          "quality": 0.7317802729413232,
+          "cost_per_1k": 0.29235270220148357,
+          "q_vs_reference": -0.05141577153288901,
+          "cost_vs_reference": -0.9309220449004723,
+          "reference_share": 0.0
+        },
+        "oracle@1000": {
+          "quality": 0.8906475565104138,
+          "cost_per_1k": 0.1242386437992866,
+          "q_vs_reference": 0.10745151203620162,
+          "cost_vs_reference": -0.9706445283612303,
+          "reference_share": 0.0027817659727207467
+        },
+        "ZOIB@1000": {
+          "quality": 0.6551261518137951,
+          "cost_per_1k": 0.11307147927135679,
+          "q_vs_reference": -0.12806989266041713,
+          "cost_vs_reference": -0.9732831387932205,
+          "reference_share": 0.0
+        },
+        "IRT-Router@1000": {
+          "quality": 0.677749501885838,
+          "cost_per_1k": 0.16694060166905964,
+          "q_vs_reference": -0.10544654258837416,
+          "cost_vs_reference": -0.9605547843425237,
+          "reference_share": 0.0
+        },
+        "IRT-Router + C_hat@1000": {
+          "quality": 0.6671820681002916,
+          "cost_per_1k": 0.12431098034816941,
+          "q_vs_reference": -0.11601397637392064,
+          "cost_vs_reference": -0.9706274364690118,
+          "reference_share": 0.0
+        },
+        "ZOIB + C(m)@1000": {
+          "quality": 0.6804299668071291,
+          "cost_per_1k": 0.17872372651950227,
+          "q_vs_reference": -0.10276607766708312,
+          "cost_vs_reference": -0.9577706329964895,
+          "reference_share": 0.0
+        },
+        "nirt-2d-projected@1000": {
+          "quality": 0.6873264473432097,
+          "cost_per_1k": 0.18476073420674802,
+          "q_vs_reference": -0.09586959713100252,
+          "cost_vs_reference": -0.9563441910897967,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s42@1000": {
+          "quality": 0.6831629534947428,
+          "cost_per_1k": 0.17796240787269682,
+          "q_vs_reference": -0.10003309097946944,
+          "cost_vs_reference": -0.9579505196023065,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s42@1000": {
+          "quality": 0.693753376381024,
+          "cost_per_1k": 0.19114702677075857,
+          "q_vs_reference": -0.08944266809318824,
+          "cost_vs_reference": -0.9548352191265921,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s42-lr1e-5@1000": {
+          "quality": 0.6846954648629219,
+          "cost_per_1k": 0.18225080162718355,
+          "q_vs_reference": -0.09850057961129033,
+          "cost_vs_reference": -0.9569372453312264,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s43@1000": {
+          "quality": 0.6858530507492987,
+          "cost_per_1k": 0.18115961596673846,
+          "q_vs_reference": -0.0973429937249135,
+          "cost_vs_reference": -0.957195073883827,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s43@1000": {
+          "quality": 0.672975964904381,
+          "cost_per_1k": 0.16781194609954533,
+          "q_vs_reference": -0.11022007956983115,
+          "cost_vs_reference": -0.9603489005213992,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s43-lr1e-5@1000": {
+          "quality": 0.6846328092971967,
+          "cost_per_1k": 0.18152138669538165,
+          "q_vs_reference": -0.09856323517701548,
+          "cost_vs_reference": -0.957109593633563,
+          "reference_share": 0.0
+        },
+        "pm-ft-d1024-s44@1000": {
+          "quality": 0.6833551937011618,
+          "cost_per_1k": 0.17755497607083032,
+          "q_vs_reference": -0.09984085077305038,
+          "cost_vs_reference": -0.9580467887850557,
+          "reference_share": 0.0
+        },
+        "pm-ctl-d1024-s44@1000": {
+          "quality": 0.6843070782002013,
+          "cost_per_1k": 0.17952147224216322,
+          "q_vs_reference": -0.09888896627401089,
+          "cost_vs_reference": -0.9575821392942051,
+          "reference_share": 0.0
+        },
+        "pm-ft-d64-s44-lr1e-5@1000": {
+          "quality": 0.6816249071057972,
+          "cost_per_1k": 0.17798167444364682,
+          "q_vs_reference": -0.10157113736841505,
+          "cost_vs_reference": -0.9579459672403376,
+          "reference_share": 0.0
+        }
+      }
+    }
+  }
+}

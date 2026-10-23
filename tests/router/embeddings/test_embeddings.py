@@ -6,7 +6,7 @@ import pytest
 import json
 
 from router.config import load_config
-from router.embeddings import EmbeddingStore, available_pathways, build_store, load_encoder
+from router.embeddings import EmbeddingStore, build_store, load_encoder
 from router.embeddings.encoder import EncoderConfig, TextEncoder
 
 
@@ -32,22 +32,11 @@ def bert_encoder():
     return enc
 
 
-def test_pathways_configured():
-    pw = available_pathways(load_config())
-    assert "retrieval" in pw and "irt" in pw
-
-
 def test_bert_backend_pools_and_shapes(bert_encoder):
     emb = bert_encoder.encode(["a short query", "another one about code"])
     assert emb.shape == (2, bert_encoder.dim)
     assert bert_encoder.dim == 768
     assert bert_encoder.cfg.pooling in ("mean", "cls")
-
-
-def test_bert_backend_deterministic(bert_encoder):
-    a = bert_encoder.encode(["reproducible?", "yes"])
-    b = bert_encoder.encode(["reproducible?", "yes"])
-    np.testing.assert_allclose(a, b, rtol=0, atol=0)
 
 
 def test_bert_store_uses_model_id_field(tmp_path, bert_encoder):

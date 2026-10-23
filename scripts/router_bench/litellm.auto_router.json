@@ -1,0 +1,48 @@
+{
+  "encoder_type": "litellm",
+  "encoder_name": "nomic-embed",
+  "routes": [
+    {
+      "name": "claude-haiku-5-5",
+      "description": "short factual or lookup questions",
+      "utterances": [
+        "what does this flag do",
+        "what is the default port",
+        "list the files in this folder",
+        "how many tests are there",
+        "which file defines this function",
+        "what version of python is installed",
+        "show me the git status",
+        "rename this variable"
+      ]
+    },
+    {
+      "name": "claude-sonnet-5-5",
+      "description": "everyday coding and explanation",
+      "utterances": [
+        "explain how this function works",
+        "write a unit test for this module",
+        "fix this failing test",
+        "add a command line flag for the output path",
+        "refactor this function to be more readable",
+        "why does this script raise a KeyError",
+        "summarize what this file does",
+        "add type hints to this module"
+      ]
+    },
+    {
+      "name": "claude-opus-5-5",
+      "description": "multi-file design and hard debugging",
+      "utterances": [
+        "design the architecture for a new subsystem across these packages",
+        "find the root cause of this intermittent race condition",
+        "plan a migration of the data pipeline to a new storage format",
+        "review this whole branch for correctness bugs",
+        "debug why the model underfits and propose a fix with experiments",
+        "redesign the routing policy and justify the trade-offs",
+        "investigate why results differ between two training runs",
+        "write an implementation plan for this feature touching many modules"
+      ]
+    }
+  ]
+}

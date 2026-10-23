@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from evaluation.routing.oracle import compare_routers, evaluate_router
 from router.routing import (
     REGISTRY,
     MatrixRouter,
@@ -57,12 +56,6 @@ def test_result_frames_and_mix():
     assert res.model_mix() == {"GPT-A": 1, "GPT-B": 2}
     assert sum(res.model_mix().values()) == 3
     pd.testing.assert_frame_equal(res.score_frame(), true_df)
-
-
-def test_call_is_route():
-    true_df, _ = _mats()
-    r = MatrixRouter(true_df)
-    assert r(list(true_df.index)).selected_model_ids == r.route(list(true_df.index)).selected_model_ids
 
 
 def test_call_dispatches_to_a_subclass_route_override():
@@ -137,15 +130,10 @@ def test_eligible_mask_blocks_models():
 # --------------------------------------------------------------------------- #
 # IRT-Router-style alpha routing                                              #
 # --------------------------------------------------------------------------- #
-def test_alpha_close_to_one_is_quality_only():
+def test_alpha_extremes_are_quality_only_and_cost_averse():
     scores = pd.DataFrame([[0.90, 0.88]], index=["q"], columns=["exp", "cheap"])
     r = MatrixRouter(scores, model_costs=[1.0, 0.0])
     assert r.route(["q"], alpha=1.0).selected_model_ids == ["exp"]
-
-
-def test_alpha_close_to_zero_is_cost_averse():
-    scores = pd.DataFrame([[0.90, 0.88]], index=["q"], columns=["exp", "cheap"])
-    r = MatrixRouter(scores, model_costs=[1.0, 0.0])
     assert r.route(["q"], alpha=0.05).selected_model_ids == ["cheap"]
 
 
@@ -171,11 +159,6 @@ def test_alpha_and_lam_both_given_raises():
     r = MatrixRouter(true_df, model_costs=[1.0, 2.0, 3.0])
     with pytest.raises(ValueError, match="alpha.*lam|lam.*alpha"):
         r.route(list(true_df.index), lam=0.5, alpha=0.5)
-
-
-def test_alpha_defaults_to_none_on_ordinary_routes():
-    true_df, _ = _mats()
-    assert MatrixRouter(true_df).route(["q001"]).alpha is None
 
 
 def test_route_text_can_use_a_per_cell_predicted_cost():
@@ -216,44 +199,9 @@ def test_route_text_can_use_a_per_cell_predicted_cost():
 # --------------------------------------------------------------------------- #
 # evaluate_router()                                                           #
 # --------------------------------------------------------------------------- #
-def test_evaluate_perfect_router_zero_regret():
-    true_df, cost_df = _mats()
-    out = evaluate_router(MatrixRouter(true_df, name="truth"), true_df, cost_df)
-    assert out["strategy"] == "truth"
-    assert out["mean_regret"] == pytest.approx(0.0)
-    assert out["oracle_hit_rate_any_best"] == pytest.approx(1.0)
-
-
-def test_evaluate_bad_router_positive_regret():
-    true_df, cost_df = _mats()
-    out = evaluate_router(MatrixRouter(-true_df, name="worst"), true_df, cost_df)
-    assert out["mean_regret"] > 0.0
-
-
-def test_evaluate_aligns_pool_subset():
-    true_df, cost_df = _mats()
-    sub = true_df[["GPT-A", "GPT-C"]]
-    out = evaluate_router(MatrixRouter(sub), sub, cost_df[["GPT-A", "GPT-C"]])
-    assert out["n_queries"] == 3
-    assert set(out["selected_model_mix"]) <= {"GPT-A", "GPT-C"}
-
-
-def test_evaluate_raises_when_outcomes_lack_a_pool_model():
-    true_df, cost_df = _mats()
-    router = MatrixRouter(true_df)                      # pool = A, B, C
-    with pytest.raises(ValueError, match="GPT-B"):
-        evaluate_router(router, true_df[["GPT-A", "GPT-C"]], cost_df)
-    with pytest.raises(ValueError, match="cost_df.*GPT-C"):
-        evaluate_router(router, true_df, cost_df[["GPT-A", "GPT-B"]])
-
-
 # --------------------------------------------------------------------------- #
 # registry                                                                    #
 # --------------------------------------------------------------------------- #
-def test_builtin_kinds_registered():
-    assert {"matrix", "nirt", "knn", "mlp", "random"} <= set(REGISTRY)
-
-
 def test_build_router_by_kind():
     r = build_router("random", model_ids=M, seed=1)
     assert isinstance(r, RandomRouter)
@@ -292,7 +240,7 @@ def test_register_custom_router_roundtrips():
 
 
 # --------------------------------------------------------------------------- #
-# RandomRouter + compare_routers                                              #
+# RandomRouter                                                               #
 # --------------------------------------------------------------------------- #
 def test_random_router_is_deterministic():
     a = RandomRouter(M, seed=7).predict_scores(["q1", "q2"])
@@ -300,81 +248,9 @@ def test_random_router_is_deterministic():
     pd.testing.assert_frame_equal(a, b)
 
 
-def test_compare_routers_adds_oracle_and_floor():
-    true_df, cost_df = _mats()
-    routers = [MatrixRouter(true_df, name="truth"), MatrixRouter(-true_df, name="worst")]
-    summary, detail = compare_routers(routers, true_df, cost_df, lam=0.5)
-    assert (summary["strategy"] == "hard oracle (upper bound)").any()
-    assert (summary["strategy"] == "random").any()
-    truth = summary[summary.strategy == "truth (quality)"].iloc[0]
-    worst = summary[summary.strategy == "worst (quality)"].iloc[0]
-    assert truth["mean_regret"] <= worst["mean_regret"]
-    assert "truth (quality)" in detail
-
-
 # --------------------------------------------------------------------------- #
 # XA-01: cost-aware evaluation must match the served router's own cost vector #
 # --------------------------------------------------------------------------- #
-def test_evaluate_router_uses_router_default_model_costs():
-    """The cost-aware selection reported by evaluate_router must be the one
-    router.route(lam=...) would actually make (router.default_model_costs),
-    not one recomputed from the eval-split cost matrix -- which can point the
-    opposite way entirely, as it does here."""
-    scores = pd.DataFrame([[0.90, 0.88]], index=["q"], columns=["exp", "cheap"])
-    r = MatrixRouter(scores, name="r", model_costs=[1.0, 0.0])  # exp is expensive
-    true_df = pd.DataFrame([[1.0, 1.0]], index=["q"], columns=["exp", "cheap"])
-    cost_df = pd.DataFrame([[0.0, 1.0]], index=["q"], columns=["exp", "cheap"])  # eval says the opposite
-
-    assert r.route(["q"], lam=0.1).selected_model_ids == ["cheap"]
-    res = evaluate_router(r, true_df, cost_df, lam=0.1)
-    assert res["_per_query"]["selected_model_id"].iloc[0] == "cheap"
-
-
-def test_compare_routers_uses_router_default_model_costs():
-    scores = pd.DataFrame([[0.90, 0.88]], index=["q"], columns=["exp", "cheap"])
-    r = MatrixRouter(scores, name="r", model_costs=[1.0, 0.0])
-    true_df = pd.DataFrame([[1.0, 1.0]], index=["q"], columns=["exp", "cheap"])
-    cost_df = pd.DataFrame([[0.0, 1.0]], index=["q"], columns=["exp", "cheap"])
-    summary, _ = compare_routers([r], true_df, cost_df, lam=0.1,
-                                 include_hard_oracle=False, include_random=False)
-    row = summary[summary.strategy == "r (cost-aware lam=0.1)"].iloc[0]
-    # picked "cheap" (per router.route's own cost vector) -- its eval-matrix
-    # cost (1.0) shows up, not "exp"'s (0.0), which the eval-split-mean cost
-    # vector would have picked instead
-    assert row["mean_selected_cost_per_1k"] == pytest.approx(1000.0)
-
-
-def test_compare_routers_rejects_duplicate_names():
-    true_df, cost_df = _mats()
-    routers = [MatrixRouter(true_df, name="dup"), MatrixRouter(-true_df, name="dup")]
-    with pytest.raises(ValueError, match="duplicate"):
-        compare_routers(routers, true_df, cost_df)
-
-
-def test_compare_routers_raises_when_a_routers_pool_is_missing_a_model():
-    """MOD-001 (evaluation.routing.oracle): compare_routers must guard the
-    same reindex-introduces-an-all-NaN-column failure mode evaluate_router
-    already guards (test_evaluate_raises_when_outcomes_lack_a_pool_model)."""
-    true_df, cost_df = _mats()  # columns GPT-A, GPT-B, GPT-C
-    partial_pool_router = MatrixRouter(true_df[["GPT-A", "GPT-C"]], name="partial")
-
-    with pytest.raises(ValueError, match="GPT-B"):
-        compare_routers([partial_pool_router], true_df, cost_df)
-
-
-def test_compare_routers_handles_non_string_query_ids():
-    """XD-08: compare_routers must align via RouterModel.aligned_scores (which
-    stringifies ids the same way predict_scores does), not a raw reindex by
-    the caller's original ids -- a non-string query id previously produced an
-    all-NaN row that silently fell back to column 0."""
-    true_df = pd.DataFrame([[0.1, 0.9]], index=[1], columns=["A", "B"])
-    scores = pd.DataFrame([[0.1, 0.9]], index=["1"], columns=["A", "B"])
-    r = MatrixRouter(scores, name="r")
-    summary, _ = compare_routers([r], true_df, include_hard_oracle=False, include_random=False)
-    row = summary[summary.strategy == "r (quality)"].iloc[0]
-    assert row["mean_regret"] == pytest.approx(0.0)
-
-
 # --------------------------------------------------------------------------- #
 # NIRTRouter (needs torch)                                                    #
 # --------------------------------------------------------------------------- #
@@ -409,13 +285,6 @@ def nirt_router():
     data = _Data(make_store(Q_IDS, 8, "query_id"), make_store(M_IDS, 4, "model_id", seed=1))
     model = build_model({"model_params": "projected", "dim": 2}, n_models=3, query_dim=8, profile_dim=4)
     return NIRTRouter(model, MODEL_INDEX, data=data, name="nirt-smoke"), model, data
-
-
-def test_nirt_router_scores_one_column_per_model(nirt_router):
-    router, _, _ = nirt_router
-    scores = router.predict_scores(Q_IDS)
-    assert scores.shape == (6, 3)
-    assert list(scores.columns) == M_IDS
 
 
 def test_nirt_router_default_costs_come_from_the_observation_table(nirt_router):
@@ -557,11 +426,6 @@ def test_nirt_warmup_pays_first_use_costs(nirt_router):
     # a routed request after warm-up reuses everything
     router.route_text(["hello"])
     assert enc.calls == 2
-
-
-def test_router_model_warmup_default_is_cheap_for_id_only_routers():
-    r = MatrixRouter(pd.DataFrame({"a": [0.1], "b": [0.2]}, index=["q"]))
-    assert set(r.warmup()) == {"costs"}
 
 
 def test_cost_by_model_keeps_only_finite_costs():

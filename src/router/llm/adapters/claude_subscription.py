@@ -72,7 +72,10 @@ class ClaudeSubscriptionAdapter(ProviderAdapter):
         cmd = [self._cli, "-p", "--output-format", "json", "--model", self.model,
                *generation_kwargs.get("extra_args", ())]
         env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_BASE_URL"}
-        proc = subprocess.run(cmd, input=text, capture_output=True, text=True, timeout=self._timeout,
+        # utf-8 explicitly: text=True alone uses the locale code page (cp1252 on
+        # Windows), which cannot encode a prompt holding e.g. an arrow
+        proc = subprocess.run(cmd, input=text, capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=self._timeout,
                               cwd=generation_kwargs.get("cwd"), env=env)
         if proc.returncode != 0:
             # with --output-format json the CLI reports its error (a usage

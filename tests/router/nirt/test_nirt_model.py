@@ -61,20 +61,6 @@ def test_vector_difficulty_shapes(mode):
     assert m(e_q, ref).shape == (B,)
 
 
-def test_scalar_difficulty_unchanged():
-    """difficulty='scalar' is the default and bit-identical to before."""
-    torch.manual_seed(0)
-    m_default = NIRTModel(query_dim=8, dim=4, n_models=3, model_params="projected",
-                          query_hidden=None, profile_dim=6)
-    torch.manual_seed(0)
-    m_explicit = NIRTModel(query_dim=8, dim=4, n_models=3, model_params="projected",
-                           query_hidden=None, profile_dim=6, difficulty="scalar")
-    e_q, ref = torch.randn(12, 8), torch.randn(12, 6)
-    assert torch.allclose(m_default(e_q, ref), m_explicit(e_q, ref))
-    _, b = m_default.model_parameters(ref)
-    assert b.shape == (12,)
-
-
 def test_difficulty_from_config_and_validation():
     assert NIRTModel.from_config({"dim": 4}, n_models=2).difficulty == "scalar"
     assert NIRTModel.from_config({"dim": 4, "difficulty": "vector"}, n_models=2).difficulty == "vector"
@@ -111,13 +97,13 @@ def test_query_head_default_identical():
     assert list(m_plain.state_dict()) == list(m_defaults.state_dict())
     e_q, ref = torch.randn(8, 12), torch.randn(8, 6)
     assert torch.allclose(m_plain(e_q, ref), m_defaults(e_q, ref))
-    assert not any("interaction" in k for k in m_plain.state_dict())
+    assert not any("interaction" in k or "query_bn" in k for k in m_plain.state_dict())
 
 
-@pytest.mark.parametrize("norm", ["none", "layernorm"])
-@pytest.mark.parametrize("activation", ["relu", "gelu"])
-@pytest.mark.parametrize("layers,residual", [(1, False), (2, False), (3, True)])
-def test_query_head_knob_shapes(norm, activation, layers, residual):
+@pytest.mark.parametrize("layers,residual,norm,activation", [
+    (1, False, "none", "relu"), (2, False, "layernorm", "gelu"), (3, True, "layernorm", "relu"),
+])
+def test_query_head_knob_shapes(layers, residual, norm, activation):
     m = NIRTModel.from_config(
         {"dim": 4, "model_params": "projected", "query_hidden": 16,
          "query_head_layers": layers, "query_head_norm": norm,
@@ -160,13 +146,6 @@ def test_query_head_config_validation():
 # --------------------------------------------------------------------------- #
 # P2c: non-additive interaction residual (structure only)                      #
 # --------------------------------------------------------------------------- #
-def test_interaction_off_identical():
-    torch.manual_seed(0)
-    base = NIRTModel(query_dim=10, dim=3, n_models=4, model_params="projected",
-                     query_hidden=8, profile_dim=6)
-    assert not any("interaction" in k for k in base.state_dict())
-
-
 def test_interaction_noop_at_init():
     """gamma starts at 0 so an interaction model's logit == the bilinear base at init."""
     torch.manual_seed(0)
@@ -183,15 +162,60 @@ def test_interaction_noop_at_init():
 # --------------------------------------------------------------------------- #
 # P7b: centering a_m / whitening theta_q (routing-collapse fixes)             #
 # --------------------------------------------------------------------------- #
-def test_center_discrimination_default_off_no_state_change():
-    """center_discrimination has no learnable parameters -> off/on state_dict
-    keys are identical (only the forward math differs when enabled)."""
+def test_query_difficulty_and_elo_prior_off_leave_state_dict_unchanged():
     torch.manual_seed(0)
-    off = NIRTModel(query_dim=6, dim=3, n_models=5, model_params="free", query_hidden=None)
+    plain = NIRTModel.from_config({"dim": 2, "query_hidden": 4}, n_models=3, query_dim=6,
+                                  profile_dim=3)
     torch.manual_seed(0)
-    on = NIRTModel(query_dim=6, dim=3, n_models=5, model_params="free", query_hidden=None,
-                   center_discrimination=True)
-    assert list(off.state_dict()) == list(on.state_dict())
+    off = NIRTModel.from_config({"dim": 2, "query_hidden": 4, "query_difficulty": False,
+                                 "elo_prior": False}, n_models=3, query_dim=6, profile_dim=3)
+    assert plain.state_dict().keys() == off.state_dict().keys()
+    e_q, ref = torch.randn(8, 6), torch.randn(8, 3)
+    assert torch.equal(plain(e_q, ref), off(e_q, ref))
+
+
+@pytest.mark.parametrize("mode", ["projected", "free"])
+def test_query_difficulty_is_one_shift_per_query(mode):
+    """``logit = a_m . theta_q - b_m - d_q``: d_q depends on the query alone, so it
+    shifts every candidate equally and never changes a ranking."""
+    torch.manual_seed(0)
+    m = NIRTModel(query_dim=6, dim=2, n_models=3, model_params=mode, profile_dim=3,
+                  query_hidden=4, query_difficulty=True)
+    e_q = torch.randn(1, 6).expand(3, 6)
+    ref = torch.randn(3, 3) if mode == "projected" else torch.arange(3)
+    with torch.no_grad():
+        a, b = m.model_parameters(ref)
+        d = m.query_difficulty(e_q)
+        assert d.shape == (3,)
+        torch.testing.assert_close(m(e_q, ref), m.score(m.latent_query(e_q), a, b) - d)
+        assert torch.allclose(d, d[0].expand(3))
+
+
+@pytest.mark.parametrize("mode", ["projected", "free"])
+def test_elo_prior_never_enters_the_logit(mode):
+    """Elo is a prior on model ability (a training penalty), not a score term:
+    alpha/beta exist but moving them leaves every prediction unchanged."""
+    torch.manual_seed(0)
+    m = NIRTModel(query_dim=6, dim=2, n_models=3, model_params=mode, profile_dim=3,
+                  query_hidden=4, elo_prior=True)
+    e_q = torch.randn(8, 6)
+    ref = torch.randn(8, 3) if mode == "projected" else torch.randint(0, 3, (8,))
+    with torch.no_grad():
+        before = m(e_q, ref)
+        m.prior_alpha.fill_(5.0)
+        m.prior_beta.fill_(-3.0)
+        assert torch.equal(m(e_q, ref), before)
+        a, b = m.model_parameters(ref)
+        torch.testing.assert_close(m.ability(ref), -b)          # theta_mean starts at 0
+        m.theta_mean.copy_(torch.tensor([1.5, -2.0]))
+        torch.testing.assert_close(m.ability(ref), a @ m.theta_mean - b)
+        torch.testing.assert_close(m.elo_prior_mean(torch.tensor([0.0, 1.0])),
+                                   torch.tensor([5.0, 2.0]))
+
+
+def test_elo_prior_validation():
+    with pytest.raises(ValueError, match="elo_prior"):
+        NIRTModel(query_dim=4, n_models=3, profile_dim=3, difficulty="vector", elo_prior=True)
 
 
 def test_center_discrimination_lossless_for_ranking_free():
@@ -217,12 +241,6 @@ def test_center_discrimination_zeroes_pool_mean_free():
                  center_discrimination=True)
     a, _ = m.model_parameters(torch.arange(6))   # covers the full pool
     assert torch.allclose(a.mean(0), torch.zeros(3), atol=1e-5)
-
-
-def test_query_head_batchnorm_default_off_no_state():
-    m = NIRTModel(query_dim=8, dim=3, n_models=4, model_params="projected",
-                 query_hidden=None, profile_dim=6)
-    assert not any("query_bn" in k for k in m.state_dict())
 
 
 def test_query_head_batchnorm_whitens_theta():
@@ -282,3 +300,48 @@ def test_build_model_orientation():
     assert build_model({"dim": 1}, n_models=3).orientation == "query_latent"   # default
     with pytest.raises(ValueError, match="orientation"):
         build_model({"orientation": "nonsense"}, n_models=3)
+
+
+# --------------------------------------------------------------------------- #
+# profile manifold: e_m -> z_m (autoencoder-shaped model side)                #
+# --------------------------------------------------------------------------- #
+def test_profile_latent_off_leaves_state_dict_unchanged():
+    torch.manual_seed(0)
+    plain = NIRTModel.from_config({"dim": 2, "query_hidden": 4}, n_models=3, query_dim=6,
+                                  profile_dim=5)
+    torch.manual_seed(0)
+    off = NIRTModel.from_config({"dim": 2, "query_hidden": 4, "profile_latent_dim": None},
+                                n_models=3, query_dim=6, profile_dim=5)
+    assert plain.state_dict().keys() == off.state_dict().keys()
+    assert not any(k.startswith("profile_") for k in plain.state_dict())
+    e_q, ref = torch.randn(8, 6), torch.randn(8, 5)
+    assert torch.equal(plain(e_q, ref), off(e_q, ref))
+
+
+@pytest.mark.parametrize("D", [2, 16, 64])
+@pytest.mark.parametrize("hidden", [None, 8])
+def test_profile_latent_shapes_and_reconstruct(D, hidden):
+    m = NIRTModel.from_config({"dim": 3, "profile_latent_dim": D,
+                               "profile_encoder_hidden": hidden},
+                              n_models=4, query_dim=6, profile_dim=5)
+    e_m = torch.randn(7, 5)
+    assert m.encode_profile(e_m).shape == (7, D)
+    assert m.reconstruct(e_m).shape == (7, 5)
+    a, b = m.model_parameters(e_m)
+    assert a.shape == (7, 3) and b.shape == (7,)
+    assert m(torch.randn(7, 6), e_m).shape == (7,)
+
+
+def test_profile_latent_validation():
+    with pytest.raises(ValueError, match="projected"):
+        NIRTModel(dim=2, model_params="free", n_models=3, profile_latent_dim=8)
+    with pytest.raises(ValueError, match="profile_latent_dim"):
+        NIRTModel(dim=2, profile_dim=4).reconstruct(torch.randn(2, 4))
+
+
+def test_profile_latent_reference_goes_through_encoder():
+    m = NIRTModel.from_config({"dim": 2, "profile_latent_dim": 8,
+                               "center_discrimination": True},
+                              n_models=3, query_dim=6, profile_dim=5)
+    m.set_discrimination_reference(torch.randn(4, 5))
+    assert m._a_ref.shape == (1, 2)

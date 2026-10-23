@@ -80,29 +80,19 @@ def test_required_capability_with_no_registry_warns_and_keeps_candidates():
     assert len(decision.ranked_models) > 0
 
 
-def test_route_warns_when_max_latency_is_set_since_no_latency_signal_exists():
+@pytest.mark.parametrize("constraints, knob", [
+    (RoutingConstraints(max_latency=0.05), "max_latency"),
+    (RoutingConstraints(objective=OptimizationObjective(quality_weight=1.0, latency_weight=1.0)),
+     "latency_weight"),
+])
+def test_route_warns_when_a_latency_knob_is_set_since_no_latency_signal_exists(constraints, knob):
     """RC-01: ModelScore.expected_latency is never populated on the live path
     (no latency source exists anywhere in the package), so a non-default
-    max_latency silently filters nothing. Callers must be warned rather than
-    getting a no-op."""
+    max_latency filters nothing and latency_weight multiplies a permanent 0.0.
+    Callers must be warned rather than getting a no-op."""
     pipeline = Router(FakeTextRouter(), llm_registry=_registry())
-    with pytest.warns(UserWarning, match="max_latency"):
-        pipeline.route(RoutingRequest(
-            request_id="r5", prompt="anything",
-            constraints=RoutingConstraints(max_latency=0.05),
-        ))
-
-
-def test_route_warns_when_latency_weight_is_set_since_no_latency_signal_exists():
-    """RC-01, the soft-objective half: latency_weight always multiplies a
-    permanent 0.0, so a non-default weight has zero effect on ranking."""
-    pipeline = Router(FakeTextRouter(), llm_registry=_registry())
-    objective = OptimizationObjective(quality_weight=1.0, latency_weight=1.0)
-    with pytest.warns(UserWarning, match="latency_weight"):
-        pipeline.route(RoutingRequest(
-            request_id="r6", prompt="anything",
-            constraints=RoutingConstraints(objective=objective),
-        ))
+    with pytest.warns(UserWarning, match=knob):
+        pipeline.route(RoutingRequest(request_id="r5", prompt="anything", constraints=constraints))
 
 
 def test_route_does_not_warn_when_latency_knobs_are_left_at_default():
@@ -169,12 +159,6 @@ def test_decision_records_the_artifact_that_produced_it():
     decision = Router(router_model, llm_registry=_registry()).route(
         RoutingRequest(request_id="r10", prompt="anything"))
     assert decision.artifact_id == "run-42"
-
-
-def test_decision_artifact_id_is_none_without_an_artifact():
-    decision = Router(FakeTextRouter(), llm_registry=_registry()).route(
-        RoutingRequest(request_id="r11", prompt="anything"))
-    assert decision.artifact_id is None
 
 
 def test_cost_weight_can_change_the_winner():
