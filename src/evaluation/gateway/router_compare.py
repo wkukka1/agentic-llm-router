@@ -67,6 +67,21 @@ _calls: list[dict] = []
 _calls_lock = threading.Lock()
 #: ``{"path": Path}`` while capturing a template; the first tool-carrying request body is written there
 _capture: dict = {}
+#: model -> HTTP status the stub answers it with instead of a reply; set only inside :func:`failing`
+_status: dict[str, int] = {}
+
+
+@contextlib.contextmanager
+def failing(statuses: Mapping[str, int]) -> Iterator[None]:
+    """For the length of the block, the stub answers each named model with its status
+    (an Anthropic error body), e.g. ``{"claude-haiku-5-5": 529}``; cleared on exit."""
+    with _calls_lock:
+        _status.update(statuses)
+    try:
+        yield
+    finally:
+        with _calls_lock:
+            _status.clear()
 
 
 def calls_since(seq: int) -> list[dict]:
@@ -79,8 +94,8 @@ def call_count() -> int:
         return len(_calls)
 
 
-def _anthropic_reply(model: str, stream: bool) -> tuple[str, bytes]:
-    message = {"id": "msg_aar_bench", "type": "message", "role": "assistant", "model": model,
+def _anthropic_reply(model: str, stream: bool, seq: int = 0) -> tuple[str, bytes]:
+    message = {"id": f"msg_aar_bench_{seq}","type": "message", "role": "assistant", "model": model,
                "content": [{"type": "text", "text": "ok"}], "stop_reason": "end_turn",
                "stop_sequence": None, "usage": {"input_tokens": 1, "output_tokens": 1}}
     if not stream:
@@ -129,12 +144,17 @@ def record_call(path: str, raw: bytes, headers: Mapping[str, str]) -> tuple[int,
         Path(_capture["path"]).write_text(json.dumps({"body": body, "headers": keep}, indent=1), encoding="utf-8")
         _capture["done"] = True
     with _calls_lock:
-        _calls.append({"seq": len(_calls), "endpoint": path, "model": model, "stream": stream,
+        seq = len(_calls)
+        status = 200 if count_only else _status.get(model, 200)
+        _calls.append({"seq": seq, "endpoint": path, "model": model, "stream": stream,
                        "kind": "count_tokens" if count_only else "openai" if openai else "anthropic",
-                       "bench_id": found.group(1).decode() if found else None})
+                       "bench_id": found.group(1).decode() if found else None, "status": status})
     if count_only:
         return 200, "application/json", json.dumps({"input_tokens": max(1, len(raw) // 4)}).encode()
-    kind, out = (_openai_reply if openai else _anthropic_reply)(model, stream)
+    if status != 200:
+        return status, "application/json", json.dumps({"type": "error", "error": {
+            "type": "overloaded_error" if status == 529 else "api_error", "message": f"stub: {model} failing"}}).encode()
+    kind, out = _openai_reply(model, stream) if openai else _anthropic_reply(model, stream, seq)
     return 200, kind, out
 
 

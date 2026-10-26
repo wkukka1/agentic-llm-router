@@ -37,6 +37,7 @@ BIN = "Scripts" if os.name == "nt" else "bin"
 ROUTERS: dict[str, tuple[str, str]] = {
     "aar": ("aar-gateway MLP router (live default)", "native"),
     "aar-nirt": ("aar-gateway NIRT router", "native"),
+    "aar-manifold": ("aar-gateway manifold NIRT (judged, BERT)", "native"),
     "ccr": ("claude-code-router 1.0.73", "native"),
     "ccp": ("claude-code-proxy (name mapper)", "native"),
     "litellm-complexity": ("LiteLLM complexity router", "native"),
@@ -46,11 +47,12 @@ ROUTERS: dict[str, tuple[str, str]] = {
     "routellm-sonnet": ("RouteLLM bert, Opus/Sonnet", "native"),
 }
 
-PORTS = {"aar": 8790, "ccr": 8791, "ccp": 8793, "litellm": 8794, "aar-nirt": 8795}
-#: the bundled router files the two gateway runs serve (``aar-gateway router list``)
+PORTS = {"aar": 8790, "ccr": 8791, "ccp": 8793, "litellm": 8794, "aar-nirt": 8795, "aar-manifold": 8796}
+#: the bundled router files the gateway runs serve (``aar-gateway router list``)
 GATEWAY_ROUTERS = REPO / "aar-gateway" / "src" / "aar_gateway" / "routers"
 AAR_ROUTER_FILES = {"aar": None,  # None: whatever the live config serves
-                    "aar-nirt": GATEWAY_ROUTERS / "llmrouterbench-nirt.npz"}
+                    "aar-nirt": GATEWAY_ROUTERS / "llmrouterbench-nirt.npz",
+                    "aar-manifold": GATEWAY_ROUTERS / "manifold-nirt-claude-judged.npz"}
 
 
 def _fill(text: str, **values: str) -> str:
@@ -79,6 +81,10 @@ def aar_spec(run_dir: Path, upstream: str, server: str = "aar") -> dict:
     models = HOME / "aar-models"  # a copy of the encoder cache, so the live folder is never written
     if not models.exists():
         shutil.copytree(Path.home() / ".aar-gateway" / "models", models)
+    # ONNX text encoders a router file names (e.g. the BERT one): the gateway reads them from its own home
+    encoders = Path.home() / ".aar-gateway" / "encoders"
+    if encoders.exists() and not (home / "encoders").exists():
+        shutil.copytree(encoders, home / "encoders")
     port = PORTS[server]
     return {"cmd": [sys.executable, "-m", "aar_gateway.cli", "serve"], "cwd": run_dir,
             "env": {"AAR_GATEWAY_LOG": str(home / "requests.jsonl"), "AAR_GATEWAY_CONFIG": str(home / "config.yaml"),
@@ -136,9 +142,11 @@ def litellm_spec(run_dir: Path, upstream: str) -> dict:
 
 
 SPECS = {"aar": aar_spec, "aar-nirt": lambda run_dir, upstream: aar_spec(run_dir, upstream, "aar-nirt"),
+         "aar-manifold": lambda run_dir, upstream: aar_spec(run_dir, upstream, "aar-manifold"),
          "ccr": ccr_spec, "ccp": ccp_spec, "litellm": litellm_spec}
 #: router name -> (server, model it is asked for or None for the requested tier, request format)
-VIA = {"aar": ("aar", None, "anthropic"), "aar-nirt": ("aar-nirt", None, "anthropic"), "ccr": ("ccr", None, "anthropic"), "ccp": ("ccp", None, "anthropic"),
+VIA = {"aar": ("aar", None, "anthropic"), "aar-nirt": ("aar-nirt", None, "anthropic"),
+       "aar-manifold": ("aar-manifold", None, "anthropic"), "ccr": ("ccr", None, "anthropic"), "ccp": ("ccp", None, "anthropic"),
        "litellm-complexity": ("litellm", "complexity-router", "anthropic"),
        "litellm-semantic": ("litellm", "semantic-router", "anthropic"),
        "litellm-passthrough": ("litellm", None, "anthropic")}
