@@ -1,0 +1,81 @@
+# The scenario grid `python -m evaluation.gateway.scenarios generate` samples from.
+# Editing this file (or the generator prompt) changes generation_version: earlier
+# fills stay cached under their own version and are never mixed with new ones.
+
+axes:
+  task: [explain, debug, implement, refactor, review, test-writing, shell-git, sql-data, design, docs]
+  difficulty: [trivial, moderate, hard]
+  language: [python, typescript, rust, go, sql, bash]
+  depth: [0, 1, 2, 3]          # earlier user+assistant exchanges before the message
+
+# a generation hint for the writer, never a label: what tier the prompt is aimed at
+suggested_tier: {trivial: haiku, moderate: sonnet, hard: opus}
+
+# combinations that make no sense; reported in the coverage table, never sampled
+exclude:
+  - {task: shell-git, language: sql}
+  - {task: sql-data, language: bash}
+  - {task: design, language: sql}
+  - {task: design, language: bash}
+
+# every pair of these axes must reach this count (when n allows); short strata are flagged
+pairs_min:
+  task x difficulty: 1
+  language x difficulty: 1
+  depth x task: 1
+
+# the oracle: the cheapest tier whose score >= best - tau and >= q_min (scores in [0, 1]).
+# Fixed before any result is seen; change it only with a note in the report.
+oracle: {tau: 0.1, q_min: 0.6}
+
+# hand-specified scenarios, sampled first. `brief` is for the writer; `rubric` is kept
+# on the row for hand review (the grader's `reference` means a merged fix, so it isn't sent)
+archetypes:
+  - id: offbyone-debug
+    axes: {task: debug, difficulty: trivial, language: python, depth: 0}
+    brief: A short function with an off-by-one error and the failing test output; ask for the root cause and a minimal fix.
+    rubric: Correct diagnosis, working fix, no unrelated rewrites.
+  - id: safe-git-undo
+    axes: {task: shell-git, difficulty: trivial, language: bash, depth: 0}
+    brief: The user has uncommitted changes in several files and wants to undo an accidental edit to one file without losing the rest.
+    rubric: Safe commands, unrelated changes preserved; destructive commands without safeguards are penalised.
+  - id: ts-refactor-multiturn
+    axes: {task: refactor, difficulty: moderate, language: typescript, depth: 2}
+    brief: A React component; earlier the user asked to split out data fetching; now adds that the public props must not change.
+    rubric: Both changes made, public API preserved, earlier context kept.
+  - id: rust-lifetimes
+    axes: {task: debug, difficulty: hard, language: rust, depth: 1}
+    brief: A borrow-checker error with lifetimes across several functions; the follow-up forbids cloning the data.
+    rubric: Compiles, honours the no-clone constraint, no needless allocation.
+  - id: sql-fanout
+    axes: {task: sql-data, difficulty: moderate, language: sql, depth: 2}
+    brief: An aggregation double-counts rows after a join; the follow-up requires keeping customers with no transactions.
+    rubric: Correct join cardinality and aggregation, unmatched rows kept.
+  - id: go-job-system
+    axes: {task: design, difficulty: hard, language: go, depth: 3}
+    brief: Design a background job system with retries, idempotency, bounded concurrency and crash recovery; follow-up caps infrastructure cost.
+    rubric: Correct failure semantics, coherent trade-offs, consistent across follow-ups.
+  - id: regression-tests
+    axes: {task: test-writing, difficulty: moderate, language: python, depth: 1}
+    brief: A bug was just fixed (shown); ask for tests that fail on the old code and pass on the new.
+    rubric: The tests catch the regression and cover real edge cases.
+  - id: cross-module-review
+    axes: {task: review, difficulty: hard, language: python, depth: 3}
+    brief: Review a change spanning config, caching and error handling; later turns reveal a race and a backwards-compatibility constraint.
+    rubric: Valid findings with evidence, calibrated severity, nothing invented.
+  - id: api-docs
+    axes: {task: docs, difficulty: trivial, language: go, depth: 0}
+    brief: "Write usage docs for a small Go API (shown): parameters, errors and a working example."
+    rubric: Consistent with the API; the example would run.
+  - id: ci-diagnosis
+    axes: {task: debug, difficulty: moderate, language: bash, depth: 2}
+    brief: Diagnose a CI failure from a log excerpt; the follow-up brings evidence that rules out the first hypothesis.
+    rubric: Evidence-based, revises the hypothesis, actionable fix.
+  - id: late-data-pipeline
+    axes: {task: implement, difficulty: moderate, language: python, depth: 2}
+    brief: Implement an incremental refresh that handles duplicate events, late-arriving records and retries.
+    rubric: Idempotent, handles late data, recoverable.
+  - id: ambiguous-atomicity
+    axes: {task: implement, difficulty: moderate, language: rust, depth: 1}
+    brief: A request that leaves unclear whether an operation must be atomic; the follow-up clarifies it must be.
+    rubric: Asks or states the assumption, then implements the clarified semantics correctly.
