@@ -23,8 +23,8 @@ from fastapi.responses import HTMLResponse, PlainTextResponse
 from . import interceptor
 from .config import load_settings
 
-READ_ONLY = {("GET", "/dashboard"), ("GET", "/stats"), ("GET", "/health"), ("GET", "/api/preferences"),
-             ("HEAD", "/dashboard"), ("HEAD", "/stats"), ("HEAD", "/health"), ("HEAD", "/api/preferences")}
+_PAGES = ("/dashboard", "/stats", "/health", "/api/preferences", "/api/session-requests")
+READ_ONLY = {(method, path) for method in ("GET", "HEAD") for path in _PAGES}
 _LOCAL = {"127.0.0.1", "localhost", "[::1]", "::1"}
 
 
@@ -66,5 +66,9 @@ def build_app(view_host: str, config_path: str | None = None) -> FastAPI:
     @app.get("/api/preferences")
     async def preferences():
         return interceptor.preferences()
+
+    @app.get("/api/session-requests")
+    def session_requests(session_id: str = "", limit: int = 40):  # plain def: reads the log off the event loop
+        return interceptor.session_requests(session_id, limit)
 
     return app

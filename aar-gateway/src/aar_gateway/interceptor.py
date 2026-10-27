@@ -83,6 +83,7 @@ from .translate import (
     openai_to_anthropic,
     parse_sse_line,
     stream_error,
+    text_of,
 )
 
 log = logging.getLogger(__name__)
@@ -200,6 +201,14 @@ ROUTING_MODES = ("auto", "off", "pin")
 #: so the subagent's own requests are labelled with it
 _spawns: OrderedDict[str, dict] = OrderedDict()
 _MAX_SPAWNS = 500
+#: the Agent call's ``tool_use_id`` -> its task hash (from the spawn hook), so a
+#: subagent's answer can be matched to it when the request carrying the answer
+#: no longer holds the call (a server-side thread sends only what is new)
+_spawn_calls: OrderedDict[str, str] = OrderedDict()
+#: the tools whose result is a subagent's final answer
+AGENT_TOOLS = ("Agent", "Task")
+#: characters of a subagent's task and answer kept in the log, when prompt history is on
+PREVIEW_CHARS = 240
 
 #: Claude Code session id -> running totals, for its status line
 _cc_sessions: OrderedDict[str, dict] = OrderedDict()
@@ -245,8 +254,8 @@ def _reset_state() -> None:
     """Every cache and running total the interceptor keeps, emptied: what
     :func:`configure` starts from (and what a test needs between cases)."""
     global _message_models_loaded
-    for state in (_sessions, _cc_sessions, _global_profile, _prefixes, _warm, _blocked, _spawns, _message_models,
-                  _mod_loops, _mod_routes):
+    for state in (_sessions, _cc_sessions, _global_profile, _prefixes, _warm, _blocked, _spawns, _spawn_calls,
+                  _message_models, _mod_loops, _mod_routes):
         state.clear()
     _message_models_loaded = False
     with _records_lock:
@@ -325,7 +334,7 @@ def _task_key(task: str) -> str:
 
 
 def record_spawn(session_id: str, subagent_type: str | None, task: str,
-                 asked_model: str | None = None) -> dict:
+                 asked_model: str | None = None, tool_use_id: str | None = None) -> dict:
     """The model for a subagent Claude Code is about to spawn (asked by the
     ``PreToolUse`` hook, ``aar-gateway hook``). Kept, so the subagent's own
     requests are labelled with it when they arrive. Respects the dashboard:
@@ -338,6 +347,8 @@ def record_spawn(session_id: str, subagent_type: str | None, task: str,
         session_model = (_cc_sessions.get(session_id) or {}).get("requested")
         decision = spawn_decision(subagent_type, task, session_model, _settings, asked_model)
     _lru_set(_spawns, _task_key(task), decision, _MAX_SPAWNS)
+    if tool_use_id:
+        _lru_set(_spawn_calls, tool_use_id, _task_key(task), _MAX_SPAWNS)
     return decision
 
 
@@ -623,6 +634,48 @@ def human_text(body: Mapping) -> str | None:
     return text or None
 
 
+def _preview(text: str | None) -> str | None:
+    """The start of a subagent's task or answer for the dashboard, only when the
+    user keeps prompt history (the request log holds no prompt text otherwise)."""
+    if not text or not history.enabled():
+        return None
+    text = " ".join(text.split())
+    return text if len(text) <= PREVIEW_CHARS else text[:PREVIEW_CHARS - 1] + "…"
+
+
+def returned_spawns(body: Mapping) -> list[dict]:
+    """The subagents whose answer this request hands the main agent: each
+    ``tool_result`` of an Agent call in the newest user message, as
+    ``{"spawn_id", "tool_use_id", "answer_tokens", "answer_preview"}``.
+    ``spawn_id`` is the task's hash, the same one the subagent's own requests
+    are logged under. The call is found in the previous assistant message, or
+    -- when only the new message was sent -- from the spawn hook."""
+    msgs = [m for m in body.get("messages") or [] if m.get("role") != "system"]
+    if not msgs or msgs[-1].get("role") != "user":
+        return []
+    results = [b for b in content_blocks(msgs[-1].get("content")) if b.get("type") == "tool_result"]
+    if not results:
+        return []
+    calls = {}
+    if len(msgs) > 1 and msgs[-2].get("role") == "assistant":
+        calls = {b.get("id"): b for b in content_blocks(msgs[-2].get("content"))
+                 if b.get("type") == "tool_use" and b.get("name") in AGENT_TOOLS}
+    out = []
+    for result in results:
+        call_id = result.get("tool_use_id")
+        call = calls.get(call_id)
+        if call is not None:
+            spawn = _task_key(str((call.get("input") or {}).get("prompt") or ""))
+        elif call_id in _spawn_calls:
+            spawn = _spawn_calls[call_id]
+        else:
+            continue
+        answer = text_of(result.get("content"), sep="\n")
+        out.append({"spawn_id": spawn, "tool_use_id": call_id, "answer_tokens": math.ceil(len(answer) / 4),
+                    "answer_preview": _preview(answer), "error": bool(result.get("is_error"))})
+    return out
+
+
 def claude_session_id(request: Request, body: Mapping) -> str:
     """Claude Code's session id: its header, else the ``_session_`` suffix
     of ``metadata.user_id`` (the same place claude-code-router reads it)."""
@@ -746,6 +799,12 @@ class _Turn:
         spawned = _spawns.get(_task_key(self.human)) if self.agent and self.human else None
         if spawned and spawned.get("role"):  # the spawn hook already decided this one
             self.agent = {"role": spawned["role"], "source": "hook", "why": spawned.get("why")}
+        # which Agent call this subagent is answering: its task's hash, the id
+        # the main agent's request that carries the answer is logged with
+        self.spawn_id = (_task_key(self.human) if self.agent and self.human
+                         else self.session.get("spawn") if self.agent else None)
+        # subagents whose answers this request hands the main agent
+        self.returned = [] if self.agent else returned_spawns(body)
         self.decision: dict = {"reason": "client's choice"}
         self.fallback = False
         self.attempted: str | None = None
@@ -816,7 +875,8 @@ class _Turn:
             profile = _update_profile(self.session.get("profile") or {}, usage)
             quality = self.decision.get("model_quality") or self.session.get("quality")
             _lru_set(_sessions, self.key, {"model": self.target, "prompt_tokens": tokens, "profile": profile,
-                                           "agent": self.agent, "quality": quality, "hold": self.hold_left},
+                                           "agent": self.agent, "spawn": self.spawn_id, "quality": quality,
+                                           "hold": self.hold_left},
                      _MAX_SESSIONS)
             if self.claude_session and self.agent is None and self.body.get("tools"):
                 # the session's main loop, for the mod's next routing question (route_text)
@@ -855,6 +915,11 @@ class _Turn:
             "subagent": self.agent is not None,
             "agent_role": (self.agent or {}).get("role"),
             "role_source": (self.agent or {}).get("source"),
+            "spawn_id": self.spawn_id,
+            # on a subagent's first request: what it was asked (prompt history only)
+            "task_preview": _preview(self.human) if self.spawn_id and self.human else None,
+            # on the main agent's request: the subagents' answers it carries back
+            "returned": self.returned or None,
             "baseline_model": asked if asked != self.requested else None,
             # a subagent's final answer -- all the main agent gets back
             "report_tokens": usage.get("output_tokens") if self.agent and self.stop_reason == "end_turn" else None,
@@ -1567,6 +1632,7 @@ def record_from_mod(report: Mapping) -> dict:
         "claude_session": session or None, "conversation": loop_key,
         "new_turn": bool(report.get("new_turn")), "turn_trigger": None, "correction": False,
         "subagent": bool(report.get("agent_id")), "agent_role": report.get("agent_role"), "role_source": "mod",
+        "spawn_id": str(report["agent_id"]) if report.get("agent_id") else None,
         "baseline_model": None, "report_tokens": None,
         "requested_model": asked, "routed_model": routed, "lane": "anthropic",
         "reason": str(report.get("reason") or _mod_reason(session, report, routed, asked))[:120],
@@ -1589,7 +1655,7 @@ def session_requests(session_id: str, limit: int = 40) -> dict:
     mine = [r for r in read_records() if key and r.get("claude_session") == key]
     fields = ("ts", "requested_model", "routed_model", "reason", "status", "subagent", "agent_role",
               "cache_read_input_tokens", "cache_creation_input_tokens", "input_tokens", "output_tokens",
-              "cost_usd", "cost_if_requested_usd", "correction", "thread")
+              "cost_usd", "cost_if_requested_usd", "correction", "thread", "spawn_id", "returned", "task_preview")
     priced = [r for r in mine if r.get("cost_usd") is not None and r.get("cost_if_requested_usd")]
     cost, base = sum(r["cost_usd"] for r in priced), sum(r["cost_if_requested_usd"] for r in priced)
     return {"session": key, "requests": len(mine),
@@ -1601,7 +1667,10 @@ def session_requests(session_id: str, limit: int = 40) -> dict:
 def session_turns(records: list[dict]) -> list[dict]:
     """A session's requests grouped into the turns the person typed: a turn
     starts with a main-loop request carrying new prompt text; its tool loop,
-    side requests and subagents join it. Times are this machine's local time."""
+    side requests and subagents join it. Each subagent is one entry per spawn,
+    marked ``returned`` once the main agent's request carries its answer back.
+    Times are this machine's local time."""
+    answers = {a["spawn_id"]: a for r in records for a in (r.get("returned") or []) if a.get("spawn_id")}
     turns: list[dict] = []
     for r in records:
         side = str(r.get("reason") or "").startswith("side request")
@@ -1613,22 +1682,20 @@ def session_turns(records: list[dict]) -> list[dict]:
             turns.append({"time": at, "requested_model": r.get("requested_model"), "models": [],
                           "reason": r.get("reason"), "requests": 0, "side_requests": 0, "errors": 0,
                           "cache_read": 0, "cache_written": 0, "fresh": 0,
-                          "cost_usd": 0.0, "cost_if_requested_usd": 0.0, "subagents": []})
+                          "cost_usd": 0.0, "cost_if_requested_usd": 0.0, "subagent_cost_usd": 0.0,
+                          "subagents": [], "returned": 0})
         t = turns[-1]
         t["errors"] += r.get("status") != 200
         if r.get("cost_usd") is not None and r.get("cost_if_requested_usd"):
             t["cost_usd"] += r["cost_usd"]
             t["cost_if_requested_usd"] += r["cost_if_requested_usd"]
         if r.get("subagent"):
-            role = r.get("agent_role") or "subagent"
-            sub = next((s for s in t["subagents"] if s["role"] == role and s["model"] == r.get("routed_model")), None)
-            if sub is None:
-                t["subagents"].append(sub := {"role": role, "model": r.get("routed_model"), "requests": 0})
-            sub["requests"] += 1
+            _join_spawn(t, r, answers)
         elif side:
             t["side_requests"] += 1
         else:
             t["requests"] += 1
+            t["returned"] += len(r.get("returned") or [])
             t["cache_read"] += r.get("cache_read_input_tokens") or 0
             t["cache_written"] += r.get("cache_creation_input_tokens") or 0
             t["fresh"] += r.get("input_tokens") or 0
@@ -1638,6 +1705,34 @@ def session_turns(records: list[dict]) -> list[dict]:
         base = t["cost_if_requested_usd"]
         t["saved_pct"] = round(100 * (1 - t["cost_usd"] / base)) if base else None
     return turns
+
+
+def _join_spawn(turn: dict, r: Mapping, answers: Mapping[str, dict]) -> None:
+    """Add one subagent request to its spawn's entry in ``turn``. Records
+    logged before spawn ids existed group by role and model, as they did."""
+    role, model, spawn = r.get("agent_role") or "subagent", r.get("routed_model"), r.get("spawn_id")
+    sub = next((s for s in turn["subagents"] if (s["spawn_id"] == spawn if spawn
+                                                 else not s["spawn_id"] and (s["role"], s["model"]) == (role, model))),
+               None)
+    if sub is None:
+        answer = answers.get(spawn) or {}
+        sub = {"spawn_id": spawn, "role": role, "model": model, "models": [], "requests": 0, "errors": 0,
+               "cost_usd": 0.0, "cost_if_requested_usd": 0.0, "report_tokens": None,
+               "task_preview": r.get("task_preview"), "returned": bool(answer),
+               "answer_tokens": answer.get("answer_tokens"), "answer_preview": answer.get("answer_preview")}
+        turn["subagents"].append(sub)
+    sub["requests"] += 1
+    sub["errors"] += r.get("status") != 200
+    sub["model"] = model or sub["model"]
+    if model and model not in sub["models"]:
+        sub["models"].append(model)
+    if r.get("cost_usd") is not None:
+        sub["cost_usd"] += r["cost_usd"]
+        sub["cost_if_requested_usd"] += rollup.baseline_cost(r, "cost_if_requested_usd")
+        turn["subagent_cost_usd"] += r["cost_usd"]
+    if r.get("report_tokens") is not None:
+        sub["report_tokens"] = r["report_tokens"]
+    sub["task_preview"] = sub["task_preview"] or r.get("task_preview")
 
 
 def session_summary(session_id: str) -> dict:

@@ -5579,6 +5579,7 @@
  "strongest_model": "claude-opus-5-5",
  "subagents": [
   {
+   "avg_answer_tokens": null,
    "avg_report_tokens": 45,
    "cache_hit_rate": 0.8205128205128205,
    "cache_read_input_tokens": 43200,
@@ -5593,11 +5594,14 @@
    },
    "prompt_tokens": 52650,
    "requests": 27,
+   "returned": 0,
    "role": "unrecognised",
    "source": "hook",
-   "spawns": 27
+   "spawns": 27,
+   "tracked_spawns": 0
   },
   {
+   "avg_answer_tokens": null,
    "avg_report_tokens": 44,
    "cache_hit_rate": 0.8208762886597938,
    "cache_read_input_tokens": 41405,
@@ -5612,11 +5616,14 @@
    },
    "prompt_tokens": 50440,
    "requests": 26,
+   "returned": 0,
    "role": "plan",
    "source": "hook",
-   "spawns": 26
+   "spawns": 26,
+   "tracked_spawns": 0
   },
   {
+   "avg_answer_tokens": null,
    "avg_report_tokens": 43,
    "cache_hit_rate": 0.8212435233160622,
    "cache_read_input_tokens": 42795,
@@ -5631,13 +5638,15 @@
    },
    "prompt_tokens": 52110,
    "requests": 27,
+   "returned": 0,
    "role": "explore",
    "source": "hook",
-   "spawns": 27
+   "spawns": 27,
+   "tracked_spawns": 0
   }
  ],
  "totals": {
-  "best_predicted_quality": 0.7764864864864864,
+  "best_predicted_quality": 0.7764864864864858,
   "cache_creation_input_tokens": 20800,
   "cache_read_input_tokens": 639400,
   "cost_if_requested_usd": 5.501999999999993,
@@ -5651,6 +5660,9 @@
   "priced_requests": 368,
   "requests": 400,
   "rerouted": 300,
+  "spawns": 80,
+  "spawns_returned": 0,
+  "subagent_cost_usd": 0.3910000000000001,
   "subagent_requests": 80,
   "turns_routed": 333
  }
