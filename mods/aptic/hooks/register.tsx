@@ -239,6 +239,21 @@ async function ensureGateway($: any): Promise<'running' | 'started' | 'failed' |
   return 'no-uv'
 }
 
+// Once ever, with the router up: plain `claude` sessions can go through the gateway too,
+// which also tells the main agent it can hand work to subagents. The plugin itself
+// changes no settings; `aar-gateway enable` does, when the person runs it.
+export const ENABLE_NOTE = 'notice.enable'
+export const ENABLE_TEXT = 'Aptic: to route plain `claude` sessions too, and let the main agent hand searches, checks '
+  + `and changes to subagents, run \`uv tool install "${GATEWAY_SPEC}"\` then \`aar-gateway enable\` in a terminal `
+  + '(`aar-gateway stop` undoes it).'
+
+async function offerEnable($: any): Promise<void> {
+  const shown = await $.store.get(ENABLE_NOTE).catch(() => true)  // no store: stay quiet, not every session
+  if (shown) return
+  await $.store.set(ENABLE_NOTE, true).catch(() => {})
+  $.ui.toast(ENABLE_TEXT)
+}
+
 export const register: Register = (on, options) => {
   const routeInClaudeCode = options?.route !== false  // on unless turned off: a plugin-only session has no proxy
   // set at session start: whether this session's requests go through the gateway's proxy
@@ -262,10 +277,10 @@ export const register: Register = (on, options) => {
     paneOpen = true
     viaProxy = String((await $.env.get('ANTHROPIC_BASE_URL')) || '').includes('127.0.0.1:8787')
     sessionModel = String(await $.session.model())
-    ensureGateway($).then(state => {
+    ensureGateway($).then(async state => {
       if (state === 'no-uv') {
         $.ui.toast('Aptic needs uv to run its router: install it from https://docs.astral.sh/uv/ then restart Claude Code.')
-      }
+      } else if (state !== 'failed' && !viaProxy) await offerEnable($)
       return refresh($)
     }).catch(() => {})
     refresh($).catch(() => {})  // display only: a failed refresh shows the old numbers

@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { vsAsked, why } from '../hooks/register'
+import { ENABLE_TEXT, vsAsked, why } from '../hooks/register'
 import type { TurnRow } from '../types'
 
 // Beneath the mod: the session, a gateway answering (or not), and the model
@@ -113,6 +113,30 @@ test('with the gateway down and no uv, the plugin says how to get uv and Claude 
   const done: any = await oneTurn($, 'rename this variable')
   expect(w.sent).toEqual(['claude-opus-5-5', 'claude-opus-5-5'])
   expect(done.text).toMatch(/opus 5\.5/)
+})
+
+test('with the router up, the plugin says once how to route plain sessions too', async ($, on) => {
+  const w = world(on, 'up')
+  const kept: Record<string, unknown> = {}
+  on('store.get', async ($, e: any) => ({ value: kept[e.key] }))
+  on('store.set', async ($, e: any) => { kept[e.key] = e.value; return { value: undefined } })
+  on('env.get', async () => ({ value: undefined }))
+  await $.session.start({ source: 'startup', cwd: '/tmp/project' } as any)
+  for (let i = 0; i < 50 && w.toasts.length === 0; i++) await new Promise(r => setTimeout(r, 10))
+  expect(w.toasts).toEqual([ENABLE_TEXT])
+  await $.session.start({ source: 'startup', cwd: '/tmp/project' } as any)
+  await new Promise(r => setTimeout(r, 50))
+  expect(w.toasts).toEqual([ENABLE_TEXT])  // never twice
+})
+
+test('a session already through the proxy is not told to enable it', async ($, on) => {
+  const w = world(on, 'up')
+  on('store.get', async () => ({ value: undefined }))
+  on('store.set', async () => ({ value: undefined }))
+  on('env.get', async ($, e) => ({ value: String((e as any).name ?? e).includes('ANTHROPIC_BASE_URL') ? 'http://127.0.0.1:8787' : undefined }))
+  await $.session.start({ source: 'startup', cwd: '/tmp/project' } as any)
+  await new Promise(r => setTimeout(r, 50))
+  expect(w.toasts).toEqual([])
 })
 
 test('the pane says in words why each turn ran where it did', async () => {
