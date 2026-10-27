@@ -17,10 +17,12 @@ In Claude Code:
 
 * **Routing per turn**, by a small trained router that runs on your computer.
   Turn it off in `/config` (the plugin's "Route in Claude Code" setting).
-* **A pane** (`/aptic-pane`): one row per turn, newest first, with its time,
-  the model it ran on, why, its cache hit and its usage against the model you
-  asked for, and any subagents and their models; this session's and all
-  sessions' savings.
+* **A pane** (`/aptic-pane`): this session's saving against always using the
+  model you asked for, the mix of models its requests ran on, its requests,
+  cache hit and turns, and all sessions' plan usage; then a table of turns
+  (newest or oldest first) with each turn's time, model, decision, requests
+  and cache hit, and any subagents. A chevron collapses it to the two savings
+  and a requests-per-turn chart; the pane remembers your choice.
 * **A line under each answer** with the model that answered and its cache use,
   and the totals on the status line. `/aptic` prints them.
 
