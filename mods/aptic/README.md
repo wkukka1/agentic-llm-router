@@ -21,8 +21,13 @@ In Claude Code:
   model you asked for, the mix of models its requests ran on, its requests,
   cache hit and turns, and all sessions' plan usage; then a table of turns
   (newest or oldest first) with each turn's time, model, decision, requests
-  and cache hit, and any subagents. A chevron collapses it to the two savings
-  and a requests-per-turn chart; the pane remembers your choice.
+  and cache hit. Under each turn are the subagents it handed work to: their
+  kind, the model they ran on, and whether their answer came back to this
+  session (`↩ answered ~29 tok`) or they are still working. When the router
+  keeps prompt history, each subagent's task and the start of its answer show
+  too. A Subagents row sums them up: spawned, answered, and their share of the
+  session's cost. A chevron collapses the pane to the two savings and a
+  requests-per-turn chart; the pane remembers your choice.
 * **A line under each answer** with the model that answered and its cache use,
   and the totals on the status line. `/aptic` prints them.
 

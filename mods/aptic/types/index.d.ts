@@ -12,8 +12,31 @@ export type TurnRow = {
   cache_written: number
   fresh: number
   saved_pct: number | null
-  subagents: { role: string; model: string | null; requests: number }[]
+  cost_usd?: number
+  subagents: SpawnRow[]
+  returned?: number  // subagents' answers the main agent's requests carried back
+  subagent_cost_usd?: number
 }
+
+// One subagent a turn spawned: its kind, the model(s) it ran on, and whether its
+// answer came back to the main agent. The task and answer previews are there only
+// when the gateway keeps prompt history; older gateways send role, model and requests
+export type SpawnRow = {
+  role: string
+  model: string | null
+  requests: number
+  spawn_id?: string | null
+  models?: string[]
+  cost_usd?: number
+  returned?: boolean
+  answer_tokens?: number | null
+  task_preview?: string | null
+  answer_preview?: string | null
+}
+
+// Subagents that finished in this session, by agent id -> the size of the answer
+// (about 4 characters a token); the size only, never the text
+export type Returns = Record<string, number>
 
 export type GatewayView = {
   isRunning: boolean
@@ -31,6 +54,6 @@ export type PanePrefs = { collapsed: boolean; oldestFirst: boolean; settingsOpen
 
 declare module 'claude-code' {
   interface PluginState {
-    'aptic': { gateway: GatewayView; cache: CacheTotals; prefs: PanePrefs }
+    'aptic': { gateway: GatewayView; cache: CacheTotals; prefs: PanePrefs; returns: Returns }
   }
 }
