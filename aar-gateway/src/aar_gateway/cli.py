@@ -978,7 +978,11 @@ def _claude_command(url: str, claude_args: list[str]) -> tuple[list[str], dict]:
     It also installs the subagent hook (``AAR_GATEWAY_HOOK=0`` to skip) and
     gives Claude Code the subagent kinds (``--agents``,
     :data:`~aar_gateway.subagents.ROLES`) -- unless the user passes
-    ``--agents`` themselves, or with ``AAR_GATEWAY_AGENTS=0``.
+    ``--agents`` themselves, or with ``AAR_GATEWAY_AGENTS=0``. With the kinds
+    goes :data:`~aar_gateway.subagents.DELEGATE_PROMPT`
+    (``--append-system-prompt``), which has the main agent hand sub-tasks to
+    them and work from the answers they return -- unless the user appends a
+    system prompt of their own.
     """
     env = {"ENABLE_TOOL_SEARCH": "true", **os.environ, "ANTHROPIC_BASE_URL": url}
     args = ["claude"]
@@ -998,6 +1002,10 @@ def _claude_command(url: str, claude_args: list[str]) -> tuple[list[str], dict]:
         from .subagents import agent_definitions
 
         args += ["--agents", json.dumps(agent_definitions())]
+        if not {"--append-system-prompt", "--append-system-prompt-file"} & set(claude_args):
+            from .subagents import DELEGATE_PROMPT
+
+            args += ["--append-system-prompt", DELEGATE_PROMPT]
     return args + claude_args, env
 
 
@@ -1512,7 +1520,7 @@ def _hook() -> None:
         return
     call = dict(event.get("tool_input") or {})
     payload = {"session_id": event.get("session_id"), "subagent_type": call.get("subagent_type"),
-               "prompt": call.get("prompt"), "model": call.get("model")}
+               "prompt": call.get("prompt"), "model": call.get("model"), "tool_use_id": event.get("tool_use_id")}
     try:
         req = urllib.request.Request(f"{_base_url()}/api/subagent-spawn", data=json.dumps(payload).encode(),
                                      headers={"content-type": "application/json"})

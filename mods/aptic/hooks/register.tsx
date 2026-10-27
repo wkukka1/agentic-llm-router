@@ -7,7 +7,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import type { CacheTotals, GatewayView, PanePrefs, TurnRow } from '../types'
+import type { CacheTotals, GatewayView, PanePrefs, Returns, SpawnRow, TurnRow } from '../types'
 
 const GATEWAY = 'http://127.0.0.1:8787'
 const PANE = 'aptic'
@@ -16,6 +16,7 @@ const EVERY_MS = 60_000
 const empty: GatewayView = { isRunning: false, sessionSavedPct: null, allSavedPct: null, allRequests: 0, turns: [] }
 const gateway = atom({ plugin: 'aptic', key: 'gateway' } as const, empty)
 const cache = atom({ plugin: 'aptic', key: 'cache' } as const, { read: 0, written: 0, fresh: 0 })
+const returns = atom({ plugin: 'aptic', key: 'returns' } as const, {} as Returns)
 const DOWN = "Aptic's router isn't running: /aptic starts it."
 
 // Share of the prompt read from the cache, of everything the requests sent
@@ -102,6 +103,38 @@ export const sessionReason = (turns: TurnRow[], short = false): string => {
   const to = [...new Set(moved.flatMap(t => t.models.filter(m => m !== t.requested_model)))].map(modelName).join(', ')
   return `${moved.length} of ${n} turn${n === 1 ? '' : 's'} routed to ${to}.`
 }
+
+// Whether a subagent's answer reached the main agent: the gateway saw it carried back
+// (through its proxy), or this mod saw the subagent finish (a session straight to
+// Anthropic, whose subagents the gateway logs under their agent id)
+export const answered = (a: SpawnRow, seen: Returns): boolean => Boolean(a.returned || (a.spawn_id && a.spawn_id in seen))
+
+const answerTokens = (a: SpawnRow, seen: Returns): number | null =>
+  a.answer_tokens ?? (a.spawn_id ? seen[a.spawn_id] ?? null : null)
+
+// One subagent under its turn: `↳ lookup on Haiku 5.5 · 2 req · ↩ answered ~29 tok`
+export const spawnLine = (a: SpawnRow, seen: Returns): string => {
+  const models = (a.models && a.models.length ? a.models : [a.model]).map(modelName).join(', ')
+  const base = `↳ ${a.role} on ${models} · ${a.requests} req`
+  if (answered(a, seen)) {
+    const n = answerTokens(a, seen)
+    return `${base} · ↩ answered${n ? ` ~${k(n)} tok` : ''}`
+  }
+  return a.spawn_id ? `${base} · working…` : base  // a spawn logged before answers were tracked: no status
+}
+
+// A session's subagents: spawned, answered, and their share of its cost
+export const subagentTotals = (turns: TurnRow[], seen: Returns) => {
+  const all = turns.flatMap(t => t.subagents)
+  const cost = turns.reduce((c, t) => c + (t.cost_usd ?? 0), 0)
+  const spent = turns.reduce((c, t) => c + (t.subagent_cost_usd ?? 0), 0)
+  return { spawned: all.length, answered: all.filter(a => answered(a, seen)).length,
+    share: cost > 0 ? Math.round((spent / cost) * 100) : null }
+}
+
+// Pane rows a turn takes: its two lines and divider, plus each subagent's lines
+const rowsOf = (t: TurnRow): number =>
+  3 + (t.errors ? 1 : 0) + t.subagents.reduce((n, a) => n + 1 + (a.task_preview ? 1 : 0) + (a.answer_preview ? 1 : 0), 0)
 
 const MINUS = '−'
 const signed = (pct: number): string => (pct < 0 ? MINUS + -pct : pct > 0 ? '+' + pct : '0') + '%'
@@ -386,6 +419,12 @@ export const register: Register = (on, options) => {
       failed.push(turn.model)
       $.ui.toast(`Aptic: ${pretty(turn.model)} failed, so this session stays on ${pretty(sessionModel)}. Send your message again.`)
     }
+    if (e.agentId && e.reason === 'answer') {
+      // a subagent's final message is what the main agent gets back: keep its size for the pane
+      const tokens = Math.ceil((e.answer || '').length / 4)
+      await update($, returns, r => ({ ...r, [e.agentId!]: tokens }))
+      refresh($).catch(() => {})
+    }
     if (e.agentId || !turn || !turn.requests) return next(e)
     const text = turnLine(turn)
     turn = null
@@ -401,7 +440,7 @@ export const register: Register = (on, options) => {
     const els: any = $.ui.resolve(e)
     const { Box, Text, Button } = els
     const Svg = e.surface === 'terminal' ? null : els.Svg  // the terminal draws no Svg: text bars there
-    const [view, counted, chosen] = await Promise.all([read($, gateway), read($, cache), read($, prefs)])
+    const [view, counted, chosen, seen] = await Promise.all([read($, gateway), read($, cache), read($, prefs), read($, returns)])
     const { collapsed, oldestFirst, settingsOpen } = { ...noPrefs, ...chosen }
     const toggle = (key: keyof PanePrefs) => async () => {
       const next = await update($, prefs, p => ({ ...noPrefs, ...p, [key]: !p[key] }))
@@ -417,6 +456,7 @@ export const register: Register = (on, options) => {
       fresh: c.fresh + t.fresh }), { read: 0, written: 0, fresh: 0 }))
     const saved = view.sessionSavedPct == null ? null : Math.round(view.sessionSavedPct)
     const allUsage = view.allSavedPct == null ? '–' : signed(-view.allSavedPct)
+    const subs = subagentTotals(all, seen)
 
     const label = (s: string) => <Text size="caption" weight="semibold" color={C.muted}>{s.toUpperCase()}</Text>
     const rule = (color: string) => Svg ? <Svg source={ruleSvg(color)} alt="" height={1} />
@@ -449,7 +489,8 @@ export const register: Register = (on, options) => {
           <Box columnGap="sm" alignItems="center">
             {icon}
             <Text size="body" weight="semibold" color={C.text}>aptic</Text>
-            <Text size="footnote" color={C.muted}>· {all.length} turn{all.length === 1 ? '' : 's'} · {num(requests)} req</Text>
+            <Text size="footnote" color={C.muted}>· {all.length} turn{all.length === 1 ? '' : 's'} · {num(requests)} req
+              {subs.spawned ? ` · ${subs.spawned} subagent${subs.spawned === 1 ? '' : 's'}` : ''}</Text>
           </Box>
           <Button key="expand" variant="secondary" plain onPress={toggle('collapsed')}><Text color={C.secondary}>▾</Text></Button>
         </Box>
@@ -477,9 +518,17 @@ export const register: Register = (on, options) => {
       </Box>)
     }
 
-    // a turn takes three rows with its divider (more with subagents or errors); the rest of the pane about 22
+    // a turn takes three rows with its divider, more with subagents or errors (rowsOf); the rest of
+    // the pane about 22, and the subagent tiles 4 more
     const rows = e.props.scroll?.bodyRows ?? (e.viewport?.rows ?? 24) - 4
-    const shown = all.slice(-Math.max(3, Math.floor((rows - 22) / 3)))
+    let room = rows - 22 - (subs.spawned ? 4 : 0)
+    let fit = 0
+    for (const t of [...all].reverse()) {
+      if (fit >= 3 && room < rowsOf(t)) break
+      room -= rowsOf(t)
+      fit++
+    }
+    const shown = all.slice(all.length - fit)
     const turns = oldestFirst ? shown : [...shown].reverse()
     const cacheOf = (t: TurnRow) => {
       const total = t.cache_read + t.cache_written + t.fresh
@@ -532,6 +581,16 @@ export const register: Register = (on, options) => {
         {tile('Cache hit', hit == null ? '–' : hit + '%')}
         {tile('Turns', num(all.length))}
       </Box>
+      {subs.spawned ? (
+        <Box flexDirection="column" rowGap="xs">
+          {label('Subagents')}
+          <Box columnGap="sm">
+            {tile('Spawned', num(subs.spawned))}
+            {tile('Answered', `${num(subs.answered)}/${num(subs.spawned)}`, 'back to this session')}
+            {tile('Share of cost', subs.share == null ? '–' : subs.share + '%')}
+          </Box>
+        </Box>
+      ) : null}
       <Box justifyContent="space-between" alignItems="center" paddingX="md" paddingY="sm"
         backgroundColor={C.card} borderStyle="round" borderColor={C.cardBorder}>
         <Box flexDirection="column">
@@ -566,8 +625,12 @@ export const register: Register = (on, options) => {
                 <Text size="footnote" weight="semibold" color={C.text}>{t.models.map(modelName).join(', ') || modelName(t.requested_model)}</Text>
                 <Text size="caption" color={kept(t) ? C.muted : C.accent}>{decision(t)}</Text>
                 {t.errors ? <Text size="caption" color={C.error}>{t.errors} failed and retried on your model</Text> : null}
-                {t.subagents.map(a => (
-                  <Text size="caption" color={C.muted}>↳ {a.role} on {modelName(a.model)} · {a.requests}</Text>
+                {t.subagents.map((a, i) => (
+                  <Box key={`spawn-${a.spawn_id ?? i}`} flexDirection="column">
+                    <Text size="caption" color={answered(a, seen) ? C.accent : C.muted}>{spawnLine(a, seen)}</Text>
+                    {a.task_preview ? <Text size="caption" color={C.muted} wrap="truncate">{'   Task: ' + a.task_preview}</Text> : null}
+                    {a.answer_preview ? <Text size="caption" color={C.secondary} wrap="truncate">{'   Answer: ' + a.answer_preview}</Text> : null}
+                  </Box>
                 ))}
               </Box>
               <Box width={cols.req} justifyContent="flex-end"><Text size="footnote" mono tabular color={C.text}>{num(t.requests)}</Text></Box>

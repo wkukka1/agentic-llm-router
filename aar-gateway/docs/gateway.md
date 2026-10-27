@@ -395,12 +395,21 @@ change. The decision log then shows `quality_source: router scores the models di
   with requests per minute over the last 30 minutes.
 * **Cost preference**: Best quality, Balanced (the default) or Save more (the savings router).
 * **Your sessions**: each Claude Code session's cost, what it would have cost
-  on the models it asked for, and the saving.
+  on the models it asked for, and the saving. Open a session (the arrow) for
+  its turns as a tree: each turn's models and cost, and under it each subagent
+  it spawned, with its kind, the model(s) it ran on, its requests and cost,
+  and whether its answer came back to the main agent (and how big it was).
+  With prompt history on, the subagent's task and the start of its answer show
+  too.
+* **Subagents**: how many were spawned, how many answers reached the main
+  agent, their share of plan usage, and their saving against the session's
+  own model; then one row per kind (spawns, answers returned, the models
+  that answered, cost, saving, average answer size).
 * **Recent requests**, 12 a page: the model asked for and the one that
-  answered, why, cost and saving. Hover a row for tokens and latency.
-* Collapsed: **Advanced settings** (below) and a **breakdown** by model and
-  by subagent kind, including the average size of what each kind reports
-  back.
+  answered, why, cost and saving. A subagent's requests carry `↳ kind`; a
+  main-agent request that hands subagents' answers back carries `↩ n answers`.
+  Hover a row for tokens and latency.
+* Collapsed: **Advanced settings** (below) and a **breakdown** by model.
 
 It is live: the gateway pushes an event the moment it logs a request
 (`GET /api/events`), and the page refreshes then; a 30-second poll is only a
@@ -849,6 +858,33 @@ No match: the general router decides, as for any turn.
 * Each subagent's final report is logged (`report_tokens`): it's what the
   main agent carries for the rest of the conversation, and the number that
   says whether the output budgets work.
+
+**Delegation: sub-tasks go out, answers come back.** `aar-gateway start`
+also appends a short instruction to the main agent's system prompt
+(`--append-system-prompt`, [`DELEGATE_PROMPT`](../src/aar_gateway/subagents.py)):
+hand self-contained sub-tasks to `lookup`, `make` and `judge`, run
+independent ones in parallel, and build on the answer each one returns.
+Claude Code appends it itself, so the gateway never edits the system prompt
+and the prompt cache stays stable. Passing your own `--append-system-prompt`,
+or `AAR_GATEWAY_AGENTS=0`, leaves it out.
+
+A subagent's final message comes back to the main agent as the Agent call's
+`tool_result`. The gateway links the two sides with one **spawn id**, the
+hash of the subagent's task:
+
+* the subagent's requests are logged with it (`spawn_id`, kept for its whole
+  tool loop);
+* the main agent's next request carries the result; it is logged with
+  `returned: [{spawn_id, tool_use_id, answer_tokens, answer_preview}]`. The
+  Agent call is read from the previous assistant message, or, when Claude
+  Code sends only the new message (server-side threads), from the spawn
+  hook, which passes the call's `tool_use_id`.
+
+This works without the hook too. The task (`task_preview`) and the start of
+the answer (`answer_preview`), 240 characters each, are logged only while
+prompt history is on (`aar-gateway history on|off`); they are never shared.
+`GET /api/session-requests?session_id=…` returns a session's turns with
+their subagents, which is what the dashboard's session tree shows.
 
 **The definitions work without the gateway too.** Each pins its tier with
 Claude Code's own `model:` field. `aar-gateway agents --install` writes them

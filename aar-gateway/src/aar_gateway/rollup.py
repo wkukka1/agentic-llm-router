@@ -32,7 +32,18 @@ def new_state() -> dict:
         "total": {**_blank(), "cost_if_requested_usd": 0.0, "cost_if_strongest_usd": 0.0, "priced_requests": 0,
                   "turns_routed": 0, "quality_sum": 0, "best_quality_sum": 0, "subagent_requests": 0},
         "models": {}, "sessions": {}, "subagents": {}, "strongest": None,
+        # spawn id -> the size of the answer the main agent got back from that subagent
+        "returns": {},
     }
+
+
+def _upgrade(state: dict) -> dict:
+    """``state`` with the keys added since it may have been stored (an archive's
+    rollup is kept beside it), filled in empty."""
+    state.setdefault("returns", {})
+    for row in state["subagents"].values():
+        row.setdefault("spawn_ids", {})
+    return state
 
 
 def expected_thread_expiry(record: Mapping) -> bool:
@@ -85,20 +96,25 @@ def accumulate(state: dict, r: Mapping) -> None:
     sess["turns"] += bool(r.get("new_turn") and not r.get("subagent")
                           and not (r.get("reason") or "").startswith("side request"))
     if r.get("subagent"):
-        sess["subagent_spawns"][r.get("conversation") or ""] = 1
+        sess["subagent_spawns"][r.get("spawn_id") or r.get("conversation") or ""] = 1
     sess["rerouted"] += r.get("routed_model") != r.get("requested_model")
     sess["models"][model] = sess["models"].get(model, 0) + 1
     sess["cost_usd"] += r.get("cost_usd") or 0.0
     sess["cost_if_requested_usd"] += baseline_cost(r, "cost_if_requested_usd")
     sess["cost_if_strongest_usd"] += baseline_cost(r, "cost_if_strongest_usd")
+    for answer in r.get("returned") or []:
+        if answer.get("spawn_id"):
+            state["returns"][answer["spawn_id"]] = answer.get("answer_tokens") or 0
 
     if r.get("subagent"):
         role = r.get("agent_role") or "unrecognised"
         agent = state["subagents"].setdefault(role, {
             "role": role, "source": r.get("role_source"), "conversations": {}, "requests": 0, "models": {},
             "cost_usd": 0.0, "cost_if_requested_usd": 0.0, "cache_read_input_tokens": 0, "prompt_tokens": 0,
-            "latency_s": 0.0, "report_sum": 0, "report_n": 0})
+            "latency_s": 0.0, "report_sum": 0, "report_n": 0, "spawn_ids": {}})
         agent["conversations"][r.get("conversation") or ""] = 1
+        if r.get("spawn_id"):
+            agent["spawn_ids"][r["spawn_id"]] = 1
         agent["requests"] += 1
         agent["models"][model] = agent["models"].get(model, 0) + 1
         agent["cost_usd"] += r.get("cost_usd") or 0.0
@@ -123,7 +139,8 @@ def _merge_row(into: dict, other: Mapping, *, summed: Iterable[str]) -> None:
 
 def merge(older: Mapping, newer: Mapping) -> dict:
     """The state of ``older``'s requests followed by ``newer``'s."""
-    out = _copy(older)
+    out = _upgrade(_copy(older))
+    newer = _upgrade(_copy(newer))
     for key in out["total"]:
         out["total"][key] += newer["total"][key]
     for name, row in newer["models"].items():
@@ -147,7 +164,9 @@ def merge(older: Mapping, newer: Mapping) -> dict:
         _merge_row(mine, row, summed=("requests", "cost_usd", "cost_if_requested_usd", "cache_read_input_tokens",
                                       "prompt_tokens", "latency_s", "report_sum", "report_n"))
         mine["conversations"].update(row["conversations"])
+        mine["spawn_ids"].update(row["spawn_ids"])
         _add_counts(mine["models"], row["models"])
+    out["returns"].update(newer["returns"])
     out["strongest"] = newer["strongest"] or older["strongest"]
     return out
 
@@ -162,6 +181,7 @@ def _copy(value):
 
 def finish(state: Mapping, *, recent: list, log: str, default_strongest: str | None) -> dict:
     """The dashboard's numbers for ``state`` (``recent``: the newest requests, oldest first)."""
+    state = _upgrade(_copy(state))
     t = dict(state["total"])
     n = t.pop("turns_routed")
     quality, best = t.pop("quality_sum"), t.pop("best_quality_sum")
@@ -171,13 +191,20 @@ def finish(state: Mapping, *, recent: list, log: str, default_strongest: str | N
     sessions = [{**_copy(row), "subagent_spawns": len(row["subagent_spawns"])} for row in state["sessions"].values()]
     sessions = sorted(sessions, key=lambda x: x["last_ts"] or "", reverse=True)[:SESSION_ROWS]
     agents = []
+    returns = state["returns"]
     for row in state["subagents"].values():
         prompt = row["prompt_tokens"]
-        shown = {k: _copy(v) for k, v in row.items() if k not in ("conversations", "report_sum", "report_n")}
+        shown = {k: v for k, v in row.items() if k not in ("conversations", "report_sum", "report_n", "spawn_ids")}
+        answers = [returns[s] for s in row["spawn_ids"] if s in returns]
         agents.append({**shown,
                        "avg_report_tokens": round(row["report_sum"] / row["report_n"]) if row["report_n"] else None,
                        "spawns": len(row["conversations"]),
+                       # spawns whose answer reached the main agent (only those logged with a spawn id)
+                       "tracked_spawns": len(row["spawn_ids"]), "returned": len(answers),
+                       "avg_answer_tokens": round(sum(answers) / len(answers)) if answers else None,
                        "cache_hit_rate": row["cache_read_input_tokens"] / prompt if prompt else None})
+    total.update(spawns=sum(a["spawns"] for a in agents), spawns_returned=sum(a["returned"] for a in agents),
+                 subagent_cost_usd=sum(a["cost_usd"] for a in agents))
     return {"log": log, "strongest_model": state["strongest"] or default_strongest, "totals": total,
             "models": {k: dict(v) for k, v in state["models"].items()},
             "subagents": sorted(agents, key=lambda x: -x["cost_usd"]), "sessions": sessions,

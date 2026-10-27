@@ -44,3 +44,7 @@ def test_another_host_is_refused(tmp_path, monkeypatch):
 def test_the_view_never_writes_the_gateway_pid_file(client, tmp_path):
     client.get("/stats")
     assert not (tmp_path / "gateway.pid").exists()
+
+
+def test_a_sessions_turns_can_be_read(client):
+    assert client.get("/api/session-requests", params={"session_id": "abc"}).json()["turns"] == []

@@ -60,6 +60,15 @@ Details, including the λ rule and the dashboard's presets, are in [docs/gateway
   work instead of benchmark stand-ins (uses the `claude` CLI and your login).
 - `aar-gateway-subagents`: price what Claude Code's subagents cost against the routed alternative.
 
+## Subagents
+
+`aar-gateway start` gives Claude Code three subagent kinds: `lookup` (Haiku), `make` (Sonnet) and `judge`
+(the session's model). It also tells the main agent to delegate self-contained sub-tasks to them. Each
+subagent runs on its cheaper tier and returns only its final answer to the main session. The dashboard shows
+each session as a tree: turn → subagents → the answer each one returned. A Subagents panel shows spawns,
+answers returned, their share of plan usage and their saving. Details:
+[docs/gateway.md](docs/gateway.md#subagents).
+
 ## Development
 
 ```bash

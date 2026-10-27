@@ -218,8 +218,10 @@ async def subagent_spawn(request: Request):
     """Asked by the ``PreToolUse`` hook (``aar-gateway hook``) before Claude
     Code spawns a subagent: which model it should run on."""
     body = await _json_object(request)
+    tool_use_id = body.get("tool_use_id")
     return interceptor.record_spawn(str(body.get("session_id") or ""), body.get("subagent_type"),
-                                    str(body.get("prompt") or ""), body.get("model"))
+                                    str(body.get("prompt") or ""), body.get("model"),
+                                    tool_use_id if isinstance(tool_use_id, str) else None)
 
 
 @app.get("/api/preferences")

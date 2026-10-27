@@ -168,9 +168,47 @@
     #sessions col:nth-child(2) { width: 15% !important; }
     #sessions col:nth-child(5) { width: 25% !important; }
     #sessions col:nth-child(7) { width: 18% !important; }
+    #subagents col:nth-child(1) { width: 28% !important; }
+    #subagents col:nth-child(2) { width: 16% !important; }
+    #subagents col:nth-child(3) { width: 18% !important; }
+    #subagents col:nth-child(5) { width: 22% !important; }
+    #subagents col:nth-child(7) { width: 16% !important; }
     .seg[aria-label="Cost preference"] { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
     .seg[aria-label="Cost preference"] button { padding: 0 6px; }
   }
+
+  /* subagents: four small tiles, then the session tree */
+  .kpis.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  @media (max-width: 960px) { .kpis.four { grid-template-columns: repeat(2, minmax(0, 1fr)); } .kpis.four .kpi:first-child { grid-column: auto; } }
+  .kpi.small { padding: 16px 18px; gap: 6px; }
+  .kpi.small .big { font-size: 26px; }
+  .twist { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; margin: -4px 6px -4px -6px;
+    vertical-align: middle; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
+  .twist:hover { background: var(--soft); color: var(--ink); }
+  .twist svg { transition: transform .2s; }
+  .twist[aria-expanded="true"] svg { transform: rotate(90deg); }
+  .sess-name { display: inline-flex; align-items: center; min-width: 0; }
+  .sess-name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  tr.tree-row > td { padding: 0; background: var(--panel-2); white-space: normal; text-align: left; }
+  tbody tr.tree-row:hover td { background: var(--panel-2); }
+  .tree { display: flex; flex-direction: column; gap: 14px; padding: 14px 18px 18px 46px; }
+  @media (max-width: 680px) { .tree { padding: 12px; } }
+  .tree .hint { white-space: normal; }
+  .turn-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; font-size: 13px; color: var(--ink-2); }
+  .turn-head .t { font-family: var(--mono); color: var(--muted); min-width: 44px; }
+  .turn-head .cost { margin-left: auto; font-family: var(--mono); color: var(--ink-2); }
+  .spawns { list-style: none; margin: 8px 0 0; padding: 0 0 0 18px; display: flex; flex-direction: column; gap: 8px;
+    border-left: 1px solid var(--line); margin-left: 21px; }
+  .spawn { display: flex; flex-direction: column; gap: 5px; padding: 9px 12px; border: 1px solid var(--row);
+    border-radius: 10px; background: var(--panel); font-size: 12.5px; }
+  .spawn-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .spawn-head .cost { margin-left: auto; font-family: var(--mono); color: var(--ink-2); }
+  .ret { font-size: 12px; font-weight: 600; color: var(--good); }
+  .ret.wait { color: var(--muted); font-weight: 500; }
+  .ret.bad { color: var(--bad); }
+  .preview { color: var(--ink-2); overflow-wrap: anywhere; }
+  .preview b { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin-right: 6px; }
+  .pill.back { background: rgba(74,222,128,.12); color: var(--good); }
 
   .pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px;
     border-top: 1px solid var(--row); background: var(--panel-2); }
@@ -297,6 +335,30 @@
     <button type="button" class="show-all" id="sessions-all" hidden></button>
   </section>
 
+  <section aria-labelledby="subagents-h">
+    <div class="sec-head">
+      <h2 id="subagents-h">Subagents</h2>
+      <span class="hint">Sub-tasks the main agent handed off, and the answers they returned to it. Open a session above to see each one.</span>
+    </div>
+    <div class="kpis four" aria-label="Subagent summary">
+      <div class="card kpi small"><span class="eyebrow">Spawned</span><span class="big" id="k-spawns">–</span>
+        <span class="hint" id="k-spawns-note"></span></div>
+      <div class="card kpi small"><span class="eyebrow">Answers returned</span><span class="big" id="k-returned">–</span>
+        <span class="hint" id="k-returned-note"></span></div>
+      <div class="card kpi small"><span class="eyebrow">Share of plan usage</span><span class="big" id="k-sub-share">–</span>
+        <span class="hint">spent in subagents</span></div>
+      <div class="card kpi small"><span class="eyebrow">Saved vs session model</span><span class="big" id="k-sub-saved">–</span>
+        <span class="hint" id="k-sub-saved-note"></span></div>
+    </div>
+    <div class="card table-box"><table id="subagents">
+      <colgroup><col style="width:20%"><col style="width:10%"><col style="width:12%"><col class="hide-md" style="width:18%">
+        <col style="width:11%"><col class="hide-sm" style="width:11%"><col style="width:8%"><col class="hide-sm" style="width:10%"></colgroup>
+      <thead><tr>
+        <th class="l">Kind</th><th>Spawns</th><th>Returned</th><th class="l hide-md">Answered by</th>
+        <th>Cost</th><th class="hide-sm">On session model</th><th>Saved</th><th class="hide-sm">Avg answer</th>
+      </tr></thead><tbody></tbody></table></div>
+  </section>
+
   <section aria-labelledby="recent-h">
     <div class="sec-head">
       <h2 id="recent-h">Recent requests</h2>
@@ -320,7 +382,7 @@
   <section>
     <details class="more" id="breakdown">
       <summary><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
-        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>Breakdown by model and subagent</summary>
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>Breakdown by model</summary>
       <div class="adv">
         <div class="card table-box"><table id="models">
           <colgroup><col style="width:26%"><col style="width:12%"><col class="hide-sm" style="width:12%">
@@ -328,13 +390,6 @@
           <thead><tr>
             <th class="l">Model</th><th>Requests</th><th class="hide-sm">Rerouted to</th>
             <th class="hide-md">Cache read</th><th class="hide-md">Output</th><th>Cost</th>
-          </tr></thead><tbody></tbody></table></div>
-        <div class="card table-box"><table id="subagents">
-          <colgroup><col style="width:22%"><col style="width:10%"><col class="hide-md" style="width:20%">
-            <col style="width:12%"><col class="hide-sm" style="width:13%"><col style="width:10%"><col class="hide-sm" style="width:13%"></colgroup>
-          <thead><tr>
-            <th class="l">Subagent kind</th><th>Spawns</th><th class="l hide-md">Answered by</th>
-            <th>Cost</th><th class="hide-sm">On session model</th><th>Saved</th><th class="hide-sm">Avg report</th>
           </tr></thead><tbody></tbody></table></div>
       </div>
     </details>
@@ -376,6 +431,8 @@ const PRESET_NOTES = {best_quality: "Stays on the stronger model unless a cheape
   save_more: "Prefers cheaper models more often, scored by the savings router; gives up a little more quality"};
 const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
 let prefs = null, recent = [], page = 0, seen = null, lastTables = {};
+/* the session tree: which sessions are open, and each one's turns (/api/session-requests) */
+let sessions = [], expanded = new Set(), trees = {};
 
 /* counts a number to its new value, then flashes it once */
 function tween(el, to, fmt) {
@@ -558,7 +615,8 @@ function renderRecent(turning) {
       <td class="l num">${esc(r.ts ? new Date(r.ts).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}) : "")}</td>
       <td class="l"><span class="flow"><span class="asked">${esc(pretty(r.requested_model))}</span>${ARROW}
         <span class="m">${swatch(r.routed_model)}${esc(pretty(r.routed_model))}</span>
-        ${r.subagent ? `<span class="pill sub">${esc(r.agent_role || "subagent")}</span>` : moved ? '<span class="pill">routed</span>' : ""}
+        ${r.subagent ? `<span class="pill sub">↳ ${esc(r.agent_role || "subagent")}</span>` : moved ? '<span class="pill">routed</span>' : ""}
+        ${r.returned && r.returned.length ? `<span class="pill back" title="This request carried ${r.returned.length === 1 ? "a subagent's answer" : "subagents' answers"} back to the main agent">↩ ${r.returned.length} answer${r.returned.length === 1 ? "" : "s"}</span>` : ""}
         ${r.fallback ? '<span class="pill fb">fallback</span>' : ""}</span></td>
       <td class="l why hide-md" title="${esc(r.reason)}">${src ? `<span class="pill src">${src}</span>` : ""}${esc(r.reason)}</td>
       <td class="strong">${usd(r.cost_usd)}</td>${requestSavedCell(r)}
@@ -586,6 +644,71 @@ const when = (a, b) => {
   return d2 - d1 > 60000 ? `${day} · ${t(d1)}–${t(d2)}` : `${day} · ${t(d1)}`;
 };
 
+/* the sessions table, each open session followed by its tree of turns and subagents */
+function renderSessions() {
+  const SHOWN = 8;
+  $("sessions-all").hidden = sessions.length <= SHOWN;
+  $("sessions-all").textContent = showAllSessions ? "Show fewer" : `Show all ${sessions.length} sessions`;
+  setRows("sessions", (showAllSessions ? sessions : sessions.slice(0, SHOWN)).map((r) => {
+    const name = r.session ? esc(r.session.slice(0, 8)) : "before session tracking";
+    const isOpen = r.session && expanded.has(r.session);
+    const twist = r.session ? `<button type="button" class="twist" data-session="${esc(r.session)}" aria-expanded="${isOpen}"
+      aria-controls="tree-${esc(r.session)}" aria-label="Show this session's turns and subagents">${CHEV("M9 6l6 6-6 6")}</button>` : "";
+    const row = `<tr><td class="l"><span class="sess-name">${twist}<span><span>${esc(when(r.first_ts, r.last_ts))}</span><span class="sub-line mono">${name}</span></span></span></td>
+      <td class="num">${num(r.turns)}</td><td class="num hide-sm">${num(r.subagent_spawns)}</td>
+      ${mixCell(r.models, "hide-md")}<td class="strong">${usd(r.cost_usd)}</td>
+      <td class="num hide-sm">${usd(r.cost_if_requested_usd)}</td>${savedCell(r.cost_usd, r.cost_if_requested_usd)}</tr>`;
+    return isOpen ? row + `<tr class="tree-row" id="tree-${esc(r.session)}"><td colspan="7">${treeHtml(trees[r.session])}</td></tr>` : row;
+  }).join("") || `<tr><td colspan="7" class="empty">No sessions yet. Run <code>aar-gateway start</code>.</td></tr>`);
+}
+
+async function loadTree(session) {
+  try {
+    const r = await fetch(`/api/session-requests?session_id=${encodeURIComponent(session)}&limit=30`);
+    trees[session] = r.ok ? await r.json() : {error: true};
+  } catch (e) {
+    trees[session] = {error: true};
+  }
+  renderSessions();
+}
+
+const TREE_TURNS = 12;
+function treeHtml(data) {
+  if (!data) return '<div class="tree"><span class="hint">Loading…</span></div>';
+  if (data.error) return '<div class="tree"><span class="hint">This view can\'t show a session\'s turns. Open the dashboard on the gateway itself.</span></div>';
+  const turns = (data.turns || []).slice(-TREE_TURNS).reverse();
+  if (!turns.length) return '<div class="tree"><span class="hint">No turns yet.</span></div>';
+  let previews = false, spawned = false;
+  const html = turns.map((t) => {
+    const models = t.models.length ? t.models.map((m) => `<span class="m">${swatch(m)}${esc(pretty(m))}</span>`).join(" ") : '<span class="muted">no main-agent request</span>';
+    const p = pct(t.cost_usd, t.cost_if_requested_usd);
+    const subs = (t.subagents || []).map((a) => {
+      spawned = true;
+      previews = previews || !!(a.task_preview || a.answer_preview);
+      const ms = (a.models && a.models.length ? a.models : [a.model]).filter(Boolean);
+      const ret = a.returned ? `<span class="ret" title="The main agent got this answer back as the Agent tool's result">↩ answer returned${a.answer_tokens ? ` · ~${num(a.answer_tokens)} tok` : ""}</span>`
+        : !a.spawn_id ? '<span class="ret wait" title="Logged before answers were tracked">answer not tracked</span>'
+        : a.errors && a.errors === a.requests ? '<span class="ret bad">failed</span>'
+        : '<span class="ret wait">working, or no answer seen yet</span>';
+      return `<li class="spawn"><div class="spawn-head"><span class="pill sub">↳ ${esc(a.role)}</span>
+          ${ms.map((m) => `<span class="m">${swatch(m)}${esc(pretty(m))}</span>`).join(" ")}
+          <span class="muted">${num(a.requests)} request${a.requests === 1 ? "" : "s"}</span>${ret}
+          <span class="cost">${a.cost_usd != null ? usd(a.cost_usd) : ""}</span></div>
+        ${a.task_preview ? `<div class="preview"><b>Task</b>${esc(a.task_preview)}</div>` : ""}
+        ${a.answer_preview ? `<div class="preview"><b>Answer</b>${esc(a.answer_preview)}</div>` : ""}</li>`;
+    }).join("");
+    const n = (t.subagents || []).length;
+    return `<div><div class="turn-head"><span class="t">${esc(t.time)}</span><span>${models}</span>
+        ${n ? `<span class="pill sub">${n} subagent${n === 1 ? "" : "s"}</span>` : ""}
+        ${t.returned ? `<span class="pill back">↩ ${num(t.returned)} answer${t.returned === 1 ? "" : "s"} back</span>` : ""}
+        <span class="cost">${usd(t.cost_usd)}${p == null ? "" : ` · ${p >= 0 ? p + "% saved" : "+" + (-p) + "%"}`}</span></div>
+      ${subs ? `<ul class="spawns">${subs}</ul>` : ""}</div>`;
+  }).join("");
+  const note = spawned && !previews ? '<span class="hint">Tasks and answers show here when prompt history is on (<code>aar-gateway history on</code>).</span>' : "";
+  const more = (data.turns || []).length > TREE_TURNS ? `<span class="hint">Newest ${TREE_TURNS} turns.</span>` : "";
+  return `<div class="tree">${html}${note}${more}</div>`;
+}
+
 async function refresh() {
   try {
     const [s, p] = await Promise.all([fetch("/stats").then((r) => r.json()),
@@ -599,17 +722,23 @@ async function refresh() {
     saving($("k-strong-pct"), $("k-strong-bars"), t.cost_usd, t.cost_if_strongest_usd, "Always Opus");
 
     // sessions with no turn of their own (just Claude Code naming the session) are noise here
-    const sessions = (s.sessions || []).filter((r) => r.turns > 0 || r.subagent_spawns > 0);
-    const SHOWN = 8;
-    $("sessions-all").hidden = sessions.length <= SHOWN;
-    $("sessions-all").textContent = showAllSessions ? "Show fewer" : `Show all ${sessions.length} sessions`;
-    setRows("sessions", (showAllSessions ? sessions : sessions.slice(0, SHOWN)).map((r) => {
-      const name = r.session ? esc(r.session.slice(0, 8)) : "before session tracking";
-      return `<tr><td class="l"><span>${esc(when(r.first_ts, r.last_ts))}</span><span class="sub-line mono">${name}</span></td>
-        <td class="num">${num(r.turns)}</td><td class="num hide-sm">${num(r.subagent_spawns)}</td>
-        ${mixCell(r.models, "hide-md")}<td class="strong">${usd(r.cost_usd)}</td>
-        <td class="num hide-sm">${usd(r.cost_if_requested_usd)}</td>${savedCell(r.cost_usd, r.cost_if_requested_usd)}</tr>`;
-    }).join("") || `<tr><td colspan="7" class="empty">No sessions yet. Run <code>aar-gateway start</code>.</td></tr>`);
+    sessions = (s.sessions || []).filter((r) => r.turns > 0 || r.subagent_spawns > 0);
+    renderSessions();
+    expanded.forEach(loadTree);  // an open session's tree follows the live updates too
+
+    const subs = s.subagents || [];
+    const tracked = subs.reduce((a, r) => a + (r.tracked_spawns || 0), 0);
+    tween($("k-spawns"), t.spawns || 0, (v) => num(Math.round(v)));
+    $("k-spawns-note").textContent = subs.length ? `${subs.length} kind${subs.length === 1 ? "" : "s"} · ${num(t.subagent_requests)} requests` : "none yet";
+    tween($("k-returned"), t.spawns_returned || 0, (v) => num(Math.round(v)));
+    $("k-returned-note").textContent = tracked ? `${Math.round(100 * (t.spawns_returned || 0) / tracked)}% of tracked spawns` : "to the main agent";
+    const share = t.cost_usd > 0 ? Math.round(100 * (t.subagent_cost_usd || 0) / t.cost_usd) : null;
+    $("k-sub-share").textContent = share == null ? "–" : share + "%";
+    const subCost = subs.reduce((a, r) => a + r.cost_usd, 0), subBase = subs.reduce((a, r) => a + r.cost_if_requested_usd, 0);
+    const subSaved = pct(subCost, subBase);
+    $("k-sub-saved").textContent = subSaved == null ? "–" : subSaved >= 0 ? `−${subSaved}%` : `+${-subSaved}%`;
+    $("k-sub-saved").style.color = subSaved == null ? "" : subSaved >= 0 ? "var(--good)" : "var(--bad)";
+    $("k-sub-saved-note").textContent = subBase > 0 ? `${usd(subCost)} against ${usd(subBase)}` : "";
 
     const models = Object.entries(s.models).sort((a, b) => b[1].cost_usd - a[1].cost_usd);
     const totalCost = models.reduce((a, [, r]) => a + r.cost_usd, 0);
@@ -622,14 +751,17 @@ async function refresh() {
           <span>${usd(r.cost_usd)}</span></div></td></tr>`;
     }).join("") || `<tr><td colspan="6" class="empty">No requests yet.</td></tr>`);
 
-    const how = {definition: "role definition", builtin: "built-in agent", task: "task keywords", hook: "set at spawn"};
-    setRows("subagents", (s.subagents || []).map((r) => {
+    const how = {definition: "role definition", builtin: "built-in agent", task: "task keywords", hook: "set at spawn", mod: "Claude Code mod"};
+    setRows("subagents", subs.map((r) => {
+      // the answer the main agent got back; for kinds logged before answers were tracked, the final reply's size
+      const answer = r.tracked_spawns ? r.avg_answer_tokens : r.avg_report_tokens;
+      const returned = r.tracked_spawns ? `${num(r.returned)}<span class="sub-line">of ${num(r.tracked_spawns)}</span>` : "–";
       return `<tr><td class="l"><strong>${esc(r.role)}</strong><span class="sub-line">${esc(how[r.source] || "unrecognised")}</span></td>
-        <td class="num">${num(r.spawns)}</td>${mixCell(r.models, "hide-md")}
+        <td class="num">${num(r.spawns)}</td><td class="num">${returned}</td>${mixCell(r.models, "hide-md")}
         <td class="strong">${usd(r.cost_usd)}</td><td class="num hide-sm">${usd(r.cost_if_requested_usd)}</td>
         ${savedCell(r.cost_usd, r.cost_if_requested_usd)}
-        <td class="num hide-sm">${r.avg_report_tokens == null ? "–" : num(r.avg_report_tokens) + " tok"}</td></tr>`;
-    }).join("") || `<tr><td colspan="7" class="empty">No subagents yet.</td></tr>`);
+        <td class="num hide-sm">${answer == null ? "–" : "~" + num(answer) + " tok"}</td></tr>`;
+    }).join("") || `<tr><td colspan="8" class="empty">No subagents yet. The main agent hands sub-tasks to <code>lookup</code>, <code>make</code> and <code>judge</code> when it runs through <code>aar-gateway start</code>.</td></tr>`);
 
     recent = s.recent || [];
     renderRecent();
@@ -675,6 +807,15 @@ $("roles").addEventListener("change", (e) => {
   if (sel) setPref({role: sel.dataset.role, model: sel.value}).then(() => sel.blur());
 });
 $("sessions-all").addEventListener("click", () => { showAllSessions = !showAllSessions; delete lastTables.sessions; refresh(); });
+$("sessions").addEventListener("click", (e) => {
+  const b = e.target.closest("button.twist[data-session]");
+  if (!b) return;
+  const id = b.dataset.session;
+  if (expanded.has(id)) expanded.delete(id); else { expanded.add(id); loadTree(id); }
+  renderSessions();
+  const again = $("sessions").querySelector(`button.twist[data-session="${CSS.escape(id)}"]`);
+  if (again) again.focus();
+});
 $("pages").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-page]");
   if (b && !b.disabled) { page = parseInt(b.dataset.page, 10); renderRecent(true); }

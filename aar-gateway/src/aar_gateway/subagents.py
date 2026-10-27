@@ -34,6 +34,14 @@ an upgrade: it never moves a subagent above the session's model.
 A subagent is the cheapest place to change model: its system prompt and
 tools differ from the main agent's, so it has a prompt cache of its own, and
 moving it never makes the main conversation rewrite its cache.
+
+**Delegation.** ``aar-gateway start`` also appends :data:`DELEGATE_PROMPT` to
+the main agent's system prompt: hand self-contained sub-tasks to these kinds
+and work from what they return. A subagent's final message comes back to the
+main agent as the Agent call's ``tool_result``; the gateway sees it in the
+main agent's next request and logs it (``returned``) under the same spawn id
+as the subagent's own requests (the hash of its task), so the dashboard can
+show each turn's subagents, the model each ran on, and the answer it gave back.
 """
 
 from __future__ import annotations
@@ -194,9 +202,10 @@ ROLES: dict[str, dict] = {
     "lookup": {
         "model": "haiku",
         "tools": _READ_TOOLS,
-        "description": "Read-only lookups with a short answer: find where something is defined or used, "
-                       "which files do X, count things, extract or label items, summarise a log, draft a "
-                       "commit message. Use for any search or mechanical, checkable task.",
+        "description": "Use proactively for read-only lookups with a short answer: find where something is "
+                       "defined or used, which files do X, count things, extract or label items, summarise a "
+                       "log, draft a commit message. Use for any search or mechanical, checkable task. Its "
+                       "final message is the answer you get back.",
         "prompt": "You find facts in the repository and do mechanical, checkable work. Never change files; "
                   "if the task needs a file written, say so instead.\n\n" + _BUDGET +
                   "\n\nOutput budget: at most 10 bullets, each `path:line` and one sentence, or exactly "
@@ -204,8 +213,9 @@ ROLES: dict[str, dict] = {
     },
     "make": {
         "model": "sonnet",
-        "description": "Produces something: implements or changes code, writes and runs tests, reviews "
-                       "a diff, or turns a goal into an implementation plan.",
+        "description": "Use proactively to produce something self-contained: implement or change code, "
+                       "write and run tests, review a diff, or turn a goal into an implementation plan. It "
+                       "reports back what it changed or concluded.",
         "prompt": "You make the change, tests, review or plan asked for, matching the project's existing "
                   "style.\n\n" + _BUDGET + "\n\nOutput budget: what you changed or concluded, as at most "
                   "10 one-line items (files touched, tests passed/failed, or findings as "
@@ -215,12 +225,26 @@ ROLES: dict[str, dict] = {
         "model": "inherit",
         "tools": _READ_TOOLS,
         "description": "Hard reasoning that needs the strongest model: root-cause debugging, architecture "
-                       "and design trade-offs. Investigates; does not edit.",
+                       "and design trade-offs. Investigates; does not edit. It reports back its conclusion "
+                       "with evidence.",
         "prompt": "You investigate hard problems: find root causes and weigh designs, with evidence from "
                   "the code. Never change files.\n\n" + _BUDGET + "\n\nOutput budget: conclusion first, "
                   "then at most 8 findings with `path:line` evidence, then the recommended next step.",
     },
 }
+
+
+#: Appended to the main agent's system prompt by ``aar-gateway start``: the
+#: main agent stays the one the person talks to, and hands sub-tasks to the
+#: kinds above, which run on cheaper models and return only their answer.
+DELEGATE_PROMPT = (
+    "Delegate sub-tasks to subagents with the Agent tool, and keep this conversation for deciding and "
+    "answering. Use `lookup` for searches and mechanical work, `make` for a self-contained change, test "
+    "run, review or plan, and `judge` only for root causes and design trade-offs. Give each one a "
+    "self-contained task -- it cannot see this conversation -- and run independent ones in parallel. Its "
+    "final message is returned to you as the tool result: build on that answer rather than redoing the "
+    "work. Do small things that need this conversation's context yourself."
+)
 
 
 def agent_definitions() -> dict[str, dict]:
