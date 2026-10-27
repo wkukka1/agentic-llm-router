@@ -95,7 +95,8 @@ On the dashboard, under **Cost preference**:
 
 * **Best quality**: stays on your model unless a cheaper one is almost as good
 * **Balanced** (default): cheaper models when they're predicted close in quality
-* **Save more**: prefers cheaper models more often
+* **Save more**: prefers cheaper models more often, using the savings router
+  (`manifold-nirt-claude-judged`), which scores the Claude models directly
 
 **Advanced settings** let you pin every request to one model, turn routing
 off, let hard questions move *up* to a stronger model, or change which model
