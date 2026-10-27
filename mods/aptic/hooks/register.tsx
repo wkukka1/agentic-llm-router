@@ -116,6 +116,24 @@ const C = {
 const MONO = "'JetBrains Mono', ui-monospace, monospace"
 const DASHBOARD = GATEWAY + '/dashboard'
 
+// Open the gateway's dashboard in the browser. A Link to an http:// address is
+// drawn as plain text on VS Code and desktop, so the pane's button runs the
+// system's own URL opener instead.
+export async function openDashboard($: any): Promise<boolean> {
+  const windows = String((await $.env.get('OS')) || '') === 'Windows_NT'
+  const openers = windows ? [['rundll32', 'url.dll,FileProtocolHandler', DASHBOARD]] : [['open', DASHBOARD], ['xdg-open', DASHBOARD]]
+  for (const argv of openers) {
+    try {
+      const r = await $.process.run(argv, { timeoutMs: 10_000 })
+      if (!r.exitCode) return true
+    } catch {
+      // this opener isn't there: try the next
+    }
+  }
+  $.ui.toast(`Open ${DASHBOARD} in your browser to see all sessions.`)
+  return false
+}
+
 // The pane's per-user choices: drawn from $.state, kept across sessions in $.store
 const PREFS = 'pane.prefs'
 const noPrefs: PanePrefs = { collapsed: false, oldestFirst: false, settingsOpen: false }
@@ -381,7 +399,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const els: any = $.ui.resolve(e)
-    const { Box, Text, Button, Link } = els
+    const { Box, Text, Button } = els
     const Svg = e.surface === 'terminal' ? null : els.Svg  // the terminal draws no Svg: text bars there
     const [view, counted, chosen] = await Promise.all([read($, gateway), read($, cache), read($, prefs)])
     const { collapsed, oldestFirst, settingsOpen } = { ...noPrefs, ...chosen }
@@ -413,14 +431,8 @@ export const register: Register = (on, options) => {
     )
     const icon = Svg ? <Svg source={ROUTE_ICON} alt="" width={16} height={16} /> : <Text color={C.accent}>⇄</Text>
     const down = !view.isRunning && <Text size="footnote" color={C.warn}>{DOWN}</Text>
-    const shell = (children: any) => (
-      <Box flexDirection="column" height="100%" backgroundColor={C.bg} borderStyle="round" borderColor={C.border}
-        paddingX="md" paddingY="sm" rowGap="md">
-        {children}
-      </Box>
-    )
     const tile = (name: string, value: string, sub?: string, accent = false) => (
-      <Box flexDirection="column" flexGrow={1} paddingX="sm" paddingY="sm"
+      <Box flexDirection="column" flexGrow={1} flexShrink={1} width="25%" paddingX="sm" paddingY="sm"
         backgroundColor={accent ? C.card : C.tile} borderStyle="round" borderColor={accent ? C.cardBorder : C.tile}>
         <Text size="caption" color={C.muted}>{name}</Text>
         <Text size="heading" mono tabular color={accent ? C.accent : C.text}>{value}</Text>
@@ -431,17 +443,18 @@ export const register: Register = (on, options) => {
     if (collapsed) {
       const chartTurns = all.slice(-12)
       const maxReq = Math.max(1, ...chartTurns.map(t => t.requests))
-      return shell(<>
+      return (
+        <Box flexDirection="column" backgroundColor={C.bg} borderStyle="round" borderColor={C.border} paddingX="md" paddingY={1} rowGap={1}>
         <Box justifyContent="space-between" alignItems="center">
           <Box columnGap="sm" alignItems="center">
             {icon}
             <Text size="body" weight="semibold" color={C.text}>aptic</Text>
             <Text size="footnote" color={C.muted}>· {all.length} turn{all.length === 1 ? '' : 's'} · {num(requests)} req</Text>
           </Box>
-          <Button key="expand" label="Expand panel" plain onPress={toggle('collapsed')}><Text color={C.secondary}>▾</Text></Button>
+          <Button key="expand" variant="secondary" plain onPress={toggle('collapsed')}><Text color={C.secondary}>▾</Text></Button>
         </Box>
         {down}
-        <Box columnGap="sm">
+        <Box columnGap="sm" flexWrap="nowrap">
           {tile('This session', saved == null ? '–' : `${saved}%`, sessionReason(all, true))}
           {tile('All sessions', allUsage, `plan usage · ${num(view.allRequests)} req`, true)}
         </Box>
@@ -461,7 +474,7 @@ export const register: Register = (on, options) => {
             ))}
         </Box>
         {legend}
-      </>)
+      </Box>)
     }
 
     // a turn takes three rows with its divider (more with subagents or errors); the rest of the pane about 22
@@ -474,7 +487,8 @@ export const register: Register = (on, options) => {
     }
     const cols = { time: 6, req: 5, cache: 5 }
 
-    return shell(<>
+    return (
+      <Box flexDirection="column" backgroundColor={C.bg} borderStyle="round" borderColor={C.border} paddingX="md" paddingY={1} rowGap={1}>
       <Box justifyContent="space-between" alignItems="center">
         <Box columnGap="sm" alignItems="center">
           {icon}
@@ -482,8 +496,8 @@ export const register: Register = (on, options) => {
           <Text size="footnote" color={C.muted}>router</Text>
         </Box>
         <Box columnGap="xs">
-          <Button key="settings" label="Panel settings" plain onPress={toggle('settingsOpen')}><Text color={C.secondary}>⚙︎</Text></Button>
-          <Button key="collapse" label="Collapse panel" plain onPress={toggle('collapsed')}><Text color={C.secondary}>▴</Text></Button>
+          <Button key="settings" variant="secondary" plain onPress={toggle('settingsOpen')}><Text color={C.secondary}>⚙︎</Text></Button>
+          <Button key="collapse" variant="secondary" plain onPress={toggle('collapsed')}><Text color={C.secondary}>▴</Text></Button>
         </Box>
       </Box>
       {settingsOpen && (
@@ -513,7 +527,7 @@ export const register: Register = (on, options) => {
           </Text>}
         {legend}
       </Box>
-      <Box columnGap="sm">
+      <Box columnGap="sm" flexWrap="nowrap">
         {tile('Requests', num(requests))}
         {tile('Cache hit', hit == null ? '–' : hit + '%')}
         {tile('Turns', num(all.length))}
@@ -532,7 +546,7 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column">
         <Box justifyContent="space-between" alignItems="center">
           {label('Turns')}
-          <Button key="sort" label={oldestFirst ? 'Oldest first' : 'Newest first'} onPress={toggle('oldestFirst')}>
+          <Button key="sort" variant="secondary" onPress={toggle('oldestFirst')}>
             <Text size="caption" color={C.secondary}>{oldestFirst ? 'Oldest first' : 'Newest first'} ▾</Text>
           </Button>
         </Box>
@@ -563,11 +577,10 @@ export const register: Register = (on, options) => {
           </Box>
         ))}
       </Box>
-      <Box flexGrow={1} />
       <Box justifyContent="space-between" alignItems="center">
         <Text size="caption" color={C.muted}>Baseline: always {base}</Text>
-        <Link href={DASHBOARD} label="View all sessions" />
+        <Button key="dashboard" variant="secondary" plain onPress={() => openDashboard($)}><Text size="caption" color={C.accent} underline>View all sessions</Text></Button>
       </Box>
-    </>)
+    </Box>)
   })
 }

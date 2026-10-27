@@ -89,3 +89,26 @@ test('the pane collapses to a summary and a chart, and remembers it', async ($, 
   expect(words(await ui.drawn())).toMatch(/THIS SESSION/)
   await ui.unmount()
 })
+
+test('View all sessions opens the dashboard in the browser', async ($, on) => {
+  const kept: Record<string, unknown> = {}
+  on("store.get", async ($, e: any) => ({ value: kept[e.key] }))
+  on("store.set", async ($, e: any) => { kept[e.key] = e.value; return { value: undefined } })
+  session(on)
+  const ran: string[][] = []
+  on('process.run', async ($, e: any) => { ran.push([...e.argv]); return { value: { exitCode: 0, stdout: '', stderr: '' } } })
+  on('session.id', async () => ({ value: 'session-under-test' }))
+  on('session.model', async () => ({ value: 'claude-opus-5-5' }))
+  on('env.get', async ($, e: any) => ({ value: e.name === 'OS' ? 'Windows_NT' : undefined }))
+  on('session.start', async ($, e, next) => ({ cwd: (e as any).cwd }))
+  on('command.register', async () => ({ value: undefined }))
+  on('ui.open', async () => ({ value: { isPlaced: false } }))
+  on('ui.status', async () => ({ value: undefined }))
+  mock.clock(on)
+  await $.session.start({ source: 'startup', cwd: '/tmp/project' } as any)
+  const ui = await $.ui.mount({ plugin: 'aptic', surface: 'desktop', component: 'Pane', requestId: 'aptic', props: {}, viewport: { columns: 60, rows: 48 } } as any)
+  ran.length = 0
+  await ui.press({ key: 'dashboard' } as any)
+  expect(ran).toEqual([['rundll32', 'url.dll,FileProtocolHandler', 'http://127.0.0.1:8787/dashboard']])
+  await ui.unmount()
+})
