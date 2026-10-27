@@ -26,8 +26,11 @@ export type GatewayView = {
 // This session's cache use, counted from the usage Claude Code reports per request
 export type CacheTotals = { read: number; written: number; fresh: number }
 
+// The pane's view choices, per user (copied to $.store so they outlast the session)
+export type PanePrefs = { collapsed: boolean; oldestFirst: boolean; settingsOpen: boolean }
+
 declare module 'claude-code' {
   interface PluginState {
-    'aptic': { gateway: GatewayView; cache: CacheTotals }
+    'aptic': { gateway: GatewayView; cache: CacheTotals; prefs: PanePrefs }
   }
 }
