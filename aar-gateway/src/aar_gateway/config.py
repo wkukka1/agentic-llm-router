@@ -24,16 +24,22 @@ log = logging.getLogger(__name__)
 #: says otherwise. ``proxy`` is the router's pool model whose predicted quality
 #: stands in for this one -- the defaults are LLMRouterBench's 2025 pool
 #: (the LLMRouterBench pool): no public dataset scores today's Claude
-#: tiers on shared prompts, so Opus reads GPT-5 (the pool's strongest), Sonnet
-#: reads Claude Sonnet 4 (the same family, one generation back) and Haiku reads
-#: Gemini 2.5 Flash (the pool's fast tier).
+#: tiers on shared prompts, so Opus reads GPT-5 (the pool's strongest), Haiku
+#: reads Gemini 2.5 Flash (the pool's fast tier) and Sonnet reads Qwen3-235B,
+#: the pool model halfway between them on real prompts. Sonnet used to read
+#: Claude Sonnet 4, which the pool scores *below* Gemini Flash (0.504 vs 0.523
+#: on 333 real prompts): Sonnet then looked worse than Haiku and cost more, so
+#: the router never picked it (0 of 75 turns, Oct 24-27).
+SONNET_STAND_IN = "qwen3-235b-a22b-2507"
+OLD_SONNET_STAND_IN = "claude-sonnet-4"  # the default before 0.7.4; a config still naming it gets the new one
+
 DEFAULT_MODELS: dict[str, dict] = {
     "claude-opus-5-5": {"lane": "anthropic", "proxy": "gpt-5", "context_window": 1_000_000,
                         "rejects": ["thinking_disabled"]},
     "claude-opus-5": {"lane": "anthropic", "proxy": "gpt-5", "context_window": 1_000_000},
-    "claude-sonnet-5-5": {"lane": "anthropic", "proxy": "claude-sonnet-4", "context_window": 1_000_000,
+    "claude-sonnet-5-5": {"lane": "anthropic", "proxy": SONNET_STAND_IN, "context_window": 1_000_000,
                           "rejects": ["thinking_disabled"]},
-    "claude-sonnet-5": {"lane": "anthropic", "proxy": "claude-sonnet-4", "context_window": 1_000_000},
+    "claude-sonnet-5": {"lane": "anthropic", "proxy": SONNET_STAND_IN, "context_window": 1_000_000},
     "claude-haiku-5-5": {"lane": "anthropic", "proxy": "gemini-2.5-flash", "context_window": 1_000_000},
     "claude-haiku-4-5": {"lane": "anthropic", "proxy": "gemini-2.5-flash", "context_window": 200_000,
                          "rejects": ["effort"]},
@@ -137,6 +143,8 @@ def load_settings(config_path: str | Path | None = None) -> dict:
     for model_id, m in local_models().items():
         models.setdefault(model_id, dict(m))
     for model_id, m in models.items():
+        if model_id.startswith("claude-sonnet-5") and m.get("proxy") == OLD_SONNET_STAND_IN:
+            m["proxy"] = SONNET_STAND_IN  # the old default, copied into config.yaml at setup
         lane = m.setdefault("lane", "anthropic")
         if lane not in ("anthropic", "openai"):
             raise ValueError(f"gateway config: model {model_id!r} has unknown lane {lane!r}")

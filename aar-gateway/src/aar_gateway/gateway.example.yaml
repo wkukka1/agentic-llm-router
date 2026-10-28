@@ -77,8 +77,9 @@ interceptor:
   # pricier than the one the user picked. `proxy` is the pool model whose
   # predicted quality stands in for this one. No public dataset scores today's
   # Claude tiers on shared prompts, so: Opus -> gpt-5 (the pool's strongest),
-  # Sonnet -> claude-sonnet-4 (same family, one generation back), Haiku ->
-  # gemini-2.5-flash (the pool's fast tier).
+  # Haiku -> gemini-2.5-flash (the pool's fast tier), Sonnet ->
+  # qwen3-235b-a22b-2507 (the pool model halfway between them on real prompts;
+  # claude-sonnet-4 scores below gemini-2.5-flash, so Sonnet was never picked).
   # Claude prices default to Anthropic's API rates (aar_gateway/pricing.py).
   # `rejects` lists request settings the model answers with a 400, so the
   # router never picks it for such a request (Opus/Sonnet 5.5 refuse
@@ -87,8 +88,8 @@ interceptor:
   models:
     claude-opus-5-5:   {lane: anthropic, proxy: gpt-5, context_window: 1000000, rejects: [thinking_disabled]}
     claude-opus-5:     {lane: anthropic, proxy: gpt-5, context_window: 1000000}
-    claude-sonnet-5-5: {lane: anthropic, proxy: claude-sonnet-4, context_window: 1000000, rejects: [thinking_disabled]}
-    claude-sonnet-5:   {lane: anthropic, proxy: claude-sonnet-4, context_window: 1000000}
+    claude-sonnet-5-5: {lane: anthropic, proxy: qwen3-235b-a22b-2507, context_window: 1000000, rejects: [thinking_disabled]}
+    claude-sonnet-5:   {lane: anthropic, proxy: qwen3-235b-a22b-2507, context_window: 1000000}
     claude-haiku-5-5:  {lane: anthropic, proxy: gemini-2.5-flash, context_window: 1000000}
     claude-haiku-4-5:  {lane: anthropic, proxy: gemini-2.5-flash, context_window: 200000, rejects: [effort]}
 

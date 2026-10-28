@@ -40,3 +40,19 @@ def test_unknown_lane(tmp_path):
 def test_router_settings_merge_over_defaults(tmp_path):
     s = load_settings(write(tmp_path, "interceptor: {router: {margin: 0.1}}"))
     assert s["router"]["margin"] == 0.1 and s["router"]["horizon_requests"] == 20
+
+
+def test_sonnet_reads_a_stand_in_between_opus_and_haiku_and_old_configs_are_moved(tmp_path):
+    """Seen live: Sonnet's stand-in, claude-sonnet-4, scores below Haiku's (gemini-2.5-flash)
+    on real prompts, so the router never picked Sonnet. Configs written at setup still name
+    the old default: they get the new stand-in; a stand-in someone chose is kept."""
+    from aar_gateway.config import DEFAULT_MODELS, SONNET_STAND_IN, load_settings
+    assert DEFAULT_MODELS["claude-sonnet-5-5"]["proxy"] == SONNET_STAND_IN == "qwen3-235b-a22b-2507"
+    old = tmp_path / "old.yaml"
+    old.write_text("interceptor:\n  models:\n"
+                   "    claude-sonnet-5-5: {lane: anthropic, proxy: claude-sonnet-4}\n"
+                   "    claude-opus-5-5: {lane: anthropic, proxy: gpt-5}\n")
+    assert load_settings(old)["models"]["claude-sonnet-5-5"]["proxy"] == SONNET_STAND_IN
+    chosen = tmp_path / "chosen.yaml"
+    chosen.write_text("interceptor:\n  models:\n    claude-sonnet-5-5: {lane: anthropic, proxy: glm-4.6}\n")
+    assert load_settings(chosen)["models"]["claude-sonnet-5-5"]["proxy"] == "glm-4.6"
