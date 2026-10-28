@@ -10,7 +10,7 @@ Claude Code. Subagents get a model by the kind of work they do.
 In Claude Code:
 
 ```
-/plugin install aptic --marketplace wkukka1/agentic-llm-router
+/plugin install aptic --marketplace wkukka1/aar-gateway
 ```
 
 ## What you get
@@ -43,7 +43,9 @@ In Claude Code:
   computer; no prompt text is stored.
 * If the router isn't answering, every request goes to the model you asked for.
 
-Source, tests and the measurements behind the numbers:
+Source and tests: https://github.com/wkukka1/aar-gateway
+
+The measurements behind the numbers:
 https://github.com/wkukka1/agentic-llm-router
 
 License: Apache-2.0.

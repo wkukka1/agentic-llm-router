@@ -111,7 +111,7 @@ const num = (n: number): string => n.toLocaleString('en-US')
 const C = {
   bg: '#1e2227', border: '#30363d', text: '#e6e9ec', secondary: '#c3c9cf', muted: '#9aa3ad',
   divider: '#2b3036', row: '#262b31', tile: '#252a30', card: '#1d2a29', cardBorder: '#2f4a46',
-  accent: '#5fb8a8', opus: '#8b95a1', up: '#e0b45c', warn: '#e0b45c', error: '#f08a7e',
+  accent: '#5fb8a8', opus: '#8b95a1', up: '#e0b45c', warn: '#e0b45c', error: '#f08a7e', faint: '#8f98a2', cardMuted: '#9fb8b3',
 }
 const MONO = "'JetBrains Mono', ui-monospace, monospace"
 const DASHBOARD = GATEWAY + '/dashboard'
@@ -139,7 +139,7 @@ const PREFS = 'pane.prefs'
 const noPrefs: PanePrefs = { collapsed: false, oldestFirst: false, settingsOpen: false }
 const prefs = atom({ plugin: 'aptic', key: 'prefs' } as const, noPrefs)
 
-const ROUTE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="${C.accent}" stroke-width="1.5" stroke-linecap="round"><circle cx="3.5" cy="12.5" r="1.8"/><circle cx="12.5" cy="3.5" r="1.8"/><path d="M5.3 12.5h4.2a2.5 2.5 0 0 0 0-5h-3a2.5 2.5 0 0 1 0-5h4.2"/></svg>`
+const ROUTE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="${C.accent}" stroke-width="1.6" stroke-linecap="round"><path d="M2 8h4M10 4h4M10 12h4M6 8l4-4M6 8l4 4"/></svg>`
 
 const ruleSvg = (color: string) =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="372" height="1" viewBox="0 0 372 1" preserveAspectRatio="none"><rect width="372" height="1" fill="${color}"/></svg>`
@@ -172,12 +172,12 @@ const chartSvg = (turns: TurnRow[]): string => {
   const bars = turns.map((t, i) => {
     const h = Math.max(2, ((base - top) * t.requests) / max)
     const cx = slot * i + slot / 2
-    return `<rect x="${(cx - bw / 2).toFixed(1)}" y="${(base - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${barColor(t)}"/>` +
-      `<text x="${cx.toFixed(1)}" y="${(base - h - 5).toFixed(1)}" text-anchor="middle" fill="${C.secondary}">${t.requests}</text>` +
-      `<text x="${cx.toFixed(1)}" y="${base + 16}" text-anchor="middle" fill="${C.muted}">${t.time}</text>`
+    return `<rect x="${(cx - bw / 2).toFixed(1)}" y="${(base - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${barColor(t)}"/>` +
+      `<text x="${cx.toFixed(1)}" y="${(base - h - 5).toFixed(1)}" text-anchor="middle" fill="${C.muted}">${t.requests}</text>` +
+      `<text x="${cx.toFixed(1)}" y="${base + 16}" text-anchor="middle" fill="${C.faint}">${t.time}</text>`
   }).join('')
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${MONO}" font-size="10">` +
-    `<rect x="0" y="${base}" width="${W}" height="1" fill="${C.divider}"/>${bars}</svg>`
+    `<rect x="0" y="${base}" width="${W}" height="1" fill="${C.border}"/>${bars}</svg>`
 }
 
 async function getJson($: any, path: string, init?: any): Promise<any | null> {
@@ -215,7 +215,7 @@ async function refresh($: any): Promise<void> {
 
 // How the plugin runs the gateway when it isn't running: uv fetches and caches it,
 // so the user installs nothing by hand. Pinned to the release this plugin ships with.
-export const GATEWAY_SPEC = 'aar-gateway @ git+https://github.com/wkukka1/agentic-llm-router@main#subdirectory=aar-gateway'
+export const GATEWAY_SPEC = 'aar-gateway @ git+https://github.com/wkukka1/aar-gateway@main'
 
 // Start the gateway if nothing answers: first-time setup (router file, config,
 // nothing else changed), then a background start. Resolves to what happened.
@@ -433,15 +433,16 @@ export const register: Register = (on, options) => {
     const saved = view.sessionSavedPct == null ? null : Math.round(view.sessionSavedPct)
     const allUsage = view.allSavedPct == null ? '–' : signed(-view.allSavedPct)
 
-    const label = (s: string) => <Text size="caption" weight="semibold" color={C.muted}>{s.toUpperCase()}</Text>
+    // Type steps follow the design: caption 11px, footnote 12px, body 13px, heading 16-20px, title 30px
+    const label = (s: string) => <Text size="caption" weight="medium" color={C.muted}>{s.toUpperCase()}</Text>
     const rule = (color: string) => Svg ? <Svg source={ruleSvg(color)} alt="" height={1} />
       : <Text color={color} wrap="truncate">{'─'.repeat(120)}</Text>
     const dot = (color: string) => <Text color={color}>■ </Text>
-    const legend = (
+    const legend = (counts: boolean) => (
       <Box columnGap="md" flexWrap="wrap">
-        <Text size="caption" color={C.muted}>{dot(C.opus)}{base} · {num(mix.kept)} req</Text>
-        <Text size="caption" color={C.muted}>{dot(C.accent)}Routed down · {num(mix.down)}</Text>
-        {mix.up ? <Text size="caption" color={C.muted}>{dot(C.up)}Routed up · {num(mix.up)}</Text> : null}
+        <Text size="caption" color={C.muted}>{dot(C.opus)}{base}{counts ? ` · ${num(mix.kept)} req` : ''}</Text>
+        <Text size="caption" color={C.muted}>{dot(C.accent)}Routed down{counts ? ` · ${num(mix.down)}` : ''}</Text>
+        {mix.up ? <Text size="caption" color={C.muted}>{dot(C.up)}Routed up{counts ? ` · ${num(mix.up)}` : ''}</Text> : null}
       </Box>
     )
     const icon = Svg ? <Svg source={ROUTE_ICON} alt="" width={16} height={16} /> : <Text color={C.accent}>⇄</Text>
@@ -449,47 +450,51 @@ export const register: Register = (on, options) => {
     const tile = (name: string, value: string, sub?: string, accent = false) => (
       <Box flexDirection="column" flexGrow={1} flexShrink={1} width="25%" paddingX="sm" paddingY="sm"
         backgroundColor={accent ? C.card : C.tile} borderStyle="round" borderColor={accent ? C.cardBorder : C.tile}>
-        <Text size="caption" color={C.muted}>{name}</Text>
+        <Text size="caption" color={accent ? C.cardMuted : C.muted}>{name}</Text>
         <Text size="heading" mono tabular color={accent ? C.accent : C.text}>{value}</Text>
-        {sub ? <Text size="caption" color={C.muted}>{sub}</Text> : null}
+        {sub ? <Text size="caption" color={accent ? C.cardMuted : C.muted}>{sub}</Text> : null}
       </Box>
     )
+
+    // the pane's whole height, so the card fills it and the footer sits at the bottom
+    const fill = e.props.scroll?.bodyRows ?? e.viewport?.rows
 
     if (collapsed) {
       const chartTurns = all.slice(-12)
       const maxReq = Math.max(1, ...chartTurns.map(t => t.requests))
       return (
-        <Box flexDirection="column" backgroundColor={C.bg} borderStyle="round" borderColor={C.border} paddingX="md" paddingY={1} rowGap={1}>
-        <Box justifyContent="space-between" alignItems="center">
-          <Box columnGap="sm" alignItems="center">
-            {icon}
-            <Text size="body" weight="semibold" color={C.text}>aptic</Text>
-            <Text size="footnote" color={C.muted}>· {all.length} turn{all.length === 1 ? '' : 's'} · {num(requests)} req</Text>
+        <Box flexDirection="column" flexGrow={1} minHeight={fill} backgroundColor={C.bg} borderStyle="round" borderColor={C.border} paddingX="md" paddingY="md" rowGap="md">
+          <Box justifyContent="space-between" alignItems="center">
+            <Box columnGap="sm" alignItems="center">
+              {icon}
+              <Text size="body" weight="semibold" color={C.text}>aptic</Text>
+              <Text size="footnote" color={C.muted}>· {all.length} turn{all.length === 1 ? '' : 's'} · {num(requests)} req</Text>
+            </Box>
+            <Button key="expand" variant="secondary" onPress={toggle('collapsed')}><Text size="footnote" color={C.secondary}>▾</Text></Button>
           </Box>
-          <Button key="expand" variant="secondary" plain onPress={toggle('collapsed')}><Text color={C.secondary}>▾</Text></Button>
-        </Box>
-        {down}
-        <Box columnGap="sm" flexWrap="nowrap">
-          {tile('This session', saved == null ? '–' : `${saved}%`, sessionReason(all, true))}
-          {tile('All sessions', allUsage, `plan usage · ${num(view.allRequests)} req`, true)}
-        </Box>
-        <Box flexDirection="column" rowGap="xs">
-          <Box justifyContent="space-between">
-            <Text size="caption" color={C.muted}>Requests per turn</Text>
-            <Text size="caption" mono color={C.muted}>cache {hit == null ? '–' : hit + '%'}</Text>
+          {down}
+          <Box columnGap="sm" flexWrap="nowrap">
+            {tile('This session', saved == null ? '–' : `${saved}%`, sessionReason(all, true))}
+            {tile('All sessions', allUsage, `plan usage · ${num(view.allRequests)} req`, true)}
           </Box>
-          {chartTurns.length === 0 ? <Text size="footnote" color={C.muted}>No turns yet in this session.</Text>
-            : Svg ? <Svg source={chartSvg(chartTurns)} alt={'Requests per turn: ' + chartTurns.map(t => `${t.time} ${t.requests}`).join(', ')} />
-            : chartTurns.map(t => (
-              <Text>
-                <Text color={C.muted}>{t.time} </Text>
-                <Text color={barColor(t)}>{'█'.repeat(Math.max(1, Math.round((t.requests / maxReq) * 20)))}</Text>
-                <Text color={C.secondary}> {t.requests}</Text>
-              </Text>
-            ))}
-        </Box>
-        {legend}
-      </Box>)
+          <Box flexDirection="column" rowGap="sm">
+            <Box justifyContent="space-between">
+              <Text size="caption" color={C.muted}>Requests per turn</Text>
+              <Text size="caption" color={C.muted}>cache {hit == null ? '–' : hit + '%'}</Text>
+            </Box>
+            {chartTurns.length === 0 ? <Text size="footnote" color={C.muted}>No turns yet in this session.</Text>
+              : Svg ? <Svg source={chartSvg(chartTurns)} alt={'Requests per turn: ' + chartTurns.map(t => `${t.time} ${t.requests}`).join(', ')} />
+              : chartTurns.map(t => (
+                <Text>
+                  <Text color={C.muted}>{t.time} </Text>
+                  <Text color={barColor(t)}>{'█'.repeat(Math.max(1, Math.round((t.requests / maxReq) * 20)))}</Text>
+                  <Text color={C.secondary}> {t.requests}</Text>
+                </Text>
+              ))}
+          </Box>
+          <Box flexGrow={1} />
+          {legend(false)}
+        </Box>)
     }
 
     // a turn takes three rows with its divider (more with subagents or errors); the rest of the pane about 22
@@ -502,83 +507,83 @@ export const register: Register = (on, options) => {
     }
     const cols = { time: 6, req: 5, cache: 5 }
 
+    // header and footer on divider rules, the footer held at the bottom
     return (
-      <Box flexDirection="column" backgroundColor={C.bg} borderStyle="round" borderColor={C.border} paddingX="md" paddingY={1} rowGap={1}>
-      <Box justifyContent="space-between" alignItems="center">
-        <Box columnGap="sm" alignItems="center">
-          {icon}
-          <Text size="body" weight="semibold" color={C.text}>aptic</Text>
-          <Text size="footnote" color={C.muted}>router</Text>
+      <Box flexDirection="column" flexGrow={1} minHeight={fill} backgroundColor={C.bg} borderStyle="round" borderColor={C.border}>
+        <Box justifyContent="space-between" alignItems="center" paddingX="md" paddingY="sm">
+          <Box columnGap="sm" alignItems="center">
+            {icon}
+            <Text size="body" weight="semibold" color={C.text}>aptic</Text>
+            <Text size="footnote" color={C.muted}>router</Text>
+          </Box>
+          <Button key="settings" variant="secondary" plain onPress={toggle('settingsOpen')}><Text size="body" color={C.muted}>⚙︎</Text></Button>
         </Box>
-        <Box columnGap="xs">
-          <Button key="settings" variant="secondary" plain onPress={toggle('settingsOpen')}><Text color={C.secondary}>⚙︎</Text></Button>
-          <Button key="collapse" variant="secondary" plain onPress={toggle('collapsed')}><Text color={C.secondary}>▴</Text></Button>
+        {rule(C.divider)}
+        <Box flexDirection="column" paddingX="md" paddingY="md" rowGap="md">
+          {settingsOpen && (
+            <Box flexDirection="column" rowGap="xs" paddingX="sm" paddingY="sm" backgroundColor={C.tile} borderStyle="round" borderColor={C.border}>
+              <Text size="footnote" color={C.secondary}>Turn order and the collapsed view are remembered for you.</Text>
+              <Text size="footnote" color={C.muted}>Routing on or off: /plugin, then aptic, then Configure.</Text>
+              <Button key="collapse" variant="secondary" onPress={toggle('collapsed')}><Text size="caption" color={C.secondary}>Collapse the pane ▴</Text></Button>
+            </Box>
+          )}
+          {down}
+          <Box flexDirection="column" rowGap="xs">
+            {label('This session')}
+            <Box columnGap="sm" alignItems="flex-end">
+              <Text size="title" mono tabular weight="medium" color={saved != null && saved < 0 ? C.warn : C.text}>
+                {saved == null ? '–' : (saved < 0 ? MINUS + -saved : saved) + '%'}
+              </Text>
+              <Text size="body" color={C.secondary}>{saved != null && saved < 0 ? 'more than' : 'saved vs.'} {base}</Text>
+            </Box>
+            <Text size="footnote" color={C.muted}>{sessionReason(all)}</Text>
+          </Box>
+          <Box flexDirection="column" rowGap="xs">
+            {Svg ? <Svg source={mixSvg(mix)} alt={`${mix.kept} requests on ${base}, ${mix.down} routed down`} height={8} />
+              : <Text>
+                <Text color={C.opus}>{'█'.repeat(Math.round((mix.kept / Math.max(requests, 1)) * 30))}</Text>
+                <Text color={C.accent}>{'█'.repeat(Math.round((mix.down / Math.max(requests, 1)) * 30))}</Text>
+                <Text color={C.up}>{'█'.repeat(Math.round((mix.up / Math.max(requests, 1)) * 30))}</Text>
+              </Text>}
+            {legend(true)}
+          </Box>
+          <Box columnGap="sm" flexWrap="nowrap">
+            {tile('Requests', num(requests))}
+            {tile('Cache hit', hit == null ? '–' : hit + '%')}
+            {tile('Turns', num(all.length))}
+          </Box>
+          <Box justifyContent="space-between" alignItems="center" paddingX="md" paddingY="sm"
+            backgroundColor={C.card} borderStyle="round" borderColor={C.cardBorder}>
+            <Box flexDirection="column">
+              <Text size="caption" color={C.cardMuted}>All sessions</Text>
+              <Text size="body" color={C.text}>{num(view.allRequests)} requests routed</Text>
+            </Box>
+            <Box flexDirection="column" alignItems="flex-end">
+              <Text size="heading" mono tabular color={C.accent}>{allUsage}</Text>
+              <Text size="caption" color={C.cardMuted}>plan usage</Text>
+            </Box>
+          </Box>
         </Box>
-      </Box>
-      {settingsOpen && (
-        <Box flexDirection="column" rowGap="xs" paddingX="sm" paddingY="sm" backgroundColor={C.tile} borderStyle="round" borderColor={C.border}>
-          <Text size="footnote" color={C.secondary}>Turn order and the collapsed view are remembered for you.</Text>
-          <Text size="footnote" color={C.muted}>Routing on or off: /plugin, then aptic, then Configure.</Text>
-        </Box>
-      )}
-      {down}
-      {rule(C.divider)}
-      <Box flexDirection="column" rowGap="xs">
-        {label('This session')}
-        <Box columnGap="sm" alignItems="flex-end">
-          <Text size="title" mono tabular weight="semibold" color={saved != null && saved < 0 ? C.warn : C.text}>
-            {saved == null ? '–' : (saved < 0 ? MINUS + -saved : saved) + '%'}
-          </Text>
-          <Text size="footnote" color={C.secondary}>{saved != null && saved < 0 ? 'more than' : 'saved vs.'} {base}</Text>
-        </Box>
-        <Text size="footnote" color={C.muted}>{sessionReason(all)}</Text>
-      </Box>
-      <Box flexDirection="column" rowGap="xs">
-        {Svg ? <Svg source={mixSvg(mix)} alt={`${mix.kept} requests on ${base}, ${mix.down} routed down`} height={8} />
-          : <Text>
-            <Text color={C.opus}>{'█'.repeat(Math.round((mix.kept / Math.max(requests, 1)) * 30))}</Text>
-            <Text color={C.accent}>{'█'.repeat(Math.round((mix.down / Math.max(requests, 1)) * 30))}</Text>
-            <Text color={C.up}>{'█'.repeat(Math.round((mix.up / Math.max(requests, 1)) * 30))}</Text>
-          </Text>}
-        {legend}
-      </Box>
-      <Box columnGap="sm" flexWrap="nowrap">
-        {tile('Requests', num(requests))}
-        {tile('Cache hit', hit == null ? '–' : hit + '%')}
-        {tile('Turns', num(all.length))}
-      </Box>
-      <Box justifyContent="space-between" alignItems="center" paddingX="md" paddingY="sm"
-        backgroundColor={C.card} borderStyle="round" borderColor={C.cardBorder}>
-        <Box flexDirection="column">
-          <Text size="caption" color={C.muted}>All sessions</Text>
-          <Text size="footnote" weight="semibold" color={C.text}>{num(view.allRequests)} requests routed</Text>
-        </Box>
-        <Box flexDirection="column" alignItems="flex-end">
-          <Text size="heading" mono tabular color={C.accent}>{allUsage}</Text>
-          <Text size="caption" color={C.muted}>plan usage</Text>
-        </Box>
-      </Box>
-      <Box flexDirection="column">
-        <Box justifyContent="space-between" alignItems="center">
+        <Box justifyContent="space-between" alignItems="center" paddingX="md" paddingBottom="xs">
           {label('Turns')}
           <Button key="sort" variant="secondary" onPress={toggle('oldestFirst')}>
             <Text size="caption" color={C.secondary}>{oldestFirst ? 'Oldest first' : 'Newest first'} ▾</Text>
           </Button>
         </Box>
-        <Box columnGap="sm" paddingY="xs">
-          <Box width={cols.time}><Text size="caption" color={C.muted}>Time</Text></Box>
-          <Box flexGrow={1}><Text size="caption" color={C.muted}>Model · decision</Text></Box>
-          <Box width={cols.req} justifyContent="flex-end"><Text size="caption" color={C.muted}>Req</Text></Box>
-          <Box width={cols.cache} justifyContent="flex-end"><Text size="caption" color={C.muted}>Cache</Text></Box>
+        <Box columnGap="sm" paddingX="md" paddingY="xs">
+          <Box width={cols.time}><Text size="caption" color={C.faint}>Time</Text></Box>
+          <Box flexGrow={1}><Text size="caption" color={C.faint}>Model · decision</Text></Box>
+          <Box width={cols.req} justifyContent="flex-end"><Text size="caption" color={C.faint}>Req</Text></Box>
+          <Box width={cols.cache} justifyContent="flex-end"><Text size="caption" color={C.faint}>Cache</Text></Box>
         </Box>
-        {rule(C.row)}
-        {turns.length === 0 && <Box paddingY="sm"><Text size="footnote" color={C.muted}>No turns yet in this session.</Text></Box>}
+        {rule(C.divider)}
+        {turns.length === 0 && <Box paddingX="md" paddingY="sm"><Text size="footnote" color={C.muted}>No turns yet in this session.</Text></Box>}
         {turns.map((t: TurnRow) => (
           <Box key={`turn-${t.time}-${all.indexOf(t)}`} flexDirection="column">
-            <Box columnGap="sm" paddingY="xs">
+            <Box columnGap="sm" paddingX="md" paddingY="sm" alignItems="center">
               <Box width={cols.time}><Text size="footnote" mono color={C.muted}>{t.time}</Text></Box>
               <Box flexGrow={1} flexDirection="column">
-                <Text size="footnote" weight="semibold" color={C.text}>{t.models.map(modelName).join(', ') || modelName(t.requested_model)}</Text>
+                <Text size="body" weight="medium" color={C.text}>{t.models.map(modelName).join(', ') || modelName(t.requested_model)}</Text>
                 <Text size="caption" color={kept(t) ? C.muted : C.accent}>{decision(t)}</Text>
                 {t.errors ? <Text size="caption" color={C.error}>{t.errors} failed and retried on your model</Text> : null}
                 {t.subagents.map(a => (
@@ -586,16 +591,17 @@ export const register: Register = (on, options) => {
                 ))}
               </Box>
               <Box width={cols.req} justifyContent="flex-end"><Text size="footnote" mono tabular color={C.text}>{num(t.requests)}</Text></Box>
-              <Box width={cols.cache} justifyContent="flex-end"><Text size="footnote" mono tabular color={C.secondary}>{cacheOf(t)}</Text></Box>
+              <Box width={cols.cache} justifyContent="flex-end"><Text size="footnote" mono tabular color={C.muted}>{cacheOf(t)}</Text></Box>
             </Box>
             {rule(C.row)}
           </Box>
         ))}
-      </Box>
-      <Box justifyContent="space-between" alignItems="center">
-        <Text size="caption" color={C.muted}>Baseline: always {base}</Text>
-        <Button key="dashboard" variant="secondary" plain onPress={() => openDashboard($)}><Text size="caption" color={C.accent} underline>View all sessions</Text></Button>
-      </Box>
-    </Box>)
+        <Box flexGrow={1} />
+        {rule(C.divider)}
+        <Box justifyContent="space-between" alignItems="center" paddingX="md" paddingY="sm">
+          <Text size="caption" color={C.faint}>Baseline: always {base}</Text>
+          <Button key="dashboard" variant="secondary" plain onPress={() => openDashboard($)}><Text size="caption" color={C.accent} underline>View all sessions</Text></Button>
+        </Box>
+      </Box>)
   })
 }

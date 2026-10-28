@@ -5,10 +5,10 @@
   "description": "Aptic picks the cheapest Claude model that can handle each turn and subagent, and shows each turn's model, cache use and savings in a pane inside Claude Code.",
   "author": {
     "name": "Deuce Labs",
-    "url": "https://github.com/wkukka1/agentic-llm-router"
+    "url": "https://github.com/wkukka1/aar-gateway"
   },
-  "homepage": "https://github.com/wkukka1/agentic-llm-router",
-  "repository": "https://github.com/wkukka1/agentic-llm-router",
+  "homepage": "https://github.com/wkukka1/aar-gateway",
+  "repository": "https://github.com/wkukka1/aar-gateway",
   "keywords": [
     "routing",
     "cost",

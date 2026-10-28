@@ -78,6 +78,7 @@ test('the pane collapses to a summary and a chart, and remembers it', async ($, 
   mock.clock(on)
   await $.session.start({ source: 'startup', cwd: '/tmp/project' } as any)
   const ui = await $.ui.mount({ plugin: 'aptic', surface: 'terminal', component: 'Pane', requestId: 'aptic', props: {}, viewport: { columns: 60, rows: 48 } } as any)
+  await ui.press({ key: 'settings' } as any)
   await ui.press({ key: 'collapse' } as any)
   const tree = words(await ui.drawn())
   expect(tree).toMatch(/· 2 turns · 3 req/)

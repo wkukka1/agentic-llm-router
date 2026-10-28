@@ -29,7 +29,7 @@ You need:
 Then, in Claude Code:
 
 ```
-/plugin install aptic --marketplace wkukka1/agentic-llm-router
+/plugin install aptic --marketplace wkukka1/aar-gateway
 ```
 
 Start a new session. The plugin starts the router in the background (the
@@ -123,7 +123,7 @@ for Claude Code versions without plugins, or to route every session on the
 machine.
 
 ```bash
-uv tool install "aar-gateway @ git+https://github.com/wkukka1/agentic-llm-router@main#subdirectory=aar-gateway"
+uv tool install git+https://github.com/wkukka1/aar-gateway
 aar-gateway setup
 ```
 
@@ -237,7 +237,7 @@ what hasn't been sent. (The server is in [`src/ingest`](src/ingest/README.md).)
 
 * [aar-gateway/docs/gateway.md](aar-gateway/docs/gateway.md): how routing
   decides, the cost model, subagents, other providers (OpenAI-compatible APIs, Ollama)
-* [mods/aptic](mods/aptic/README.md): the Claude Code plugin
+* [aar-gateway/mods/aptic](aar-gateway/mods/aptic/README.md): the Claude Code plugin
 * [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md): the research code (data
   pipeline, router training, evaluation)
 * [docs/RUNBOOK.md](docs/RUNBOOK.md): every pipeline, step by step
