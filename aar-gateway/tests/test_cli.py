@@ -512,3 +512,17 @@ def test_output_with_marks_survives_a_legacy_code_page(monkeypatch):
     print("✓ router")  # the doctor's mark: not in cp1252
     out.flush()
     assert out.buffer.getvalue().startswith(b"? router")
+
+
+def test_stop_leaves_the_claude_code_plugin_installed_and_disable_removes_it(claude_settings, monkeypatch, capsys):
+    """Seen live: `aar-gateway stop` ran the full disable, which uninstalls the Claude
+    Code plugin and its marketplace, so stopping the router removed Aptic."""
+    removed = []
+    monkeypatch.setattr(cli, "_ensure_running", lambda url, quiet=False: True)
+    monkeypatch.setattr(cli, "_stop", lambda: True)
+    monkeypatch.setattr(cli, "_mod_remove", lambda: removed.append("removed"))
+    cli.main(["start"])
+    assert cli.main(["stop"]) == 0
+    assert removed == []
+    assert cli.main(["disable"]) == 0
+    assert removed == ["removed"]

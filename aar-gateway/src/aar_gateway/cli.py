@@ -1282,14 +1282,16 @@ def _mod_remove() -> None:
         pass
 
 
-def _disable() -> int:
-    """Takes out what :func:`_enable` added; the rest of the settings stay."""
+def _disable(remove_plugin: bool = True) -> int:
+    """Takes out what :func:`_enable` added; the rest of the settings stay. ``stop``
+    keeps the Claude Code plugin: stopping the router must not uninstall it."""
     path = _claude_settings_path()
     with _settings_lock(path):
         _disable_settings(path)
     if sys.platform == "darwin" or sys.platform.startswith("linux"):
         _service("uninstall")
-    _mod_remove()
+    if remove_plugin:
+        _mod_remove()
     print("every `claude` session talks to Anthropic directly again (`aar-gateway start` turns it back on)")
     return 0
 
@@ -1666,7 +1668,7 @@ def main(argv: list[str] | None = None) -> int:
         print("every `claude` session now goes through the gateway (`aar-gateway stop` undoes that)")
         return 0
     if args.command == "stop":
-        _disable()  # Claude Code first, so no new request reaches the gateway
+        _disable(remove_plugin=False)  # Claude Code first, so no new request reaches the gateway
         _stop()
         return 0
     if args.command == "restart":
