@@ -44,7 +44,7 @@ def test_the_mod_only_talks_to_the_local_gateway_and_never_changes_settings():
     assert "$.http.fetch(GATEWAY + path" in code and code.count("$.http.fetch(") == 1
     urls = set(re.findall(r"https?://[^'\"`\s#]+", code)) - {"http://www.w3.org/2000/svg"}
     assert urls == {
-        "http://127.0.0.1:8787", "https://github.com/wkukka1/agentic-llm-router@main", "https://docs.astral.sh/uv/"}
+        "http://127.0.0.1:8787", "https://github.com/wkukka1/agentic-llm-router@v0.7.1", "https://docs.astral.sh/uv/"}
     assert "/api/preferences" not in code and "/v1/messages" not in code and "/api/shutdown" not in code
 
 

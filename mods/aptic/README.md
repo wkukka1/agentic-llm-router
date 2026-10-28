@@ -25,7 +25,7 @@ In Claude Code:
   kind, the model they ran on, and whether their answer came back to this
   session (`↩ answered ~29 tok`) or they are still working. When the router
   keeps prompt history, each subagent's task and the start of its answer show
-  too. A Subagents row sums them up: spawned, answered, and their share of the
+  too (see below). A Subagents row sums them up: spawned, answered, and their share of the
   session's cost. A chevron collapses the pane to the two savings and a
   requests-per-turn chart; the pane remembers your choice.
 * **A line under each answer** with the model that answered and its cache use,
@@ -40,13 +40,23 @@ In Claude Code:
 
 ## What it does on your machine
 
-* Starts the router (a local process on `127.0.0.1:8787`) when it isn't running,
-  with `uvx`, from this repository; first run writes `~/.aar-gateway/config.yaml`
-  and the router file. Nothing else is installed and no settings are changed.
-* Sends your typed message to that local process to pick a model, and reports
-  each request's token counts to it so it can show savings. Nothing leaves your
-  computer; no prompt text is stored.
-* If the router isn't answering, every request goes to the model you asked for.
+* **Downloads and runs the router.** The first time, `uv` downloads the router
+  from GitHub (`wkukka1/agentic-llm-router`, release `v0.7.1`) and its Python
+  packages, then starts it on `127.0.0.1:8787`, which only this computer can
+  reach. It writes `~/.aar-gateway/` (a config file and the router's model
+  file). It doesn't change your Claude Code settings and doesn't install a
+  login service.
+* **Reads what you type, locally.** Your message goes to that local router to
+  choose a model. Claude Code then sends the request to Anthropic with your own
+  login, as it always does. The router doesn't send your messages anywhere else.
+* **Keeps a history on this computer.** When the history is on, the router
+  keeps each message you type, with the model it used, and each subagent's
+  task, in `~/.aar-gateway/`. It never leaves the machine. Turn it off with
+  `aar-gateway history off`.
+* **Sharing is off.** Anonymous usage sharing is off by default, and the plugin
+  never turns it on.
+* **Falls back if the router is down.** Every request then goes to the model
+  you asked for.
 
 Source, tests and the measurements behind the numbers:
 https://github.com/wkukka1/agentic-llm-router

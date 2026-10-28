@@ -248,7 +248,7 @@ async function refresh($: any): Promise<void> {
 
 // How the plugin runs the gateway when it isn't running: uv fetches and caches it,
 // so the user installs nothing by hand. Pinned to the release this plugin ships with.
-export const GATEWAY_SPEC = 'aar-gateway @ git+https://github.com/wkukka1/agentic-llm-router@main#subdirectory=aar-gateway'
+export const GATEWAY_SPEC = 'aar-gateway @ git+https://github.com/wkukka1/agentic-llm-router@v0.7.1#subdirectory=aar-gateway'
 
 // Start the gateway if nothing answers: first-time setup (router file, config,
 // nothing else changed), then a background start. Resolves to what happened.
