@@ -41,7 +41,7 @@ In Claude Code:
 ## What it does on your machine
 
 * **Downloads and runs the router.** The first time, `uv` downloads the router
-  from GitHub (`wkukka1/agentic-llm-router`, release `v0.7.3`) and its Python
+  from GitHub (`wkukka1/agentic-llm-router`, release `v0.7.4`) and its Python
   packages, then starts it on `127.0.0.1:8787`, which only this computer can
   reach. It writes `~/.aar-gateway/` (a config file and the router's model
   file). It doesn't change your Claude Code settings and doesn't install a
