@@ -140,27 +140,37 @@ def load_savings_model(rcfg: Mapping) -> tuple[object | None, str | None]:
 
 
 def calibration_offsets(graded_file: Path, router_model, settings: Mapping,
-                        shrink: float = 20.0) -> dict[str, float]:
+                        shrink: float = 20.0, relative_shrink: float = 100.0) -> dict[str, float]:
     """Per model: how far the user's graded scores sit from its stand-in's
-    predictions, over the prompts the user had graded. Shrunk toward 0 by
-    ``n / (n + shrink)`` so a handful of grades can't swing it. Measured on
-    the first 23 graded prompts: Opus +0.27, Sonnet +0.30, Haiku +0.35 -- the
-    stand-ins rated Haiku 0.10 below Opus, the user's own work 0.02."""
+    predictions, over the prompts the user had graded. Measured on the first
+    23 graded prompts: Opus +0.27, Sonnet +0.30, Haiku +0.35 -- the stand-ins
+    rated Haiku 0.10 below Opus, the user's own work 0.02.
+
+    Two parts, shrunk apart. The level all models share (the user's grades sit
+    above the benchmark's) is shrunk toward 0 by ``n / (n + shrink)``. Each
+    model's distance from that level -- what reorders the models -- is shrunk
+    by ``n / (n + relative_shrink)``, much harder: seen live, 30 grades a model
+    put Sonnet 0.035 below Haiku (inside the noise), and the router then never
+    picked Sonnet."""
     from .graded import load_graded
 
     prompts, models, scores = load_graded(graded_file)
     if not prompts:
         return {}
     frame = router_model.route_text(prompts).score_frame().reset_index(drop=True)
-    offsets = {}
+    gaps, counts = {}, {}
     for j, model in enumerate(models):
         proxy = router_column(model, settings["models"].get(model) or {}, frame.columns)
         rows = np.flatnonzero(~np.isnan(scores[:, j]))
         if proxy not in frame.columns or not len(rows):
             continue
-        gap = float(scores[rows, j].mean() - frame[proxy].iloc[rows].mean())
-        offsets[model] = gap * len(rows) / (len(rows) + shrink)
-    return offsets
+        gaps[model] = float(scores[rows, j].mean() - frame[proxy].iloc[rows].mean())
+        counts[model] = len(rows)
+    if not gaps:
+        return {}
+    level = sum(gaps.values()) / len(gaps)
+    shared = level * len(prompts) / (len(prompts) + shrink)
+    return {m: shared + (g - level) * counts[m] / (counts[m] + relative_shrink) for m, g in gaps.items()}
 
 
 def build_picker(settings: Mapping, router_model=None, graded=None,
@@ -202,7 +212,8 @@ def build_picker(settings: Mapping, router_model=None, graded=None,
             calibration["state"] = (
                 mtime, len(load_graded(graded_file)[0]),
                 calibration_offsets(graded_file, router_model, settings,
-                                    float(rcfg.get("calibration_shrink", 20))))
+                                    float(rcfg.get("calibration_shrink", 20)),
+                                    float(rcfg.get("calibration_relative_shrink", 100))))
         return calibration["state"][2]
 
     def calibration_status() -> dict:

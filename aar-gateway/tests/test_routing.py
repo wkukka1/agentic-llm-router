@@ -217,7 +217,9 @@ def test_stand_ins_are_calibrated_on_the_users_grades(settings, router, tmp_path
     router.scores = {"strong": 0.70, "mid": 0.55, "weak": 0.50}
     graded = tmp_path / "graded.jsonl"
     rows = []
-    for i in range(200):  # the offset is shrunk by n/(n+20): near full strength at 200
+    # the shared level is shrunk by n/(n+20), each model's distance from it by n/(n+100):
+    # near full strength at 1000 grades a model
+    for i in range(1000):
         for model, score in {"claude-opus-5": 0.80, "claude-haiku-4-5": 0.79}.items():
             rows.append({"prompt_hash": f"h{i}", "prompt": f"question {i}", "model": model, "score": score})
     graded.write_text("\n".join(_json.dumps(r) for r in rows))
@@ -241,6 +243,25 @@ def test_calibration_is_shrunk_while_grades_are_few(settings, router, tmp_path):
                                              "model": "claude-opus-5", "score": 0.9}) for i in range(5)))
     off = calibration_offsets(graded, router, settings, shrink=20)
     assert abs(off["claude-opus-5"] - 0.4 * 5 / 25) < 1e-9
+
+
+def test_a_few_dozen_grades_cannot_reorder_the_models(settings, router, tmp_path):
+    """Seen live: 30 grades a model put Sonnet 0.035 below Haiku, inside the noise, and the
+    router never picked Sonnet. The level the grades share is kept; the gap between models
+    is shrunk hard until there are many grades."""
+    import json as _json
+
+    from aar_gateway.routing import calibration_offsets
+
+    router.scores = {"strong": 0.5, "mid": 0.5, "weak": 0.5}
+    graded = tmp_path / "graded.jsonl"
+    rows = [{"prompt_hash": f"h{i}", "prompt": f"q{i}", "model": m, "score": s}
+            for i in range(30) for m, s in {"claude-sonnet-5": 0.765, "claude-haiku-4-5": 0.800}.items()]
+    graded.write_text("\n".join(_json.dumps(r) for r in rows))
+    off = calibration_offsets(graded, router, settings, shrink=20)
+    level = (0.265 + 0.300) / 2 * 30 / 50
+    assert off["claude-sonnet-5"] == pytest.approx(level - 0.0175 * 30 / 130)
+    assert off["claude-haiku-4-5"] - off["claude-sonnet-5"] == pytest.approx(0.035 * 30 / 130)  # 0.008, not 0.035
 
 
 def test_a_turns_prediction_is_blended_with_the_previous_turns(settings, router):
