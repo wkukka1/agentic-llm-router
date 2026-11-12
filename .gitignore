@@ -59,3 +59,5 @@ evaluations/LLMRouterBench/
 
 # live training logs for the Elo-manifold runs (results are committed as summaries)
 investigations/elo_manifold/logs/
+investigations/router_bakeoff/logs/
+.venv-llmrouter/
