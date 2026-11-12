@@ -187,7 +187,7 @@ def _spearman_ndcg(pred: np.ndarray, true: np.ndarray, k: int = 3):
 
 
 def evaluate_split(policies: dict, true: pd.DataFrame, cost: pd.DataFrame, datasets: np.ndarray,
-                   ref_cost: float, n_boot: int, anchor: str, rng) -> tuple:
+                   ref_cost: float, n_boot: int, anchor_router: str, rng) -> tuple:
     """policies: {name: {lam: choice index array}} -> (points, summary, per_dataset)."""
     T, C = true.to_numpy(np.float64), cost.to_numpy(np.float64)
     n = len(T)
@@ -244,28 +244,33 @@ def evaluate_split(policies: dict, true: pd.DataFrame, cost: pd.DataFrame, datas
                                                lo_pos, hi, log=True)})
 
     # paired bootstrap of differences to the anchor, resampling queries within dataset
-    if n_boot and anchor in policies:
+    if n_boot and anchor_router in policies:
         names = list(policies)
         keys = ["aiq_log", "macro_aiq_log", "q@1%", "macro_q@1%"]
         draws = {nm: {k: [] for k in keys} for nm in names}
         for _ in range(n_boot):
             res = {g: rng.choice(ix, size=len(ix), replace=True) for g, ix in ds_idx.items()}
+            allr = np.concatenate(list(res.values()))
+            b_anchor = (C[allr, cheap].mean(), T[allr, cheap].mean())
+            b_mac = (np.mean([C[ix, cheap].mean() for ix in res.values()]),
+                     np.mean([T[ix, cheap].mean() for ix in res.values()]))
             vals = {}
             for nm in names:
                 pts, mac = stats(nm, res)
-                vals[nm] = {"aiq_log": aiq(pts, anchor, lo_pos, hi, 120, log=True),
-                            "macro_aiq_log": aiq(mac, mac_anchor, lo_pos, hi, 120, log=True),
-                            "q@1%": quality_at(pts, anchor, 0.01 * ref_cost),
-                            "macro_q@1%": quality_at(mac, mac_anchor, 0.01 * ref_cost)}
+                vals[nm] = {"aiq_log": aiq(pts, b_anchor, lo_pos, hi, 120, log=True),
+                            "macro_aiq_log": aiq(mac, b_mac, lo_pos, hi, 120, log=True),
+                            "q@1%": quality_at(pts, b_anchor, 0.01 * ref_cost),
+                            "macro_q@1%": quality_at(mac, b_mac, 0.01 * ref_cost)}
             for nm in names:
                 for k in keys:
-                    draws[nm][k].append(vals[nm][k] - vals[anchor][k])
+                    draws[nm][k].append(vals[nm][k] - vals[anchor_router][k])
         for r in rows:
             for k in keys:
                 a = np.array(draws[r["router"]][k], dtype=float)
                 a = a[np.isfinite(a)]
                 if len(a):
                     r[f"d_{k}_vs_anchor_lo"], r[f"d_{k}_vs_anchor_hi"] = np.quantile(a, [0.025, 0.975])
+                    r[f"d_{k}_vs_anchor_p_le0"] = float((a <= 0).mean())
     return pd.DataFrame(points), pd.DataFrame(rows), pd.DataFrame(per_ds)
 
 
