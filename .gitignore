@@ -56,3 +56,6 @@ build/
 
 # third-party benchmark clone (its own git repo; fetched locally, never committed)
 evaluations/LLMRouterBench/
+
+# live training logs for the Elo-manifold runs (results are committed as summaries)
+investigations/elo_manifold/logs/
