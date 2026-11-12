@@ -61,3 +61,4 @@ evaluations/LLMRouterBench/
 investigations/elo_manifold/logs/
 investigations/router_bakeoff/logs/
 .venv-llmrouter/
+.venv-routellm/
