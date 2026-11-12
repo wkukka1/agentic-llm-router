@@ -1,0 +1,5 @@
+run,bce,auc,spearman_r,regret,delta_bce_vs_model_mean,best_epoch,min
+em-bert,0.5125,0.8108,0.5282,0.1562,-0.0606,38,21.0
+em-bert-delta,0.5025,0.818,0.5414,0.1428,-0.0706,43,46.1
+em-manifold-only,0.5338,0.7962,0.5039,0.1579,-0.0394,38,38.9
+em-manifold-delta,0.5038,0.8168,0.5397,0.1483,-0.0693,44,47.4
