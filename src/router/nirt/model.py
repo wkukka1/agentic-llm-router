@@ -59,6 +59,7 @@ _NIRT_ONLY_KNOBS = {
     "query_head_batchnorm": lambda v: not v,
     "profile_latent_dim": lambda v: coerce_hidden(v) is None,
     "profile_encoder_hidden": lambda v: True,    # only meaningful with profile_latent_dim
+    "discrepancy": lambda v: not v,
 }
 
 
@@ -173,6 +174,7 @@ class NIRTModel(nn.Module):
         elo_prior: bool = False,
         profile_latent_dim: Optional[int] = None,
         profile_encoder_hidden: Optional[int] = None,
+        discrepancy: bool = False,
     ):
         super().__init__()
         require_choice(model_params, MODEL_PARAM_MODES, field="model_params")
@@ -197,6 +199,10 @@ class NIRTModel(nn.Module):
             raise ValueError("elo_prior needs difficulty='scalar' (one ability -b_m per model)")
         self.profile_latent_dim = int(profile_latent_dim) if profile_latent_dim else None
         self.profile_encoder_hidden = profile_encoder_hidden
+        self.discrepancy = bool(discrepancy)
+        if self.discrepancy and model_params != "projected":
+            raise ValueError("discrepancy needs model_params='projected' (it corrects the "
+                             "profile-predicted a_m / b_m)")
         if self.profile_latent_dim and model_params != "projected":
             raise ValueError("profile_latent_dim needs model_params='projected' (it encodes e_m)")
         # projected-mode centring reference set at inference
@@ -247,6 +253,21 @@ class NIRTModel(nn.Module):
             self.b = nn.Embedding(self.n_models, b_dim)
             nn.init.normal_(self.a.weight, std=0.1)
             nn.init.zeros_(self.b.weight)
+
+        # -- optional per-model discrepancy from the profile ---------------
+        # ``a_m = head_a(e_m) + delta_a[m]``, ``b_m = head_b(e_m) + delta_b[m]``
+        # (before the softplus). With an Elo-manifold profile (``manifold_k<K>``)
+        # the heads carry what the public numbers say and delta is what the
+        # training data says they get wrong; the trainer shrinks it toward 0
+        # (train.discrepancy_weight). Zero-initialised, so it starts as a no-op;
+        # a model with no index (unseen, index -1) gets delta = 0, i.e. the
+        # profile-only prediction. Only created when enabled, so a disabled
+        # state_dict is unchanged.
+        if self.discrepancy:
+            self.delta_a = nn.Embedding(self.n_models, self.dim)
+            self.delta_b = nn.Embedding(self.n_models, b_dim)
+            nn.init.zeros_(self.delta_a.weight)
+            nn.init.zeros_(self.delta_b.weight)
 
         # -- optional non-additive interaction residual (P2c) --------------
         # ``logit = bilinear_base + gamma * net([theta_q, a_m, theta_q * a_m])``.
@@ -317,6 +338,7 @@ class NIRTModel(nn.Module):
             elo_prior=bool(model_cfg.get("elo_prior", False)),
             profile_latent_dim=coerce_hidden(model_cfg.get("profile_latent_dim")),
             profile_encoder_hidden=coerce_hidden(model_cfg.get("profile_encoder_hidden")),
+            discrepancy=bool(model_cfg.get("discrepancy", False)),
         )
 
     # ------------------------------------------------------------------ #
@@ -388,18 +410,24 @@ class NIRTModel(nn.Module):
         return a - r
 
     def model_parameters(
-        self, model_ref: Union[torch.Tensor, np.ndarray]
+        self, model_ref: Union[torch.Tensor, np.ndarray],
+        model_index: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Return ``(a_m, b_m)`` for a batch.
 
         ``model_ref`` is a ``(B, profile_dim)`` float tensor of profile
         embeddings when ``model_params="projected"``, or a ``(B,)`` long tensor
-        of model indices when ``model_params="free"``.
+        of model indices when ``model_params="free"``. ``model_index`` (``(B,)``
+        long, -1 = unseen) selects the per-model discrepancy when
+        ``discrepancy`` is on; ``None`` means no discrepancy for the batch.
         """
         if self.model_params == "projected":
             z = self.encode_profile(model_ref)
             a = self.a_head(z)
             b = self.b_head(z)
+            if self.discrepancy and model_index is not None:
+                da, db = self.discrepancy_terms(model_index)
+                a, b = a + da, b + db
         else:
             if not torch.is_tensor(model_ref):
                 model_ref = torch.as_tensor(model_ref, dtype=torch.long)
@@ -412,6 +440,20 @@ class NIRTModel(nn.Module):
         if self.center_discrimination:
             a = self._center_discrimination(a)
         return a, b
+
+    def discrepancy_terms(self, model_index: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """``(delta_a, delta_b)`` for a ``(B,)`` index batch; rows with index -1
+        (a model absent from training) are zero."""
+        if not torch.is_tensor(model_index):
+            model_index = torch.as_tensor(model_index, dtype=torch.long)
+        known = (model_index >= 0).unsqueeze(-1).to(self.delta_a.weight.dtype)
+        idx = model_index.clamp(min=0)
+        return self.delta_a(idx) * known, self.delta_b(idx) * known
+
+    def discrepancy_penalty(self) -> torch.Tensor:
+        """Mean over models of ``|delta_a|^2 + |delta_b|^2`` -- the shrinkage that
+        makes the data earn every departure from the profile prediction."""
+        return (self.delta_a.weight.pow(2).sum(-1) + self.delta_b.weight.pow(2).sum(-1)).mean()
 
     def encode_profile(self, e_m: torch.Tensor) -> torch.Tensor:
         """``z_m`` on the profile manifold -> ``(B, D)``; ``e_m`` unchanged when
@@ -473,15 +515,17 @@ class NIRTModel(nn.Module):
         model_ref: Union[torch.Tensor, np.ndarray],
         *,
         theta: Optional[torch.Tensor] = None,
+        model_index: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Logit of ``P(correct)`` -> ``(B,)``. Apply ``sigmoid`` for a probability.
 
         ``theta`` (an already-computed ``latent_query(e_q)``) lets a trainer that
         also needs ``theta_q`` run the query head once -- one BatchNorm update and
-        one dropout mask per step."""
+        one dropout mask per step. ``model_index`` feeds the per-model
+        discrepancy (see :meth:`model_parameters`)."""
         if theta is None:
             theta = self.latent_query(e_q)          # (B, K)
-        a, b = self.model_parameters(model_ref)     # (B, K), (B,) or (B, K)
+        a, b = self.model_parameters(model_ref, model_index)  # (B, K), (B,) or (B, K)
         logit = self.score(theta, a, b)
         if self.query_difficulty_on:
             logit = logit - self.query_difficulty(e_q)
@@ -489,9 +533,10 @@ class NIRTModel(nn.Module):
 
     @torch.no_grad()
     def predict_proba(
-        self, e_q: torch.Tensor, model_ref: Union[torch.Tensor, np.ndarray]
+        self, e_q: torch.Tensor, model_ref: Union[torch.Tensor, np.ndarray],
+        model_index: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        return torch.sigmoid(self.forward(e_q, model_ref))
+        return torch.sigmoid(self.forward(e_q, model_ref, model_index=model_index))
 
 
 class IRTRouterModel(nn.Module):

@@ -370,12 +370,15 @@ def _predict_packed(model, packed: dict, batch_size: int = 8192) -> np.ndarray:
     dev = _device_of(model)
     q = torch.from_numpy(packed["q"])
     ref_src = torch.from_numpy(packed["m"]) if projected else torch.from_numpy(packed["midx"])
+    # per-model discrepancy: the row's model index (-1 = unseen -> profile only)
+    idx_src = torch.from_numpy(packed["midx"]) if getattr(model, "discrepancy", False) else None
     out = np.empty(len(packed["y"]), dtype=np.float64)
     model.eval()
     with torch.no_grad():
         for i in range(0, len(out), batch_size):
             sl = slice(i, i + batch_size)
-            out[sl] = torch.sigmoid(model(q[sl].to(dev), ref_src[sl].to(dev))).cpu().numpy()
+            kw = {} if idx_src is None else {"model_index": idx_src[sl].to(dev)}
+            out[sl] = torch.sigmoid(model(q[sl].to(dev), ref_src[sl].to(dev), **kw)).cpu().numpy()
     return out
 
 
@@ -581,6 +584,11 @@ def fit(
     elo_weight = float(ecfg.get("weight", 0.0) or 0.0)
     if elo_weight > 0 and not getattr(model, "elo_prior", False):
         raise ValueError("train.elo_prior.weight needs model.elo_prior: true")
+    # shrinkage of the per-model discrepancy toward the profile prediction
+    discrepancy_on = bool(getattr(model, "discrepancy", False))
+    discrepancy_weight = float(tcfg.get("discrepancy_weight", 0.0) or 0.0)
+    if discrepancy_weight > 0 and not discrepancy_on:
+        raise ValueError("train.discrepancy_weight needs model.discrepancy: true")
     abort_on_collapse = bool(tcfg.get("abort_on_collapse", False))              # P7d
     collapse_rank_threshold = float(tcfg.get("collapse_rank_threshold", 1.3))
     collapse_agreement_threshold = float(tcfg.get("collapse_agreement_threshold", 0.95))
@@ -690,13 +698,14 @@ def fit(
         pw_running = pw_seen = 0.0
         for idx in batches:
             ref = mt[idx] if projected else it[idx]
+            kw = {"model_index": it[idx]} if discrepancy_on else {}
             if theta_once:
                 # run the query head ONCE: the loss and the covariance penalty share
                 # one BatchNorm update and one dropout mask
                 theta = model.latent_query(qt[idx])
-                logit = model(qt[idx], ref, theta=theta)
+                logit = model(qt[idx], ref, theta=theta, **kw)
             else:
-                logit = model(qt[idx], ref)
+                logit = model(qt[idx], ref, **kw)
             weight_idx = None
             if tr_zero_var is not None:
                 w = np.where(tr_zero_var[idx.numpy()], zero_variance_weight, 1.0).astype(np.float32)
@@ -709,6 +718,8 @@ def fit(
                 gap = (model.ability(elo_ref, theta.mean(0).detach())
                        - model.elo_prior_mean(elo_std))
                 loss = loss + elo_weight * gap.pow(2).mean()
+            if discrepancy_weight > 0:
+                loss = loss + discrepancy_weight * model.discrepancy_penalty()
             if recon_ref is not None:
                 loss = loss + recon_weight * (model.reconstruct(recon_ref) - recon_ref).pow(2).mean()
             total = loss
