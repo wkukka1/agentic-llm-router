@@ -34,8 +34,8 @@ Full table: `routellm_summary_seed0.csv`. Curves: `routellm_curves_seed0.csv`.
   recover half the gap, against 26 % for Bernoulli. This is the off-the-shelf use case, and
   Arena preferences don't transfer to these benchmark tasks.
 * **Retrained on our data, RouteLLM's MF is competitive.** ID 0.66–0.67 beats NIRT K=2, kNN
-  and MLP, but our three best are clearly ahead: the CIs vs BERT don't overlap MF's point
-  estimates by much (see CSV for exact pairwise numbers). On OOD the 4o/mini-pair MF matches our best;
+  and MLP. Our three best are 0.06–0.08 APGR higher on ID; the bootstrap here is only
+  against BERT, so that gap has no direct CI yet. On OOD the 4o/mini-pair MF matches our best;
   the 20-model-pair MF drops to random.
 * **Best for this 2-model decision: Bernoulli / ZOIB / IRT-Router K=25**, about 0.73–0.76 APGR on ID and OOD.
   They recover half the gap with 21–28 % strong calls.
