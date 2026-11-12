@@ -11,6 +11,9 @@ public representation alone:
   are unchanged.
 * ``bert``      -- m's BERT profile-text embedding (configs/nirt.yaml, the
   ``irtrouter-nirt-2d-projected`` recipe).
+* ``manifold``  -- configs/nirt_elo_manifold.yaml: m's coordinates on the
+  Elo-anchored manifold (``manifold_k3``) through the manifold heads; the
+  per-model discrepancy learned for the other 19 does not apply to m.
 * ``warm_mean`` -- m predicted as the per-query mean of the 19 warm models
   (the documented zero-shot floor), from the same fold's model.
 
@@ -44,6 +47,9 @@ from training.nirt.train import fit
 METHODS = {
     "eloprior": "configs/nirt_elo_prior.yaml",
     "bert": "configs/nirt.yaml",
+    # Elo manifold z_m + learned per-model discrepancy; the held-out model has
+    # no discrepancy (index -1), so it is scored from the manifold alone
+    "manifold": "configs/nirt_elo_manifold.yaml",
 }
 
 

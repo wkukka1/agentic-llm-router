@@ -345,3 +345,29 @@ def test_profile_latent_reference_goes_through_encoder():
                               n_models=3, query_dim=6, profile_dim=5)
     m.set_discrimination_reference(torch.randn(4, 5))
     assert m._a_ref.shape == (1, 2)
+
+
+# --------------------------------------------------------------------------- #
+# per-model discrepancy (manifold base + learned correction)                   #
+# --------------------------------------------------------------------------- #
+def test_discrepancy_is_noop_at_init_and_zero_for_unseen():
+    model = NIRTModel(query_dim=6, dim=2, n_models=4, model_params="projected",
+                      query_hidden=None, profile_dim=3, discrepancy=True)
+    e_q, ref = torch.randn(8, 6), torch.randn(8, 3)
+    idx = torch.tensor([0, 1, 2, 3, -1, -1, 0, 1])
+    assert torch.allclose(model(e_q, ref, model_index=idx), model(e_q, ref))
+    with torch.no_grad():
+        model.delta_b.weight.fill_(1.0)
+    moved = model(e_q, ref, model_index=idx) - model(e_q, ref)
+    assert torch.allclose(moved[idx >= 0], torch.full((6,), -1.0))   # logit = ... - b
+    assert torch.allclose(moved[idx < 0], torch.zeros(2))             # unseen: profile only
+    assert float(model.discrepancy_penalty()) == pytest.approx(1.0)
+
+
+def test_discrepancy_needs_projected_and_keeps_state_dict_when_off():
+    with pytest.raises(ValueError):
+        NIRTModel(query_dim=4, dim=1, n_models=3, model_params="free", discrepancy=True)
+    keys = set(NIRTModel(query_dim=4, dim=1, n_models=3, profile_dim=4).state_dict())
+    assert not any(k.startswith("delta_") for k in keys)
+    cfg = {"dim": 2, "model_params": "projected", "discrepancy": True}
+    assert build_model(cfg, n_models=3, query_dim=4, profile_dim=4).discrepancy

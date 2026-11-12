@@ -54,6 +54,10 @@ def predict_dataset(model, dataset, model_index: dict, batch_size: int = 8192):
     model_ids = np.asarray(dataset.model_ids)
 
     projected = model.model_params == "projected"
+    # per-model discrepancy (NIRTModel.discrepancy): index per row, -1 = unseen,
+    # which scores that model from its profile alone
+    disc_idx = (np.array([model_index.get(str(m), -1) for m in model_ids], dtype=np.int64)
+                if getattr(model, "discrepancy", False) else None)
     pool_ref = None
     if projected:
         _, first = np.unique(model_ids.astype(str), return_index=True)
@@ -79,7 +83,8 @@ def predict_dataset(model, dataset, model_index: dict, batch_size: int = 8192):
                 ref = torch.from_numpy(np.ascontiguousarray(g["model_embedding"], dtype=np.float32))
             else:
                 ref = torch.from_numpy(midx[idx])
-            out[idx] = torch.sigmoid(model(q, ref)).numpy()
+            kw = {} if disc_idx is None else {"model_index": torch.from_numpy(disc_idx[idx])}
+            out[idx] = torch.sigmoid(model(q, ref, **kw)).numpy()
     return y, out
 
 
