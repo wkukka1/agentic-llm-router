@@ -1,6 +1,7 @@
 # Router bake-off: every router, same data, in- and out-of-domain
 
-Status: **design** (2026-11-12). Nothing here has been run yet.
+Status: **step 1 run** (2026-11-12/13): primary split, seed 0, plus the RouteLLM and LiteLLM
+2-model sub-study. Results: `investigations/router_bakeoff/primary/headline.md`.
 
 ## Question
 
@@ -141,6 +142,19 @@ compared on the same binary decision.
 * **RouteLLM / binary:** sweep the threshold (strong-model share 0–100 %).
 
 ## Metrics
+
+> **Revised after step 1 (2026-11-13).** A *query-blind* policy gives every query each model's
+> train-mean score, plus the same cost trade-off. It reaches 0.751 of the 20-model macro log-cost
+> AIQ in-domain, against 0.759 for the best router and 0.920 for the oracle. So that AIQ mostly
+> rewards knowing model averages and costs, not per-query routing. The headline is now **per-query
+> skill over the query-blind baseline**:
+> * `headroom` = (AIQ − AIQ_blind) / (AIQ_oracle − AIQ_blind), with a paired-bootstrap CI on AIQ − AIQ_blind;
+> * Δ per-query Spearman / NDCG@3 against the blind ranking (the same model order for every query), with CIs;
+> * the 2-model gpt_4o-vs-gpt_4o_mini **APGR** (RouteLLM's metric), where query-blind = random ≈ 0.5,
+>   with CIs vs random.
+>
+> Raw 20-model AIQ and the metrics below remain as secondary columns. Report:
+> `scripts/bench/bakeoff_report.py` → `headline.md`.
 
 All are computed on the observed **graded** score `y(q, m)`, using the existing
 `evaluation.routing.oracle` and `evaluation.nirt.routing` code.

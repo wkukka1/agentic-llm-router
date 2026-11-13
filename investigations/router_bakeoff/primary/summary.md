@@ -1,5 +1,8 @@
 # Router bake-off, step 1: primary split, 1 seed (2026-11-12)
 
+> **Headline moved to `headline.md`**: per-query skill over the query-blind baseline, plus the
+> 2-model test. The table below is the raw 20-model AIQ, now a secondary metric.
+
 Design: `docs/router_benchmark_experiment.md`. Data: IRT-Router, 20 models; train 22 011 queries.
 ID test = 10 458 queries (8 datasets). OOD = 3 159 queries (ceval, commonsense_qa, gsm8k, humaneval).
 Every router uses the same BERT query embeddings and the same train rows.

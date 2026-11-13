@@ -35,7 +35,11 @@ credited with quality below the cheapest spend it can actually reach.
   observed scores.
 
 Paired bootstrap (queries resampled within dataset) gives 95 % CIs for each
-router's difference to ``--anchor``.
+router's difference to ``--anchor``, by default the **query-blind baseline**
+(every query gets each model's train-mean score, swept over the same lambdas).
+On this benchmark that baseline reaches almost all of the 20-model AIQ, so the
+per-query skill columns are reported against it: ``headroom_captured``,
+``regret_lift`` and ``d_macro_spearman`` / ``d_macro_ndcg@3`` (see ``_lift_columns``).
 
 Outputs ``investigations/router_bakeoff/<bundle name>/``: ``points.csv``
 (every frontier point), ``summary.csv`` and ``per_dataset.csv``.
@@ -58,6 +62,8 @@ from training.data.facade import load_training_data
 
 LAMBDAS = (0.0, 100.0, 300.0, 1000.0, 3000.0, 10000.0)
 COST_FRACS = (0.005, 0.01, 0.02, 0.05, 1.0)
+BLIND = "query-blind (train mean per model)"
+ORACLE = "oracle (cheapest best)"
 
 OUR_NIRT_RUNS = {
     "nirt (K=2, BERT profile)": "em-bert",
@@ -171,21 +177,28 @@ def quality_at(points, anchor, cost) -> float:
     return float(np.interp(cost, xs, ys, left=ys[0], right=ys[-1]))
 
 
-def _spearman_ndcg(pred: np.ndarray, true: np.ndarray, k: int = 3):
+def _per_query_rank(pred: np.ndarray, true: np.ndarray, k: int = 3) -> tuple:
+    """Per-query Spearman and NDCG@k of the predicted model order (NaN where undefined:
+    all observed scores tied, or no finite prediction)."""
     from scipy.stats import rankdata
 
-    rho, nd = [], []
-    for p, t in zip(pred, true):
+    rho, nd = np.full(len(true), np.nan), np.full(len(true), np.nan)
+    disc = 1 / np.log2(np.arange(2, k + 2))
+    for i, (p, t) in enumerate(zip(pred, true)):
         if np.ptp(t) == 0 or not np.isfinite(p).any():
             continue
         p = np.where(np.isfinite(p), p, np.nanmin(p[np.isfinite(p)]) - 1)
         rp, rt = rankdata(p), rankdata(t)
-        rho.append(np.corrcoef(rp, rt)[0, 1])
-        top = np.argsort(-p)[:k]
+        if np.ptp(rp) > 0:
+            rho[i] = np.corrcoef(rp, rt)[0, 1]
+        top = np.argsort(-p, kind="stable")[:k]
         ideal = np.sort(t)[::-1][:k]
-        disc = 1 / np.log2(np.arange(2, k + 2))
-        nd.append(float((t[top] * disc).sum() / max((ideal * disc).sum(), 1e-12)))
-    return float(np.nanmean(rho)), float(np.mean(nd))
+        nd[i] = float((t[top] * disc).sum() / max((ideal * disc).sum(), 1e-12))
+    return rho, nd
+
+
+def _macro(v: np.ndarray, ds_idx: dict) -> float:
+    return float(np.mean([np.nanmean(v[ix]) for ix in ds_idx.values()]))
 
 
 def evaluate_split(policies: dict, true: pd.DataFrame, cost: pd.DataFrame, datasets: np.ndarray,
@@ -276,6 +289,35 @@ def evaluate_split(policies: dict, true: pd.DataFrame, cost: pd.DataFrame, datas
     return pd.DataFrame(points), pd.DataFrame(rows), pd.DataFrame(per_ds)
 
 
+def _lift_columns(summ: pd.DataFrame, pq: dict, ds_idx: dict, n_boot: int, rng) -> None:
+    """Per-query skill relative to the query-blind baseline.
+
+    * ``headroom_captured``: (AIQ - AIQ_blind) / (AIQ_oracle - AIQ_blind) on the macro
+      log-cost AIQ. 0 = no better than knowing each model's average; 1 = oracle.
+    * ``regret_lift``: blind regret - router regret at lambda=0 (mean graded score).
+    * ``d_macro_spearman`` / ``d_macro_ndcg@3``: per-query ranking minus the blind ranking
+      (the same model order for every query), with a paired bootstrap CI that resamples
+      queries within dataset. Spearman is undefined for a constant prediction on a query
+      and is skipped there; ranks are compared only where both are defined.
+    """
+    s = summ.set_index("router")
+    b, o = s.loc[BLIND, "macro_aiq_log"], s.loc[ORACLE, "macro_aiq_log"]
+    summ["headroom_captured"] = (summ["macro_aiq_log"] - b) / (o - b)
+    summ["regret_lift"] = s.loc[BLIND, "regret_mean"] - summ["regret_mean"]
+    groups = list(ds_idx.values())
+    for metric, j in (("spearman", 0), ("ndcg@3", 1)):
+        base = pq[BLIND][j]
+        for nm, arrs in pq.items():
+            d = arrs[j] - base
+            summ.loc[summ["router"] == nm, f"d_macro_{metric}"] = _macro(d, ds_idx)
+            if n_boot:
+                draws = []
+                for _ in range(n_boot):
+                    draws.append(np.mean([np.nanmean(d[rng.choice(ix, len(ix))]) for ix in groups]))
+                lo, hi = np.nanquantile(draws, [0.025, 0.975])
+                summ.loc[summ["router"] == nm, [f"d_macro_{metric}_lo", f"d_macro_{metric}_hi"]] = [lo, hi]
+
+
 # --------------------------------------------------------------------------- #
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -284,7 +326,8 @@ def main() -> int:
     ap.add_argument("--splits", default="test,ood")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--reference", default="gpt_4o")
-    ap.add_argument("--anchor", default="nirt (K=2, BERT profile)")
+    ap.add_argument("--anchor", default=BLIND,
+                    help="every Δ / CI is router minus this policy (default: the query-blind baseline)")
     ap.add_argument("--knn-k", type=int, default=5)
     ap.add_argument("--n-boot", type=int, default=300)
     ap.add_argument("--out", default="investigations/router_bakeoff")
@@ -339,8 +382,8 @@ def main() -> int:
         policies["random"] = {0.0: rng.integers(0, len(model_ids), n)}
         # query-blind: every query gets the same per-model quality (train mean), swept over lambda
         blind = np.tile(train_mean, (n, 1))
-        policies["query-blind (train mean per model)"] = {
-            lam: routing_decision(blind, lam=lam, model_costs=train_cost) for lam in LAMBDAS}
+        policies[BLIND] = {lam: routing_decision(blind, lam=lam, model_costs=train_cost) for lam in LAMBDAS}
+        ranking[BLIND] = blind
         pdb = [per_ds_best.get(g, best_single) for g in datasets]   # unseen dataset -> best single
         policies["per-dataset best (uses dataset label)"] = {0.0: np.array([model_ids.index(m) for m in pdb])}
 
@@ -369,17 +412,25 @@ def main() -> int:
 
         pts, summ, per_ds = evaluate_split(policies, true, cost, datasets, ref_cost,
                                            args.n_boot, args.anchor, rng)
+        ds_idx = {g: np.where(datasets == g)[0] for g in sorted(set(datasets))}
+        pq = {nm: _per_query_rank(P, T) for nm, P in ranking.items()}
         for nm, P in ranking.items():
-            rho, nd = _spearman_ndcg(P, T)
-            summ.loc[summ["router"] == nm, ["spearman_lam0", "ndcg@3_lam0"]] = [rho, nd]
+            rho, nd = pq[nm]
+            summ.loc[summ["router"] == nm, ["spearman_lam0", "ndcg@3_lam0", "macro_spearman", "macro_ndcg@3"]] = [
+                float(np.nanmean(rho)), float(np.nanmean(nd)), _macro(rho, ds_idx), _macro(nd, ds_idx)]
             if nm in ours and np.nanmin(P) >= 0 and np.nanmax(P) <= 1:
                 summ.loc[summ["router"] == nm, "mse"] = float(np.nanmean((P - T) ** 2))
+
+        # lift over the query-blind baseline: what per-query routing adds
+        if BLIND in pq:
+            _lift_columns(summ, pq, ds_idx, args.n_boot, rng)
         for df in (pts, summ, per_ds):
             df.insert(0, "split", split)
         all_pts.append(pts); all_sum.append(summ); all_ds.append(per_ds)
 
-        show = ["router", "macro_aiq_log", "aiq_log", "q@0.5%", "q@1%", "q@2%", "q@100%",
-                "regret_mean", "any_best", "spearman_lam0"]
+        show = [c for c in ["router", "macro_aiq_log", "headroom_captured", "d_macro_aiq_log_vs_anchor_lo",
+                            "d_macro_aiq_log_vs_anchor_hi", "regret_lift", "macro_spearman", "d_macro_spearman",
+                            "d_macro_spearman_lo", "d_macro_spearman_hi"] if c in summ.columns]
         print(f"\n=== {split}: {n} queries, {len(model_ids)} models, ref {args.reference} "
               f"cost {ref_cost * 1000:.3f}$/1k ===")
         print(summ.sort_values("macro_aiq_log", ascending=False)[show].round(4).to_string(index=False))

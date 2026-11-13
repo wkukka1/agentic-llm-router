@@ -87,7 +87,8 @@ def main() -> int:
     ap.add_argument("--splits", default="test,ood")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--n-boot", type=int, default=500)
-    ap.add_argument("--anchor", default="routellm: bert (pretrained, Arena)")
+    ap.add_argument("--anchor", default="ref: random",
+                    help="CIs are APGR minus this router. Random = query-blind in the 2-model setting.")
     ap.add_argument("--out", default="investigations/router_bakeoff")
     args = ap.parse_args()
 
