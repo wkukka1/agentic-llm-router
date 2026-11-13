@@ -300,6 +300,7 @@ def main() -> int:
     train_cost = models.set_index("model_id")["train_mean_cost"].reindex(model_ids).to_numpy()
     train_q = obs[obs["query_id"].isin(queries.loc[queries["split"] == "train", "query_id"])]
     tq = train_q.merge(queries[["query_id", "dataset"]], on="query_id")
+    train_mean = tq.groupby("model_id")["target"].mean().reindex(model_ids).to_numpy()
     best_single = tq.groupby("model_id")["target"].mean().idxmax()
     per_ds_best = tq.groupby(["dataset", "model_id"])["target"].mean().unstack().idxmax(axis=1)
     ext = _ext_scores(bundle, args.seed)
@@ -336,6 +337,10 @@ def main() -> int:
         for m in (best_single, args.reference, model_ids[int(np.argmin(train_cost))]):
             policies[f"fixed: {m}"] = {0.0: np.full(n, model_ids.index(m))}
         policies["random"] = {0.0: rng.integers(0, len(model_ids), n)}
+        # query-blind: every query gets the same per-model quality (train mean), swept over lambda
+        blind = np.tile(train_mean, (n, 1))
+        policies["query-blind (train mean per model)"] = {
+            lam: routing_decision(blind, lam=lam, model_costs=train_cost) for lam in LAMBDAS}
         pdb = [per_ds_best.get(g, best_single) for g in datasets]   # unseen dataset -> best single
         policies["per-dataset best (uses dataset label)"] = {0.0: np.array([model_ids.index(m) for m in pdb])}
 
