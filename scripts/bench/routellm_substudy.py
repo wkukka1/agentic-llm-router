@@ -6,6 +6,8 @@ gpt_4o_mini traces quality against the share of strong calls (k = 0..100 %).
 
 * RouteLLM 0.2.0 (``scripts/bench/run_routellm.py``): pretrained BERT (Arena) and
   MF retrained on our data. Score = strong win rate.
+* LiteLLM (``scripts/bench/run_litellm.py``): complexity router (rules, heuristic_v2
+  bundled and retrained) and the adaptive bandit router.
 * Our 20-model routers, restricted to the two columns: score = P(gpt_4o) - P(gpt_4o_mini)
   (cached by ``router_bakeoff.py``).
 * llmrouter-lib routers at λ=0: score = S(gpt_4o) - S(gpt_4o_mini).
@@ -71,6 +73,11 @@ def load_scores(bundle: Path, split_q: pd.Index, seed: int) -> dict[str, np.ndar
         s = r.set_index("query_id")["strong_win_rate"].reindex(split_q)
         if s.notna().all():
             sc[f"routellm: {r['router'].iloc[0]}"] = s.to_numpy()
+    for f in sorted(glob.glob(str(bundle / "litellm" / "*.parquet"))):       # run_litellm.py
+        r = pd.read_parquet(f)
+        s = r.set_index("query_id")["strong_score"].reindex(split_q)
+        if s.notna().all():
+            sc[f"litellm: {r['router'].iloc[0]}"] = s.to_numpy()
     return sc
 
 

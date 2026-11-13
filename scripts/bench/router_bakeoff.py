@@ -115,11 +115,13 @@ def _our_matrix(name, kind, spec, d, cfg, split, qids, cache: Path) -> pd.DataFr
 def _ext_scores(bundle: Path, seed: int) -> dict:
     """{router: {lam: DataFrame[query x model]}} from run_llmrouter.py outputs."""
     out: dict = {}
-    for f in sorted(glob.glob(str(bundle / "llmrouter" / "*" / f"seed{seed}" / "lam*.npz"))):
+    files = [(f, "ext") for f in glob.glob(str(bundle / "llmrouter" / "*" / f"seed{seed}" / "lam*.npz"))]
+    files += [(f, "litellm") for f in glob.glob(str(bundle / "litellm" / "*" / f"seed{seed}" / "lam*.npz"))]
+    for f, src in sorted(files):
         kind = Path(f).parts[-3]
         lam = float(Path(f).stem[3:])
         z = np.load(f)
-        out.setdefault(f"ext: {kind}", {})[lam] = pd.DataFrame(
+        out.setdefault(f"{src}: {kind}", {})[lam] = pd.DataFrame(
             z["scores"], index=z["query_ids"].astype(str), columns=z["model_ids"].astype(str))
     return out
 
