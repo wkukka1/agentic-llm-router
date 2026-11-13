@@ -23,6 +23,8 @@ gpt_4o's spend.
 | irt-router K=25 (ours) | 0.754 | [−0.004, +0.005] | **0.711** | 0.851 | [−0.000, +0.010] | 0.870 |
 | mlp (ours) | 0.754 | [−0.004, +0.004] | 0.696 | 0.850 | [−0.002, +0.009] | 0.873 |
 | nirt elo-manifold + Δ | 0.753 | [−0.006, +0.003] | 0.699 | **0.854** | [−0.001, +0.014] | 0.873 |
+| **query-blind (train mean per model, swept over λ)** | 0.751 | [−0.006, −0.001] | 0.690 | 0.843 | [−0.007, −0.001] | 0.869 |
+| litellm: adaptive (bandit) | 0.751 | [−0.006, −0.001] | 0.690 | 0.843 | [−0.007, +0.000] | 0.869 |
 | ext: mlp | 0.731 | [−0.027, −0.020] | 0.638 | 0.795 | [−0.062, −0.043] | 0.669 |
 | knn k=5 (ours) | 0.724 | [−0.037, −0.025] | 0.678 | 0.805 | [−0.054, −0.030] | 0.779 |
 | ext: mf | 0.722 | [−0.036, −0.029] | 0.611 | 0.780 | [−0.079, −0.059] | 0.628 |
@@ -40,6 +42,17 @@ Full columns (linear AIQ, q at 0.5/2/5/100 %, regret, any-best, Spearman, NDCG@3
 `summary_seed0.csv`. Frontier points are in `points_seed0.csv`, per-dataset results in `per_dataset_seed0.csv`.
 
 ## Reading
+
+**Most important: the 20-model AIQ barely measures per-query routing.** A query-blind policy
+gives every query the same per-model quality (the train mean) and sweeps λ. It reaches 0.751 ID
+and 0.843 OOD, within 0.004–0.011 of the best learned router. That small margin is significant
+but small. So most of what separates "ours" from the llmrouter-lib routers below is that ours are
+cost-aware score models while those classifiers collapse to one label, not better per-query
+choices. The per-query signal shows up more clearly in the 2-model sub-study
+(`routellm_summary.md`), where query-blind routing is random (APGR 0.5) and our best reach 0.75.
+LiteLLM's adaptive router lands exactly on the query-blind line: its request-type classifier puts
+95 % of these queries in "general".
+
 
 * **Our six score-based routers are statistically tied.** On ID and OOD every Δ CI
   lies within about ±0.015 AIQ of NIRT. The only clear separation is between this

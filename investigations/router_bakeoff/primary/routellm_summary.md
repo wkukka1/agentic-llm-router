@@ -22,6 +22,10 @@ Full table: `routellm_summary_seed0.csv`. Curves: `routellm_curves_seed0.csv`.
 | ours: nirt K=2 | 0.644 | [+0.060, +0.142] | 32 % | 0.444 | [−0.151, +0.021] | 55 % |
 | ours: knn | 0.642 | [+0.053, +0.154] | 30 % | 0.619 | [−0.003, +0.240] | 33 % |
 | ours: mlp | 0.632 | [+0.045, +0.133] | 34 % | 0.720 | [+0.114, +0.355] | 17 % |
+| LiteLLM complexity heuristic_v2, retrained on our data | 0.558 | [−0.031, +0.057] | 38 % | 0.590 | [+0.003, +0.183] | 34 % |
+| LiteLLM complexity router (rules) | 0.537 | [−0.048, +0.037] | 48 % | 0.666 | [+0.050, +0.313] | 28 % |
+| LiteLLM complexity heuristic_v2 (bundled UltraFeedback) | 0.507 | [−0.075, +0.008] | 52 % | 0.445 | [−0.195, +0.075] | 54 % |
+| LiteLLM adaptive (bandit, trained on our data) | 0.497 | [−0.090, −0.002] | 50 % | 0.590 | [−0.031, +0.246] | 28 % |
 | **RouteLLM bert, pretrained (Arena)** | 0.544 | — | 43 % | 0.503 | — | 50 % |
 | random | 0.523 | [−0.064, +0.022] | 46 % | 0.490 | [−0.132, +0.142] | 51 % |
 | llmrouter-lib routers (best: routerdc / elo) | 0.43–0.53 | ≤ +0.04 | 44–64 % | 0.24–0.60 | | 28–82 % |
@@ -46,6 +50,13 @@ Full table: `routellm_summary_seed0.csv`. Curves: `routellm_curves_seed0.csv`.
 * llmrouter-lib's classifiers stay at or below random, as in the main bake-off. They were trained
   on 20-model "best model" labels, where gpt_4o and gpt_4o_mini are rarely the label.
 * OOD CIs are wide (3 159 queries, only about 13 % of them decisive between the two models).
+
+* **LiteLLM's query-aware routers are at or near random in-domain** (APGR 0.50–0.56). Its
+  rule-based complexity router does better OOD (0.67), which plausibly comes from code/math
+  keywords on humaneval/gsm8k. The OOD CIs are wide. Its adaptive bandit is nearly query-blind
+  here (95 % of queries classified "general"). LiteLLM's other strategies (shuffle, least-busy,
+  latency/usage/cost-based) balance load across deployments and never read the query.
+  Script: `scripts/bench/run_litellm.py`.
 
 ## Not run (with reasons)
 
